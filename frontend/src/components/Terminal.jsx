@@ -5,7 +5,6 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { AttachAddon } from '@xterm/addon-attach';
 import { Copy, Clipboard, Trash2, CheckSquare, MoreHorizontal, Play, Clock, X } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
-import { reduceTerminalHistoryInput } from './terminalHistory.js';
 import QuickCommands from './QuickCommands.jsx';
 import '@xterm/xterm/css/xterm.css';
 import defaultTermBg from '../assets/term_bg.png';
@@ -72,36 +71,30 @@ function getXtermTheme() {
   return (TERMINAL_THEMES[key] || TERMINAL_THEMES['lumin']).theme;
 }
 
+// ── 从终端当前行提取命令（仅当有 shell 提示符标记时）──
 const PROMPT_MARKERS = ['# ', '$ ', '% ', '> '];
-
 function readDisplayedCommand(term) {
   const buffer = term?.buffer?.active;
   if (!buffer) return '';
 
   let row = buffer.baseY + buffer.cursorY;
-  const segments = [];
+  if (row < 0) return '';
 
-  while (row >= 0) {
-    const line = buffer.getLine(row);
-    if (!line) break;
-    segments.unshift(line.translateToString(false));
-    if (!line.isWrapped) break;
-    row -= 1;
-  }
+  const line = buffer.getLine(row);
+  if (!line) return '';
 
-  const logicalLine = segments.join('').replace(/\s+$/, '');
-  if (!logicalLine.trim()) return '';
+  const text = line.translateToString(false).trim();
+  if (!text) return '';
 
-  let commandStart = -1;
+  // 只在有 shell 提示符标记时才提取命令（排除交互式输入如 y/n、fzf 等）
   for (const marker of PROMPT_MARKERS) {
-    const markerIndex = logicalLine.lastIndexOf(marker);
-    if (markerIndex > commandStart) {
-      commandStart = markerIndex + marker.length;
+    const idx = text.lastIndexOf(marker);
+    if (idx >= 0) {
+      const cmd = text.slice(idx + marker.length).trim();
+      return cmd;
     }
   }
-
-  const candidate = commandStart >= 0 ? logicalLine.slice(commandStart) : logicalLine;
-  return candidate.trim();
+  return '';
 }
 
 export default function Terminal({ sessionId, serverId, historyServerId, status, isActive, serverName, connectedSessions = [] }) {
@@ -109,8 +102,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const termRef        = useRef(null);
   const fitAddonRef    = useRef(null);
   const wsRef          = useRef(null);
-  const historyStateRef = useRef({ buffer: '', commands: [] });
-  const recordHistoryChunkRef = useRef(() => {});
   const [contextMenu, setContextMenu]         = useState(null);
   const [contextHasSelection, setContextHasSelection] = useState(false);
   const [justConnected, setJustConnected]     = useState(false);
@@ -230,7 +221,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         e.preventDefault();
         navigator.clipboard.readText().then((text) => {
           if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-            recordHistoryChunkRef.current(text);
             wsRef.current.send(new TextEncoder().encode(text));
           }
         });
@@ -363,41 +353,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     });
 
     // ── 历史指令记录 + 输入直通 + Local Echo ────────────────────────
-    historyStateRef.current = { buffer: '', commands: [] };
     let cwdTimer = null;
     let localInputLength = 0; // 用于保护提示符，防止退格越界
-
-    const recordHistoryChunk = (chunk) => {
-      const submitted = /[\r\n]/.test(chunk);
-      historyStateRef.current = reduceTerminalHistoryInput(historyStateRef.current, chunk);
-      let commands = historyStateRef.current.commands;
-
-      if (commands.length === 0 && submitted) {
-        const displayedCommand = readDisplayedCommand(term);
-        if (displayedCommand) {
-          commands = [displayedCommand];
-        }
-      }
-      if (commands.length === 0) return;
-
-      for (const cmd of commands) {
-        window.dispatchEvent(new CustomEvent('ssh-command-history', {
-          detail: { sessionId: serverId, command: cmd, time: new Date().toISOString(), source: 'input' }
-        }));
-      }
-
-      historyStateRef.current = { ...historyStateRef.current, commands: [] };
-      if (window.__cwdListeners?.[sessionId]) {
-        clearTimeout(cwdTimer);
-        cwdTimer = setTimeout(async () => {
-          try {
-            const cwd = await AppGo.GetTerminalCwd(sessionId);
-            if (cwd) window.dispatchEvent(new CustomEvent('ssh-terminal-cwd-changed', { detail: { sessionId, cwd } }));
-          } catch (_) {}
-        }, 400);
-      }
-    };
-    recordHistoryChunkRef.current = recordHistoryChunk;
 
     term.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -425,6 +382,16 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           }
         } else if (data === '\r' || data === '\n' || data === '\r\n') {
           localInputLength = 0;
+          // 从终端当前行提取命令并记录历史（同步读取，xterm 尚未处理 \r）
+          const term = termRef.current;
+          if (term) {
+            const cmd = readDisplayedCommand(term);
+            if (cmd) {
+              window.dispatchEvent(new CustomEvent('ssh-command-history', {
+                detail: { sessionId: serverId, command: cmd, time: new Date().toISOString(), source: 'input' }
+              }));
+            }
+          }
         } else {
           // 遇到方向键、Ctrl快捷键（如 Ctrl+C/D/Z）等控制符，
           // 立刻清零预测输入长度，安全退回到服务器渲染模式
@@ -432,7 +399,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         }
       }
 
-      recordHistoryChunk(data);
     });
 
     term.onResize(({ cols, rows }) => {
@@ -443,8 +409,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       clearTimeout(fitTimer);
       clearTimeout(cwdTimer);
       if (ws) { try { ws.close(); } catch (_) {} }
-      recordHistoryChunkRef.current = () => {};
-      historyStateRef.current = { buffer: '', commands: [] };
       termRef.current     = null;
       fitAddonRef.current = null;
       if (webglAddon) {
@@ -568,7 +532,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       case 'paste':
         navigator.clipboard.readText().then(text => {
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            recordHistoryChunkRef.current(text);
             wsRef.current.send(new TextEncoder().encode(text));
           }
           termRef.current.focus();
