@@ -98,6 +98,7 @@ func main() {
 		})
 
 		mQuit.Click(func() {
+			app.sshManager.DisconnectAll()
 			systray.Quit()
 			os.Exit(0)
 		})

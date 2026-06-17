@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import {
   formatCapacity,
@@ -10,13 +10,16 @@ import {
 // ── Sparkline SVG ──────────────────────────────────────────────────────────
 function Sparkline({ data, color = '#22c55e', fill = true, height = 36, width = '100%' }) {
   const pts = data || [];
+  const { points, fillPts } = useMemo(() => {
+    if (pts.length < 2) return { points: '', fillPts: '' };
+    const max = Math.max(...pts, 1);
+    const W = 200; const H = height;
+    const p = pts.map((v, i) => `${(i / (pts.length - 1)) * W},${H - (v / max) * (H - 2)}`).join(' ');
+    return { points: p, fillPts: `0,${H} ` + p + ` ${W},${H}` };
+  }, [pts, height]);
   if (pts.length < 2) return <div style={{ height }} />;
-  const max = Math.max(...pts, 1);
-  const W = 200; const H = height;
-  const points = pts.map((v, i) => `${(i / (pts.length - 1)) * W},${H - (v / max) * (H - 2)}`).join(' ');
-  const fillPts = `0,${H} ` + points + ` ${W},${H}`;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width, height, display: 'block' }}>
+    <svg viewBox={`0 0 200 ${height}`} preserveAspectRatio="none" style={{ width, height, display: 'block' }}>
       {fill && <polygon points={fillPts} fill={color} opacity={0.12} />}
       <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
     </svg>

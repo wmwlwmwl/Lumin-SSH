@@ -123,7 +123,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			authMethods = append(authMethods, ssh.PublicKeys(signer))
 		}
 
-		knownHostsPath := filepath.Join(os.Getenv("USERPROFILE"), ".ssh", "known_hosts")
+		knownHostsPath := getKnownHostsPath()
 		os.MkdirAll(filepath.Dir(knownHostsPath), 0700)
 		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
 			os.WriteFile(knownHostsPath, []byte(""), 0600)
@@ -527,6 +527,19 @@ func (m *SSHManager) Disconnect(sessionId string) {
 	}
 }
 
+// DisconnectAll 断开所有 SSH 连接，用于应用退出时清理资源
+func (m *SSHManager) DisconnectAll() {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.Disconnect(id)
+	}
+}
+
 func (m *SSHManager) CloseSessionResources(sessionId string) {
 	m.mu.Lock()
 	s, ok := m.sessions[sessionId]
@@ -675,6 +688,15 @@ func (m *SSHManager) OpenTerminal(sessionId string) (string, error) {
 	return newId, nil
 }
 
+// getKnownHostsPath 返回跨平台的 known_hosts 文件路径
+func getKnownHostsPath() string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE") // Windows
+	}
+	return filepath.Join(home, ".ssh", "known_hosts")
+}
+
 // AcceptHostKeyChange 处理用户对主机密钥变更的确认
 // action: 0=取消, 1=仅本次接受, 2=接受并保存至 known_hosts
 func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
@@ -698,13 +720,13 @@ func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
 		return m.Connect(sessionId, pending.Conn)
 
 	case 2: // 接受并保存到 known_hosts
-		knownHostsPath := filepath.Join(os.Getenv("USERPROFILE"), ".ssh", "known_hosts")
+		knownHostsPath := getKnownHostsPath()
 		os.MkdirAll(filepath.Dir(knownHostsPath), 0700)
 
 		newLine := knownhosts.Line([]string{pending.Hostname}, pending.NewKey)
 
 		if len(pending.OldKeys) > 0 {
-			// 密钥已变更：删除旧条目后追加新条目
+			// 密钥已变更：删除旧条目后追加新条目（原子写入：临时文件 + rename）
 			data, err := os.ReadFile(knownHostsPath)
 			if err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("无法读取 known_hosts: %v", err)
@@ -730,9 +752,17 @@ func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
 			}
 			newLines = append(newLines, newLine)
 
-			if err := os.WriteFile(knownHostsPath, []byte(strings.Join(newLines, "\n")+"\n"), 0600); err != nil {
+			// 原子写入：先写临时文件，再 rename 覆盖，避免中断损坏原文件
+			tmpPath := knownHostsPath + ".tmp"
+			if err := os.WriteFile(tmpPath, []byte(strings.Join(newLines, "\n")+"\n"), 0600); err != nil {
 				return fmt.Errorf("无法写入 known_hosts: %v", err)
 			}
+			os.Rename(knownHostsPath, knownHostsPath+".bak")
+			if err := os.Rename(tmpPath, knownHostsPath); err != nil {
+				os.Rename(knownHostsPath+".bak", knownHostsPath) // 回滚
+				return fmt.Errorf("无法写入 known_hosts: %v", err)
+			}
+			os.Remove(knownHostsPath + ".bak")
 		} else {
 			// 首次连接：直接追加新条目
 			f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
@@ -831,69 +861,10 @@ func (m *SSHManager) executeCmdWithClient(client *ssh.Client, cmd string) (strin
 	case err := <-errCh:
 		return stdoutBuf.String(), err
 	case <-time.After(30 * time.Second):
-		session.Close()
+		// 异步关闭 session，避免 Close 本身阻塞调用方
+		go session.Close()
 		return "", fmt.Errorf("command timed out after 30 seconds")
 	}
-}
-
-func parseStatCpus(lines []string) map[string][]uint64 {
-	res := make(map[string][]uint64)
-	for _, l := range lines {
-		if !strings.HasPrefix(l, "cpu") {
-			continue
-		}
-		parts := strings.Fields(l)
-		if len(parts) < 5 {
-			continue
-		}
-		vals := make([]uint64, len(parts)-1)
-		for i := 1; i < len(parts); i++ {
-			v, _ := strconv.ParseUint(parts[i], 10, 64)
-			vals[i-1] = v
-		}
-		res[parts[0]] = vals
-	}
-	return res
-}
-
-func parseNetDev(lines []string) map[string][]uint64 {
-	res := make(map[string][]uint64)
-	for _, l := range lines {
-		if !strings.Contains(l, ":") {
-			continue
-		}
-		parts := strings.Split(l, ":")
-		name := strings.TrimSpace(parts[0])
-		if name == "lo" {
-			continue
-		}
-		fields := strings.Fields(parts[1])
-		if len(fields) < 9 {
-			continue
-		}
-		rx, _ := strconv.ParseUint(fields[0], 10, 64)
-		tx, _ := strconv.ParseUint(fields[8], 10, 64)
-		res[name] = []uint64{rx, tx}
-	}
-	return res
-}
-
-func parseDiskStats(lines []string) map[string][]uint64 {
-	res := make(map[string][]uint64)
-	for _, l := range lines {
-		fields := strings.Fields(l)
-		if len(fields) < 10 {
-			continue
-		}
-		name := fields[2]
-		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") {
-			continue
-		}
-		readSectors, _ := strconv.ParseUint(fields[5], 10, 64)
-		writeSectors, _ := strconv.ParseUint(fields[9], 10, 64)
-		res[name] = []uint64{readSectors, writeSectors}
-	}
-	return res
 }
 
 const dynamicProbeScript = `#!/bin/sh

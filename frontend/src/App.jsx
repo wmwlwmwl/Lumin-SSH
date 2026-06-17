@@ -21,6 +21,8 @@ import logoImg from './assets/logo.png';
 export default function App() {
   const { t } = useTranslation();
   const [servers, setServers] = useState([]);
+  const serversRef = useRef([]);
+  useEffect(() => { serversRef.current = servers; }, [servers]);
   const [pings, setPings] = useState({});
   const [sessions, setSessions] = useState([]);      // { id, serverId, serverName, host, status, osInfo }
   const [activeSessionId, setActiveSessionId] = useState(null);
@@ -429,9 +431,10 @@ export default function App() {
 
   // ── Ping all servers ───────────────────────────────────────
   const pingAll = useCallback(async () => {
-    if (servers.length === 0) return;
+    const list = serversRef.current;
+    if (list.length === 0) return;
     const results = await Promise.all(
-      servers.map(async (s) => {
+      list.map(async (s) => {
         try {
           const res = await AppGo.PingServer(s.host, s.port || 22);
           return { id: s.id, ...res };
@@ -443,7 +446,7 @@ export default function App() {
     const map = {};
     results.forEach((r) => { map[r.id] = { online: r.online, latency: r.latency }; });
     setPings(map);
-  }, [servers]);
+  }, []);
 
   useEffect(() => {
     pingAll();
