@@ -860,17 +860,18 @@ export default function App() {
   }, [sessions, addToast]);
 
   // ── Close session ──────────────────────────────────────────
-  const closeSession = useCallback(async (sessionId, e) => {
+  const closeSession = useCallback((sessionId, e) => {
     e?.stopPropagation();
     const session = sessions.find(s => s.id === sessionId);
-    // 关闭该会话的所有终端
+    // 后端断开（不等待，即使服务器无响应也不阻塞 UI）
     if (session?.terminals) {
       for (const t of session.terminals) {
-        try { await AppGo.DisconnectSSH(t.id); } catch (_) {}
+        AppGo.DisconnectSSH(t.id).catch(() => {});
       }
     } else {
-      try { await AppGo.DisconnectSSH(sessionId); } catch (_) {}
+      AppGo.DisconnectSSH(sessionId).catch(() => {});
     }
+    // 立即从 UI 移除会话
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     if (activeSessionId === sessionId) {
       const remaining = sessions.filter((s) => s.id !== sessionId);
@@ -919,12 +920,12 @@ export default function App() {
   }, [sessions, addToast]);
 
   // ── 关闭单个终端标签 ──────────────────────────────────────
-  const closeTerminal = useCallback(async (sessionId, terminalId, e) => {
+  const closeTerminal = useCallback((sessionId, terminalId, e) => {
     e?.stopPropagation();
     const session = sessions.find(s => s.id === sessionId);
     if (!session?.terminals) return;
     
-    try { await AppGo.DisconnectSSH(terminalId); } catch (_) {}
+    AppGo.DisconnectSSH(terminalId).catch(() => {});
     
     setSessions((prev) => {
       return prev.map((s) => {
