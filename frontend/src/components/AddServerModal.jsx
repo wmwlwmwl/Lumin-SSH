@@ -44,14 +44,17 @@ export default function AddServerModal({ server, onSave, onClose }) {
     if (!form.username.trim()) return window.luminDialog?.alert('请填写用户名');
 
     setSaving(true);
-    const data = { ...form };
-    data.port = parseInt(data.port, 10) || 22; // ensure port is an integer
-    data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
-    if (server?.id) data.id = server.id;
-    // If editing and password is empty, don't overwrite existing
-    if (server?.id && !data.password) delete data.password;
-    await onSave(data);
-    setSaving(false);
+    try {
+      const data = { ...form };
+      data.port = parseInt(data.port, 10) || 22; // ensure port is an integer
+      data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
+      if (server?.id) data.id = server.id;
+      // If editing and password is empty, don't overwrite existing
+      if (server?.id && !data.password) delete data.password;
+      await onSave(data);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSelectPrivateKeyFile = async () => {

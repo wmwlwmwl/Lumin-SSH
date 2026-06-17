@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { APP_VERSION } from '../config.js';
 
@@ -51,6 +51,9 @@ export function useUpdateChecker({ onResult, onError } = {}) {
   const [checking, setChecking] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(-1);
 
+  const cbRef = useRef({ onResult, onError });
+  cbRef.current = { onResult, onError };
+
   useEffect(() => {
     const handleProgress = (e) => {
       if (typeof e.detail === 'number') setDownloadProgress(e.detail);
@@ -61,8 +64,10 @@ export function useUpdateChecker({ onResult, onError } = {}) {
 
   const checkUpdate = useCallback(async () => {
     setChecking(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const res = await fetch(RELEASE_API);
+      const res = await fetch(RELEASE_API, { signal: controller.signal });
       if (!res.ok) throw new Error('API request failed');
       const data = await res.json();
       if (!data || !data.tag_name) return null;
@@ -71,15 +76,16 @@ export function useUpdateChecker({ onResult, onError } = {}) {
       const { url, filename } = await resolveDownloadAsset(data);
       const hasUpdate = compareVersions(latest, APP_VERSION);
       const result = { hasUpdate, latestVersion: latest, url, filename };
-      onResult?.(result);
+      cbRef.current.onResult?.(result);
       return result;
     } catch (err) {
-      onError?.(err);
+      cbRef.current.onError?.(err);
       return null;
     } finally {
+      clearTimeout(timeout);
       setChecking(false);
     }
-  }, [onResult, onError]);
+  }, []);  // Empty deps - stable reference
 
   const applyUpdate = useCallback(async (updateInfo) => {
     if (!updateInfo || !updateInfo.url) return;

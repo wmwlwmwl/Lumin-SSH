@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,9 +28,10 @@ type App struct {
 	sshManager    *SSHManager
 	configManager *ConfigManager
 	wsPort        int
+	wsToken       string
 	wsMu          sync.Mutex
 	wsConns       map[string]*websocket.Conn // sessionId -> active WebSocket
-	quitting      bool                       // 标记用户确认退出，OnBeforeClose 放行
+	quitting      atomic.Bool                // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
 }
 
 // NewApp creates a new App application struct
@@ -47,14 +52,26 @@ func (a *App) startup(ctx context.Context) {
 
 	// ── 启动本地 WebSocket 终端服务器 ─────────────────────────────────
 	// 不经过 Wails IPC，直接走 TCP loopback，延迟极低
+	// 生成随机 token，要求连接时通过 ?token=xxx 携带，防止本机恶意进程注入命令
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		// rand.Read 失败极少见；失败时仍生成一个基于时间的回退 token，避免无法启动
+		a.wsToken = fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	} else {
+		a.wsToken = hex.EncodeToString(tokenBytes)
+	}
+
 	mux := http.NewServeMux()
 	// 仅允许 Wails WebView 的 Origin（防止本机恶意网页通过 DNS rebinding 连接）
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
+			// 拒绝空 Origin，防止非浏览器进程直连
+			if origin == "" {
+				return false
+			}
 			// Wails WebView 的 Origin 通常是 wails:// 或 http://wails.localhost
-			return origin == "" ||
-				strings.HasPrefix(origin, "wails://") ||
+			return strings.HasPrefix(origin, "wails://") ||
 				strings.HasPrefix(origin, "http://wails.") ||
 				strings.HasPrefix(origin, "https://wails.")
 		},
@@ -62,6 +79,11 @@ func (a *App) startup(ctx context.Context) {
 		WriteBufferSize: 32768,
 	}
 	mux.HandleFunc("/ws/", func(w http.ResponseWriter, r *http.Request) {
+		// 校验 token，拒绝未携带正确 token 的连接
+		if r.URL.Query().Get("token") != a.wsToken {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		sessionId := strings.TrimPrefix(r.URL.Path, "/ws/")
 		if sessionId == "" {
 			http.Error(w, "missing sessionId", http.StatusBadRequest)
@@ -123,7 +145,7 @@ func (a *App) startup(ctx context.Context) {
 
 // DoQuit 用户确认退出，设标记让 OnBeforeClose 放行
 func (a *App) DoQuit() {
-	a.quitting = true
+	a.quitting.Store(true)
 	runtime.Quit(a.ctx)
 }
 
@@ -132,22 +154,26 @@ func (a *App) GetWsPort() int {
 	return a.wsPort
 }
 
+// GetWsToken 返回 WebSocket 鉴权 token，前端连接时通过 ?token=xxx 携带
+func (a *App) GetWsToken() string {
+	return a.wsToken
+}
+
 // WriteWsToSession 将 WebSocket 输出写入给指定 session 的 WS 连接
 func (a *App) WriteWsOutput(sessionId string, data []byte) {
 	a.wsMu.Lock()
+	defer a.wsMu.Unlock()
 	conn, ok := a.wsConns[sessionId]
-	a.wsMu.Unlock()
-	if ok {
-		// 设置写超时，防止前端停止读取后 goroutine 永久阻塞
-		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		err := conn.WriteMessage(websocket.BinaryMessage, data)
-		if err != nil {
-			// 写失败（超时/连接断开），关闭并移除该连接
-			a.wsMu.Lock()
-			delete(a.wsConns, sessionId)
-			a.wsMu.Unlock()
-			conn.Close()
-		}
+	if !ok || conn == nil {
+		return
+	}
+	// 设置写超时，防止前端停止读取后 goroutine 永久阻塞
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := conn.WriteMessage(websocket.BinaryMessage, data)
+	if err != nil {
+		// 写失败（超时/连接断开），关闭并移除该连接
+		delete(a.wsConns, sessionId)
+		conn.Close()
 	}
 }
 
@@ -628,6 +654,40 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 	if err != nil {
 		os.Remove(targetPath) // Cleanup on failure
 		return fmt.Errorf("failed to save update file: %w", err)
+	}
+
+	// 2.5 校验下载文件的 SHA256（如果发布方提供了 .sha256 文件）
+	// 防止下载文件被篡改或损坏后直接替换可执行文件
+	shaResp, shaErr := client.Get(downloadUrl + ".sha256")
+	if shaErr != nil {
+		// .sha256 文件获取失败（如 404），跳过校验但记录警告
+		fmt.Printf("[UpdateApp] warning: failed to fetch .sha256 file, skipping verification: %v\n", shaErr)
+	} else {
+		shaBody, shaReadErr := io.ReadAll(shaResp.Body)
+		shaResp.Body.Close()
+		if shaReadErr != nil {
+			fmt.Printf("[UpdateApp] warning: failed to read .sha256 file, skipping verification: %v\n", shaReadErr)
+		} else {
+			// 计算下载文件的 SHA256
+			downloadedData, readErr := os.ReadFile(targetPath)
+			if readErr != nil {
+				os.Remove(targetPath)
+				return fmt.Errorf("failed to read downloaded file for verification: %w", readErr)
+			}
+			actualHash := sha256.Sum256(downloadedData)
+			actualHashHex := hex.EncodeToString(actualHash[:])
+
+			// .sha256 文件内容通常是 "<hash>  <filename>" 格式，取第一个字段
+			expectedHash := strings.Fields(strings.TrimSpace(string(shaBody)))
+			if len(expectedHash) == 0 {
+				fmt.Printf("[UpdateApp] warning: empty .sha256 file, skipping verification\n")
+			} else {
+				if !strings.EqualFold(actualHashHex, expectedHash[0]) {
+					os.Remove(targetPath)
+					return fmt.Errorf("SHA256 mismatch: expected %s, got %s", expectedHash[0], actualHashHex)
+				}
+			}
+		}
 	}
 
 	// 3. 区分 Setup 还是 Portable 替换

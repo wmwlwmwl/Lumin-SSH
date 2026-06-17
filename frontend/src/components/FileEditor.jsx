@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -130,6 +130,8 @@ export default function FileEditor({
 
   const isModified = activeFile ? currentContent !== activeFile.content : false;
 
+  const byteSize = useMemo(() => new Blob([currentContent]).size, [currentContent]);
+
   const handleChange = useCallback((value) => {
     if (!activeFile) return;
     setEditedContents(prev => ({ ...prev, [activeFile.path]: value }));
@@ -151,12 +153,20 @@ export default function FileEditor({
     }
   };
 
-  const handleCloseCurrent = async () => {
-    if (activeFile && isModified) {
-      if (!(await window.luminDialog?.confirm('文件有未保存的修改，确定关闭？'))) return;
+  const closeFileWithConfirm = async (path) => {
+    const f = files.find((x) => x.path === path);
+    const edited = editedContents[path];
+    if (f && edited !== undefined && edited !== f.content) {
+      const ok = await window.luminDialog?.confirm('文件有未保存的修改，确定关闭？');
+      if (!ok) return;
     }
+    setEditedContents(prev => { const next = { ...prev }; delete next[path]; return next; });
+    onCloseFile(path);
+  };
+
+  const handleCloseCurrent = async () => {
     if (activeFile) {
-      onCloseFile(activeFile.path);
+      await closeFileWithConfirm(activeFile.path);
     }
   };
 
@@ -354,7 +364,7 @@ export default function FileEditor({
           >
             <span>{f.name}{fModified ? ' ●' : ''}</span>
             <span
-              onClick={(e) => { e.stopPropagation(); onCloseFile(f.path); }}
+              onClick={(e) => { e.stopPropagation(); closeFileWithConfirm(f.path); }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -525,7 +535,7 @@ export default function FileEditor({
         color: 'var(--text-4)',
         fontFamily: 'var(--font-mono)',
       }}>
-        <span>{currentContent.split('\n').length} 行 · {new Blob([currentContent]).size} 字节</span>
+        <span>{currentContent.split('\n').length} 行 · {byteSize} 字节</span>
         <span>UTF-8 · {lang ? ext.toUpperCase() : 'Text'}</span>
       </div>
     </>

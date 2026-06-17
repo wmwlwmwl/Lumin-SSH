@@ -85,7 +85,7 @@ export default function GlobalDialog() {
 
   return (
     <div className="modal-overlay" style={{ zIndex: 9999 }}>
-      <DialogContent current={current} onClose={handleClose} onConfirm={handleConfirm} onChoice={handleChoice} />
+      <DialogContent key={current.id} current={current} onClose={handleClose} onConfirm={handleConfirm} onChoice={handleChoice} />
     </div>
   );
 }

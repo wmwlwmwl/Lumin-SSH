@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -28,6 +29,12 @@ type RemoteStorage interface {
 	EncryptKey() []byte
 }
 
+// maxBackupsProvider 是可选接口：后端若实现 MaxBackups()，syncFromProvider 在
+// 同步后触发备份时会使用该值清理旧备份。未实现者（如 webdavStorage）保持原行为（不清理）。
+type maxBackupsProvider interface {
+	MaxBackups() int
+}
+
 // ─── 同步快照 ─────────────────────────────────────────────
 
 // SyncSnapshot 同步快照，包含连接和快捷命令等所有可同步数据
@@ -49,7 +56,7 @@ func (c *ConfigManager) decryptAndParse(data string, key []byte) ([]Connection, 
 	}
 	// 先尝试新格式（快照）
 	var snap SyncSnapshot
-	if err := json.Unmarshal([]byte(decrypted), &snap); err == nil && len(snap.Connections) > 0 {
+	if err := json.Unmarshal([]byte(decrypted), &snap); err == nil && snap.Connections != nil {
 		return snap.Connections, nil
 	}
 	// 回退旧格式（纯连接列表）
@@ -72,7 +79,7 @@ func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte) (*SyncS
 	}
 	// 尝试新格式（快照）
 	var snap SyncSnapshot
-	if err := json.Unmarshal([]byte(decrypted), &snap); err == nil && len(snap.Connections) > 0 {
+	if err := json.Unmarshal([]byte(decrypted), &snap); err == nil && snap.Connections != nil {
 		return &snap, nil
 	}
 	// 回退旧格式（纯连接列表）
@@ -101,6 +108,10 @@ func (c *ConfigManager) mergeAndDedupe(localConns, remoteConns []Connection) []C
 	for _, v := range mergedMap {
 		merged = append(merged, v)
 	}
+	// 按 ID 排序，保证去重结果稳定可重现（避免 map 迭代顺序随机）
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].ID < merged[j].ID
+	})
 
 	type hpKey struct {
 		host string
@@ -112,16 +123,21 @@ func (c *ConfigManager) mergeAndDedupe(localConns, remoteConns []Connection) []C
 	for _, v := range merged {
 		key := hpKey{v.Host, v.Port, v.Username}
 		if idx, ok := hostPortMap[key]; ok {
+			// 字段级合并：仅用 v 填补 existing 中缺失的字段，避免整条覆盖丢失数据
 			existing := deduped[idx]
 			if existing.Password == "" && v.Password != "" {
-				deduped[idx] = v
-			} else if existing.Password != "" && v.Password == "" {
-				// keep existing
-			} else if existing.PrivateKey == "" && v.PrivateKey != "" {
-				deduped[idx] = v
-			} else if v.Name != "" && existing.Name == "" {
-				deduped[idx] = v
+				existing.Password = v.Password
 			}
+			if existing.PrivateKey == "" && v.PrivateKey != "" {
+				existing.PrivateKey = v.PrivateKey
+			}
+			if existing.Passphrase == "" && v.Passphrase != "" {
+				existing.Passphrase = v.Passphrase
+			}
+			if v.Name != "" && existing.Name == "" {
+				existing.Name = v.Name
+			}
+			deduped[idx] = existing
 		} else {
 			hostPortMap[key] = len(deduped)
 			deduped = append(deduped, v)
@@ -237,7 +253,9 @@ func (c *ConfigManager) pruneOldBackups(s RemoteStorage, maxBackups int) {
 			return backups[i].time.Before(backups[j].time)
 		})
 		for i := 0; i < len(backups)-maxBackups; i++ {
-			s.DeleteFile(backups[i].name)
+			if err := s.DeleteFile(backups[i].name); err != nil {
+				log.Printf("pruneOldBackups: failed to delete %s: %v", backups[i].name, err)
+			}
 		}
 	}
 }
@@ -290,7 +308,16 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage) (map[string]interface{
 	changed := !connsEqual(deduped, remoteSnap.Connections) ||
 		mergedQuickCmds != remoteSnap.QuickCommands
 	if changed {
-		backupResult, _ = c.backupConnections(s, 0)
+		// 通过可选接口获取后端配置的 maxBackups，未实现者默认 0（不清理）
+		maxBackups := 0
+		if mb, ok := s.(maxBackupsProvider); ok {
+			maxBackups = mb.MaxBackups()
+		}
+		br, berr := c.backupConnections(s, maxBackups)
+		if berr != nil {
+			log.Printf("syncFromProvider: backup failed: %v", berr)
+		}
+		backupResult = br
 	}
 
 	return map[string]interface{}{
@@ -311,12 +338,16 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) {
 
 	remoteSnap, err := c.fetchLatestBackup(s)
 	if err != nil {
-		c.backupConnections(s, maxBackups) // 云端无备份，直接上传
+		if _, berr := c.backupConnections(s, maxBackups); berr != nil { // 云端无备份，直接上传
+			log.Printf("autoSync backup failed: %v", berr)
+		}
 		return
 	}
 
 	if !snapshotEqual(localSnap, remoteSnap) {
-		c.backupConnections(s, maxBackups)
+		if _, berr := c.backupConnections(s, maxBackups); berr != nil {
+			log.Printf("autoSync backup failed: %v", berr)
+		}
 	}
 }
 
@@ -346,6 +377,7 @@ func (c *ConfigManager) getSyncProviders() []providerEntry {
 	} else {
 		// 选中的方式不可用则回退到 webdav
 		if len(entries) == 0 {
+			log.Printf("getSyncProviders: selected provider %s not available, falling back", mode)
 			s, max, err := c.newWebdavStorage()
 			if err == nil {
 				entries = append(entries, providerEntry{storage: s, maxBackups: max})

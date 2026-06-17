@@ -121,15 +121,15 @@ func main() {
 		OnStartup:        app.startup,
 		// 拦截窗口关闭：弹出对话框让用户选择退出 / 系统托盘 / 取消
 		OnBeforeClose: func(ctx context.Context) bool {
-			if app.quitting {
+			if app.quitting.Load() {
 				return false // 用户确认退出，放行
 			}
 			runtime.EventsEmit(ctx, "close-request")
 			// 超时兜底：如果前端 5 秒内没有响应（崩溃/JS 异常），强制允许关闭
 			go func() {
 				time.Sleep(5 * time.Second)
-				if !app.quitting {
-					app.quitting = true
+				if !app.quitting.Load() {
+					app.quitting.Store(true)
 					runtime.Quit(ctx)
 				}
 			}()

@@ -25,6 +25,12 @@ type R2Config struct {
 	MaxBackups      int    `json:"maxBackups"`
 }
 
+// getR2Key 基于连接配置派生加密密钥。
+// 注意：此处使用裸 SHA-256 而未加盐与迭代（无 KDF），该简化处理是可接受的，因为：
+//  1. 输入包含访问密钥等高熵字段；
+//  2. 该密钥仅用于已加密配置数据的传输/静态保护；
+//  3. 主保护由 ConfigManager 的主密钥提供。
+// 修改 KDF 会破坏与既有备份的向后兼容，故保持现状。
 func (c *ConfigManager) getR2Key() []byte {
 	conf := c.GetR2Config()
 	if conf == nil {
@@ -144,18 +150,25 @@ func (c *ConfigManager) newR2Client() (*minio.Client, error) {
 // ─── R2 RemoteStorage 实现 ─────────────────────────────────
 
 type r2Storage struct {
-	cli    *minio.Client
-	bucket string
-	prefix string
-	key    []byte
+	cli        *minio.Client
+	bucket     string
+	prefix     string
+	key        []byte
+	maxBackups int
 }
+
+func (s *r2Storage) MaxBackups() int { return s.maxBackups }
 
 func (s *r2Storage) ListFiles() ([]RemoteFile, error) {
 	ctx := context.Background()
 	objects := s.cli.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: s.prefix})
 	var result []RemoteFile
+	var firstErr error
 	for obj := range objects {
 		if obj.Err != nil {
+			if firstErr == nil {
+				firstErr = obj.Err
+			}
 			continue
 		}
 		name := strings.TrimPrefix(obj.Key, s.prefix)
@@ -167,6 +180,9 @@ func (s *r2Storage) ListFiles() ([]RemoteFile, error) {
 			ModTime: obj.LastModified,
 			Size:    obj.Size,
 		})
+	}
+	if firstErr != nil {
+		return nil, fmt.Errorf("list objects error: %w", firstErr)
 	}
 	return result, nil
 }
@@ -208,7 +224,7 @@ func (c *ConfigManager) newR2Storage() (RemoteStorage, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	return &r2Storage{cli: cli, bucket: conf.Bucket, prefix: conf.Prefix, key: c.getR2Key()}, conf.MaxBackups, nil
+	return &r2Storage{cli: cli, bucket: conf.Bucket, prefix: conf.Prefix, key: c.getR2Key(), maxBackups: conf.MaxBackups}, conf.MaxBackups, nil
 }
 
 // BackupToR2 备份到 R2
@@ -249,7 +265,8 @@ func (c *ConfigManager) RestoreFromR2File(objectKey string) (map[string]interfac
 	}
 
 	ctx := context.Background()
-	obj, err := cli.GetObject(ctx, conf.Bucket, objectKey, minio.GetObjectOptions{})
+	fullKey := conf.Prefix + objectKey
+	obj, err := cli.GetObject(ctx, conf.Bucket, fullKey, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, err
 	}

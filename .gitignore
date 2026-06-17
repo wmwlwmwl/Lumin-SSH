@@ -5,7 +5,7 @@
 *.so
 *.dylib
 test.exe
-Luminssh-go.exe
+luminssh-go.exe
 
 # Wails standard build outputs
 /build/bin/

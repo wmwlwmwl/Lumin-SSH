@@ -57,7 +57,14 @@ export default function GlobalContextMenu() {
           await runtime.ClipboardSetText(text);
           const start = targetInput.selectionStart;
           const end = targetInput.selectionEnd;
-          targetInput.setRangeText('', start, end, 'end');
+          // 使用原生 setter 以兼容 React 受控输入框
+          const proto = targetInput.tagName === 'TEXTAREA'
+            ? window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement.prototype;
+          const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+          const newVal = targetInput.value.substring(0, start) + targetInput.value.substring(end);
+          nativeSetter.call(targetInput, newVal);
+          targetInput.setSelectionRange(start, start);
           targetInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
       } else if (action === 'paste') {
@@ -72,8 +79,11 @@ export default function GlobalContextMenu() {
           const start = targetInput.selectionStart;
           const end = targetInput.selectionEnd;
           // 使用原生 setter 以兼容 React 受控输入框
-          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-          nativeSetter.call(targetInput, 
+          const proto = targetInput.tagName === 'TEXTAREA'
+            ? window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement.prototype;
+          const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+          nativeSetter.call(targetInput,
             targetInput.value.substring(0, start) + text + targetInput.value.substring(end)
           );
           targetInput.dispatchEvent(new Event('input', { bubbles: true }));

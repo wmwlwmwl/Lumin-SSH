@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import {
   formatCapacity,
@@ -223,11 +223,15 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
   }, [fetchInfo, enabled]);
 
   const handleConfirm = async () => {
-    setEnabling(true);
-    await new Promise(r => setTimeout(r, 300));
-    onEnable();
     setShowConfirm(false);
-    setEnabling(false);
+    setEnabling(true);
+    try {
+      await onEnable();
+    } catch (err) {
+      console.error('Probe enable failed:', err);
+    } finally {
+      setEnabling(false);
+    }
   };
 
   // ── Not enabled: show welcome panel ──────────────────────────────────
@@ -429,14 +433,14 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
             { dot: '#22c55e', label: '上传', speed: fspeed(info.netUp), total: ftotal(info.netUpTotal) },
             { dot: '#3b82f6', label: '下载', speed: fspeed(info.netDown), total: ftotal(info.netDownTotal) },
           ].map(({ dot, label, speed, total }) => (
-            <>
-              <div key={label + 'l'} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '3px 0' }}>
+            <Fragment key={label}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '3px 0' }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />
                 <span style={{ color: 'var(--text-3)' }}>{label}</span>
               </div>
-              <div key={label + 's'} style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600, textAlign: 'center', alignSelf: 'center' }}>{speed}</div>
-              <div key={label + 't'} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', textAlign: 'center', alignSelf: 'center' }}>{total}</div>
-            </>
+              <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600, textAlign: 'center', alignSelf: 'center' }}>{speed}</div>
+              <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', textAlign: 'center', alignSelf: 'center' }}>{total}</div>
+            </Fragment>
           ))}
         </div>
       </Card>
@@ -491,11 +495,11 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
           <span style={{ fontSize: 11.5, color: 'var(--text-4)', fontWeight: 700 }}>内存</span>
           <span style={{ fontSize: 11.5, color: 'var(--text-4)', fontWeight: 700 }}>进程</span>
           {info.processes?.length > 0 ? info.processes.slice(0, 5).map((p, i) => (
-            <>
-              <span key={i + 'c'} style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: p.cpu > 5 ? '#f59e0b' : 'var(--text-3)' }}>{p.cpu?.toFixed(1)}%</span>
-              <span key={i + 'm'} style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{fmem(p.mem)}</span>
-              <span key={i + 'n'} style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmd}</span>
-            </>
+            <Fragment key={i}>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: p.cpu > 5 ? '#f59e0b' : 'var(--text-3)' }}>{p.cpu?.toFixed(1)}%</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{fmem(p.mem)}</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmd}</span>
+            </Fragment>
           )) : (
             <div style={{ gridColumn: '1/-1', fontSize: 11.5, color: 'var(--text-4)', textAlign: 'center', padding: '8px 0' }}>暂无热点进程</div>
           )}

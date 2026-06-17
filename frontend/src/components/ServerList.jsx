@@ -64,7 +64,7 @@ export default function ServerList({
   const [hoveredId, setHoveredId] = useState(null);
   const menuRef = useRef(null);
 
-  const mask = (text) => hideSensitive ? text.replace(/[^@.:\/\s-]/g, '*') : text;
+  const mask = (text) => hideSensitive ? String(text || '').replace(/[^@.:\/\s-]/g, '*') : text;
 
   // Close context menu on outside click
   useEffect(() => {

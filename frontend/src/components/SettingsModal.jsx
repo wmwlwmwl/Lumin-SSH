@@ -486,6 +486,13 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     if (!listeningKey) return;
 
     const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setListeningKey(null);
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
 
@@ -582,10 +589,17 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const base64 = ev.target.result;
-      setTermBgImage(base64);
-      localStorage.setItem('termBgImage', base64);
-      window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-      addToast(language === 'zh-CN' ? '终端壁纸已更新' : 'Wallpaper updated', 'success');
+      try {
+        localStorage.setItem('termBgImage', base64);
+        setTermBgImage(base64);
+        window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+        addToast(language === 'zh-CN' ? '终端壁纸已更新' : 'Wallpaper updated', 'success');
+      } catch (err) {
+        addToast(language === 'zh-CN' ? '图片过大，无法保存，请使用较小的图片' : 'Image too large to save', 'error');
+      }
+    };
+    reader.onerror = () => {
+      addToast(language === 'zh-CN' ? '读取图片失败' : 'Failed to read image', 'error');
     };
     reader.readAsDataURL(file);
   };
@@ -609,8 +623,8 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     let hasWebdav = false;
     let hasR2 = false;
 
-    AppGo.GetWebdavConfig()
-      .then((data) => {
+    Promise.all([
+      AppGo.GetWebdavConfig().then((data) => {
         if (data) {
           setWebdavForm((f) => ({
             ...f,
@@ -625,37 +639,31 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
             hasWebdav = true;
           }
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        // Also load R2 config in parallel
-        AppGo.GetR2Config()
-          .then((data) => {
-            if (data) {
-              setR2Form((f) => ({
-                ...f,
-                accessKeyId: data.accessKeyId || '',
-                secretAccessKey: data.secretAccessKey || '',
-                bucket: data.bucket || '',
-                endpoint: data.endpoint || '',
-                region: data.region || f.region,
-                prefix: data.prefix || f.prefix,
-                maxBackups: data.maxBackups || '',
-              }));
-              if (data.bucket && data.endpoint) {
-                setR2Configured(true);
-                hasR2 = true;
-              }
-            }
-          })
-          .catch(() => {})
-          .finally(() => {
-            // Auto-select provider: R2 if only R2 configured, else WebDAV
-            if (hasR2 && !hasWebdav) {
-              setSyncProvider('r2');
-            }
-          });
-      });
+      }).catch(() => {}),
+      AppGo.GetR2Config().then((data) => {
+        if (data) {
+          setR2Form((f) => ({
+            ...f,
+            accessKeyId: data.accessKeyId || '',
+            secretAccessKey: data.secretAccessKey || '',
+            bucket: data.bucket || '',
+            endpoint: data.endpoint || '',
+            region: data.region || f.region,
+            prefix: data.prefix || f.prefix,
+            maxBackups: data.maxBackups || '',
+          }));
+          if (data.bucket && data.endpoint) {
+            setR2Configured(true);
+            hasR2 = true;
+          }
+        }
+      }).catch(() => {}),
+    ]).then(() => {
+      // Auto-select provider: R2 if only R2 configured, else WebDAV
+      if (hasR2 && !hasWebdav) {
+        setSyncProvider('r2');
+      }
+    });
 
     // Load sync mode
     AppGo.GetSyncMode()
@@ -683,8 +691,8 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
 
   const setWebdav = (key) => (e) => setWebdavForm((f) => ({ ...f, [key]: e.target.value }));
   const setR2 = (key) => (e) => setR2Form((f) => ({ ...f, [key]: e.target.value }));
-  const setFTP = (field) => (e) => setFtpForm({...ftpForm, [field]: e.target.value});
-  const setSFTP = (field) => (e) => setSftpForm({...sftpForm, [field]: e.target.value});
+  const setFTP = (field) => (e) => setFtpForm((f) => ({ ...f, [field]: e.target.value }));
+  const setSFTP = (field) => (e) => setSftpForm((f) => ({ ...f, [field]: e.target.value }));
 
   // ────────────────────── Cloud Sync Handlers ──────────────────────
   const providerState = {

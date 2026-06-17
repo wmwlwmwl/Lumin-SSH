@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,13 @@ type FTPConfig struct {
 	MaxBackups int    `json:"maxBackups"`
 }
 
+// getFTPKey 基于连接配置派生加密密钥。
+// 注意：此处使用裸 SHA-256 而未加盐与迭代（无 KDF），该简化处理是可接受的，因为：
+//  1. 输入包含用户密码等高熵字段；
+//  2. 该密钥仅用于已加密配置数据的传输/静态保护；
+//  3. 主保护由 ConfigManager 的主密钥提供。
+//
+// 修改 KDF 会破坏与既有备份的向后兼容，故保持现状。
 func (c *ConfigManager) getFTPKey() []byte {
 	conf := c.GetFTPConfig()
 	if conf == nil {
@@ -97,9 +106,15 @@ func (c *ConfigManager) SaveFTPConfig(config map[string]string) error {
 }
 
 func (c *ConfigManager) TestFTPConnection(host string, port int, username, password string) error {
-	client, err := ftp.Dial(dialAddr(host, port), ftp.DialWithTimeout(10*time.Second))
+	addr := dialAddr(host, port)
+	// 优先尝试显式 TLS，失败则回退到明文
+	client, err := ftp.Dial(addr, ftp.DialWithTimeout(10*time.Second), ftp.DialWithExplicitTLS(&tls.Config{ServerName: host}))
 	if err != nil {
-		return err
+		log.Printf("FTP TLS 拨号失败 %s，回退到明文连接: %v", addr, err)
+		client, err = ftp.Dial(addr, ftp.DialWithTimeout(10*time.Second))
+		if err != nil {
+			return err
+		}
 	}
 	defer client.Quit()
 
@@ -115,9 +130,15 @@ func (c *ConfigManager) newFTPClient() (*ftp.ServerConn, error) {
 	if conf == nil {
 		return nil, fmt.Errorf("FTP not configured")
 	}
-	client, err := ftp.Dial(dialAddr(conf.Host, conf.Port), ftp.DialWithTimeout(10*time.Second))
+	addr := dialAddr(conf.Host, conf.Port)
+	// 优先尝试显式 TLS，失败则回退到明文
+	client, err := ftp.Dial(addr, ftp.DialWithTimeout(10*time.Second), ftp.DialWithExplicitTLS(&tls.Config{ServerName: conf.Host}))
 	if err != nil {
-		return nil, err
+		log.Printf("FTP TLS 拨号失败 %s，回退到明文连接: %v", addr, err)
+		client, err = ftp.Dial(addr, ftp.DialWithTimeout(10*time.Second))
+		if err != nil {
+			return nil, err
+		}
 	}
 	err = client.Login(conf.Username, conf.Password)
 	if err != nil {
@@ -162,10 +183,13 @@ func (c *ConfigManager) ensureFTPDir(client *ftp.ServerConn) error {
 // ─── FTP RemoteStorage 实现 ───────────────────────────────
 
 type ftpStorage struct {
-	c         *ConfigManager
-	remoteDir string
-	key       []byte
+	c          *ConfigManager
+	remoteDir  string
+	key        []byte
+	maxBackups int
 }
+
+func (s *ftpStorage) MaxBackups() int { return s.maxBackups }
 
 func (s *ftpStorage) ListFiles() ([]RemoteFile, error) {
 	client, err := s.c.newFTPClient()
@@ -216,8 +240,9 @@ func (s *ftpStorage) WriteFile(name string, data []byte) error {
 	}
 	defer client.Quit()
 
-	// ensure dir
-	s.c.ensureFTPDir(client)
+	if err := s.c.ensureFTPDir(client); err != nil {
+		return err
+	}
 
 	return client.Stor(name, bytes.NewReader(data))
 }
@@ -228,7 +253,8 @@ func (s *ftpStorage) DeleteFile(name string) error {
 		return err
 	}
 	defer client.Quit()
-	return client.Delete(name)
+	path := strings.TrimRight(s.remoteDir, "/") + "/" + name
+	return client.Delete(path)
 }
 
 func (s *ftpStorage) EncryptKey() []byte { return s.key }
@@ -238,7 +264,7 @@ func (c *ConfigManager) newFTPStorage() (RemoteStorage, int, error) {
 	if conf == nil {
 		return nil, 0, fmt.Errorf("FTP not configured")
 	}
-	return &ftpStorage{c: c, remoteDir: conf.RemoteDir, key: c.getFTPKey()}, conf.MaxBackups, nil
+	return &ftpStorage{c: c, remoteDir: conf.RemoteDir, key: c.getFTPKey(), maxBackups: conf.MaxBackups}, conf.MaxBackups, nil
 }
 
 // BackupToFTP 备份到 FTP
@@ -269,6 +295,7 @@ func (c *ConfigManager) SyncFromFTP() (map[string]interface{}, error) {
 }
 
 func (c *ConfigManager) RestoreFromFTPFile(filename string) (map[string]interface{}, error) {
+	filename = filepath.Base(filename) // 防止路径穿越
 	conf := c.GetFTPConfig()
 	if conf == nil {
 		return nil, fmt.Errorf("FTP not configured")

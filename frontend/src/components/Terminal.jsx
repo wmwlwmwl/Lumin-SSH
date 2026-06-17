@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { AttachAddon } from '@xterm/addon-attach';
 import { Copy, Clipboard, Trash2, CheckSquare, MoreHorizontal, Play, Clock, X } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import QuickCommands from './QuickCommands.jsx';
@@ -83,6 +82,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const [cmdInput, setCmdInput]               = useState('');
   const [showHistory, setShowHistory]         = useState(false);
   const [historyList, setHistoryList]         = useState([]);
+  const historyListRef                        = useRef([]);
+  useEffect(() => { historyListRef.current = historyList; }, [historyList]);
   const [historyMode, setHistoryMode]         = useState('server'); // 'server' | 'global'
   const [searchQuery, setSearchQuery]         = useState('');
   const cmdInputRef                           = useRef(null);
@@ -189,6 +190,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           if (text && wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(new TextEncoder().encode(text));
           }
+        }).catch((err) => {
+          console.error('Clipboard read failed:', err);
+          termRef.current?.focus();
         });
         return false;
       }
@@ -232,9 +236,11 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     let cancelled = false;
     const pendingEchoes = [];
 
-    AppGo.GetWsPort().then((port) => {
+    // 并行获取端口与鉴权 token，后端要求连接时通过 ?token=xxx 携带，防止本机恶意进程注入命令
+    Promise.all([AppGo.GetWsPort(), AppGo.GetWsToken()]).then(([port, token]) => {
       if (cancelled || !port || !termRef.current) return;
-      ws = new WebSocket(`ws://127.0.0.1:${port}/ws/${sessionId}`);
+      const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+      ws = new WebSocket(`ws://127.0.0.1:${port}/ws/${sessionId}${tokenQuery}`);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
 
@@ -320,7 +326,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     });
 
     // ── 历史指令记录 + 输入直通 + Local Echo ────────────────────────
-    let cwdTimer = null;
     let localInputLength = 0; // 用于保护提示符，防止退格越界
 
     term.onData((data) => {
@@ -382,7 +387,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     return () => {
       cancelled = true;
       clearTimeout(fitTimer);
-      clearTimeout(cwdTimer);
       if (ws) { try { ws.close(); } catch (_) {} }
       termRef.current     = null;
       fitAddonRef.current = null;
@@ -583,12 +587,14 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     scrollOnNextUpdate.current = false;
   }, [historyList, showHistory]);
 
-  const filteredHistory = searchQuery
-    ? historyList.filter(item => item.command.toLowerCase().includes(searchQuery.toLowerCase()))
-    : historyList;
+  const filteredHistory = useMemo(() => {
+    if (!searchQuery) return historyList;
+    const q = searchQuery.toLowerCase();
+    return historyList.filter(item => item.command.toLowerCase().includes(q));
+  }, [historyList, searchQuery]);
 
   // 反转后用于显示：最早的在上边，最新的在底部
-  const displayHistory = [...filteredHistory].reverse();
+  const displayHistory = useMemo(() => [...filteredHistory].reverse(), [filteredHistory]);
 
   const toggleHistory = () => {
     const willShow = !showHistory;
@@ -642,7 +648,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     const cmd = directCmd || cmdInput;
     if (!isConnected) return;
     const text = (cmd ?? '').trim();
-    AppGo.WriteTerminal(sessionId, text + '\r');
+    AppGo.WriteTerminal(sessionId, text + '\r').catch((err) => {
+      console.error('WriteTerminal failed:', err);
+    });
     termRef.current?.scrollToBottom();
     if (text && text.length > 1 && !/^\d+$/.test(text)) {
       window.dispatchEvent(new CustomEvent('ssh-command-history', {
@@ -660,15 +668,13 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   };
 
   const deleteHistoryItem = (id) => {
-    setHistoryList(prev => {
-      const next = prev.filter(item => item.id !== id);
-      if (historyMode === 'global') {
-        AppGo.SaveGlobalCommandHistory(JSON.stringify(next)).catch(() => {});
-      } else {
-        AppGo.SaveCommandHistory(historyServerId, JSON.stringify(next)).catch(() => {});
-      }
-      return next;
-    });
+    const next = historyListRef.current.filter(item => item.id !== id);
+    setHistoryList(next);
+    if (historyMode === 'global') {
+      AppGo.SaveGlobalCommandHistory(JSON.stringify(next)).catch(() => {});
+    } else {
+      AppGo.SaveCommandHistory(historyServerId, JSON.stringify(next)).catch(() => {});
+    }
   };
 
   // 命令栏按钮样式辅助函数

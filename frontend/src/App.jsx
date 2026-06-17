@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { EventsOn, WindowMinimise, WindowToggleMaximise, WindowHide } from '../wailsjs/runtime/runtime.js';
 import * as AppGo from '../wailsjs/go/main/App.js';
 import ServerList from './components/ServerList.jsx';
@@ -26,6 +26,8 @@ export default function App() {
   useEffect(() => { serversRef.current = servers; }, [servers]);
   const [pings, setPings] = useState({});
   const [sessions, setSessions] = useState([]);      // { id, serverId, serverName, host, status, osInfo }
+  const sessionsRef = useRef([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [activeTerminalId, setActiveTerminalId] = useState(null);
   const lastTerminalRef = useRef({}); // 记录每个 session 最后选中的终端
@@ -119,25 +121,27 @@ export default function App() {
     };
 
     const handleMouseUp = () => {
-      resizer.classList.remove('dragging');
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      try {
+        resizer.classList.remove('dragging');
 
-      if (direction === 'left') {
-        localStorage.setItem('leftSplitWidth', leftSplitWidthRef.current.toString());
-      } else if (direction === 'probe') {
-        localStorage.setItem('probePanelWidth', probePanelWidthRef.current.toString());
-      } else {
-        localStorage.setItem('bottomSplitHeight', bottomSplitHeightRef.current.toString());
+        if (direction === 'left') {
+          localStorage.setItem('leftSplitWidth', leftSplitWidthRef.current.toString());
+        } else if (direction === 'probe') {
+          localStorage.setItem('probePanelWidth', probePanelWidthRef.current.toString());
+        } else {
+          localStorage.setItem('bottomSplitHeight', bottomSplitHeightRef.current.toString());
+        }
+
+        // 通知所有终端自适应重绘
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 50);
+      } finally {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
       }
-
-      // 通知所有终端自适应重绘
-      setTimeout(() => {
-        window.dispatchEvent(new Event('resize'));
-      }, 50);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -150,7 +154,16 @@ export default function App() {
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   // ── 新增主页仪表盘状态 ──────────────────────────────────
-  const [recentServers, setRecentServers] = useState([]);
+  const [recentServers, setRecentServers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('recent_servers');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  // 持久化最近连接列表到 localStorage（仅含非敏感字段）
+  useEffect(() => {
+    localStorage.setItem('recent_servers', JSON.stringify(recentServers));
+  }, [recentServers]);
   const [isRefreshingPing, setIsRefreshingPing] = useState(false);
   const [pingInterval, setPingInterval] = useState(parseInt(localStorage.getItem('pingInterval') || '2', 10));
 
@@ -217,16 +230,6 @@ export default function App() {
       addToast(`自动更新失败: ${err}`, 'error', 5000);
     }
   };
-
-  // ── 加载最近常用会话 ────────────────────────────────────
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('recent_servers');
-      if (saved) {
-        setRecentServers(JSON.parse(saved));
-      }
-    } catch (e) {}
-  }, []);
 
   // ── 浏览选择快捷连接的私钥 ──────────────────────────────
   const handleQuickPrivateKeyFile = async () => {
@@ -319,9 +322,7 @@ export default function App() {
       setRecentServers((prev) => {
         const filtered = prev.filter((s) => s.id !== savedServer.id);
         const safeServer = { id: savedServer.id, name: savedServer.name, host: savedServer.host, port: savedServer.port, username: savedServer.username };
-        const updated = [safeServer, ...filtered].slice(0, 4);
-        localStorage.setItem('recent_servers', JSON.stringify(updated));
-        return updated;
+        return [safeServer, ...filtered].slice(0, 4);
       });
 
       // 清空表单
@@ -347,8 +348,9 @@ export default function App() {
   };
 
   // ── Toast helpers ──────────────────────────────────────────
+  const toastIdRef = useRef(0);
   const addToast = useCallback((message, type = 'info', duration = 3000) => {
-    const id = Date.now();
+    const id = ++toastIdRef.current;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => { if (mountedRef.current) setToasts((prev) => prev.filter((t) => t.id !== id)); }, duration);
   }, []);
@@ -662,9 +664,7 @@ export default function App() {
         setRecentServers((prev) => {
           const filtered = prev.filter((s) => s.id !== connId);
           const server = { id: connId, host, port, username };
-          const updated = [server, ...filtered].slice(0, 4);
-          localStorage.setItem('recent_servers', JSON.stringify(updated));
-          return updated;
+          return [server, ...filtered].slice(0, 4);
         });
       } catch (retryErr) {
         setSessions((prev) =>
@@ -778,12 +778,11 @@ export default function App() {
         }
       } catch (_) {}
 
-      // 连接成功后加入最近连接列表
+      // 连接成功后加入最近连接列表（仅保留非敏感字段）
+      const safeServer = { id: server.id, name: server.name, host: server.host, port: server.port, username: server.username };
       setRecentServers((prev) => {
         const filtered = prev.filter((s) => s.id !== server.id);
-        const updated = [server, ...filtered].slice(0, 4);
-        localStorage.setItem('recent_servers', JSON.stringify(updated));
-        return updated;
+        return [safeServer, ...filtered].slice(0, 4);
       });
     } catch (err) {
       const errMsg = String(err);
@@ -805,7 +804,7 @@ export default function App() {
   // ── Close session ──────────────────────────────────────────
   const closeSession = useCallback((sessionId, e) => {
     e?.stopPropagation();
-    const session = sessions.find(s => s.id === sessionId);
+    const session = sessionsRef.current.find(s => s.id === sessionId);
     // 后端断开（不等待，即使服务器无响应也不阻塞 UI）
     if (session?.terminals) {
       for (const t of session.terminals) {
@@ -817,7 +816,7 @@ export default function App() {
     // 立即从 UI 移除会话
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     if (activeSessionId === sessionId) {
-      const remaining = sessions.filter((s) => s.id !== sessionId);
+      const remaining = sessionsRef.current.filter((s) => s.id !== sessionId);
       if (remaining.length > 0) {
         const nextSession = remaining[remaining.length - 1];
         setActiveSessionId(nextSession.id);
@@ -829,7 +828,7 @@ export default function App() {
         setActiveTerminalId(null);
       }
     }
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId]);
 
   // ── 在当前服务器上新建终端标签 ──────────────────────────────
   const openNewTerminal = useCallback(async (sessionId) => {
@@ -865,7 +864,7 @@ export default function App() {
   // ── 关闭单个终端标签 ──────────────────────────────────────
   const closeTerminal = useCallback((sessionId, terminalId, e) => {
     e?.stopPropagation();
-    const session = sessions.find(s => s.id === sessionId);
+    const session = sessionsRef.current.find(s => s.id === sessionId);
     if (!session?.terminals) return;
     
     AppGo.DisconnectSSH(terminalId).catch(() => {});
@@ -885,7 +884,7 @@ export default function App() {
         setActiveTerminalId(remaining[remaining.length - 1].id);
       } else {
         // 最后一个终端被关闭，整个 session 也被移除了
-        const remainingSessions = sessions.filter(s => s.id !== sessionId);
+        const remainingSessions = sessionsRef.current.filter(s => s.id !== sessionId);
         if (remainingSessions.length > 0) {
           const nextSession = remainingSessions[remainingSessions.length - 1];
           setActiveSessionId(nextSession.id);
@@ -898,7 +897,7 @@ export default function App() {
         }
       }
     }
-  }, [activeTerminalId, sessions]);
+  }, [activeTerminalId]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
@@ -980,15 +979,26 @@ export default function App() {
     }
   }, [addToast, triggerAutoBackup]);
 
-  const filteredServers = servers.filter(s => 
-    (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (s.host || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.username || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredServers = useMemo(() => {
+    if (!searchQuery) return servers;
+    const q = searchQuery.toLowerCase();
+    return servers.filter((s) =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.host || '').toLowerCase().includes(q) ||
+      (s.username || '').toLowerCase().includes(q)
+    );
+  }, [servers, searchQuery]);
 
-  const connectedSessions = sessions
-    .filter(s => s.status === 'connected')
-    .filter((s, i, arr) => arr.findIndex(x => x.serverId === s.serverId) === i);
+  const connectedSessions = useMemo(() => {
+    const seen = new Set();
+    return sessions
+      .filter(s => s.status === 'connected')
+      .filter((s) => {
+        if (seen.has(s.serverId)) return false;
+        seen.add(s.serverId);
+        return true;
+      });
+  }, [sessions]);
 
 
   return (

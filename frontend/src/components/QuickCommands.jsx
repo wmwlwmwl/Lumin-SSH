@@ -714,8 +714,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
 
     // 保存参数历史（每个参数存为数组，用于下拉列表）
     if (Object.keys(values).length > 0) {
-      const pHist = { ...paramHistory };
-      if (!pHist[cmd]) pHist[cmd] = {};
+      const pHist = { ...paramHistory, [cmd]: { ...(paramHistory[cmd] || {}) } };
       Object.entries(values).forEach(([num, val]) => {
         if (!val) return;
         const arr = pHist[cmd][num] || [];
@@ -735,11 +734,15 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
 
     if (sendTarget === 'all' && connectedSessions.length > 0) {
       connectedSessions.forEach(s => {
-        AppGo.WriteTerminal(s.id, finalCmd);
+        AppGo.WriteTerminal(s.id, finalCmd).catch((err) => {
+          console.error('WriteTerminal failed:', err);
+        });
       });
       if (addToast) addToast('已发送到 '+connectedSessions.length+' 个会话', 'info', 2000);
     } else {
-      AppGo.WriteTerminal(sessionId, finalCmd);
+      AppGo.WriteTerminal(sessionId, finalCmd).catch((err) => {
+        console.error('WriteTerminal failed:', err);
+      });
       if (addToast) addToast('已发送指令到终端', 'info', 2000);
     }
   };
@@ -750,10 +753,14 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
     if (!cmd) return;
     const finalCmd = quickAddCR ? cmd + '\r' : cmd;
     if (sendTarget === 'all' && connectedSessions.length > 0) {
-      connectedSessions.forEach(s => AppGo.WriteTerminal(s.id, finalCmd));
+      connectedSessions.forEach(s => AppGo.WriteTerminal(s.id, finalCmd).catch((err) => {
+        console.error('WriteTerminal failed:', err);
+      }));
       if (addToast) addToast('已发送到 '+connectedSessions.length+' 个会话', 'info', 2000);
     } else {
-      AppGo.WriteTerminal(sessionId, finalCmd);
+      AppGo.WriteTerminal(sessionId, finalCmd).catch((err) => {
+        console.error('WriteTerminal failed:', err);
+      });
       if (addToast) addToast('已发送', 'info', 1500);
     }
     setQuickCmd('');
@@ -856,7 +863,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
               ) : (
                 displayed.map((item, i) => (
                   <TreeNode
-                    key={i}
+                    key={item.name + '_' + i}
                     item={item}
                     index={i}
                     path={String(i)}
@@ -1105,8 +1112,8 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                                   {/* 清空列表 */}
                                   <div
                                     onClick={() => {
-                                      const pHist = { ...paramHistory };
-                                      if (pHist[cmdKey]?.[p.num]) {
+                                      const pHist = { ...paramHistory, [cmdKey]: { ...(paramHistory[cmdKey] || {}) } };
+                                      if (pHist[cmdKey][p.num]) {
                                         pHist[cmdKey][p.num] = [];
                                         setParamHistory(pHist);
                                         AppGo.SaveParamHistory(JSON.stringify(pHist)).catch(() => {});

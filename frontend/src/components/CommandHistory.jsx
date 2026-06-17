@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { useTranslation } from '../i18n.js';
 
@@ -8,6 +8,21 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
   const [searchQuery, setSearchQuery] = useState('');
   const [historyMode, setHistoryMode] = useState('server'); // 'server' | 'global'
   const perServerRef = useRef([]);
+
+  // ── 串行化全局历史更新，避免 read-modify-write 竞态 ──
+  const globalHistoryUpdateLock = useRef(Promise.resolve());
+
+  const updateGlobalHistory = useCallback((updater) => {
+    globalHistoryUpdateLock.current = globalHistoryUpdateLock.current.then(async () => {
+      try {
+        const current = await AppGo.GetGlobalCommandHistory();
+        const next = updater(current || []);
+        await AppGo.SaveGlobalCommandHistory(JSON.stringify(next));
+      } catch (e) {
+        console.error('Failed to update global history:', e);
+      }
+    });
+  }, []);
 
   // ── 加载显示数据（模式/服务器切换时）──
   useEffect(() => {
@@ -45,14 +60,13 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
       persist();
 
       // 追加到全局历史（连续相同命令只更新时间）
-      AppGo.GetGlobalCommandHistory().then(raw => {
-        const list = JSON.parse(raw);
-        if (!Array.isArray(list)) return;
+      updateGlobalHistory((list) => {
+        if (!Array.isArray(list)) return [];
         // 全局历史去重：移除相同命令的旧条目
         const filtered = list.filter(e => e.command !== cmd);
         filtered.unshift({ id: Date.now() + Math.random(), command: cmd, time: d.time, source: 'input' });
-        AppGo.SaveGlobalCommandHistory(JSON.stringify(filtered.slice(0, 100))).catch(() => {});
-      }).catch(() => {});
+        return filtered.slice(0, 100);
+      });
 
       if (historyMode === 'server') {
         setHistory([...perServerRef.current]);
@@ -97,13 +111,20 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
     window.dispatchEvent(new CustomEvent('ssh-command-history', {
       detail: { sessionId, command: cmd, time: new Date().toISOString(), source: 'input' }
     }));
-    AppGo.WriteTerminal(sessionId, cmd + '\r');
+    AppGo.WriteTerminal(sessionId, cmd + '\r').catch((err) => {
+      console.error('WriteTerminal failed:', err);
+    });
     addToast?.('已发送指令到终端', 'info', 2000);
   };
 
   const clear = async () => {
     if (await window.luminDialog?.confirm('确定要清空该服务器的历史指令吗？')) {
-      perServerRef.current = [];
+      if (historyMode === 'global') {
+        AppGo.SaveGlobalCommandHistory('[]').catch(() => {});
+      } else {
+        perServerRef.current = [];
+        AppGo.SaveCommandHistory(historyServerId, '[]').catch(() => {});
+      }
       setHistory([]);
       window.dispatchEvent(new CustomEvent('ssh-history-cleared', { detail: { sessionId } }));
     }

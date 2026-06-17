@@ -58,7 +58,7 @@ type SSHManager struct {
 	connTerminals    map[string][]string        // connKey -> terminal sessionIds
 	probeDeployed    map[string]bool            // connKey -> probe.sh deployed
 	pendingHostKeys  map[string]*PendingHostKey // sessionId -> pending host key info
-	tempAcceptedKeys map[string]bool            // fingerprint -> true (accept this time only)
+	tempAcceptedKeys map[string]string          // sessionId -> fingerprint (accept this time only)
 	mu               sync.Mutex
 }
 
@@ -77,7 +77,7 @@ func NewSSHManager() *SSHManager {
 		connTerminals:    make(map[string][]string),
 		probeDeployed:    make(map[string]bool),
 		pendingHostKeys:  make(map[string]*PendingHostKey),
-		tempAcceptedKeys: make(map[string]bool),
+		tempAcceptedKeys: make(map[string]string),
 	}
 }
 
@@ -150,9 +150,9 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 				if len(keyErr.Want) == 0 {
 					fingerprint := ssh.FingerprintSHA256(key)
 
-					// 检查是否为临时接受的密钥（仅本次会话）
+					// 检查是否为临时接受的密钥（仅本次会话，按 sessionId 匹配）
 					m.mu.Lock()
-					if m.tempAcceptedKeys[fingerprint] {
+					if fp, ok := m.tempAcceptedKeys[sessionId]; ok && fp == fingerprint {
 						m.mu.Unlock()
 						return nil
 					}
@@ -172,9 +172,9 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 				} else {
 					fingerprint := ssh.FingerprintSHA256(key)
 
-					// 检查是否为临时接受的密钥（仅本次会话）
+					// 检查是否为临时接受的密钥（仅本次会话，按 sessionId 匹配）
 					m.mu.Lock()
-					if m.tempAcceptedKeys[fingerprint] {
+					if fp, ok := m.tempAcceptedKeys[sessionId]; ok && fp == fingerprint {
 						m.mu.Unlock()
 						return nil // 本次接受该密钥
 					}
@@ -218,19 +218,29 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 		if dialErr != nil {
 			if errors.Is(dialErr, ErrHostKeyChanged) {
 				if m.ctx != nil {
-					pending := m.pendingHostKeys[sessionId]
+					// 在锁内读取 pendingHostKeys，避免与 AcceptHostKeyChange 并发写入竞争
+					m.mu.Lock()
+					pending, ok := m.pendingHostKeys[sessionId]
+					if !ok || pending == nil {
+						m.mu.Unlock()
+						return fmt.Errorf("主机密钥已变更，但未找到待确认信息")
+					}
+					hostname := pending.Hostname
+					newFingerprint := pending.NewFingerprint
 					oldFingerprints := make([]string, 0, len(pending.OldKeys))
 					for _, k := range pending.OldKeys {
 						oldFingerprints = append(oldFingerprints, ssh.FingerprintSHA256(k.Key))
 					}
+					isNew := len(pending.OldKeys) == 0
+					m.mu.Unlock()
 					runtime.EventsEmit(m.ctx, "ssh-host-key-changed", map[string]interface{}{
 						"sessionId":       sessionId,
-						"hostname":        pending.Hostname,
+						"hostname":        hostname,
 						"host":            conn.Host,
 						"port":            conn.Port,
-						"newFingerprint":  pending.NewFingerprint,
+						"newFingerprint":  newFingerprint,
 						"oldFingerprints": oldFingerprints,
-						"isNew":           len(pending.OldKeys) == 0,
+						"isNew":           isNew,
 					})
 				}
 				return fmt.Errorf("主机密钥已变更，请在弹窗中确认")
@@ -274,64 +284,76 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			sftpClient = nil
 		}
 
+		// 重新检查 connKey 是否已被并发 Connect 写入；若是则丢弃新连接，复用已有连接
 		m.mu.Lock()
-		m.clients[connKey] = &sshClientEntry{Client: client, SFTP: sftpClient}
-		m.connTerminals[connKey] = []string{}
-		m.mu.Unlock()
-
-		go func() {
-			_ = client.Wait()
-			m.mu.Lock()
-			terminalIds := append([]string{}, m.connTerminals[connKey]...)
-			var sftpC *sftp.Client
-			var cli *ssh.Client
-			if entry, ok := m.clients[connKey]; ok {
-				// 校验是否还是同一个 client 实例，避免误删快速重连后的新连接
-				if entry.Client != client {
-					m.mu.Unlock()
-					return // 已被新连接替换，不再清理
-				}
-				sftpC = entry.SFTP
-				cli = entry.Client
-				delete(m.clients, connKey)
-				delete(m.connTerminals, connKey)
-				delete(m.probeDeployed, connKey)
+		if existing, ok := m.clients[connKey]; ok && existing.Client != nil {
+			m.mu.Unlock()
+			// 关闭刚刚新建的连接和 sftp，改用已存在的连接
+			if sftpClient != nil {
+				sftpClient.Close()
 			}
+			client.Close()
+			client = existing.Client
+			sftpClient = existing.SFTP
+		} else {
+			m.clients[connKey] = &sshClientEntry{Client: client, SFTP: sftpClient}
+			m.connTerminals[connKey] = []string{}
 			m.mu.Unlock()
 
-			type closeItem struct {
-				stdin   io.WriteCloser
-				session *ssh.Session
-			}
-			var items []closeItem
-			for _, tid := range terminalIds {
+			go func() {
+				_ = client.Wait()
 				m.mu.Lock()
-				ts, tsOk := m.sessions[tid]
-				if tsOk {
-					items = append(items, closeItem{stdin: ts.Stdin, session: ts.Session})
-					delete(m.sessions, tid)
+				terminalIds := append([]string{}, m.connTerminals[connKey]...)
+				var sftpC *sftp.Client
+				var cli *ssh.Client
+				if entry, ok := m.clients[connKey]; ok {
+					// 校验是否还是同一个 client 实例，避免误删快速重连后的新连接
+					if entry.Client != client {
+						m.mu.Unlock()
+						return // 已被新连接替换，不再清理
+					}
+					sftpC = entry.SFTP
+					cli = entry.Client
+					delete(m.clients, connKey)
+					delete(m.connTerminals, connKey)
+					delete(m.probeDeployed, connKey)
 				}
 				m.mu.Unlock()
-				if m.ctx != nil {
-					runtime.EventsEmit(m.ctx, "ssh-disconnected", tid)
-				}
-			}
 
-			for _, item := range items {
-				if item.stdin != nil {
-					item.stdin.Close()
+				type closeItem struct {
+					stdin   io.WriteCloser
+					session *ssh.Session
 				}
-				if item.session != nil {
-					item.session.Close()
+				var items []closeItem
+				for _, tid := range terminalIds {
+					m.mu.Lock()
+					ts, tsOk := m.sessions[tid]
+					if tsOk {
+						items = append(items, closeItem{stdin: ts.Stdin, session: ts.Session})
+						delete(m.sessions, tid)
+					}
+					m.mu.Unlock()
+					if m.ctx != nil {
+						runtime.EventsEmit(m.ctx, "ssh-disconnected", tid)
+					}
 				}
-			}
-			if sftpC != nil {
-				sftpC.Close()
-			}
-			if cli != nil {
-				cli.Close()
-			}
-		}()
+
+				for _, item := range items {
+					if item.stdin != nil {
+						item.stdin.Close()
+					}
+					if item.session != nil {
+						item.session.Close()
+					}
+				}
+				if sftpC != nil {
+					sftpC.Close()
+				}
+				if cli != nil {
+					cli.Close()
+				}
+			}()
+		}
 	}
 
 	session, err := client.NewSession()
@@ -485,6 +507,8 @@ func (m *SSHManager) Disconnect(sessionId string) {
 	}
 	connKey := s.ConnKey
 	delete(m.sessions, sessionId)
+	// 清理该会话临时接受的主机密钥记录，避免无限累积
+	delete(m.tempAcceptedKeys, sessionId)
 
 	// 收集需要关闭的资源（避免在锁内执行可能阻塞的 Close 操作）
 	stdin := s.Stdin
@@ -537,63 +561,6 @@ func (m *SSHManager) DisconnectAll() {
 	m.mu.Unlock()
 	for _, id := range ids {
 		m.Disconnect(id)
-	}
-}
-
-func (m *SSHManager) CloseSessionResources(sessionId string) {
-	m.mu.Lock()
-	s, ok := m.sessions[sessionId]
-	if !ok {
-		m.mu.Unlock()
-		return
-	}
-	connKey := s.ConnKey
-	terminalIds := append([]string{}, m.connTerminals[connKey]...)
-	m.mu.Unlock()
-
-	// 收集所有需要关闭的资源
-	type closeItem struct {
-		stdin   io.WriteCloser
-		session *ssh.Session
-	}
-	var items []closeItem
-	var sftpToClose *sftp.Client
-	var clientToClose *ssh.Client
-
-	for _, tid := range terminalIds {
-		m.mu.Lock()
-		ts, tsOk := m.sessions[tid]
-		if tsOk {
-			items = append(items, closeItem{stdin: ts.Stdin, session: ts.Session})
-			delete(m.sessions, tid)
-		}
-		m.mu.Unlock()
-	}
-
-	m.mu.Lock()
-	if entry, ok := m.clients[connKey]; ok {
-		sftpToClose = entry.SFTP
-		clientToClose = entry.Client
-		delete(m.clients, connKey)
-		delete(m.connTerminals, connKey)
-		delete(m.probeDeployed, connKey)
-	}
-	m.mu.Unlock()
-
-	// 在锁外关闭所有资源
-	for _, item := range items {
-		if item.stdin != nil {
-			item.stdin.Close()
-		}
-		if item.session != nil {
-			item.session.Close()
-		}
-	}
-	if sftpToClose != nil {
-		sftpToClose.Close()
-	}
-	if clientToClose != nil {
-		clientToClose.Close()
 	}
 }
 
@@ -715,7 +682,7 @@ func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
 
 	case 1: // 仅本次接受 —— 不写 known_hosts，仅临时放行
 		m.mu.Lock()
-		m.tempAcceptedKeys[pending.NewFingerprint] = true
+		m.tempAcceptedKeys[sessionId] = pending.NewFingerprint
 		m.mu.Unlock()
 		return m.Connect(sessionId, pending.Conn)
 
@@ -861,8 +828,7 @@ func (m *SSHManager) executeCmdWithClient(client *ssh.Client, cmd string) (strin
 	case err := <-errCh:
 		return stdoutBuf.String(), err
 	case <-time.After(30 * time.Second):
-		// 异步关闭 session，避免 Close 本身阻塞调用方
-		go session.Close()
+		// 超时后由 defer session.Close() 统一关闭，无需在此重复 Close
 		return "", fmt.Errorf("command timed out after 30 seconds")
 	}
 }
@@ -1210,8 +1176,14 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 		}
 		netDownTotal += float64(v2[0]) / (1024.0 * 1024.0)
 		netUpTotal += float64(v2[1]) / (1024.0 * 1024.0)
-		rxSpeed := float64(v2[0]-v1[0]) / 1024.0 // KB/s over 1s
-		txSpeed := float64(v2[1]-v1[1]) / 1024.0
+		// 防止 v2 < v1 时 uint64 减法下溢（计数器回绕/重置）
+		var rxSpeed, txSpeed float64
+		if v2[0] >= v1[0] {
+			rxSpeed = float64(v2[0]-v1[0]) / 1024.0 // KB/s over 1s
+		}
+		if v2[1] >= v1[1] {
+			txSpeed = float64(v2[1]-v1[1]) / 1024.0
+		}
 		if rxSpeed > netDownSpeed {
 			netDownSpeed = rxSpeed
 		}
@@ -1248,8 +1220,14 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 		if !ok {
 			continue
 		}
-		rKB := float64(v2[0]-v1[0]) * 0.5 // 512-byte sectors → KB over 1s
-		wKB := float64(v2[1]-v1[1]) * 0.5
+		// 防止 v2 < v1 时 uint64 减法下溢（计数器回绕/重置）
+		var rKB, wKB float64
+		if v2[0] >= v1[0] {
+			rKB = float64(v2[0]-v1[0]) * 0.5 // 512-byte sectors → KB over 1s
+		}
+		if v2[1] >= v1[1] {
+			wKB = float64(v2[1]-v1[1]) * 0.5
+		}
 		if rKB > diskReadSpeed {
 			diskReadSpeed = rKB
 		}
@@ -1509,6 +1487,10 @@ func (m *SSHManager) WriteFile(sessionId string, path string, content string) er
 }
 
 func (m *SSHManager) DeleteItem(sessionId string, path string, isDir bool) error {
+	// 拒绝删除危险路径，防止 rm -rf 误删根目录或家目录
+	if path == "" || path == "/" || path == "/*" || path == "~" || path == "~/*" {
+		return fmt.Errorf("refusing to delete dangerous path: %q", path)
+	}
 	client, sftpClient, err := m.getClientEntry(sessionId)
 	if err != nil {
 		return err
@@ -1800,14 +1782,18 @@ func (m *SSHManager) UncompressItem(sessionId string, remotePath string) error {
 
 	var cmd string
 	lowerBase := strings.ToLower(base)
+	// 注意：解压在远程服务器执行，无法在客户端校验归档成员路径。
+	// 对 tar 命令追加 --no-unsafe-paths（GNU tar 支持，可拒绝包含 .. 或绝对路径的成员，
+	// 缓解 tar slip 路径穿越风险；BSD tar 不识别该选项会报错，但多数 Linux 发行版默认为 GNU tar）。
 	if strings.HasSuffix(lowerBase, ".zip") {
+		// unzip 无等价选项，无法在命令行层面防御路径穿越
 		cmd = fmt.Sprintf("cd '%s' && unzip -o '%s'", safeDir, safeBase)
 	} else if strings.HasSuffix(lowerBase, ".tar.gz") || strings.HasSuffix(lowerBase, ".tgz") {
-		cmd = fmt.Sprintf("cd '%s' && tar -xzf '%s'", safeDir, safeBase)
+		cmd = fmt.Sprintf("cd '%s' && tar --no-unsafe-paths -xzf '%s'", safeDir, safeBase)
 	} else if strings.HasSuffix(lowerBase, ".tar") {
-		cmd = fmt.Sprintf("cd '%s' && tar -xf '%s'", safeDir, safeBase)
+		cmd = fmt.Sprintf("cd '%s' && tar --no-unsafe-paths -xf '%s'", safeDir, safeBase)
 	} else if strings.HasSuffix(lowerBase, ".tar.bz2") || strings.HasSuffix(lowerBase, ".tbz2") {
-		cmd = fmt.Sprintf("cd '%s' && tar -xjf '%s'", safeDir, safeBase)
+		cmd = fmt.Sprintf("cd '%s' && tar --no-unsafe-paths -xjf '%s'", safeDir, safeBase)
 	} else if strings.HasSuffix(lowerBase, ".gz") {
 		cmd = fmt.Sprintf("cd '%s' && gunzip -f -k '%s'", safeDir, safeBase)
 	} else {

@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/studio-b12/gowebdav"
@@ -40,6 +42,7 @@ type ConfigManager struct {
 	paramHistFile  string
 	historyDir     string
 	globalHistFile string
+	mu             sync.Mutex
 }
 
 func NewConfigManager() *ConfigManager {
@@ -66,14 +69,22 @@ func NewConfigManager() *ConfigManager {
 		if keyErr != nil || len(key) != 32 {
 			// 如果读取损坏或长度不符，重新生成
 			key = make([]byte, 32)
-			rand.Read(key)
-			os.WriteFile(keyFile, key, 0600)
+			if _, err := rand.Read(key); err != nil {
+				log.Fatalf("无法生成加密密钥: %v", err)
+			}
+			if err := os.WriteFile(keyFile, key, 0600); err != nil {
+				log.Fatalf("无法写入密钥文件: %v", err)
+			}
 		}
 	} else {
 		// 密钥文件不存在，生成全新密钥
 		newKey := make([]byte, 32)
-		rand.Read(newKey)
-		os.WriteFile(keyFile, newKey, 0600)
+		if _, err := rand.Read(newKey); err != nil {
+			log.Fatalf("无法生成加密密钥: %v", err)
+		}
+		if err := os.WriteFile(keyFile, newKey, 0600); err != nil {
+			log.Fatalf("无法写入密钥文件: %v", err)
+		}
 		key = newKey
 	}
 
@@ -145,6 +156,13 @@ func (c *ConfigManager) decryptWithKey(hexText string, key []byte) string {
 }
 
 func (c *ConfigManager) GetConnections() []Connection {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.getConnectionsLocked()
+}
+
+// getConnectionsLocked 读取连接列表，调用方需持有 c.mu
+func (c *ConfigManager) getConnectionsLocked() []Connection {
 	data, err := os.ReadFile(c.connFile)
 	if err != nil {
 		return []Connection{}
@@ -169,7 +187,9 @@ func (c *ConfigManager) GetConnectionByID(id string) *Connection {
 }
 
 func (c *ConfigManager) SaveConnection(conn Connection) Connection {
-	conns := c.GetConnections()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	conns := c.getConnectionsLocked()
 	if conn.ID == "" {
 		conn.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 		conns = append(conns, conn)
@@ -191,24 +211,40 @@ func (c *ConfigManager) SaveConnection(conn Connection) Connection {
 		}
 	}
 
-	c.saveConnectionsFile(conns)
+	if err := c.saveConnectionsFile(conns); err != nil {
+		log.Printf("[SaveConnection] failed to save connections: %v", err)
+	}
 	go c.AutoSyncToWebdav()
 	return conn
 }
 
-func (c *ConfigManager) saveConnectionsFile(conns []Connection) {
+// saveConnectionsFile 加密并原子写入连接列表，调用方需持有 c.mu
+func (c *ConfigManager) saveConnectionsFile(conns []Connection) error {
 	toSave := make([]Connection, len(conns))
 	copy(toSave, conns)
 	for i := range toSave {
 		toSave[i].Password = c.encrypt(toSave[i].Password)
 		toSave[i].Passphrase = c.encrypt(toSave[i].Passphrase)
 	}
-	data, _ := json.MarshalIndent(toSave, "", "  ")
-	os.WriteFile(c.connFile, data, 0600)
+	data, err := json.MarshalIndent(toSave, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal connections: %w", err)
+	}
+	// 原子写入：先写临时文件，再 rename 覆盖，避免中断损坏原文件
+	tmpFile := c.connFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := os.Rename(tmpFile, c.connFile); err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+	return nil
 }
 
 // loadRawFile 读取配置文件的原始 JSON 字符串（用于同步快照）
 func (c *ConfigManager) loadRawFile(path string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
@@ -217,14 +253,18 @@ func (c *ConfigManager) loadRawFile(path string) string {
 }
 
 func (c *ConfigManager) DeleteConnection(id string) bool {
-	conns := c.GetConnections()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	conns := c.getConnectionsLocked()
 	filtered := []Connection{}
 	for _, conn := range conns {
 		if conn.ID != id {
 			filtered = append(filtered, conn)
 		}
 	}
-	c.saveConnectionsFile(filtered)
+	if err := c.saveConnectionsFile(filtered); err != nil {
+		log.Printf("[DeleteConnection] failed to save connections: %v", err)
+	}
 
 	// 清理该服务器的历史文件
 	histPath := filepath.Join(c.historyDir, id+".json")
@@ -460,6 +500,8 @@ func (c *ConfigManager) isSFTPConfigured() bool {
 
 // GetQuickCommands 读取快捷命令列表
 func (c *ConfigManager) GetQuickCommands() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	data, err := os.ReadFile(c.quickCmdFile)
 	if err != nil {
 		return "[]"
@@ -469,6 +511,8 @@ func (c *ConfigManager) GetQuickCommands() string {
 
 // SaveQuickCommands 保存快捷命令列表（JSON 字符串），触发云端同步
 func (c *ConfigManager) SaveQuickCommands(jsonStr string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	err := os.WriteFile(c.quickCmdFile, []byte(jsonStr), 0600)
 	if err == nil {
 		go c.AutoSyncToWebdav()
@@ -478,6 +522,8 @@ func (c *ConfigManager) SaveQuickCommands(jsonStr string) error {
 
 // SaveQuickCommandsLocal 保存快捷命令列表到本地，不触发云端同步
 func (c *ConfigManager) SaveQuickCommandsLocal(jsonStr string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return os.WriteFile(c.quickCmdFile, []byte(jsonStr), 0600)
 }
 

@@ -63,6 +63,78 @@ function isArchive(name) {
   return ['zip', 'tar', 'gz', 'bz2', 'tgz', 'rar', '7z'].includes(ext) || name.toLowerCase().endsWith('.tar.gz');
 }
 
+// 文件编辑大小上限
+const MAX_EDIT_SIZE = 5 * 1024 * 1024; // 5MB
+
+// 上传文件大小上限
+const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB
+
+// Check if a file name is a hidden/system file that should be skipped
+function isHiddenFile(name) {
+  return /^\./.test(name) || /^Thumbs\.db$/i.test(name) || /^desktop\.ini$/i.test(name);
+}
+
+// Recursively traverse a FileSystemEntry to collect all File objects
+function traverseEntry(entry) {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      if (isHiddenFile(entry.name)) {
+        resolve([]);
+        return;
+      }
+      entry.file((file) => {
+        file._fullPath = entry.fullPath;
+        resolve([file]);
+      }, () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const allEntries = [];
+      let emptyCount = 0;
+      function readBatch() {
+        reader.readEntries((entries) => {
+          if (entries.length === 0) {
+            emptyCount++;
+            // 连续两次返回空数组才确认读取完成（规避 Chrome readEntries 提前返回的 bug）
+            if (emptyCount >= 2) {
+              Promise.all(allEntries.map((e) => traverseEntry(e))).then((results) => {
+                resolve(results.flat());
+              });
+            } else {
+              readBatch();
+            }
+          } else {
+            allEntries.push(...entries);
+            emptyCount = 0;
+            readBatch();
+          }
+        }, () => resolve([]));
+      }
+      readBatch();
+    } else {
+      resolve([]);
+    }
+  });
+}
+
+// 读取文件为 base64 字符串（去掉 data URL 前缀），避免将 Uint8Array 展开为
+// 普通 Array 导致的内存爆炸（8-16 倍开销）。base64 仅 1.33 倍开销。
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    if (file.size > MAX_UPLOAD_SIZE) {
+      reject(new Error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，最大支持 100MB`));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const commaIdx = dataUrl.indexOf(',');
+      resolve(commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 // Context menu component
 function ContextMenu({ pos, item, onClose, onDownload, onEdit, onRename, onDelete, onMkdir, onNewFile, onCompress, onUncompress, t }) {
   const ref = useRef(null);
@@ -134,6 +206,8 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   const [renamingItem, setRenamingItem] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [openEditFiles, setOpenEditFiles] = useState([]);      // [{ path, name, content }]
+  const openEditFilesRef = useRef([]);
+  useEffect(() => { openEditFilesRef.current = openEditFiles; }, [openEditFiles]);
   const [activeEditPath, setActiveEditPath] = useState(null);  // 当前激活的文件路径
   const [editorMode, setEditorMode] = useState(() => localStorage.getItem('fileEditorMode') || 'modal');
   const [editorSplitPosition, setEditorSplitPosition] = useState(() => localStorage.getItem('editorSplitPosition') || 'right');
@@ -295,6 +369,12 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
       ? `/${item.name}`
       : `${currentPath}/${item.name}`;
 
+    // 文件大小检查，避免加载过大文件导致卡顿
+    if (item.size && item.size > MAX_EDIT_SIZE) {
+      addToast(`文件过大 (${(item.size / 1024 / 1024).toFixed(1)}MB)，最大支持 5MB 编辑`, 'error');
+      return;
+    }
+
     // 如果文件已在打开列表中，直接激活
     if (openEditFiles.some(f => f.path === remotePath)) {
       setActiveEditPath(remotePath);
@@ -329,16 +409,15 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
   // 关闭单个文件
   const closeEditFile = (path) => {
-    setOpenEditFiles(prev => {
-      const next = prev.filter(f => f.path !== path);
-      // 如果关闭的是当前激活文件，激活下一个
-      if (activeEditPath === path) {
-        const idx = prev.findIndex(f => f.path === path);
-        const nextActive = next[idx] || next[idx - 1] || next[0] || null;
-        setActiveEditPath(nextActive?.path || null);
-      }
-      return next;
-    });
+    const prev = openEditFilesRef.current;
+    const next = prev.filter(f => f.path !== path);
+    setOpenEditFiles(next);
+    // 如果关闭的是当前激活文件，激活下一个
+    if (activeEditPath === path) {
+      const idx = prev.findIndex(f => f.path === path);
+      const nextActive = next[idx] || next[idx - 1] || next[0] || null;
+      setActiveEditPath(nextActive?.path || null);
+    }
   };
 
   // 关闭所有文件
@@ -462,72 +541,6 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   const closeContextMenu = () => setContextMenu(null);
 
   // ── 拖拽上传 ────────────────────────────────────────────────
-  // Check if a file name is a hidden/system file that should be skipped
-  function isHiddenFile(name) {
-    return /^\./.test(name) || /^Thumbs\.db$/i.test(name) || /^desktop\.ini$/i.test(name);
-  }
-
-  // Recursively traverse a FileSystemEntry to collect all File objects
-  function traverseEntry(entry) {
-    return new Promise((resolve) => {
-      if (entry.isFile) {
-        if (isHiddenFile(entry.name)) {
-          resolve([]);
-          return;
-        }
-        entry.file((file) => {
-          file._fullPath = entry.fullPath;
-          resolve([file]);
-        }, () => resolve([]));
-      } else if (entry.isDirectory) {
-        const reader = entry.createReader();
-        const allEntries = [];
-        let emptyCount = 0;
-        function readBatch() {
-          reader.readEntries((entries) => {
-            if (entries.length === 0) {
-              emptyCount++;
-              // 连续两次返回空数组才确认读取完成（规避 Chrome readEntries 提前返回的 bug）
-              if (emptyCount >= 2) {
-                Promise.all(allEntries.map((e) => traverseEntry(e))).then((results) => {
-                  resolve(results.flat());
-                });
-              } else {
-                readBatch();
-              }
-            } else {
-              allEntries.push(...entries);
-              emptyCount = 0;
-              readBatch();
-            }
-          }, () => resolve([]));
-        }
-        readBatch();
-      } else {
-        resolve([]);
-      }
-    });
-  }
-
-  // 读取文件为 base64 字符串（去掉 data URL 前缀），避免将 Uint8Array 展开为
-  // 普通 Array 导致的内存爆炸（8-16 倍开销）。base64 仅 1.33 倍开销。
-  const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB
-  function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-      if (file.size > MAX_UPLOAD_SIZE) {
-        reject(new Error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，最大支持 100MB`));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result;
-        const commaIdx = dataUrl.indexOf(',');
-        resolve(commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl);
-      };
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-  }
 
   const handleDragEnter = (e) => {
     e.preventDefault();
@@ -557,9 +570,9 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     setIsDragOver(false);
     dragCounterRef.current = 0;
 
-    const items = Array.from(e.dataTransfer.items);
+    const droppedItems = Array.from(e.dataTransfer.items);
     const droppedFiles = Array.from(e.dataTransfer.files || []).filter(f => !isHiddenFile(f.name));
-    if (items.length === 0 && droppedFiles.length === 0) return;
+    if (droppedItems.length === 0 && droppedFiles.length === 0) return;
 
     setTransferInfo({ name: '正在上传...', progress: 0, direction: 'upload' });
 
@@ -569,7 +582,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
     try {
       // ── 方式一：通过 items + webkitGetAsEntry API（支持文件夹结构） ──
-      for (const item of items) {
+      for (const item of droppedItems) {
         const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
 
         if (entry && entry.isFile) {

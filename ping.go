@@ -1,28 +1,20 @@
 package main
 
 import (
-	"fmt"
 	"net"
-	"strings"
 	"time"
 )
 
 // isLocalOrPrivateIP checks if the host string points to a local loopback or private subnet
 func isLocalOrPrivateIP(host string) bool {
-	h := strings.ToLower(strings.TrimSpace(host))
-	if h == "127.0.0.1" || h == "localhost" || h == "::1" || h == "0.0.0.0" || h == "[::]" {
+	if host == "localhost" {
 		return true
 	}
-	if strings.HasPrefix(h, "192.168.") || strings.HasPrefix(h, "10.") {
-		return true
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
 	}
-	for i := 16; i <= 31; i++ {
-		prefix := fmt.Sprintf("172.%d.", i)
-		if strings.HasPrefix(h, prefix) {
-			return true
-		}
-	}
-	return false
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
 
 // measureLatency measures the one-way RTT to the SSH server.

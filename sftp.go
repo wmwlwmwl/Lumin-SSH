@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type SFTPConfig struct {
@@ -25,6 +28,13 @@ type SFTPConfig struct {
 	MaxBackups int    `json:"maxBackups"`
 }
 
+// getSFTPKey 基于连接配置派生加密密钥。
+// 注意：此处使用裸 SHA-256 而未加盐与迭代（无 KDF），该简化处理是可接受的，因为：
+//  1. 输入包含用户密码等高熵字段；
+//  2. 该密钥仅用于已加密配置数据的传输/静态保护；
+//  3. 主保护由 ConfigManager 的主密钥提供。
+//
+// 修改 KDF 会破坏与既有备份的向后兼容，故保持现状。
 func (c *ConfigManager) getSFTPKey() []byte {
 	conf := c.GetSFTPConfig()
 	if conf == nil {
@@ -42,6 +52,7 @@ func (c *ConfigManager) GetSFTPConfig() *SFTPConfig {
 	}
 	var conf SFTPConfig
 	json.Unmarshal(data, &conf)
+	conf.Username = c.decrypt(conf.Username)
 	conf.Password = c.decrypt(conf.Password)
 	conf.PrivateKey = c.decrypt(conf.PrivateKey)
 	if conf.Port == 0 {
@@ -59,8 +70,12 @@ func (c *ConfigManager) GetSFTPConfig() *SFTPConfig {
 func (c *ConfigManager) SaveSFTPConfig(config map[string]string) error {
 	existing := c.GetSFTPConfig()
 
+	username := config["username"]
 	password := config["password"]
 	privateKey := config["privateKey"]
+	if username == "" && existing != nil {
+		username = existing.Username
+	}
 	if password == "" && existing != nil {
 		password = existing.Password
 	}
@@ -89,7 +104,7 @@ func (c *ConfigManager) SaveSFTPConfig(config map[string]string) error {
 	conf := SFTPConfig{
 		Host:       config["host"],
 		Port:       port,
-		Username:   config["username"],
+		Username:   c.encrypt(username),
 		AuthMethod: config["authMethod"],
 		Password:   c.encrypt(password),
 		PrivateKey: c.encrypt(privateKey),
@@ -101,10 +116,50 @@ func (c *ConfigManager) SaveSFTPConfig(config map[string]string) error {
 	return os.WriteFile(sftpFile, data, 0600)
 }
 
+// sftpHostKeyCallback 返回基于 known_hosts 的 TOFU（首次信任）主机密钥校验回调。
+// 首次连接时自动将主机密钥写入 known_hosts；后续连接若密钥不匹配则拒绝。
+func sftpHostKeyCallback() ssh.HostKeyCallback {
+	hostKeyPath := getKnownHostsPath()
+	os.MkdirAll(filepath.Dir(hostKeyPath), 0700)
+	if _, err := os.Stat(hostKeyPath); os.IsNotExist(err) {
+		os.WriteFile(hostKeyPath, []byte(""), 0600)
+	}
+	cb, err := knownhosts.New(hostKeyPath)
+	if err != nil {
+		// known_hosts 损坏，重建空文件后重试，而非禁用校验
+		os.WriteFile(hostKeyPath, []byte(""), 0600)
+		cb, err = knownhosts.New(hostKeyPath)
+		if err != nil {
+			return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+				return fmt.Errorf("无法初始化主机密钥校验: %w", err)
+			}
+		}
+	}
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := cb(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+		// TOFU：密钥不在 known_hosts 中（首次连接），追加写入
+		var keyErr *knownhosts.KeyError
+		if errors.As(err, &keyErr) && len(keyErr.Want) == 0 {
+			line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
+			if f, ferr := os.OpenFile(hostKeyPath, os.O_APPEND|os.O_WRONLY, 0600); ferr == nil {
+				if _, werr := f.WriteString(line + "\n"); werr == nil {
+					f.Close()
+					return nil
+				}
+				f.Close()
+			}
+		}
+		return err
+	}
+}
+
 func (c *ConfigManager) TestSFTPConnection(host string, port int, username, password, authMethod, privateKey string) error {
 	sshConfig := &ssh.ClientConfig{
 		User:            username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: sftpHostKeyCallback(),
 		Timeout:         10 * time.Second,
 	}
 
@@ -138,22 +193,22 @@ func (c *ConfigManager) TestSFTPConnection(host string, port int, username, pass
 	return nil
 }
 
-func (c *ConfigManager) newSFTPClient() (*sftp.Client, error) {
+func (c *ConfigManager) newSFTPClient() (*sftp.Client, *ssh.Client, error) {
 	conf := c.GetSFTPConfig()
 	if conf == nil {
-		return nil, fmt.Errorf("SFTP not configured")
+		return nil, nil, fmt.Errorf("SFTP not configured")
 	}
 
 	sshConfig := &ssh.ClientConfig{
 		User:            conf.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: sftpHostKeyCallback(),
 		Timeout:         10 * time.Second,
 	}
 
 	if conf.AuthMethod == "key" {
 		signer, err := ssh.ParsePrivateKey([]byte(conf.PrivateKey))
 		if err != nil {
-			return nil, fmt.Errorf("解析私钥失败：%v", err)
+			return nil, nil, fmt.Errorf("解析私钥失败：%v", err)
 		}
 		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	} else {
@@ -162,16 +217,16 @@ func (c *ConfigManager) newSFTPClient() (*sftp.Client, error) {
 
 	sshClient, err := ssh.Dial("tcp", dialAddr(conf.Host, conf.Port), sshConfig)
 	if err != nil {
-		return nil, fmt.Errorf("SSH 连接失败：%v", err)
+		return nil, nil, fmt.Errorf("SSH 连接失败：%v", err)
 	}
 
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		sshClient.Close()
-		return nil, fmt.Errorf("SFTP 初始化失败：%v", err)
+		return nil, nil, fmt.Errorf("SFTP 初始化失败：%v", err)
 	}
 
-	return sftpClient, nil
+	return sftpClient, sshClient, nil
 }
 
 func (c *ConfigManager) ensureSFTPDir(client *sftp.Client) error {
@@ -192,17 +247,21 @@ func (c *ConfigManager) ensureSFTPDir(client *sftp.Client) error {
 // ─── SFTP RemoteStorage 实现 ──────────────────────────────
 
 type sftpStorage struct {
-	c         *ConfigManager
-	remoteDir string
-	key       []byte
+	c          *ConfigManager
+	remoteDir  string
+	key        []byte
+	maxBackups int
 }
 
+func (s *sftpStorage) MaxBackups() int { return s.maxBackups }
+
 func (s *sftpStorage) ListFiles() ([]RemoteFile, error) {
-	client, err := s.c.newSFTPClient()
+	client, sshClient, err := s.c.newSFTPClient()
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
+	defer sshClient.Close()
 
 	files, err := client.ReadDir(s.remoteDir)
 	if err != nil {
@@ -221,11 +280,12 @@ func (s *sftpStorage) ListFiles() ([]RemoteFile, error) {
 }
 
 func (s *sftpStorage) ReadFile(name string) ([]byte, error) {
-	client, err := s.c.newSFTPClient()
+	client, sshClient, err := s.c.newSFTPClient()
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
+	defer sshClient.Close()
 
 	path := strings.TrimSuffix(s.remoteDir, "/") + "/" + name
 	f, err := client.Open(path)
@@ -240,13 +300,16 @@ func (s *sftpStorage) ReadFile(name string) ([]byte, error) {
 }
 
 func (s *sftpStorage) WriteFile(name string, data []byte) error {
-	client, err := s.c.newSFTPClient()
+	client, sshClient, err := s.c.newSFTPClient()
 	if err != nil {
 		return err
 	}
 	defer client.Close()
+	defer sshClient.Close()
 
-	s.c.ensureSFTPDir(client)
+	if err := s.c.ensureSFTPDir(client); err != nil {
+		return err
+	}
 
 	path := strings.TrimSuffix(s.remoteDir, "/") + "/" + name
 	f, err := client.Create(path)
@@ -263,12 +326,14 @@ func (s *sftpStorage) WriteFile(name string, data []byte) error {
 }
 
 func (s *sftpStorage) DeleteFile(name string) error {
-	client, err := s.c.newSFTPClient()
+	client, sshClient, err := s.c.newSFTPClient()
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	return client.Remove(name)
+	defer sshClient.Close()
+	path := strings.TrimSuffix(s.remoteDir, "/") + "/" + name
+	return client.Remove(path)
 }
 
 func (s *sftpStorage) EncryptKey() []byte { return s.key }
@@ -278,7 +343,7 @@ func (c *ConfigManager) newSFTPStorage() (RemoteStorage, int, error) {
 	if conf == nil {
 		return nil, 0, fmt.Errorf("SFTP not configured")
 	}
-	return &sftpStorage{c: c, remoteDir: conf.RemoteDir, key: c.getSFTPKey()}, conf.MaxBackups, nil
+	return &sftpStorage{c: c, remoteDir: conf.RemoteDir, key: c.getSFTPKey(), maxBackups: conf.MaxBackups}, conf.MaxBackups, nil
 }
 
 // BackupToSFTP 备份到 SFTP
@@ -309,16 +374,18 @@ func (c *ConfigManager) SyncFromSFTP() (map[string]interface{}, error) {
 }
 
 func (c *ConfigManager) RestoreFromSFTPFile(filename string) (map[string]interface{}, error) {
+	filename = filepath.Base(filename) // 防止路径穿越
 	conf := c.GetSFTPConfig()
 	if conf == nil {
 		return nil, fmt.Errorf("SFTP not configured")
 	}
 
-	client, err := c.newSFTPClient()
+	client, sshClient, err := c.newSFTPClient()
 	if err != nil {
 		return nil, err
 	}
 	defer client.Close()
+	defer sshClient.Close()
 
 	remotePath := strings.TrimSuffix(conf.RemoteDir, "/") + "/" + filename
 	f, err := client.Open(remotePath)
