@@ -5,6 +5,7 @@ import (
 	"embed"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/energye/systray"
@@ -123,6 +124,14 @@ func main() {
 				return false // 用户确认退出，放行
 			}
 			runtime.EventsEmit(ctx, "close-request")
+			// 超时兜底：如果前端 5 秒内没有响应（崩溃/JS 异常），强制允许关闭
+			go func() {
+				time.Sleep(5 * time.Second)
+				if !app.quitting {
+					app.quitting = true
+					runtime.Quit(ctx)
+				}
+			}()
 			return true // 取消关闭，由前端弹窗决定后续操作
 		},
 		Bind: []interface{}{

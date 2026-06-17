@@ -138,7 +138,16 @@ func (a *App) WriteWsOutput(sessionId string, data []byte) {
 	conn, ok := a.wsConns[sessionId]
 	a.wsMu.Unlock()
 	if ok {
-		_ = conn.WriteMessage(websocket.BinaryMessage, data)
+		// 设置写超时，防止前端停止读取后 goroutine 永久阻塞
+		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		err := conn.WriteMessage(websocket.BinaryMessage, data)
+		if err != nil {
+			// 写失败（超时/连接断开），关闭并移除该连接
+			a.wsMu.Lock()
+			delete(a.wsConns, sessionId)
+			a.wsMu.Unlock()
+			conn.Close()
+		}
 	}
 }
 
@@ -570,8 +579,9 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 	if !strings.HasPrefix(downloadUrl, "https://") {
 		return fmt.Errorf("更新地址必须使用 HTTPS")
 	}
-	// 2. 发起请求下载新文件
-	resp, err := http.Get(downloadUrl)
+	// 2. 发起请求下载新文件（带超时，防止慢网络永久阻塞）
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(downloadUrl)
 	if err != nil {
 		return fmt.Errorf("failed to download update: %w", err)
 	}

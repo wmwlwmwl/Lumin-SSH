@@ -281,6 +281,11 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			var sftpC *sftp.Client
 			var cli *ssh.Client
 			if entry, ok := m.clients[connKey]; ok {
+				// 校验是否还是同一个 client 实例，避免误删快速重连后的新连接
+				if entry.Client != client {
+					m.mu.Unlock()
+					return // 已被新连接替换，不再清理
+				}
 				sftpC = entry.SFTP
 				cli = entry.Client
 				delete(m.clients, connKey)
