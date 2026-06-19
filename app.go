@@ -203,6 +203,11 @@ func (a *App) IsPortableVersion() bool {
 	if strings.Contains(exeName, "installer") || strings.Contains(exeName, "setup") {
 		return false
 	}
+	// 安装在 Program Files 下的一定是安装版
+	exeDir := strings.ToLower(filepath.Dir(exePath))
+	if strings.Contains(exeDir, "program files") {
+		return false
+	}
 	return true
 }
 
@@ -737,6 +742,8 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 
 	// Portable 热更替换逻辑
 	oldPath := exePath + ".old"
+	// 清理上次更新残留的 .old 文件
+	os.Remove(oldPath)
 	if err := os.Rename(exePath, oldPath); err != nil {
 		os.Remove(targetPath)
 		return fmt.Errorf("failed to rename current executable: %w", err)
