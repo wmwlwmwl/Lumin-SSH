@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
-import { setLanguage as setGlobalLanguage } from '../i18n.js';
+import { setLanguage as setGlobalLanguage, t as $t } from '../i18n.js';
 import logoImg from '../assets/logo.png';
 import { APP_VERSION } from '../config.js';
 import { useUpdateChecker } from '../hooks/useUpdateChecker.js';
@@ -170,11 +170,11 @@ const PROVIDERS = {
   webdav: {
     name: 'WebDAV',
     icon: '☁️',
-    title: 'WebDAV 配置',
-    subtitle: '配置 WebDAV 端点用于加密同步服务器列表',
+    title: $t('WebDAV 配置'),
+    subtitle: $t('配置 WebDAV 端点用于加密同步服务器列表'),
     accent: 'var(--green)',
     accentRgb: '16, 185, 129',
-    successMsg: '已成功绑定 WebDAV 服务',
+    successMsg: $t('已成功绑定 WebDAV 服务'),
     defaultForm: defaultWebdavForm,
     test: (f) => AppGo.TestWebdavConnection(f.url, f.username, f.password),
     save: (f) => AppGo.SaveWebdavConfig(f),
@@ -186,20 +186,20 @@ const PROVIDERS = {
     isConfigured: (f) => !!f.username,
     applyConfig: (data) => ({ url: data.url || '', username: data.username || '', password: data.password || '', remotePath: data.remotePath || '/Lumin/', maxBackups: data.maxBackups || '' }),
     summaryFields: (f) => [
-      { label: '绑定账号', value: f.username, primary: true },
-      { label: '备份目录', value: f.remotePath },
-      { label: '保留份数', value: f.maxBackups || '不限' },
-      { label: '服务器地址', value: f.url, fullWidth: true },
+      { label: $t('绑定账号'), value: f.username, primary: true },
+      { label: $t('备份目录'), value: f.remotePath },
+      { label: $t('保留份数'), value: f.maxBackups || $t('不限') },
+      { label: $t('服务器地址'), value: f.url, fullWidth: true },
     ],
   },
   r2: {
     name: 'R2',
     icon: '🗄️',
-    title: 'R2 (S3 兼容) 配置',
-    subtitle: '配置 Cloudflare R2 或任意 S3 兼容对象存储用于加密同步',
+    title: $t('R2 (S3 兼容) 配置'),
+    subtitle: $t('配置 Cloudflare R2 或任意 S3 兼容对象存储用于加密同步'),
     accent: '#3b82f6',
     accentRgb: '59, 130, 246',
-    successMsg: '已成功绑定 R2 对象存储',
+    successMsg: $t('已成功绑定 R2 对象存储'),
     defaultForm: defaultR2Form,
     test: (f) => AppGo.TestR2Connection(f.accessKeyId, f.secretAccessKey, f.bucket, f.endpoint),
     save: (f) => AppGo.SaveR2Config(f),
@@ -212,19 +212,19 @@ const PROVIDERS = {
     applyConfig: (data) => ({ accessKeyId: data.accessKeyId || '', secretAccessKey: data.secretAccessKey || '', bucket: data.bucket || '', endpoint: data.endpoint || '', region: data.region || 'auto', prefix: data.prefix || 'Lumin/', maxBackups: data.maxBackups || '' }),
     summaryFields: (f) => [
       { label: 'Bucket', value: f.bucket, primary: true },
-      { label: '前缀目录', value: f.prefix },
-      { label: '端点地址', value: f.endpoint, fullWidth: true },
-      { label: '保留份数', value: f.maxBackups || '不限' },
+      { label: $t('前缀目录'), value: f.prefix },
+      { label: $t('端点地址'), value: f.endpoint, fullWidth: true },
+      { label: $t('保留份数'), value: f.maxBackups || $t('不限') },
     ],
   },
   ftp: {
     name: 'FTP',
     icon: '📁',
-    title: 'FTP 配置',
-    subtitle: '配置 FTP 服务器用于加密同步服务器列表',
+    title: $t('FTP 配置'),
+    subtitle: $t('配置 FTP 服务器用于加密同步服务器列表'),
     accent: '#f472b6',
     accentRgb: '244, 114, 182',
-    successMsg: '已成功绑定 FTP 服务器',
+    successMsg: $t('已成功绑定 FTP 服务器'),
     defaultForm: defaultFTPForm,
     test: (f) => AppGo.TestFTPConnection(f.host, f.port, f.username, f.password),
     save: (f) => AppGo.SaveFTPConfig({ host: f.host, port: String(f.port), username: f.username, password: f.password, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
@@ -236,21 +236,21 @@ const PROVIDERS = {
     isConfigured: (f) => !!f.host,
     applyConfig: (data) => ({ host: data.host || '', port: data.port || 21, username: data.username || '', password: data.password || '', remoteDir: data.remoteDir || '/Lumin/', maxBackups: data.maxBackups || '' }),
     summaryFields: (f) => [
-      { label: '主机地址', value: f.host, primary: true },
-      { label: '端口', value: f.port },
-      { label: '用户名', value: f.username, primary: true },
-      { label: '远程目录', value: f.remoteDir },
-      { label: '保留份数', value: f.maxBackups || '不限' },
+      { label: $t('主机地址'), value: f.host, primary: true },
+      { label: $t('端口'), value: f.port },
+      { label: $t('用户名'), value: f.username, primary: true },
+      { label: $t('远程目录'), value: f.remoteDir },
+      { label: $t('保留份数'), value: f.maxBackups || $t('不限') },
     ],
   },
   sftp: {
     name: 'SFTP',
     icon: '🔒',
-    title: 'SFTP (SSH) 配置',
-    subtitle: '配置 SFTP 服务器用于加密同步服务器列表',
+    title: $t('SFTP (SSH) 配置'),
+    subtitle: $t('配置 SFTP 服务器用于加密同步服务器列表'),
     accent: '#22c55e',
     accentRgb: '34, 197, 94',
-    successMsg: '已成功绑定 SFTP 服务器',
+    successMsg: $t('已成功绑定 SFTP 服务器'),
     defaultForm: defaultSFTPForm,
     test: (f) => AppGo.TestSFTPConnection(f.host, f.port, f.username, f.password, f.authMethod, f.privateKey),
     save: (f) => AppGo.SaveSFTPConfig({ host: f.host, port: String(f.port), username: f.username, password: f.password, authMethod: f.authMethod, privateKey: f.privateKey, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
@@ -262,11 +262,11 @@ const PROVIDERS = {
     isConfigured: (f) => !!f.host,
     applyConfig: (data) => ({ host: data.host || '', port: data.port || 22, username: data.username || '', password: data.password || '', authMethod: data.authMethod || 'password', privateKey: data.privateKey || '', remoteDir: data.remoteDir || '/Lumin/', maxBackups: data.maxBackups || '' }),
     summaryFields: (f) => [
-      { label: '主机地址', value: f.host, primary: true },
-      { label: '端口', value: f.port },
-      { label: '用户名', value: f.username, primary: true },
-      { label: '远程目录', value: f.remoteDir },
-      { label: '保留份数', value: f.maxBackups || '不限' },
+      { label: $t('主机地址'), value: f.host, primary: true },
+      { label: $t('端口'), value: f.port },
+      { label: $t('用户名'), value: f.username, primary: true },
+      { label: $t('远程目录'), value: f.remoteDir },
+      { label: $t('保留份数'), value: f.maxBackups || $t('不限') },
     ],
   },
 };
@@ -323,7 +323,7 @@ function ProviderCard({ provider, form, configured, editing, onEdit, onCancelEdi
             onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-2)'; }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-              修改配置
+              {$t('修改配置')}
             </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '4px' }}>
@@ -348,13 +348,13 @@ function ProviderCard({ provider, form, configured, editing, onEdit, onCancelEdi
           {children}
           <div style={{ display: 'flex', gap: 12, marginTop: 12, alignItems: 'center' }}>
             <button className="btn btn-secondary" onClick={onTest} disabled={testing}>
-              {testing ? '测试中...' : '🔌 测试连接'} {testResult === 'ok' && '✓'} {testResult === 'fail' && '✗'}
+              {testing ? $t('测试中...') : $t('🔌 测试连接')} {testResult === 'ok' && '✓'} {testResult === 'fail' && '✗'}
             </button>
             <button className="btn btn-primary" onClick={onSave} disabled={loading}>
-              {loading ? '保存中...' : '💾 保存配置'}
+              {loading ? $t('保存中...') : $t('💾 保存配置')}
             </button>
             {editing && (
-              <button className="btn btn-ghost" onClick={onCancelEdit} style={{ marginLeft: 'auto' }}>取消</button>
+              <button className="btn btn-ghost" onClick={onCancelEdit} style={{ marginLeft: 'auto' }}>{$t('取消')}</button>
             )}
           </div>
         </div>
@@ -365,14 +365,14 @@ function ProviderCard({ provider, form, configured, editing, onEdit, onCancelEdi
 
 // 快捷键行配置
 const SHORTCUT_ROWS = [
-  { label: '从终端复制', key: 'copy' },
-  { label: '粘贴到终端', key: 'paste' },
-  { label: '清空终端缓冲区', key: 'clear' },
-  { label: '新建本地标签页', key: 'newTab' },
-  { label: '打断当前指令 (SIGINT)', key: 'sigint' },
-  { label: '结束终端会话 (EOF)', key: 'eof' },
-  { label: '后台挂起进程 (SIGTSTP)', key: 'suspend' },
-  { label: '清空当前输入行', key: 'clearLine' },
+  { label: $t('从终端复制'), key: 'copy' },
+  { label: $t('粘贴到终端'), key: 'paste' },
+  { label: $t('清空终端缓冲区'), key: 'clear' },
+  { label: $t('新建本地标签页'), key: 'newTab' },
+  { label: $t('打断当前指令 (SIGINT)'), key: 'sigint' },
+  { label: $t('结束终端会话 (EOF)'), key: 'eof' },
+  { label: $t('后台挂起进程 (SIGTSTP)'), key: 'suspend' },
+  { label: $t('清空当前输入行'), key: 'clearLine' },
 ];
 
 // 单个快捷键行
@@ -391,7 +391,7 @@ function ShortcutRow({ label, keyName, shortcuts, listeningKey, onSetListening, 
           transition: 'var(--transition)'
         }}
       >
-        {isListening ? '请按下快捷键...' : shortcuts[keyName]}
+        {isListening ? $t('请按下快捷键...') : shortcuts[keyName]}
       </button>
     </div>
   );
@@ -410,13 +410,13 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
           url: result.url,
           filename: result.filename,
         });
-        addToast(language === 'zh-CN' ? '发现新版本: v' + result.latestVersion : 'New version found: v' + result.latestVersion, 'success');
+        addToast($t('发现新版本: v') + result.latestVersion, 'success');
       } else {
-        addToast(language === 'zh-CN' ? '当前已是最新版本' : 'You are up to date', 'info');
+        addToast($t('当前已是最新版本'), 'info');
       }
     },
     onError: (err) => {
-      addToast((language === 'zh-CN' ? '检查更新失败: ' : 'Check failed: ') + (err?.message || err), 'error');
+      addToast($t('检查更新失败: ') + (err?.message || err), 'error');
     },
   });
 
@@ -424,7 +424,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
 
   const handleApplyUpdate = () => {
     applyUpdate(updateInfo).catch((err) => {
-      addToast((language === 'zh-CN' ? '更新失败: ' : 'Update failed: ') + err, 'error');
+      addToast($t('更新失败: ') + err, 'error');
     });
   };
 
@@ -549,7 +549,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
       localStorage.setItem('appShortcuts', JSON.stringify(updated));
       window.dispatchEvent(new CustomEvent('app-shortcuts-changed', { detail: updated }));
 
-      addToast(`终端快捷键已修改为 ${combined}`, 'success');
+      addToast($t('终端快捷键已修改为') + ` ${combined}`, 'success');
       setListeningKey(null);
     };
 
@@ -581,14 +581,14 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     } else {
       document.documentElement.style.setProperty('--green', '#10b981');
     }
-    addToast(nextVal ? '已启用自定义强调色' : '已恢复默认强调色', 'success');
+    addToast(nextVal ? $t('已启用自定义强调色') : $t('已恢复默认强调色'), 'success');
   };
 
   const handleLanguageChange = (e) => {
     const lang = e.target.value;
     setLanguage(lang);
     setGlobalLanguage(lang);
-    addToast(lang === 'zh-CN' ? '语言已切换至 简体中文' : 'Language switched to English', 'success');
+    addToast($t('语言已切换至 简体中文'), 'success');
   };
 
   const handleFontChange = (e) => {
@@ -602,7 +602,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     else if (font === 'JetBrains Mono') fontVal = "'JetBrains Mono', monospace";
     document.body.style.fontFamily = fontVal;
     
-    addToast('界面字体已应用', 'success');
+    addToast($t('界面字体已应用'), 'success');
   };
 
   const handleTerminalFontChange = (e) => {
@@ -628,13 +628,13 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
         localStorage.setItem('termBgImage', base64);
         setTermBgImage(base64);
         window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-        addToast(language === 'zh-CN' ? '终端壁纸已更新' : 'Wallpaper updated', 'success');
+        addToast($t('终端壁纸已更新'), 'success');
       } catch (err) {
-        addToast(language === 'zh-CN' ? '图片过大，无法保存，请使用较小的图片' : 'Image too large to save', 'error');
+        addToast($t('图片过大，无法保存，请使用较小的图片'), 'error');
       }
     };
     reader.onerror = () => {
-      addToast(language === 'zh-CN' ? '读取图片失败' : 'Failed to read image', 'error');
+      addToast($t('读取图片失败'), 'error');
     };
     reader.readAsDataURL(file);
   };
@@ -643,7 +643,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     setTermBgImage('');
     localStorage.removeItem('termBgImage');
     window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-    addToast(language === 'zh-CN' ? '已恢复默认壁纸' : 'Reset to default', 'success');
+    addToast($t('已恢复默认壁纸'), 'success');
   };
 
   const handleTermBgOpacityChange = (e) => {
@@ -745,10 +745,10 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     try {
       await p.test(s.form);
       s.setTestResult('ok');
-      addToast(`${p.name} 连接测试成功 ✓`, 'success');
+      addToast(`${p.name} ${$t('连接测试成功 ✓')}`, 'success');
     } catch (err) {
       s.setTestResult('fail');
-      addToast(`${p.name} 连接测试失败: ${err}`, 'error');
+      addToast(`${p.name} ` + $t('连接测试失败') + `: ${err}`, 'error');
     } finally {
       s.setTesting(false);
     }
@@ -766,19 +766,19 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
         try {
           const res = await p.sync();
           setLastBackup(res.backup?.time);
-          addToast(`${p.name} 同步成功！本地 ${res.localCount} 个 + 云端 ${res.remoteCount} 个 = ${res.mergedCount} 个`, 'success');
+          addToast(`${p.name} ${$t('同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
           onRestored?.();
         } catch (_) {
           try {
             const data = await p.backup();
             setLastBackup(data.time);
-            addToast(`${p.name} 配置已保存，已上传 ${data.count} 个服务器`, 'success');
+            addToast(`${p.name} ${$t('配置已保存，已上传')} ${data.count} ${$t('个服务器')}`, 'success');
           } catch (e) {
-            addToast(`${p.name} 配置已保存，但同步失败，可稍后手动上传`, 'warning');
+            addToast(`${p.name} ${$t('配置已保存，但同步失败，可稍后手动上传')}`, 'warning');
           }
         }
       } else {
-        addToast(`${p.name} 配置已保存`, 'success');
+        addToast(`${p.name} ${$t('配置已保存')}`, 'success');
       }
     } catch (err) {
       addToast(err, 'error');
@@ -802,7 +802,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
       const p = PROVIDERS[syncMode] || PROVIDERS.webdav;
       const list = await p.list();
       if (!list || list.length === 0) {
-        addToast('云端未找到任何备份文件', 'error');
+        addToast($t('云端未找到任何备份文件'), 'error');
         return;
       }
       list.sort((a, b) => new Date(b.time) - new Date(a.time));
@@ -810,7 +810,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
       setSelectedBackup(list[0].name);
       setConfirmRestore(true);
     } catch (err) {
-      addToast(`获取备份列表失败: ${err}`, 'error');
+      addToast($t('获取备份列表失败') + ': ' + err, 'error');
     } finally {
       setLoadingBackups(false);
     }
@@ -823,10 +823,10 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
       const p = PROVIDERS[syncMode] || PROVIDERS.webdav;
       await p.restore(selectedBackup);
       try { await p.backup(); } catch (_) {}
-      addToast('恢复成功', 'success');
+      addToast($t('恢复成功'), 'success');
       onRestored?.();
     } catch (err) {
-      addToast(`恢复失败: ${err}`, 'error');
+      addToast($t('恢复失败') + `: ${err}`, 'error');
     } finally {
       setRestoring(false);
       setConfirmRestore(false);
@@ -843,27 +843,27 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
           try {
             const res = await p.sync();
             anyOk = true;
-            addToast(`${p.name} 合并同步成功！本地 ${res.localCount} 个 + 云端 ${res.remoteCount} 个 = ${res.mergedCount} 个`, 'success');
+            addToast(`${p.name} ${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
           } catch (e) {
-            addToast(`${p.name} 同步失败: ${e}`, 'error');
+            addToast(`${p.name} ${$t('同步失败')}: ${e}`, 'error');
           }
         }
         if (anyOk) onRestored?.();
       } else {
         const p = PROVIDERS[syncMode] || PROVIDERS.webdav;
         const res = await p.sync();
-        addToast(`合并同步成功！本地 ${res.localCount} 个 + 云端 ${res.remoteCount} 个 = ${res.mergedCount} 个`, 'success');
+        addToast(`${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
         onRestored?.();
       }
     } catch (err) {
-      addToast(`合并同步失败: ${err}`, 'error');
+      addToast($t('合并同步失败') + ': ' + err, 'error');
     } finally {
       setSyncing(false);
     }
   };
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay">
       <div className="modal modal-xl" style={{ display: 'flex', flexDirection: 'column', height: '80vh', background: 'var(--bg-1)' }}>
         
         {/* Settings Header */}
@@ -965,7 +965,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                             ) : (
                                <>
                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                                 {updateInfo.latestVersion} {language === 'zh-CN' ? '立即更新' : 'Update Now'}
+                                 {updateInfo.latestVersion} {$t('立即更新')}
                                </>
                             )}
                           </span>
@@ -998,9 +998,9 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     onMouseLeave={(e) => { if(!checkingUpdate) { e.currentTarget.style.background = 'var(--bg-2)'; e.currentTarget.style.color = 'var(--text-3)'; } }}
                   >
                     <svg className={checkingUpdate ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
-                    {checkingUpdate 
-                       ? (language === 'zh-CN' ? '检查中...' : 'Checking...') 
-                       : (language === 'zh-CN' ? '检查更新' : 'Check Updates')}
+                    {checkingUpdate
+                       ? $t('检查中...')
+                       : $t('检查更新')}
                   </button>
                 </div>
 
@@ -1106,7 +1106,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     ))}
                   </div>
                   <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--bg-2)', borderRadius: 8, fontSize: 12, color: 'var(--text-4)', lineHeight: 1.7, border: '1px solid var(--border-light)' }}>
-                    💡 <strong style={{ color: 'var(--text-3)' }}>提示：</strong>{t.network.tip}
+                    💡 <strong style={{ color: 'var(--text-3)' }}>{$t('提示：')}</strong>{t.network.tip}
                   </div>
                 </div>
 
@@ -1181,7 +1181,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                         <div style={{ color: 'var(--text-4)', fontSize: 11 }}>{t.appearance.fontDesc}</div>
                       </div>
                       <select className="select" style={{ width: 200 }} value={appFont} onChange={handleFontChange}>
-                        <option value="system-ui">系统默认</option>
+                        <option value="system-ui">{$t('系统默认')}</option>
                         <option value="Open Sans">Open Sans</option>
                         <option value="Inter">Inter</option>
                         <option value="JetBrains Mono">JetBrains Mono</option>
@@ -1245,9 +1245,9 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
 
                 {/* ── 终端颜色主题 ── */}
                 <div>
-                  <h3 style={{ fontSize: 14, color: 'var(--text-1)', marginBottom: 12, fontWeight: 600 }}>终端颜色主题</h3>
+                  <h3 style={{ fontSize: 14, color: 'var(--text-1)', marginBottom: 12, fontWeight: 600 }}>{$t('终端颜色主题')}</h3>
                   <div className="form-group" style={{ background: 'var(--bg-2)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-                    <div style={{ color: 'var(--text-4)', fontSize: 11, marginBottom: 12 }}>选择终端的配色风格，即时生效</div>
+                    <div style={{ color: 'var(--text-4)', fontSize: 11, marginBottom: 12 }}>{$t('选择终端的配色风格，即时生效')}</div>
                     <div className="theme-palette-grid">
                       {[
                         { key: 'lumin',      name: 'Lumin Default', swatches: ['#22c55e', '#58a6ff', '#bc8cff', '#ff7b72'] },
@@ -1380,7 +1380,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
             {activeTab === 'shortcuts' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <div>
-                  <h3 style={{ fontSize: 14, color: 'var(--text-1)', marginBottom: 12, fontWeight: 600 }}>终端快捷键</h3>
+                  <h3 style={{ fontSize: 14, color: 'var(--text-1)', marginBottom: 12, fontWeight: 600 }}>{$t('终端快捷键')}</h3>
                   <div className="form-group" style={{ background: 'var(--bg-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
                     {SHORTCUT_ROWS.map((row, idx) => (
                       <ShortcutRow
@@ -1394,7 +1394,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                       />
                     ))}
                   </div>
-                  <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-4)' }}>注：部分快捷键行为受终端内的 Shell 设置影响。</p>
+                  <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-4)' }}>{$t('注：部分快捷键行为受终端内的 Shell 设置影响。')}</p>
                 </div>
               </div>
             )}
@@ -1439,23 +1439,23 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     onSave={handleSave}
                   >
                     <div className="form-group">
-                      <label className="form-label">端点地址 (URL)</label>
+                      <label className="form-label">{$t('端点地址 (URL)')}</label>
                       <input className="input" value={webdavForm.url} onChange={setWebdav('url')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">用户名</label>
+                      <label className="form-label">{$t('用户名')}</label>
                       <input className="input" value={webdavForm.username} onChange={setWebdav('username')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">密码 / 授权码</label>
+                      <label className="form-label">{$t('密码 / 授权码')}</label>
                       <input className="input" type="password" value={webdavForm.password} onChange={setWebdav('password')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">远程保存目录</label>
+                      <label className="form-label">{$t('远程保存目录')}</label>
                       <input className="input" value={webdavForm.remotePath} onChange={setWebdav('remotePath')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">保留份数 (0=不限)</label>
+                      <label className="form-label">{$t('保留份数 (0=不限)')}</label>
                       <input className="input" type="number" min="0" value={webdavForm.maxBackups} onChange={setWebdav('maxBackups')} placeholder="0" />
                     </div>
                   </ProviderCard>
@@ -1477,31 +1477,31 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     onSave={handleR2Save}
                   >
                     <div className="form-group">
-                      <label className="form-label">访问密钥 ID (Access Key ID)</label>
+                      <label className="form-label">{$t('访问密钥 ID (Access Key ID)')}</label>
                       <input className="input" value={r2Form.accessKeyId} onChange={setR2('accessKeyId')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">秘密访问密钥 (Secret Access Key)</label>
+                      <label className="form-label">{$t('秘密访问密钥 (Secret Access Key)')}</label>
                       <input className="input" type="password" value={r2Form.secretAccessKey} onChange={setR2('secretAccessKey')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">存储桶 (Bucket)</label>
+                      <label className="form-label">{$t('存储桶 (Bucket)')}</label>
                       <input className="input" value={r2Form.bucket} onChange={setR2('bucket')} placeholder="your-bucket" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">端点地址 (Endpoint)</label>
+                      <label className="form-label">{$t('端点地址 (Endpoint)')}</label>
                       <input className="input" value={r2Form.endpoint} onChange={setR2('endpoint')} placeholder="https://your-account.r2.cloudflarestorage.com" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">区域 (Region)</label>
+                      <label className="form-label">{$t('区域 (Region)')}</label>
                       <input className="input" value={r2Form.region} onChange={setR2('region')} placeholder="auto" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">前缀 (Prefix)</label>
+                      <label className="form-label">{$t('前缀 (Prefix)')}</label>
                       <input className="input" value={r2Form.prefix} onChange={setR2('prefix')} placeholder="Lumin/" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">保留份数 (0=不限)</label>
+                      <label className="form-label">{$t('保留份数 (0=不限)')}</label>
                       <input className="input" type="number" min="0" value={r2Form.maxBackups} onChange={setR2('maxBackups')} placeholder="0" />
                     </div>
                   </ProviderCard>
@@ -1523,27 +1523,27 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     onSave={handleSaveFTP}
                   >
                     <div className="form-group">
-                      <label className="form-label">主机地址</label>
+                      <label className="form-label">{$t('主机地址')}</label>
                       <input className="input" value={ftpForm.host} onChange={setFTP('host')} placeholder="ftp.example.com" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">端口</label>
+                      <label className="form-label">{$t('端口')}</label>
                       <input className="input" type="number" value={ftpForm.port} onChange={setFTP('port')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">用户名</label>
+                      <label className="form-label">{$t('用户名')}</label>
                       <input className="input" value={ftpForm.username} onChange={setFTP('username')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">密码</label>
+                      <label className="form-label">{$t('密码')}</label>
                       <input className="input" type="password" value={ftpForm.password} onChange={setFTP('password')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">远程保存目录</label>
+                      <label className="form-label">{$t('远程保存目录')}</label>
                       <input className="input" value={ftpForm.remoteDir} onChange={setFTP('remoteDir')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">保留份数 (0=不限)</label>
+                      <label className="form-label">{$t('保留份数 (0=不限)')}</label>
                       <input className="input" type="number" min="0" value={ftpForm.maxBackups} onChange={setFTP('maxBackups')} placeholder="0" />
                     </div>
                   </ProviderCard>
@@ -1565,33 +1565,33 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     onSave={handleSaveSFTP}
                   >
                     <div className="form-group">
-                      <label className="form-label">主机地址</label>
+                      <label className="form-label">{$t('主机地址')}</label>
                       <input className="input" value={sftpForm.host} onChange={setSFTP('host')} placeholder="sftp.example.com" />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">端口</label>
+                      <label className="form-label">{$t('端口')}</label>
                       <input className="input" type="number" value={sftpForm.port} onChange={setSFTP('port')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">用户名</label>
+                      <label className="form-label">{$t('用户名')}</label>
                       <input className="input" value={sftpForm.username} onChange={setSFTP('username')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">认证方式</label>
+                      <label className="form-label">{$t('认证方式')}</label>
                       <select className="input" value={sftpForm.authMethod} onChange={setSFTP('authMethod')}>
-                        <option value="password">密码认证</option>
-                        <option value="key">密钥认证</option>
+                        <option value="password">{$t('密码认证')}</option>
+                        <option value="key">{$t('密钥认证')}</option>
                       </select>
                     </div>
                     {sftpForm.authMethod === 'password' ? (
                       <div className="form-group">
-                        <label className="form-label">密码</label>
+                        <label className="form-label">{$t('密码')}</label>
                         <input className="input" type="password" value={sftpForm.password} onChange={setSFTP('password')} />
                       </div>
                     ) : (
                       <>
                         <div className="form-group">
-                          <label className="form-label">私钥内容</label>
+                          <label className="form-label">{$t('私钥内容')}</label>
                           <textarea className="input" style={{ minHeight: 100, fontFamily: 'monospace', fontSize: 12 }} value={sftpForm.privateKey} onChange={setSFTP('privateKey')} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" />
                         </div>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1600,20 +1600,20 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                               const key = await AppGo.ReadPrivateKeyFile();
                               if (key) setSftpForm(prev => ({ ...prev, privateKey: key }));
                             } catch (e) {
-                              addToast('读取私钥文件失败: ' + e, 'error');
+                              addToast($t('读取私钥文件失败') + ': ' + e, 'error');
                             }
                           }} style={{ fontSize: 12 }}>
-                            📂 从文件加载私钥
+                            {$t('📂 从文件加载私钥')}
                           </button>
                         </div>
                       </>
                     )}
                     <div className="form-group">
-                      <label className="form-label">远程保存目录</label>
+                      <label className="form-label">{$t('远程保存目录')}</label>
                       <input className="input" value={sftpForm.remoteDir} onChange={setSFTP('remoteDir')} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">保留份数 (0=不限)</label>
+                      <label className="form-label">{$t('保留份数 (0=不限)')}</label>
                       <input className="input" type="number" min="0" value={sftpForm.maxBackups} onChange={setSFTP('maxBackups')} placeholder="0" />
                     </div>
                   </ProviderCard>
@@ -1621,15 +1621,15 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
 
                 {/* 自动同步模式 */}
                 <div style={{ background: 'var(--bg-2)', padding: 24, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)', marginBottom: 4 }}>自动同步模式</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 20 }}>选择自动同步使用的云服务，启动时按偏好执行合并同步</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)', marginBottom: 4 }}>{$t('自动同步模式')}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 20 }}>{$t('选择自动同步使用的云服务，启动时按偏好执行合并同步')}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {[
-                      { id: 'webdav', label: '☁️ WebDAV', desc: '仅使用 WebDAV 同步（默认），若未配置则尝试其他' },
-                      { id: 'r2', label: '🗄️ R2 (S3)', desc: '仅使用 R2 同步，若未配置则尝试其他' },
-                      { id: 'ftp', label: '📁 FTP', desc: '仅使用 FTP 同步，若未配置则尝试其他' },
-                      { id: 'sftp', label: '🔒 SFTP', desc: '仅使用 SFTP 同步，若未配置则尝试其他' },
-                      { id: 'all', label: '🔄 全部同步', desc: '同时同步所有已配置的云服务，按顺序分别合并' },
+                      { id: 'webdav', label: '☁️ WebDAV', desc: $t('仅使用 WebDAV 同步（默认），若未配置则尝试其他') },
+                      { id: 'r2', label: '🗄️ R2 (S3)', desc: $t('仅使用 R2 同步，若未配置则尝试其他') },
+                      { id: 'ftp', label: '📁 FTP', desc: $t('仅使用 FTP 同步，若未配置则尝试其他') },
+                      { id: 'sftp', label: '🔒 SFTP', desc: $t('仅使用 SFTP 同步，若未配置则尝试其他') },
+                      { id: 'all', label: $t('🔄 全部同步'), desc: $t('同时同步所有已配置的云服务，按顺序分别合并') },
                     ].map(opt => (
                       <div
                         key={opt.id}
@@ -1665,23 +1665,23 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
 
                 {/* 云端同步 (shared for both providers) */}
                 <div style={{ background: 'var(--bg-2)', padding: 24, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)', marginBottom: 8 }}>云端同步</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 20 }}>同步所有配置，全程 AES-256 高强加密</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)', marginBottom: 8 }}>{$t('云端同步')}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 20 }}>{$t('同步所有配置，全程 AES-256 高强加密')}</div>
                   
                   {(isConfigured || r2Configured || ftpConfigured || sftpConfigured) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, marginBottom: 20, color: 'var(--green)', fontSize: 13 }}>
-                      <span>✨</span> <span><strong>已开启自动云端备份：</strong>当您添加、编辑、删除服务器或修改配置时，后台将静默保存至云端。</span>
+                      <span>✨</span> <span><strong>{$t('已开启自动云端备份：')}</strong>{$t('当您添加、编辑、删除服务器或修改配置时，后台将静默保存至云端。')}</span>
                     </div>
                   )}
 
-                  {lastBackup && <div style={{ fontSize: 12, color: 'var(--green)', marginBottom: 12 }}>上次同步: {lastBackup}</div>}
+                  {lastBackup && <div style={{ fontSize: 12, color: 'var(--green)', marginBottom: 12 }}>{$t('上次同步')}: {lastBackup}</div>}
                   
                   <div style={{ display: 'flex', gap: 12 }}>
                     <button className="btn btn-secondary" onClick={handleSync} disabled={syncing}>
-                      {syncing ? '同步中...' : '🔀 合并同步'}
+                      {syncing ? $t('同步中...') : $t('🔀 合并同步')}
                     </button>
                     <button className="btn btn-secondary" onClick={handleRestore} disabled={loadingBackups || restoring}>
-                      {loadingBackups ? '加载备份列表中...' : '🔄 从云端恢复'}
+                      {loadingBackups ? $t('加载备份列表中...') : $t('🔄 从云端恢复')}
                     </button>
                   </div>
                 </div>
@@ -1696,9 +1696,9 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
       {confirmRestore && (
         <div className="modal-overlay" style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
           <div className="glass-card" style={{ width: 450, padding: 24, animation: 'scaleIn 0.2s ease-out' }}>
-            <div style={{ fontSize: 18, color: 'var(--text-1)', marginBottom: 16, fontWeight: 'bold' }}>选择要恢复的云端备份</div>
+            <div style={{ fontSize: 18, color: 'var(--text-1)', marginBottom: 16, fontWeight: 'bold' }}>{$t('选择要恢复的云端备份')}</div>
             <div style={{ color: 'var(--text-2)', marginBottom: 16, fontSize: 14 }}>
-              此操作将覆盖当前所有的本地服务器配置，且无法撤销。请选择要恢复的备份时间：
+              {$t('此操作将覆盖当前所有的本地服务器配置，且无法撤销。请选择要恢复的备份时间：')}
             </div>
             
             <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 20, background: 'var(--bg-0)', borderRadius: 'var(--radius-md)', padding: 8 }}>
@@ -1730,9 +1730,9 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
             </div>
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" style={{ padding: '0 20px' }} onClick={() => setConfirmRestore(false)}>取消</button>
+              <button className="btn btn-secondary" style={{ padding: '0 20px' }} onClick={() => setConfirmRestore(false)}>{$t('取消')}</button>
               <button className="btn" style={{ backgroundColor: 'var(--red)', color: '#fff', border: 'none', padding: '0 20px' }} onClick={doRestore} disabled={!selectedBackup || restoring}>
-                {restoring ? '恢复中...' : '确定恢复'}
+                {restoring ? $t('恢复中...') : $t('确定恢复')}
               </button>
             </div>
           </div>

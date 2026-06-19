@@ -518,6 +518,67 @@ a { color: var(--blue); text-decoration: none; }
   border-top: 1px solid var(--border);
 }
 
+/* ── Chmod Dialog ─────────────────────────────────────────────── */
+.chmod-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chmod-dialog-path {
+  font-size: 12px;
+  color: var(--text-3);
+  word-break: break-all;
+  padding: 6px 10px;
+  background: var(--bg-1);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+.chmod-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chmod-row {
+  display: grid;
+  grid-template-columns: 60px repeat(3, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.chmod-row-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.chmod-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.chmod-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+.chmod-octal-input {
+  width: 64px;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text-1);
+  outline: none;
+}
+.chmod-octal-input:focus {
+  border-color: var(--blue);
+}
+
 /* ── Tabs ────────────────────────────────────────────────────── */
 .tab-bar {
   display: flex;
@@ -1157,8 +1218,8 @@ a { color: var(--blue); text-decoration: none; }
 
 .file-list-header {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 70px 130px 80px;
-  min-width: 420px;
+  grid-template-columns: minmax(120px, 1fr) 60px 85px 110px 110px;
+  min-width: 500px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   font-size: 11px;
@@ -1174,8 +1235,8 @@ a { color: var(--blue); text-decoration: none; }
 
 .file-item {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 70px 130px 80px;
-  min-width: 420px;
+  grid-template-columns: minmax(120px, 1fr) 60px 85px 110px 110px;
+  min-width: 500px;
   padding: 7px 16px;
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
@@ -1202,6 +1263,8 @@ a { color: var(--blue); text-decoration: none; }
 .file-name.is-dir { color: var(--blue); font-weight: 500; }
 
 .file-size { font-size: 12px; color: var(--text-3); font-family: var(--font-mono); }
+.file-permission { font-size: 12px; color: var(--text-3); font-family: var(--font-mono); cursor: pointer; }
+.file-permission:hover { color: var(--blue); }
 .file-date { font-size: 12px; color: var(--text-3); }
 .file-actions { opacity: 0; display: flex; gap: 4px; justify-content: flex-end; }
 

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import CodeMirror from '@uiw/react-codemirror';
+import { useTranslation, t as st } from '../i18n.js';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -73,17 +74,17 @@ function getLanguage(filename) {
 }
 
 const MODE_ICONS = {
-  modal: { icon: Maximize2, title: '全屏弹窗' },
-  popup: { icon: PictureInPicture, title: '浮动面板' },
-  split: { icon: Columns2, title: '分栏编辑' },
+  modal: { icon: Maximize2, title: st('全屏弹窗') },
+  popup: { icon: PictureInPicture, title: st('浮动面板') },
+  split: { icon: Columns2, title: st('分栏编辑') },
 };
 
 const MODE_ORDER = ['modal', 'popup', 'split'];
 
 const SPLIT_ICONS = {
-  left: { icon: PanelLeft, title: '左侧分栏' },
-  right: { icon: PanelRight, title: '右侧分栏' },
-  bottom: { icon: PanelBottom, title: '底部分栏' },
+  left: { icon: PanelLeft, title: st('左侧分栏') },
+  right: { icon: PanelRight, title: st('右侧分栏') },
+  bottom: { icon: PanelBottom, title: st('底部分栏') },
 };
 
 const SPLIT_ORDER = ['left', 'right', 'bottom'];
@@ -101,6 +102,8 @@ export default function FileEditor({
   onSplitPositionChange,
   isActive = true,
 }) {
+  const { t } = useTranslation();
+
   // 每个文件的编辑内容缓存：{ [path]: content }
   const [editedContents, setEditedContents] = useState({});
   const [saving, setSaving] = useState(false);
@@ -196,7 +199,7 @@ export default function FileEditor({
     const f = files.find((x) => x.path === path);
     const edited = editedContents[path];
     if (f && edited !== undefined && edited !== f.content) {
-      const ok = await window.luminDialog?.confirm('文件有未保存的修改，确定关闭？');
+      const ok = await window.luminDialog?.confirm(t('文件有未保存的修改，确定关闭？'));
       if (!ok) return;
     }
     setEditedContents(prev => { const next = { ...prev }; delete next[path]; return next; });
@@ -214,7 +217,7 @@ export default function FileEditor({
       const edited = editedContents[f.path];
       return edited !== undefined && edited !== f.content;
     });
-    if (hasModified && !(await window.luminDialog?.confirm('有文件未保存，确定全部关闭？'))) return;
+    if (hasModified && !(await window.luminDialog?.confirm(t('有文件未保存，确定全部关闭？')))) return;
     onCloseAll();
   };
 
@@ -443,7 +446,7 @@ export default function FileEditor({
         <div className="modal-title" style={{ flex: 1, minWidth: 0 }}>
           <span>✏️</span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14 }}>
-            {activeFile ? activeFile.name : '编辑器'}
+            {activeFile ? activeFile.name : t('编辑器')}
           </span>
           {isModified && (
             <span style={{
@@ -454,7 +457,7 @@ export default function FileEditor({
               borderRadius: 4,
               fontWeight: 500,
             }}>
-              未保存
+              {t('未保存')}
             </span>
           )}
         </div>
@@ -501,9 +504,9 @@ export default function FileEditor({
             onClick={handleSave}
             disabled={saving || !isModified}
           >
-            {saving ? '保存中...' : '💾 保存'}
+            {saving ? t('保存中...') : t('💾 保存')}
           </button>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={handleCloseCurrent} title="关闭当前文件">
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={handleCloseCurrent} title={t('关闭当前文件')}>
             <X size={14} />
           </button>
         </div>
@@ -576,7 +579,7 @@ export default function FileEditor({
         color: 'var(--text-4)',
         fontFamily: 'var(--font-mono)',
       }}>
-        <span>{currentContent.split('\n').length} 行 · {byteSize} 字节</span>
+        <span>{currentContent.split('\n').length}{t('行')} · {byteSize}{t('字节')}</span>
         <span>UTF-8 · {lang ? ext.toUpperCase() : 'Text'}</span>
       </div>
 
@@ -600,10 +603,10 @@ export default function FileEditor({
           onMouseDown={(e) => e.stopPropagation()}
         >
           {[
-            { label: '复制', action: 'copy', shortcut: 'Ctrl+C' },
-            { label: '粘贴', action: 'paste', shortcut: 'Ctrl+V' },
-            { label: '剪切', action: 'cut', shortcut: 'Ctrl+X' },
-            { label: '全选', action: 'selectAll', shortcut: 'Ctrl+A' },
+            { label: t('复制'), action: 'copy', shortcut: 'Ctrl+C' },
+            { label: t('粘贴'), action: 'paste', shortcut: 'Ctrl+V' },
+            { label: t('剪切'), action: 'cut', shortcut: 'Ctrl+X' },
+            { label: t('全选'), action: 'selectAll', shortcut: 'Ctrl+A' },
           ].map((item) => (
             <div
               key={item.action}
@@ -657,7 +660,7 @@ export default function FileEditor({
             cursor: 'se-resize',
             zIndex: 2,
           }}
-          title="调整大小"
+          title={t('调整大小')}
         >
           <svg width="12" height="12" viewBox="0 0 12 12" style={{ position: 'absolute', right: 2, bottom: 2, opacity: 0.3 }}>
             <path d="M8 12v-2h2v2H8zm0-4V6h2v2H8zm0-4V2h2v2H8zM4 12v-2h2v2H4z" fill="currentColor" />

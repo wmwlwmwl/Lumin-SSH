@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import FileEditor from './FileEditor.jsx';
-import { useTranslation } from '../i18n.js';
+import { useTranslation, t as tKey } from '../i18n.js';
 
 // 格式化文件大小
 function fmtSize(bytes) {
@@ -121,7 +121,7 @@ function traverseEntry(entry) {
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     if (file.size > MAX_UPLOAD_SIZE) {
-      reject(new Error(`文件过大 (${(file.size / 1024 / 1024).toFixed(1)}MB)，最大支持 100MB`));
+      reject(new Error(`${tKey('文件过大')} (${(file.size / 1024 / 1024).toFixed(1)}MB)，${tKey('最大支持')} 100MB`));
       return;
     }
     const reader = new FileReader();
@@ -135,8 +135,115 @@ function readFileAsBase64(file) {
   });
 }
 
+// ── Chmod Dialog ──────────────────────────────────────────────
+function ChmodDialog({ path, permission, mode, onSave, onClose, t }) {
+  // 从 permission string 解析初始状态 (e.g. "-rwxr-xr-x" or "drwxr-xr-x")
+  const parsePerms = (permStr) => {
+    const p = permStr && permStr.length >= 10 ? permStr.slice(1) : '---------';
+    return {
+      user: { r: p[0] === 'r', w: p[1] === 'w', x: p[2] === 'x' },
+      group: { r: p[3] === 'r', w: p[4] === 'w', x: p[5] === 'x' },
+      other: { r: p[6] === 'r', w: p[7] === 'w', x: p[8] === 'x' },
+    };
+  };
+
+  const [perms, setPerms] = useState(parsePerms(permission || ''));
+  const [octal, setOctal] = useState(mode || '644');
+
+  // 从复选框计算八进制
+  const calcOctal = (p) => {
+    const u = (p.user.r ? 4 : 0) + (p.user.w ? 2 : 0) + (p.user.x ? 1 : 0);
+    const g = (p.group.r ? 4 : 0) + (p.group.w ? 2 : 0) + (p.group.x ? 1 : 0);
+    const o = (p.other.r ? 4 : 0) + (p.other.w ? 2 : 0) + (p.other.x ? 1 : 0);
+    return `${u}${g}${o}`;
+  };
+
+  const togglePerm = (cat, key) => {
+    setPerms(prev => {
+      const next = { ...prev, [cat]: { ...prev[cat], [key]: !prev[cat][key] } };
+      setOctal(calcOctal(next));
+      return next;
+    });
+  };
+
+  const handleOctalChange = (e) => {
+    const val = e.target.value.replace(/[^0-7]/g, '').slice(0, 3);
+    setOctal(val);
+    // 从八进制更新复选框
+    if (val.length === 3) {
+      const u = parseInt(val[0], 8);
+      const g = parseInt(val[1], 8);
+      const o = parseInt(val[2], 8);
+      setPerms({
+        user: { r: !!(u & 4), w: !!(u & 2), x: !!(u & 1) },
+        group: { r: !!(g & 4), w: !!(g & 2), x: !!(g & 1) },
+        other: { r: !!(o & 4), w: !!(o & 2), x: !!(o & 1) },
+      });
+    }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal modal-sm">
+        <div className="modal-header">
+          <div className="modal-title">🔐 {t('修改权限')}</div>
+        </div>
+        <div className="modal-body">
+          <div className="chmod-dialog-body">
+            <div className="chmod-dialog-path">{path}</div>
+            <div className="chmod-grid">
+              {/* Header */}
+              <div className="chmod-row">
+                <span></span>
+                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-4)' }}>{t('读取')}</span>
+                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-4)' }}>{t('写入')}</span>
+                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-4)' }}>{t('执行')}</span>
+              </div>
+              {/* User row */}
+              <div className="chmod-row">
+                <span className="chmod-row-label">{t('用户')}</span>
+                {['r','w','x'].map(k => (
+                  <label key={k} className="chmod-checkbox" style={{ justifyContent: 'center' }}>
+                    <input type="checkbox" checked={perms.user[k]} onChange={() => togglePerm('user', k)} />
+                  </label>
+                ))}
+              </div>
+              {/* Group row */}
+              <div className="chmod-row">
+                <span className="chmod-row-label">{t('组')}</span>
+                {['r','w','x'].map(k => (
+                  <label key={k} className="chmod-checkbox" style={{ justifyContent: 'center' }}>
+                    <input type="checkbox" checked={perms.group[k]} onChange={() => togglePerm('group', k)} />
+                  </label>
+                ))}
+              </div>
+              {/* Other row */}
+              <div className="chmod-row">
+                <span className="chmod-row-label">{t('其他')}</span>
+                {['r','w','x'].map(k => (
+                  <label key={k} className="chmod-checkbox" style={{ justifyContent: 'center' }}>
+                    <input type="checkbox" checked={perms.other[k]} onChange={() => togglePerm('other', k)} />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{t('八进制:')}</span>
+              <input className="chmod-octal-input" value={octal} onChange={handleOctalChange} />
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>{t('取消')}</button>
+          <button className="btn btn-primary" onClick={() => onSave(octal)}>{t('确定')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Context menu component
-function ContextMenu({ pos, item, onClose, onDownload, onEdit, onRename, onDelete, onMkdir, onNewFile, onCompress, onUncompress, t }) {
+function ContextMenu({ pos, item, onClose, onDownload, onEdit, onRename, onDelete, onMkdir, onNewFile, onCompress, onUncompress, onChmod, t }) {
   const ref = useRef(null);
   useEffect(() => {
     const handler = (e) => {
@@ -177,6 +284,11 @@ function ContextMenu({ pos, item, onClose, onDownload, onEdit, onRename, onDelet
           <span>✏</span> {t('重命名')}
         </div>
       )}
+      {item && (
+        <div className="context-menu-item" onClick={onChmod}>
+          <span>🔐</span> {t('修改权限')}
+        </div>
+      )}
       <div className="context-menu-divider" />
       {!item && (
         <div className="context-menu-item" onClick={onNewFile}>
@@ -205,6 +317,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   const [contextMenu, setContextMenu] = useState(null); // { pos, item }
   const [renamingItem, setRenamingItem] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [chmodTarget, setChmodTarget] = useState(null); // { item, path }
   const [openEditFiles, setOpenEditFiles] = useState([]);      // [{ path, name, content }]
   const openEditFilesRef = useRef([]);
   useEffect(() => { openEditFilesRef.current = openEditFiles; }, [openEditFiles]);
@@ -248,8 +361,8 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     } catch (err) {
       if (!silent) {
         const msg = String(err).toLowerCase().includes('permission denied')
-          ? `权限不足: SFTP 仍以 ${sessionId ? '原用户' : ''} 身份运行，终端内 sudo 不影响文件管理器`
-          : `读取目录失败: ${err}`;
+          ? `${t('权限不足')}: SFTP ${t('仍以')} ${sessionId ? t('原用户') : ''} ${t('身份运行，终端内 sudo 不影响文件管理器')}`
+          : `${t('读取目录失败')}: ${err}`;
         addToast(`${msg} [${path}]`, 'error');
       }
       return false;
@@ -316,12 +429,12 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
   // Breadcrumb parts
   const pathParts = currentPath === '/'
-    ? [{ label: '目录根', path: '/' }]
+    ? [{ label: t('目录根'), path: '/' }]
     : currentPath.split('/').filter(Boolean).reduce((acc, part, i, arr) => {
         const path = '/' + arr.slice(0, i + 1).join('/');
         acc.push({ label: part, path });
         return acc;
-      }, [{ label: '目录根', path: '/' }]);
+      }, [{ label: t('目录根'), path: '/' }]);
 
   // Navigate into folder
   const navigate = (item) => {
@@ -335,12 +448,12 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   // Upload file via Wails native file dialog
   const handleUpload = async () => {
     try {
-      setTransferInfo({ name: '正在选择文件...', progress: 0, direction: 'upload' });
+      setTransferInfo({ name: t('正在选择文件...'), progress: 0, direction: 'upload' });
       await AppGo.UploadFile(sessionId, currentPath);
-      addToast(`上传成功`, 'success');
+      addToast(t('上传成功'), 'success');
       await loadDir(currentPath);
     } catch (err) {
-      if (err) addToast(`上传失败: ${err}`, 'error');
+      if (err) addToast(`${t('上传失败')}: ${err}`, 'error');
     } finally {
       setTransferInfo(null);
     }
@@ -355,9 +468,9 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     try {
       setTransferInfo({ name: item.name, progress: 0, direction: 'download' });
       await AppGo.DownloadFile(sessionId, remotePath);
-      addToast(`下载成功: ${item.name}`, 'success');
+      addToast(`${t('下载成功')}: ${item.name}`, 'success');
     } catch (err) {
-      if (err) addToast(`下载失败: ${err}`, 'error');
+      if (err) addToast(`${t('下载失败')}: ${err}`, 'error');
     } finally {
       setTransferInfo(null);
     }
@@ -371,7 +484,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
     // 文件大小检查，避免加载过大文件导致卡顿
     if (item.size && item.size > MAX_EDIT_SIZE) {
-      addToast(`文件过大 (${(item.size / 1024 / 1024).toFixed(1)}MB)，最大支持 5MB 编辑`, 'error');
+      addToast(`${t('文件过大')} (${(item.size / 1024 / 1024).toFixed(1)}MB)，${t('最大支持 5MB 编辑')}`, 'error');
       return;
     }
 
@@ -387,7 +500,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
       setOpenEditFiles(prev => [...prev, newFile]);
       setActiveEditPath(remotePath);
     } catch (err) {
-      addToast(`无法打开文件: ${err}`, 'error');
+      addToast(`${t('无法打开文件')}: ${err}`, 'error');
     }
   };
 
@@ -395,7 +508,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   const handleSaveFile = async (path, content) => {
     try {
       await AppGo.WriteFile(sessionId, path, content);
-      addToast('文件保存成功', 'success');
+      addToast(t('文件保存成功'), 'success');
       // 更新 openEditFiles 中对应文件的内容
       setOpenEditFiles(prev => prev.map(f => f.path === path ? { ...f, content } : f));
       // 只有弹窗模式才在保存后自动关闭编辑器，popup/split 保持打开
@@ -403,7 +516,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
         closeEditFile(path);
       }
     } catch (err) {
-      addToast(`保存失败: ${err}`, 'error');
+      addToast(`${t('保存失败')}: ${err}`, 'error');
     }
   };
 
@@ -446,41 +559,41 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     const remotePath = currentPath === '/'
       ? `/${item.name}`
       : `${currentPath}/${item.name}`;
-    if (!(await window.luminDialog?.confirm(`确定删除「${item.name}」？此操作不可撤销`))) return;
+    if (!(await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？${t('此操作不可撤销')}`))) return;
     try {
       await AppGo.DeleteItem(sessionId, remotePath, item.isDirectory);
-      addToast(`已删除: ${item.name}`, 'success');
+      addToast(`${t('已删除')}: ${item.name}`, 'success');
       await loadDir(currentPath);
     } catch (err) {
-      addToast(`删除失败: ${err}`, 'error');
+      addToast(`${t('删除失败')}: ${err}`, 'error');
     }
   };
 
   // Create directory
   const handleMkdir = async () => {
-    const name = await window.luminDialog?.prompt('新文件夹名称:');
+    const name = await window.luminDialog?.prompt(t('新文件夹名称:'));
     if (!name) return;
     const remotePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
     try {
       await AppGo.Mkdir(sessionId, remotePath);
-      addToast(`文件夹创建成功: ${name}`, 'success');
+      addToast(`${t('文件夹创建成功')}: ${name}`, 'success');
       await loadDir(currentPath);
     } catch (err) {
-      addToast(`创建失败: ${err}`, 'error');
+      addToast(`${t('创建失败')}: ${err}`, 'error');
     }
   };
 
   // Create file
   const handleNewFile = async () => {
-    const name = await window.luminDialog?.prompt('新文件名称:');
+    const name = await window.luminDialog?.prompt(t('新文件名称:'));
     if (!name) return;
     const remotePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
     try {
       await AppGo.WriteFile(sessionId, remotePath, '');
-      addToast(`文件创建成功: ${name}`, 'success');
+      addToast(`${t('文件创建成功')}: ${name}`, 'success');
       await loadDir(currentPath);
     } catch (err) {
-      addToast(`创建失败: ${err}`, 'error');
+      addToast(`${t('创建失败')}: ${err}`, 'error');
     }
   };
 
@@ -489,12 +602,12 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     const remotePath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`;
     try {
       setLoading(true);
-      addToast(`正在压缩 ${item.name}...`, 'info');
+      addToast(`${t('正在压缩')} ${item.name}...`, 'info');
       await AppGo.CompressItem(sessionId, remotePath);
-      addToast('压缩成功', 'success');
+      addToast(t('压缩成功'), 'success');
       await loadDir(currentPath);
     } catch (err) {
-      addToast(`压缩失败: ${err}`, 'error');
+      addToast(`${t('压缩失败')}: ${err}`, 'error');
       setLoading(false);
     }
   };
@@ -504,12 +617,12 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     const remotePath = currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`;
     try {
       setLoading(true);
-      addToast(`正在解压 ${item.name}...`, 'info');
+      addToast(`${t('正在解压')} ${item.name}...`, 'info');
       await AppGo.UncompressItem(sessionId, remotePath);
-      addToast('解压成功', 'success');
+      addToast(t('解压成功'), 'success');
       await loadDir(currentPath);
     } catch (err) {
-      addToast(`解压失败: ${err}`, 'error');
+      addToast(`${t('解压失败')}: ${err}`, 'error');
       setLoading(false);
     }
   };
@@ -529,16 +642,36 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     const newPath = currentPath === '/' ? `/${renameValue}` : `${currentPath}/${renameValue}`;
     try {
       await AppGo.RenameItem(sessionId, oldPath, newPath);
-      addToast('重命名成功', 'success');
+      addToast(t('重命名成功'), 'success');
       await loadDir(currentPath);
     } catch (err) {
-      addToast(`重命名失败: ${err}`, 'error');
+      addToast(`${t('重命名失败')}: ${err}`, 'error');
     } finally {
       setRenamingItem(null);
     }
   };
 
   const closeContextMenu = () => setContextMenu(null);
+
+  // Chmod
+  const handleChmod = (item) => {
+    const itemPath = currentPath === '/'
+      ? `/${item.name}`
+      : `${currentPath}/${item.name}`;
+    setChmodTarget({ item, path: itemPath });
+  };
+
+  const handleChmodSave = async (modeStr) => {
+    if (!chmodTarget) return;
+    try {
+      await AppGo.ChmodFile(sessionId, chmodTarget.path, modeStr);
+      addToast(t('权限修改成功'), 'success');
+      setChmodTarget(null);
+      await loadDir(currentPath);
+    } catch (err) {
+      addToast(`${t('权限修改失败')}: ${err}`, 'error');
+    }
+  };
 
   // ── 拖拽上传 ────────────────────────────────────────────────
 
@@ -574,7 +707,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
     const droppedFiles = Array.from(e.dataTransfer.files || []).filter(f => !isHiddenFile(f.name));
     if (droppedItems.length === 0 && droppedFiles.length === 0) return;
 
-    setTransferInfo({ name: '正在上传...', progress: 0, direction: 'upload' });
+    setTransferInfo({ name: t('正在上传...'), progress: 0, direction: 'upload' });
 
     let fileCount = 0;
     const uploadedNames = new Set(); // 追踪所有已成功上传的文件名
@@ -699,13 +832,13 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
       const failCount = pendingFailures.size;
       if (failCount > 0) {
         const failedNames = Array.from(pendingFailures).slice(0, 3).join(', ');
-        addToast(`上传完成: ${fileCount} 项成功, ${failCount} 项失败 (${failedNames})`, 'warning');
+        addToast(`${t('上传完成')}: ${fileCount}${t('项成功')}, ${failCount}${t('项失败')} (${failedNames})`, 'warning');
       } else {
-        addToast(`上传成功: ${fileCount} 项`, 'success');
+        addToast(`${t('上传成功')}: ${fileCount}${t('项')}`, 'success');
       }
       await loadDir(currentPath);
     } catch (err) {
-      if (err) addToast(`上传失败: ${err}`, 'error');
+      if (err) addToast(`${t('上传失败')}: ${err}`, 'error');
     } finally {
       setTransferInfo(null);
     }
@@ -748,7 +881,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
         </button>
         <button
           className="btn btn-ghost btn-sm btn-icon"
-          title="刷新"
+          title={t('刷新')}
           onClick={() => loadDir(currentPath)}
         >
           ↻
@@ -762,6 +895,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
           <div className="file-list-header">
             <span>{t('名称')}</span>
             <span>{t('大小')}</span>
+            <span>{t('权限')}</span>
             <span>{t('修改时间')}</span>
             <span></span>
           </div>
@@ -779,6 +913,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
                 <span className="file-icon">↩</span>
                 <span className="file-name is-dir">..</span>
               </div>
+              <span />
               <span />
               <span />
               <span />
@@ -837,31 +972,32 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
                 </div>
 
                 <span className="file-size">{item.isDirectory ? '-' : fmtSize(item.size)}</span>
+                <span className="file-permission" onClick={(e) => { e.stopPropagation(); handleChmod(item); }}>{item.permission || '-'}</span>
                 <span className="file-date">{fmtDate(item.modifyTime)}</span>
 
                 <div className="file-actions">
                   {!item.isDirectory && isEditable(item.name) && (
                     <button
                       className="btn btn-ghost btn-sm btn-icon"
-                      title="编辑"
+                      title={t('编辑')}
                       onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
                     >✏️</button>
                   )}
                   {!item.isDirectory && (
                     <button
                       className="btn btn-ghost btn-sm btn-icon"
-                      title="下载到本地"
+                      title={t('下载到本地')}
                       onClick={(e) => { e.stopPropagation(); handleDownload(item); }}
                     >⬇️</button>
                   )}
                   <button
                     className="btn btn-ghost btn-sm btn-icon"
-                    title="重命名"
+                    title={t('重命名')}
                     onClick={(e) => { e.stopPropagation(); startRename(item); }}
                   >✏</button>
                   <button
                     className="btn btn-ghost btn-sm btn-icon"
-                    title="删除"
+                    title={t('删除')}
                     style={{ color: 'var(--red)' }}
                     onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
                   >🗑</button>
@@ -890,6 +1026,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
           onDownload={() => { handleDownload(contextMenu.item); closeContextMenu(); }}
           onEdit={() => { handleEdit(contextMenu.item); closeContextMenu(); }}
           onRename={() => { startRename(contextMenu.item); closeContextMenu(); }}
+          onChmod={() => { handleChmod(contextMenu.item); closeContextMenu(); }}
           onDelete={() => { handleDelete(contextMenu.item); closeContextMenu(); }}
           onMkdir={() => { handleMkdir(); closeContextMenu(); }}
           onNewFile={() => { handleNewFile(); closeContextMenu(); }}
@@ -927,6 +1064,18 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
           splitPosition={editorSplitPosition}
           onSplitPositionChange={handleEditorSplitPositionChange}
           isActive={isActive}
+        />
+      )}
+
+      {/* Chmod Dialog */}
+      {chmodTarget && (
+        <ChmodDialog
+          path={chmodTarget.path}
+          permission={chmodTarget.item.permission}
+          mode={chmodTarget.item.mode}
+          onSave={handleChmodSave}
+          onClose={() => setChmodTarget(null)}
+          t={t}
         />
       )}
     </div>

@@ -40,16 +40,15 @@ export default function AddServerModal({ server, onSave, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.host.trim()) return window.luminDialog?.alert('请填写主机地址');
-    if (!form.username.trim()) return window.luminDialog?.alert('请填写用户名');
+    if (!form.host.trim()) return window.luminDialog?.alert(t('请填写主机地址'));
+    if (!form.username.trim()) return window.luminDialog?.alert(t('请填写用户名'));
 
     setSaving(true);
     try {
       const data = { ...form };
-      data.port = parseInt(data.port, 10) || 22; // ensure port is an integer
+      data.port = parseInt(data.port, 10) || 22;
       data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
       if (server?.id) data.id = server.id;
-      // If editing and password is empty, don't overwrite existing
       if (server?.id && !data.password) delete data.password;
       await onSave(data);
     } finally {
@@ -64,13 +63,12 @@ export default function AddServerModal({ server, onSave, onClose }) {
         setForm(f => ({ ...f, privateKey: content }));
       }
     } catch (e) {
-      // User cancelled or error
-      if (e) window.luminDialog?.alert(`读取私钥文件失败: ${e}`, '错误');
+      if (e) window.luminDialog?.alert(`${t('读取私钥文件失败')}: ${e}`, t('错误'));
     }
   };
 
   return (
-    <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay">
       <div className="modal modal-md">
         <div className="modal-header">
           <div className="modal-title">
@@ -82,9 +80,8 @@ export default function AddServerModal({ server, onSave, onClose }) {
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            {/* 基本信息 */}
             <div className="webdav-section">
-              <div className="webdav-section-title">🖥 {t('基本信息') || '基本信息'}</div>
+              <div className="webdav-section-title">🖥 {t('基本信息')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div className="form-group">
                   <label className="form-label">{t('服务器别名（选填）')}</label>
@@ -100,7 +97,7 @@ export default function AddServerModal({ server, onSave, onClose }) {
                     <label className="form-label">{t('主机地址 *')}</label>
                     <input
                       className="input"
-                      placeholder="192.168.1.1 或 example.com"
+                      placeholder={t('192.168.1.1 或 example.com')}
                       value={form.host}
                       onChange={set('host')}
                       required
@@ -132,7 +129,6 @@ export default function AddServerModal({ server, onSave, onClose }) {
               </div>
             </div>
 
-            {/* 认证方式 */}
             <div className="webdav-section">
               <div className="webdav-section-title">🔑 {t('认证方式')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -147,7 +143,7 @@ export default function AddServerModal({ server, onSave, onClose }) {
                 {form.authType === 'password' ? (
                   <div className="form-group" style={{ position: 'relative' }}>
                     <label className="form-label">
-                      {server ? '新密码（留空则不修改）' : '密码'} *
+                      {server ? t('新密码（留空则不修改）') : t('密码')} *
                     </label>
                     <input
                       className="input"
@@ -184,7 +180,7 @@ export default function AddServerModal({ server, onSave, onClose }) {
                       />
                     </div>
                     <div className="form-group" style={{ position: 'relative' }}>
-                      <label className="form-label">{t('私钥密码 (可选)')}</label>
+                      <label className="form-label">{t('私钥密码短语 (可选)')}</label>
                       <input
                         className="input"
                         type={showPassphrase ? "text" : "password"}

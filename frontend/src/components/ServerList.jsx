@@ -230,14 +230,14 @@ export default function ServerList({
                   </>
                 ) : (
                   ping !== undefined && !ping?.online ? (
-                    <span style={{ fontSize: 14, color: '#f87171', fontWeight: 'bold', lineHeight: 1 }} title="服务器离线或不可达">✕</span>
+                    <span style={{ fontSize: 14, color: '#f87171', fontWeight: 'bold', lineHeight: 1 }} title={t('服务器离线或不可达')}>✕</span>
                   ) : null
                 )}
 
                 {/* 编辑按钮 */}
                 <button
                   onClick={(e) => { e.stopPropagation(); onEdit(server); }}
-                  title="编辑服务器"
+                  title={t('编辑服务器')}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -264,12 +264,12 @@ export default function ServerList({
         <table className="server-table">
           <thead>
             <tr>
-              <th>系统</th>
-              <th>别名</th>
-              <th>主机地址</th>
-              <th>用户名</th>
-              <th>状态</th>
-              <th>操作</th>
+              <th>{t('系统')}</th>
+              <th>{t('别名')}</th>
+              <th>{t('主机地址')}</th>
+              <th>{t('用户名')}</th>
+              <th>{t('状态')}</th>
+              <th>{t('操作')}</th>
             </tr>
           </thead>
           <tbody>
@@ -331,7 +331,7 @@ export default function ServerList({
                       className="btn btn-ghost btn-sm"
                       style={{ padding: '4px 8px', fontSize: 12 }}
                     >
-                      编辑
+                      {t('编辑')}
                     </button>
                   </td>
                 </tr>

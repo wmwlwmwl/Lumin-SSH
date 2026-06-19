@@ -132,6 +132,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
   const [showConfirm, setShowConfirm] = useState(false);
   const [enabling, setEnabling] = useState(false);
   const [hideIP, setHideIP] = useState(false);
+  const [cpuExpanded, setCpuExpanded] = useState(false);
   const staticInfoRef = useRef(null);
 
   // 切换服务器时立即清空旧数据和静态缓存
@@ -141,6 +142,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
     setCpuHist(Array(30).fill(0));
     setUploadHist(Array(30).fill(0));
     setDownloadHist(Array(30).fill(0));
+    setCpuExpanded(false);
   }, [sessionId]);
 
   // 启用监控时获取一次静态信息（OS/时区/主机名/CPU 型号）
@@ -368,14 +370,19 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
         </div>
         {info.cpuModel && <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginBottom: 6, wordBreak: 'break-all' }}>{info.cpuModel}</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {cores.map((val, i) => (
+          {(cores.length > 8 && !cpuExpanded ? cores.slice(0, 8) : cores).map((val, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: '#4ade80', fontFamily: 'var(--font-mono)', width: 12, textAlign: 'right', flexShrink: 0 }}>{i}</span>
+              <span style={{ fontSize: 12, color: '#4ade80', fontFamily: 'var(--font-mono)', width: 16, textAlign: 'right', flexShrink: 0 }}>{i}</span>
               <CpuBar val={val} />
               <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-3)', width: 38, textAlign: 'right', flexShrink: 0 }}>{val.toFixed(1)}%</span>
             </div>
           ))}
         </div>
+        {cores.length > 8 && (
+          <button onClick={() => setCpuExpanded(v => !v)} style={{ display: 'block', width: '100%', marginTop: 6, padding: '4px 0', fontSize: 11, color: '#6366f1', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 5, cursor: 'pointer', textAlign: 'center' }}>
+            {cpuExpanded ? t('收起') : `${t('展开全部')} ${cores.length} ${t('核')}`}
+          </button>
+        )}
       </Card>
 
       {/* ── 内存 ── */}

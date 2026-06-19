@@ -5,6 +5,7 @@ import { Copy, Clipboard, Trash2, CheckSquare, Play, Clock, X } from 'lucide-rea
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import QuickCommands from './QuickCommands.jsx';
 import '@xterm/xterm/css/xterm.css';
+import { t } from '../i18n';
 import defaultTermBg from '../assets/term_bg.png';
 
 // ── 多套终端主题定义 ──────────────────────────────────────────────
@@ -828,7 +829,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                 e.target.style.borderColor = 'rgba(34, 197, 94, 0.3)';
               }}
             >
-              重新连接
+              {t('重新连接')}
             </button>
           )}
         </div>
@@ -867,7 +868,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             if (e.key === 'Enter') executeCommand();
             if (e.key === 'Escape') setShowHistory(false);
           }}
-          placeholder="输入命令"
+          placeholder={t('输入命令')}
           style={{
             flex: 1,
             fontSize: 12,
@@ -883,7 +884,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         <button
           ref={historyBtnRef}
           onClick={toggleHistory}
-          title="历史指令"
+          title={t('历史指令')}
           style={{
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px',
@@ -898,14 +899,14 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           }}
         >
           <Clock size={13} />
-          <span>历史</span>
+          <span>{t('历史')}</span>
         </button>
 
         {/* 快捷命令按钮 */}
         <button
           ref={commandsBtnRef}
           onClick={toggleCommands}
-          title="快捷命令"
+          title={t('快捷命令')}
           style={{
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px',
@@ -920,14 +921,14 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           }}
         >
           <span>⚡</span>
-          <span>命令</span>
+          <span>{t('命令')}</span>
         </button>
 
         {/* 执行按钮（绿色） */}
         <button
           onClick={executeCommand}
           disabled={!cmdInput.trim() || !isConnected}
-          title="执行"
+          title={t('执行')}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 30, height: 30,
@@ -947,7 +948,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         <button
           onClick={copyCommand}
           disabled={!cmdInput.trim()}
-          title="复制"
+          title={t('复制')}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 30, height: 30,
@@ -998,7 +999,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               flexShrink: 0,
             }}>
-              <span style={{ color: '#8b949e', fontSize: 11 }}>历史命令</span>
+              <span style={{ color: '#8b949e', fontSize: 11 }}>{t('历史命令')}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
                   onClick={() => {
@@ -1011,13 +1012,13 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   }}
                   style={{ ...btnStyle('red'), fontSize: 11, padding: '2px 8px' }}
                 >
-                  清空列表
+                  {t('清空列表')}
                 </button>
                 <button
                   onClick={() => { setShowHistory(false); setHistoryPopupPos(null); }}
-                  style={{ border: 'none', background: 'none', color: '#8b949e', cursor: 'pointer', padding: 2 }}
+                  style={btnStyle('red')}
                 >
-                  <X size={14} />
+                  <X size={12} />
                 </button>
               </div>
             </div>
@@ -1026,7 +1027,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             <div ref={historyScrollRef} style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {filteredHistory.length === 0 ? (
               <div style={{ padding: 20, textAlign: 'center', color: '#6e7681', fontSize: 12 }}>
-                {searchQuery ? '无匹配结果' : '暂无历史记录'}
+                {searchQuery ? t('无匹配结果') : t('暂无历史记录')}
               </div>
             ) : displayHistory.map(item => (
               <div
@@ -1059,7 +1060,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   {/* 执行（绿色） */}
                   <button
                     onClick={() => executeCommand(item.command)}
-                    title="执行"
+                    title={t('执行')}
                     style={{ ...iconBtnStyle('#22c55e', 'rgba(34,197,94,0.15)') }}
                   >
                     <Play size={12} />
@@ -1067,15 +1068,14 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   {/* 复制（蓝色） */}
                   <button
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(item.command).catch(() => {}); }}
-                    title="复制"
-                    style={{ ...iconBtnStyle('#58a6ff', 'rgba(88,166,255,0.15)') }}
-                  >
+                    title={t('复制')}
+                    style={{ ...iconBtnStyle('#58a6ff', 'rgba(88,166,255,0.15)') }}>
                     <Clipboard size={12} />
                   </button>
                   {/* 删除（红色） */}
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteHistoryItem(item.id); }}
-                    title="删除"
+                    title={t('删除')}
                     style={{ ...iconBtnStyle('#ff7b72', 'rgba(255,123,114,0.15)') }}
                   >
                     <X size={12} />
@@ -1095,7 +1095,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               <input
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="搜索命令..."
+                placeholder={t('搜索命令...')}
                 style={{
                   flex: 1,
                   padding: '4px 8px',
@@ -1119,7 +1119,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   whiteSpace: 'nowrap',
                 }}
               >
-                当前服务器
+                {t('当前服务器')}
               </button>
               <button
                 onClick={() => setHistoryMode('global')}
@@ -1133,7 +1133,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   whiteSpace: 'nowrap',
                 }}
               >
-                全部服务器
+                {t('全部服务器')}
               </button>
             </div>
           </div>
@@ -1196,11 +1196,11 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           }}
         >
           {[
-            { icon: <Copy size={13} />, label: '复制', action: 'copy', shortcut: 'Ctrl+C', disabled: !contextHasSelection },
-            { icon: <Clipboard size={13} />, label: '粘贴', action: 'paste', shortcut: 'Ctrl+V' },
+            { icon: <Copy size={13} />, label: t('复制'), action: 'copy', shortcut: 'Ctrl+C', disabled: !contextHasSelection },
+            { icon: <Clipboard size={13} />, label: t('粘贴'), action: 'paste', shortcut: 'Ctrl+V' },
             { type: 'separator' },
-            { icon: <CheckSquare size={13} />, label: '全选', action: 'selectAll' },
-            { icon: <Trash2 size={13} />, label: '清空屏幕', action: 'clear', shortcut: 'Ctrl+L' },
+            { icon: <CheckSquare size={13} />, label: t('全选'), action: 'selectAll' },
+            { icon: <Trash2 size={13} />, label: t('清空屏幕'), action: 'clear', shortcut: 'Ctrl+L' },
           ].map((item, idx) =>
             item.type === 'separator' ? (
               <div key={idx} className="context-menu-separator" />

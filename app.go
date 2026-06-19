@@ -318,6 +318,11 @@ func (a *App) RenameItem(sessionId string, oldPath string, newPath string) error
 	return a.sshManager.RenameItem(sessionId, oldPath, newPath)
 }
 
+// ChmodFile changes file permissions via SFTP
+func (a *App) ChmodFile(sessionId string, path string, mode string) error {
+	return a.sshManager.ChmodFile(sessionId, path, mode)
+}
+
 // CompressItem archives a file or directory on the remote server
 func (a *App) CompressItem(sessionId string, remotePath string) error {
 	return a.sshManager.CompressItem(sessionId, remotePath)

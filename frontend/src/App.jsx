@@ -225,7 +225,7 @@ export default function App() {
     try {
       await applyUpdate(startupUpdateInfo);
     } catch (err) {
-      addToast(`自动更新失败: ${err}`, 'error', 5000);
+      addToast(`${t('自动更新失败')}: ${err}`, 'error', 5000);
     }
   };
 
@@ -237,7 +237,7 @@ export default function App() {
         setQuickKey(content);
       }
     } catch (e) {
-      if (e) window.luminDialog?.alert(`读取私钥文件失败: ${e}`, '错误');
+      if (e) window.luminDialog?.alert(`${t('读取私钥文件失败')}: ${e}`, t('错误'));
     }
   };
 
@@ -251,12 +251,12 @@ export default function App() {
   // ── 闪电直连逻辑 ────────────────────────────────────────
   const handleQuickConnectDirect = async (e) => {
     if (e) e.preventDefault();
-    if (!quickHost.trim()) return window.luminDialog?.alert('请填写主机地址');
+    if (!quickHost.trim()) return window.luminDialog?.alert(t('请填写主机地址'));
 
     const tempId = `temp_${Date.now()}`;
     const tempServer = {
       id: '',
-      name: quickName.trim() || `闪连_${quickHost}`,
+      name: quickName.trim() || quickHost.trim(),
       host: quickHost.trim(),
       port: parseInt(quickPort, 10) || 22,
       username: quickUser.trim(),
@@ -273,7 +273,7 @@ export default function App() {
       serverName: tempServer.name,
       host: tempServer.host,
       status: 'connecting',
-      terminals: [{ id: sessionId, label: '终端1' }],
+      terminals: [{ id: sessionId, label: `${t('终端')}1` }],
     };
 
     setSessions((prev) => [...prev, newSession]);
@@ -340,7 +340,7 @@ export default function App() {
       );
       if (!isHostKeyChange && !isAuthFailed) {
         setConnectingServer(null);
-        addToast(`连接失败: ${err}`, 'error', 5000);
+        addToast(`${t('连接失败')}: ${err}`, 'error', 5000);
       }
     }
   };
@@ -359,7 +359,7 @@ export default function App() {
       const data = await AppGo.GetConnections();
       setServers(data || []);
     } catch (e) {
-      addToast('加载服务器配置失败', 'error');
+      addToast(t('加载服务器配置失败'), 'error');
     }
   }, [addToast]);
 
@@ -421,7 +421,7 @@ export default function App() {
       // 重建子终端 (终端2, 终端3, ...)
       const subTerminals = (session.terminals || []).filter(t => t.id !== session.id);
       const oldToNew = { [session.id]: session.id };
-      const newTerminals = [{ id: session.id, label: '终端1' }];
+      const newTerminals = [{ id: session.id, label: `${t('终端')}1` }];
       for (const sub of subTerminals) {
         try {
           const newTermId = await AppGo.OpenTerminal(session.id);
@@ -434,7 +434,7 @@ export default function App() {
         prev.map((s) => (s.id === session.id ? { ...s, status: 'connected', terminals: newTerminals } : s))
       );
       setConnectingServer(null);
-      addToast('重新连接成功', 'success');
+      addToast(t('重新连接成功'), 'success');
 
       // 切回重连前所在的终端
       if (requestingTerminalId && oldToNew[requestingTerminalId]) {
@@ -469,7 +469,7 @@ export default function App() {
       );
       if (!isHostKeyChange) {
         setConnectingServer(null);
-        addToast(`重新连接失败: ${err}`, 'error', 5000);
+        addToast(`${t('重新连接失败')}: ${err}`, 'error', 5000);
       }
     }
   }, [servers, addToast]);
@@ -490,7 +490,7 @@ export default function App() {
         }
         return prev;
       });
-      addToast('SSH 连接已意外断开', 'error', 4000);
+      addToast(t('SSH 连接已意外断开'), 'error', 4000);
     });
     return () => {
       if (unbind) unbind();
@@ -507,36 +507,36 @@ export default function App() {
       const oldFpList = (oldFingerprints || []).join('\n');
       const msg = isNew
         ? [
-            `首次连接到此主机，请确认密钥指纹：`,
+            t('首次连接到此主机，请确认密钥指纹：'),
             ``,
-            `主机: ${host}:${port}`,
+            `${t('主机:')} ${host}:${port}`,
             ``,
-            `密钥指纹:`,
+            t('密钥指纹:'),
             `${newFingerprint}`,
             ``,
-            `如果指纹与服务器管理员提供的匹配，点击"接受并保存"。`,
+            t('如果指纹与服务器管理员提供的匹配，点击"接受并保存"。'),
           ].join('\n')
         : [
-            `远程主机密钥已变更，可能存在中间人攻击！`,
+            t('远程主机密钥已变更，可能存在中间人攻击！'),
             ``,
-            `主机: ${host}:${port}`,
+            `${t('主机:')} ${host}:${port}`,
             ``,
-            `新密钥指纹:`,
+            t('新密钥指纹:'),
             `${newFingerprint}`,
             ``,
-            `旧密钥指纹:`,
+            t('旧密钥指纹:'),
             `${oldFpList}`,
             ``,
-            `如果确认这是预期的变更（如服务器重装），点击"接受并保存"。`,
+            t('如果确认这是预期的变更（如服务器重装），点击"接受并保存"。'),
           ].join('\n');
 
       const action = await window.luminDialog?.choice?.(
         msg,
-        isNew ? '🔑 主机密钥确认' : '⚠️ 主机密钥已变更',
+        isNew ? t('🔑 主机密钥确认') : t('⚠️ 主机密钥已变更'),
         [
-          { label: '只接受本次', value: 1, secondary: true },
-          { label: '接受并保存', value: 2, primary: true },
-          { label: '取消', value: 0, secondary: true },
+          { label: t('只接受本次'), value: 1, secondary: true },
+          { label: t('接受并保存'), value: 2, primary: true },
+          { label: t('取消'), value: 0, secondary: true },
         ]
       );
 
@@ -553,7 +553,7 @@ export default function App() {
           );
           setConnectingServer(null);
           addToast(
-            chosen === 2 ? '主机密钥已保存，连接成功' : '本次已接受，连接成功',
+            chosen === 2 ? t('主机密钥已保存，连接成功') : t('本次已接受，连接成功'),
             'success'
           );
 
@@ -581,7 +581,7 @@ export default function App() {
           )
         );
         setConnectingServer(null);
-        addToast(`连接失败: ${err}`, 'error', 5000);
+        addToast(`${t('连接失败')}: ${err}`, 'error', 5000);
       }
     });
     return () => {
@@ -596,16 +596,16 @@ export default function App() {
 
       const password = await window.luminDialog?.prompt?.(
         [
-          `认证失败，请输入正确的密码重试：`,
+          t('认证失败，请输入正确的密码重试：'),
           ``,
-          `主机: ${host}:${port}`,
-          `用户: ${username}`,
+          `${t('主机:')} ${host}:${port}`,
+          `${t('用户')}: ${username}`,
           ``,
-          `错误: ${error}`,
+          `${t('错误')}: ${error}`,
         ].join('\n'),
         '',
-        '认证失败',
-        '记住密码'
+        t('认证失败'),
+        t('记住密码')
       );
 
       if (password === null) {
@@ -614,7 +614,7 @@ export default function App() {
           prev.map((s) => (s.id === sessionId ? { ...s, status: 'error' } : s))
         );
         setConnectingServer(null);
-        addToast('用户取消连接', 'warning', 3000);
+        addToast(t('用户取消连接'), 'warning', 3000);
         return;
       }
 
@@ -635,7 +635,7 @@ export default function App() {
           prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
         );
         setConnectingServer(null);
-        addToast(persist ? '密码已保存，连接成功' : '连接成功', 'success', 3000);
+        addToast(persist ? t('密码已保存，连接成功') : t('连接成功'), 'success', 3000);
 
         // 连接成功后自动查询 OS 信息
         try {
@@ -669,7 +669,7 @@ export default function App() {
           prev.map((s) => (s.id === sessionId ? { ...s, status: 'error' } : s))
         );
         setConnectingServer(null);
-        addToast(`重连失败: ${String(retryErr)}`, 'error', 5000);
+        addToast(`${t('重新连接失败')}: ${String(retryErr)}`, 'error', 5000);
       }
     });
     return () => {
@@ -681,12 +681,12 @@ export default function App() {
   useEffect(() => {
     const unbind = EventsOn('close-request', async () => {
       const choice = await window.luminDialog?.choice?.(
-        '请选择操作',
-        '关闭窗口',
+        t('请选择操作'),
+        t('关闭窗口'),
         [
-          { label: '退出', value: 'quit', primary: true },
-          { label: '系统托盘', value: 'tray', secondary: true },
-          { label: '取消', value: 'cancel', secondary: true },
+          { label: t('退出'), value: 'quit', primary: true },
+          { label: t('系统托盘'), value: 'tray', secondary: true },
+          { label: t('取消'), value: 'cancel', secondary: true },
         ]
       );
       if (choice === 'quit') {
@@ -739,7 +739,7 @@ export default function App() {
       serverName: server.name || server.host,
       host: server.host,
       status: 'connecting',
-      terminals: [{ id: sessionId, label: '终端1' }],
+      terminals: [{ id: sessionId, label: `${t('终端')}1` }],
     };
 
     setSessions((prev) => [...prev, newSession]);
@@ -795,7 +795,7 @@ export default function App() {
       );
       if (!isHostKeyChange && !isAuthFailed) {
         setConnectingServer(null);
-        addToast(`连接失败: ${err}`, 'error', 5000);
+        addToast(`${t('连接失败')}: ${err}`, 'error', 5000);
       }
       // 主机密钥变更或认证失败时，保持 connectingServer 和 connecting 状态，等待弹窗确认
     }
@@ -840,11 +840,11 @@ export default function App() {
     
     // 计算下一个终端编号（找最大编号 + 1）
     let maxNum = 0;
-    (session.terminals || []).forEach(t => {
-      const match = t.label?.match(/终端(\d+)/);
+    (session.terminals || []).forEach(term => {
+      const match = term.label?.match(/(\d+)$/);
       if (match) maxNum = Math.max(maxNum, parseInt(match[1]));
     });
-    const termLabel = `终端${maxNum + 1}`;
+    const termLabel = `${t('终端')}${maxNum + 1}`;
     
     try {
       const newTermId = await AppGo.OpenTerminal(baseTermId);
@@ -857,7 +857,7 @@ export default function App() {
       setActiveTerminalId(newTermId);
       setContentTab('terminal');
     } catch (err) {
-      addToast(`新建终端失败: ${err}`, 'error', 5000);
+      addToast(`${t('新建终端失败')}: ${err}`, 'error', 5000);
     }
   }, [sessions, addToast]);
 
@@ -959,7 +959,7 @@ export default function App() {
     try {
       await AppGo.SaveConnection(data);
       await loadServers();
-      addToast(data.id ? '服务器配置已更新' : '服务器添加成功', 'success');
+      addToast(data.id ? t('服务器配置已更新') : t('服务器添加成功'), 'success');
       triggerAutoBackup();
     } catch (err) {
       addToast(err, 'error');
@@ -972,10 +972,10 @@ export default function App() {
     try {
       await AppGo.DeleteConnection(id);
       setServers((prev) => prev.filter((s) => s.id !== id));
-      addToast('服务器已删除', 'success');
+      addToast(t('服务器已删除'), 'success');
       triggerAutoBackup();
     } catch {
-      addToast('删除失败', 'error');
+      addToast(t('删除失败'), 'error');
     }
   }, [addToast, triggerAutoBackup]);
 
@@ -1017,7 +1017,7 @@ export default function App() {
                 className="btn btn-ghost btn-sm no-drag" 
                 onClick={() => { setActiveSessionId(null); setActiveTerminalId(null); }} 
                 style={{ marginRight: 8, height: '26px', display: 'flex', alignItems: 'center', gap: 4 }}
-                title="返回主页"
+                title={t('返回主页')}
               >
                 <House size={14} />
               </button>
@@ -1044,7 +1044,7 @@ export default function App() {
                         e.stopPropagation();
                         reconnectSession(s);
                       }}
-                      title="重新连接"
+                      title={t('重新连接')}
                       style={{
                         cursor: 'pointer',
                         opacity: 0.6,
@@ -1068,23 +1068,23 @@ export default function App() {
           {sessions.length === 0 && <div style={{ flex: 1 }}></div>}
 
           <div className="window-controls">
-            <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowSettings(true)} title="设置" style={{ display: 'flex', alignItems: 'center' }}><Settings size={16} /></button>
+            <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowSettings(true)} title={t('设置')} style={{ display: 'flex', alignItems: 'center' }}><Settings size={16} /></button>
             
             <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 8px' }}></div>
             
-            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowMinimise} title="最小化" style={{ display: 'flex', alignItems: 'center' }}><Minus size={14} /></button>
-            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowToggleMaximise} title="最大化" style={{ display: 'flex', alignItems: 'center' }}><Square size={14} /></button>
+            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowMinimise} title={t('最小化')} style={{ display: 'flex', alignItems: 'center' }}><Minus size={14} /></button>
+            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowToggleMaximise} title={t('最大化')} style={{ display: 'flex', alignItems: 'center' }}><Square size={14} /></button>
             <button
               className="btn btn-ghost btn-icon no-drag"
-              title="关闭"
+              title={t('关闭')}
               onClick={async () => {
                 const choice = await window.luminDialog?.choice?.(
-                  '请选择操作',
-                  '关闭窗口',
+                  t('请选择操作'),
+                  t('关闭窗口'),
                   [
-                    { label: '退出', value: 'quit', primary: true },
-                    { label: '系统托盘', value: 'tray', secondary: true },
-                    { label: '取消', value: 'cancel', secondary: true },
+                    { label: t('退出'), value: 'quit', primary: true },
+                    { label: t('系统托盘'), value: 'tray', secondary: true },
+                    { label: t('取消'), value: 'cancel', secondary: true },
                   ]
                 );
                 if (choice === 'quit') AppGo.DoQuit();
@@ -1197,7 +1197,7 @@ export default function App() {
                       <button
                         className={`btn-icon ${serverListViewMode === 'grid' ? 'active' : ''}`}
                         onClick={() => { setServerListViewMode('grid'); localStorage.setItem('serverListViewMode', 'grid'); }}
-                        title="卡片视图"
+                        title={t('卡片视图')}
                         style={{ padding: '2px 6px', fontSize: 12, background: serverListViewMode === 'grid' ? 'var(--bg-3)' : 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                       >
                         🔲
@@ -1205,7 +1205,7 @@ export default function App() {
                       <button
                         className={`btn-icon ${serverListViewMode === 'table' ? 'active' : ''}`}
                         onClick={() => { setServerListViewMode('table'); localStorage.setItem('serverListViewMode', 'table'); }}
-                        title="列表视图"
+                        title={t('列表视图')}
                         style={{ padding: '2px 6px', fontSize: 12, background: serverListViewMode === 'table' ? 'var(--bg-3)' : 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                       >
                         📄
@@ -1214,7 +1214,7 @@ export default function App() {
                     <button
                       className={`btn-icon ${hideSensitive ? 'active' : ''}`}
                       onClick={() => { const v = !hideSensitive; setHideSensitive(v); localStorage.setItem('hideSensitive', v); }}
-                      title={hideSensitive ? '显示敏感信息' : '隐藏敏感信息'}
+                      title={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')}
                       style={{ padding: '2px 8px', fontSize: 12, background: hideSensitive ? 'var(--bg-3)' : 'transparent', border: hideSensitive ? '1px solid var(--orange)' : '1px solid rgba(255,255,255,0.1)', borderRadius: 4, cursor: 'pointer', color: hideSensitive ? 'var(--orange)' : 'var(--text-3)' }}
                     >
                       {hideSensitive ? '🙈' : '🙉'}
@@ -1292,9 +1292,9 @@ export default function App() {
                         }
                       }}
                     >
-                      <option value="tab">标签页</option>
-                      <option value="left">左侧分屏</option>
-                      <option value="bottom">底部分屏</option>
+                      <option value="tab">{t('标签页')}</option>
+                      <option value="left">{t('左侧分屏')}</option>
+                      <option value="bottom">{t('底部分屏')}</option>
                     </select>
                   </div>
                 )}
@@ -1350,7 +1350,7 @@ export default function App() {
                 <button
                   className="btn-ghost"
                   onClick={() => openNewTerminal(activeSession.id)}
-                  title="新建终端"
+                  title={t('新建终端')}
                   style={{
                     marginLeft: 2, padding: '1px 6px',
                     fontSize: 12, lineHeight: 1,
@@ -1415,7 +1415,7 @@ export default function App() {
                     {/* 主要视口 (终端/标签页模式下的文件) */}
                     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
                       <div style={{ display: (contentTab === 'terminal' || s.status !== 'connected') ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', position: 'relative' }}>
-                        {(s.terminals && s.terminals.length > 0 ? s.terminals : [{ id: s.id, label: '终端' }]).map((t) => (
+                        {(s.terminals && s.terminals.length > 0 ? s.terminals : [{ id: s.id, label: t('终端') }]).map((t) => (
                           <div key={t.id} style={{
                             position: 'absolute', inset: 0,
                             display: ((contentTab === 'terminal' || s.status !== 'connected') && activeTerminalId === t.id) ? 'flex' : 'none',
@@ -1499,7 +1499,7 @@ export default function App() {
                   <div
                     className="split-resizer-v probe-resizer"
                     onMouseDown={(e) => startDrag(e, 'probe')}
-                    title="调整监控边栏宽度"
+                    title={t('调整监控边栏宽度')}
                   />
                   <div
                     className="probe-panel-wrapper"
@@ -1581,7 +1581,7 @@ export default function App() {
                   }}
                   onClick={() => setConnectingServer(null)}
                 >
-                  取消
+                  {t('取消')}
                 </button>
               </div>
             </div>
@@ -1615,7 +1615,7 @@ export default function App() {
             {/* 提示文字 */}
             <div style={{ fontSize: 12, color: '#6e7681', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ animation: 'spin 1.5s linear infinite', display: 'inline-block' }}>⟳</span>
-              正在建立 SSH 连接，请稍候...
+              {t('正在建立 SSH 连接，请稍候...')}
             </div>
           </div>
         </div>
@@ -1649,7 +1649,7 @@ export default function App() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6e7681', fontSize: 14, padding: '2px 6px' }}
-                title="展开窗口"
+                title={t('展开窗口')}
                 onClick={() => { import('../wailsjs/runtime/runtime.js').then(r => r.WindowShow()); setShowTrayPanel(false); }}
               >⤢</button>
               <button
@@ -1663,7 +1663,7 @@ export default function App() {
           <div style={{ flex: 1, padding: '12px 0', minHeight: 120 }}>
             {sessions.filter(s => s.status === 'connected').length > 0 ? (
               <>
-                <div style={{ fontSize: 11, color: '#6e7681', padding: '0 16px 8px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1 }}>会话</div>
+                <div style={{ fontSize: 11, color: '#6e7681', padding: '0 16px 8px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1 }}>{t('会话')}</div>
                 {sessions.filter(s => s.status === 'connected').map(s => (
                   <div key={s.id} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1682,16 +1682,16 @@ export default function App() {
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
                       <span style={{ fontSize: 14, color: '#f0f6fc', fontWeight: 500 }}>{s.serverName}</span>
                     </div>
-                    <span style={{ fontSize: 12, color: '#6e7681' }}>已连接</span>
+                    <span style={{ fontSize: 12, color: '#6e7681' }}>{t('已连接')}</span>
                   </div>
                 ))}
               </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '28px 16px', gap: 10 }}>
                 <div style={{ fontSize: 40 }}>😤</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#f0f6fc' }}>一切都很安静</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#f0f6fc' }}>{t('一切都很安静')}</div>
                 <div style={{ fontSize: 12, color: '#6e7681', textAlign: 'center', lineHeight: 1.6 }}>
-                  去连接个服务器吧，已经想念你了 🌿
+                  {t('去连接个服务器吧，已经想念你了 🌿')}
                 </div>
               </div>
             )}
@@ -1710,7 +1710,7 @@ export default function App() {
               onMouseLeave={e => e.currentTarget.style.color = '#6e7681'}
               onClick={() => AppGo.DoQuit()}
             >
-              <span>⏻</span> 退出 Lumin
+              <span>⏻</span> {t('退出 Lumin')}
             </button>
           </div>
         </div>

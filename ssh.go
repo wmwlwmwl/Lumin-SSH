@@ -1393,6 +1393,10 @@ func formatFileMode(mode os.FileMode) string {
 	return mode.String()
 }
 
+func fileModeNumeric(mode os.FileMode) string {
+	return fmt.Sprintf("%o", mode.Perm())
+}
+
 func (m *SSHManager) ListDir(sessionId string, path string) ([]map[string]interface{}, error) {
 	_, sftpClient, err := m.getClientEntry(sessionId)
 	if err != nil {
@@ -1409,12 +1413,28 @@ func (m *SSHManager) ListDir(sessionId string, path string) ([]map[string]interf
 
 	var results []map[string]interface{}
 	for _, f := range files {
+		permStr := formatFileMode(f.Mode())
+		modeNumeric := fileModeNumeric(f.Mode())
+
+		// 尝试从 Sys() 获取 UID/GID（*sftp.FileStat），非 sftp 环境可能为 nil
+		uid := "-"
+		gid := "-"
+		if stat, ok := f.Sys().(interface{ GetUID() uint32 }); ok {
+			uid = fmt.Sprintf("%d", stat.GetUID())
+		}
+		if stat, ok := f.Sys().(interface{ GetGID() uint32 }); ok {
+			gid = fmt.Sprintf("%d", stat.GetGID())
+		}
+
 		results = append(results, map[string]interface{}{
 			"name":        f.Name(),
 			"isDirectory": f.IsDir(),
 			"size":        f.Size(),
 			"modifyTime":  f.ModTime().Format(time.RFC3339),
-			"rights":      map[string]string{"user": formatFileMode(f.Mode())},
+			"permission":  permStr,
+			"mode":        modeNumeric,
+			"uid":         uid,
+			"gid":         gid,
 		})
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -1426,6 +1446,23 @@ func (m *SSHManager) ListDir(sessionId string, path string) ([]map[string]interf
 		return results[i]["name"].(string) < results[j]["name"].(string)
 	})
 	return results, nil
+}
+
+func (m *SSHManager) ChmodFile(sessionId string, path string, modeStr string) error {
+	_, sftpClient, err := m.getClientEntry(sessionId)
+	if err != nil {
+		return err
+	}
+	if sftpClient == nil {
+		return fmt.Errorf("SFTP not available")
+	}
+
+	// 解析八进制权限字符串（如 "0755"、"644"）
+	modeInt, err := strconv.ParseInt(modeStr, 8, 32)
+	if err != nil {
+		return fmt.Errorf("invalid mode: %v", err)
+	}
+	return sftpClient.Chmod(path, os.FileMode(modeInt))
 }
 
 func (m *SSHManager) ReadFile(sessionId string, path string) (string, error) {

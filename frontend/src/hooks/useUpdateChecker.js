@@ -27,9 +27,9 @@ async function resolveDownloadAsset(data) {
   if (data.assets && data.assets.length > 0) {
     let targetAsset = null;
     if (isPortable) {
-      targetAsset = data.assets.find(a => a.name.toLowerCase().includes('portable') && a.name.endsWith('.exe'));
+      targetAsset = data.assets.find(a => !/installer|setup/i.test(a.name) && a.name.endsWith('.exe'));
     } else {
-      targetAsset = data.assets.find(a => (a.name.toLowerCase().includes('setup') || a.name.toLowerCase().includes('installer')) && a.name.endsWith('.exe'));
+      targetAsset = data.assets.find(a => /setup|installer/i.test(a.name) && a.name.endsWith('.exe'));
     }
     if (!targetAsset) {
       targetAsset = data.assets.find(a => a.name.endsWith('.exe'));

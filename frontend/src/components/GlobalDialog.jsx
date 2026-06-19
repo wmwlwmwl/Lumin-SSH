@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import { useTranslation } from '../i18n.js';
+import { useTranslation, t } from '../i18n.js';
 
 export default function GlobalDialog() {
   const [dialogs, setDialogs] = useState([]);
@@ -8,7 +8,7 @@ export default function GlobalDialog() {
   useEffect(() => {
     // 注册全局 API
     window.luminDialog = {
-      alert: (message, title = '提示') => {
+      alert: (message, title = t('提示')) => {
         return new Promise((resolve) => {
           setDialogs(prev => [...prev, {
             id: Date.now() + Math.random(),
@@ -19,7 +19,7 @@ export default function GlobalDialog() {
           }]);
         });
       },
-      confirm: (message, title = '操作确认') => {
+      confirm: (message, title = t('操作确认')) => {
         return new Promise((resolve) => {
           setDialogs(prev => [...prev, {
             id: Date.now() + Math.random(),
@@ -31,7 +31,7 @@ export default function GlobalDialog() {
           }]);
         });
       },
-      prompt: (message, defaultValue = '', title = '输入信息', checkboxLabel = '') => {
+      prompt: (message, defaultValue = '', title = t('输入信息'), checkboxLabel = '') => {
         return new Promise((resolve) => {
           setDialogs(prev => [...prev, {
             id: Date.now() + Math.random(),

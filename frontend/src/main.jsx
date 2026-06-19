@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
+import { t } from './i18n.js';
 import './index.css';
 
 // 全局错误边界，防止渲染错误导致白屏
@@ -28,13 +29,13 @@ class ErrorBoundary extends React.Component {
           padding: 20, textAlign: 'center'
         }}>
           <div style={{ fontSize: 24 }}>⚠</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>界面渲染出错</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{t('界面渲染出错')}</div>
           <div style={{ fontSize: 11, color: '#8b949e', maxWidth: 500, wordBreak: 'break-all' }}>{msg}</div>
           <pre style={{ fontSize: 10, color: '#6e7681', maxHeight: 200, overflow: 'auto', background: 'rgba(255,255,255,0.05)', padding: 8, borderRadius: 4 }}>{stack}</pre>
           <button onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }} style={{
             padding: '6px 16px', borderRadius: 6, border: '1px solid #f85149', background: 'rgba(248,81,73,0.1)',
             color: '#f85149', cursor: 'pointer', fontSize: 13
-          }}>重新加载</button>
+          }}>{t('重新加载')}</button>
         </div>
       );
     }
