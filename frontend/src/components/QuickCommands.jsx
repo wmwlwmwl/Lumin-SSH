@@ -1360,7 +1360,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
       {/* ── 添加/编辑对话框（覆盖层） ── */}
       {dialog && (
         <>
-          <div onClick={() => { setShowGroupPicker(false); setDialog(null); }} style={{ position: 'fixed', inset: 0, zIndex: 299, background: 'rgba(0,0,0,0.4)' }} />
+          <div onClick={() => setShowGroupPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 299, background: 'rgba(0,0,0,0.4)' }} />
           <div style={{
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 300,
             width: 480, background: '#1c2128', border: '1px solid #30363d', borderRadius: 8,
