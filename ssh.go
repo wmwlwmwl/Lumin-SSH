@@ -1023,14 +1023,14 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 	memTotalMB := float64(memTotal) / 1024.0
 	memFreeMB := float64(memFree) / 1024.0
 	memCacheMB := float64(memBuffers+memCached+memSReclaimable) / 1024.0
-	// 使用 MemAvailable 计算已用内存，与 free 命令一致
-	var memUsedMB float64
-	if memAvailable > 0 {
-		memUsedMB = memTotalMB - float64(memAvailable)/1024.0
-	} else {
-		memUsedMB = memTotalMB - memFreeMB - memCacheMB
-	}
+	// 确保 used + cache + free = total，避免甜甜圈图溢出
+	memUsedMB := memTotalMB - memFreeMB - memCacheMB
 	if memUsedMB < 0 {
+		// cache 比 total-free 还大时，压缩 cache
+		memCacheMB = memTotalMB - memFreeMB
+		if memCacheMB < 0 {
+			memCacheMB = 0
+		}
 		memUsedMB = 0
 	}
 	swapTotalMB := float64(swapTotal) / 1024.0
