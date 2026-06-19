@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -118,21 +119,27 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 				signer, err = ssh.ParsePrivateKey([]byte(conn.PrivateKey))
 			}
 			if err != nil {
-				return fmt.Errorf("invalid private key: %v", err)
+				return fmt.Errorf("invalid private key: %w", err)
 			}
 			authMethods = append(authMethods, ssh.PublicKeys(signer))
 		}
 
 		knownHostsPath := getKnownHostsPath()
-		os.MkdirAll(filepath.Dir(knownHostsPath), 0700)
+		if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
+			log.Printf("[Connect] MkdirAll for known_hosts dir failed: %v", err)
+		}
 		if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
-			os.WriteFile(knownHostsPath, []byte(""), 0600)
+			if err := os.WriteFile(knownHostsPath, []byte(""), 0600); err != nil {
+				log.Printf("[Connect] failed to create known_hosts file: %v", err)
+			}
 		}
 
 		hostKeyCallback, err := knownhosts.New(knownHostsPath)
 		if err != nil {
 			// 创建空 known_hosts 文件后重试，而非禁用校验
-			os.WriteFile(knownHostsPath, []byte(""), 0600)
+			if err := os.WriteFile(knownHostsPath, []byte(""), 0600); err != nil {
+				log.Printf("[Connect] failed to recreate known_hosts file: %v", err)
+			}
 			hostKeyCallback, err = knownhosts.New(knownHostsPath)
 			if err != nil {
 				return fmt.Errorf("无法初始化主机密钥校验: %w", err)
@@ -494,6 +501,18 @@ func (m *SSHManager) getClientEntry(sessionId string) (*ssh.Client, *sftp.Client
 	return entry.Client, entry.SFTP, nil
 }
 
+// getSFTPClient 查找 session 对应的 SFTP 客户端，不可用时返回 error
+func (m *SSHManager) getSFTPClient(sessionId string) (*sftp.Client, error) {
+	_, sftpClient, err := m.getClientEntry(sessionId)
+	if err != nil {
+		return nil, err
+	}
+	if sftpClient == nil {
+		return nil, fmt.Errorf("SFTP not available")
+	}
+	return sftpClient, nil
+}
+
 func (m *SSHManager) Disconnect(sessionId string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -691,7 +710,9 @@ func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
 
 	case 2: // 接受并保存到 known_hosts
 		knownHostsPath := getKnownHostsPath()
-		os.MkdirAll(filepath.Dir(knownHostsPath), 0700)
+		if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
+			log.Printf("[AcceptHostKeyChange] MkdirAll for known_hosts dir failed: %v", err)
+		}
 
 		newLine := knownhosts.Line([]string{pending.Hostname}, pending.NewKey)
 
@@ -699,7 +720,7 @@ func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
 			// 密钥已变更：删除旧条目后追加新条目（原子写入：临时文件 + rename）
 			data, err := os.ReadFile(knownHostsPath)
 			if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("无法读取 known_hosts: %v", err)
+				return fmt.Errorf("无法读取 known_hosts: %w", err)
 			}
 
 			var newLines []string
@@ -725,19 +746,19 @@ func (m *SSHManager) AcceptHostKeyChange(sessionId string, action int) error {
 			// 原子写入：先写临时文件，再 rename 覆盖，避免中断损坏原文件
 			tmpPath := knownHostsPath + ".tmp"
 			if err := os.WriteFile(tmpPath, []byte(strings.Join(newLines, "\n")+"\n"), 0600); err != nil {
-				return fmt.Errorf("无法写入 known_hosts: %v", err)
+				return fmt.Errorf("无法写入 known_hosts: %w", err)
 			}
 			os.Rename(knownHostsPath, knownHostsPath+".bak")
 			if err := os.Rename(tmpPath, knownHostsPath); err != nil {
 				os.Rename(knownHostsPath+".bak", knownHostsPath) // 回滚
-				return fmt.Errorf("无法写入 known_hosts: %v", err)
+				return fmt.Errorf("无法写入 known_hosts: %w", err)
 			}
 			os.Remove(knownHostsPath + ".bak")
 		} else {
 			// 首次连接：直接追加新条目
 			f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 			if err != nil {
-				return fmt.Errorf("无法写入 known_hosts: %v", err)
+				return fmt.Errorf("无法写入 known_hosts: %w", err)
 			}
 			defer f.Close()
 			f.WriteString(newLine + "\n")
@@ -885,7 +906,7 @@ func (m *SSHManager) deployProbeScript(sftpClient *sftp.Client, connKey string) 
 		scriptPath = "/tmp/.lumin/probe.sh"
 		f, err = sftpClient.Create(scriptPath)
 		if err != nil {
-			return fmt.Errorf("cannot write probe script: %v", err)
+			return fmt.Errorf("cannot write probe script: %w", err)
 		}
 	}
 	_, err = f.Write([]byte(dynamicProbeScript))
@@ -1463,7 +1484,7 @@ func (m *SSHManager) ChmodFile(sessionId string, path string, modeStr string) er
 	// 解析八进制权限字符串（如 "0755"、"644"）
 	modeInt, err := strconv.ParseInt(modeStr, 8, 32)
 	if err != nil {
-		return fmt.Errorf("invalid mode: %v", err)
+		return fmt.Errorf("invalid mode: %w", err)
 	}
 	return sftpClient.Chmod(path, os.FileMode(modeInt))
 }
@@ -1503,12 +1524,9 @@ func (m *SSHManager) ReadFile(sessionId string, path string) (string, error) {
 }
 
 func (m *SSHManager) WriteFile(sessionId string, path string, content string) error {
-	_, sftpClient, err := m.getClientEntry(sessionId)
+	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return err
-	}
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
 	}
 
 	f, err := sftpClient.Create(path)
@@ -1595,12 +1613,9 @@ func (p *progressReader) Read(data []byte) (int, error) {
 }
 
 func (m *SSHManager) UploadFile(sessionId string, localPath string, remotePath string) error {
-	_, sftpClient, err := m.getClientEntry(sessionId)
+	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return err
-	}
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
 	}
 
 	src, err := os.Open(localPath)
@@ -1717,12 +1732,9 @@ func (m *SSHManager) UploadFileContent(sessionId string, fileName string, remote
 // UploadFileContentBase64 通过 base64 编码上传文件内容，避免前端将 Uint8Array
 // 展开为普通 Array 导致的内存爆炸（8-16 倍开销）。base64 仅 1.33 倍开销。
 func (m *SSHManager) UploadFileContentBase64(sessionId string, fileName string, remoteDir string, base64Content string) error {
-	_, sftpClient, err := m.getClientEntry(sessionId)
+	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return err
-	}
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
 	}
 
 	content, err := base64.StdEncoding.DecodeString(base64Content)
@@ -1798,7 +1810,7 @@ func (m *SSHManager) CompressItem(sessionId string, remotePath string) error {
 
 	out, err := m.executeCmdWithClient(client, cmd)
 	if err != nil {
-		return fmt.Errorf("compress failed: %v, output: %s", err, out)
+		return fmt.Errorf("compress failed: %w, output: %s", err, out)
 	}
 	return nil
 }
@@ -1837,7 +1849,7 @@ func (m *SSHManager) UncompressItem(sessionId string, remotePath string) error {
 
 	out, err := m.executeCmdWithClient(client, cmd)
 	if err != nil {
-		return fmt.Errorf("uncompress failed: %v, output: %s", err, out)
+		return fmt.Errorf("uncompress failed: %w, output: %s", err, out)
 	}
 	return nil
 }

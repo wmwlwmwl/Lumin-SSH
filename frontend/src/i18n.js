@@ -312,10 +312,6 @@ const dict = {
     "编辑服务器": "编辑服务器",
     "行": "行",
     "字节": "字节",
-    "保存中...": "保存中...",
-    "恢复中...": "恢复中...",
-    "确定恢复": "确定恢复",
-    "注：部分快捷键行为受终端内的 Shell 设置影响。": "注：部分快捷键行为受终端内的 Shell 设置影响。",
 
     // App.jsx
     "自动更新失败": "自动更新失败",
@@ -783,10 +779,6 @@ const dict = {
     "编辑服务器": "Edit Server",
     "行": " lines",
     "字节": " bytes",
-    "保存中...": "Saving...",
-    "恢复中...": "Restoring...",
-    "确定恢复": "Confirm Restore",
-    "注：部分快捷键行为受终端内的 Shell 设置影响。": "Note: Some shortcut behaviors are affected by the terminal Shell settings.",
 
     // App.jsx
     "自动更新失败": "Auto-update failed",

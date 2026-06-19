@@ -55,22 +55,29 @@ const rhelRepo = StreamLanguage.define({
   }
 });
 
-// 根据文件扩展名返回对应的 CodeMirror 语言
+// 根据文件扩展名返回对应的 CodeMirror 语言（带缓存，避免每次创建新实例）
+const LANG_CACHE = {};
 function getLanguage(filename) {
   const ext = (filename.split('.').pop() || '').toLowerCase();
-  const map = {
-    js: javascript(), jsx: javascript({ jsx: true }),
-    ts: javascript({ typescript: true }), tsx: javascript({ jsx: true, typescript: true }),
-    py: python(),
-    html: html(), htm: html(),
-    css: css(), scss: css(), less: css(),
-    json: json(),
-    xml: xml(), svg: xml(),
-    sql: sql(),
-    sh: StreamLanguage.define(shell), bash: StreamLanguage.define(shell), zsh: StreamLanguage.define(shell),
-    list: debianList, sources: debianList, repo: rhelRepo,
-  };
-  return map[ext] || null;
+  if (LANG_CACHE[ext]) return LANG_CACHE[ext];
+  let lang = null;
+  switch (ext) {
+    case 'js': lang = javascript(); break;
+    case 'jsx': lang = javascript({ jsx: true }); break;
+    case 'ts': lang = javascript({ typescript: true }); break;
+    case 'tsx': lang = javascript({ jsx: true, typescript: true }); break;
+    case 'py': lang = python(); break;
+    case 'html': case 'htm': lang = html(); break;
+    case 'css': case 'scss': case 'less': lang = css(); break;
+    case 'json': lang = json(); break;
+    case 'xml': case 'svg': lang = xml(); break;
+    case 'sql': lang = sql(); break;
+    case 'sh': case 'bash': case 'zsh': lang = StreamLanguage.define(shell); break;
+    case 'list': case 'sources': lang = debianList; break;
+    case 'repo': lang = rhelRepo; break;
+  }
+  LANG_CACHE[ext] = lang;
+  return lang;
 }
 
 const MODE_ICONS_KEYS = {
@@ -88,6 +95,33 @@ const SPLIT_ICONS_KEYS = {
 };
 
 const SPLIT_ORDER = ['left', 'right', 'bottom'];
+
+const BASIC_SETUP = {
+  lineNumbers: true,
+  highlightActiveLineGutter: true,
+  highlightSpecialChars: true,
+  history: true,
+  foldGutter: true,
+  drawSelection: true,
+  dropCursor: true,
+  allowMultipleSelections: true,
+  indentOnInput: true,
+  syntaxHighlighting: true,
+  bracketMatching: true,
+  closeBrackets: true,
+  autocompletion: true,
+  rectangularSelection: true,
+  crosshairCursor: false,
+  highlightActiveLine: true,
+  highlightSelectionMatches: true,
+  closeBracketsKeymap: true,
+  defaultKeymap: true,
+  searchKeymap: true,
+  historyKeymap: true,
+  foldKeymap: true,
+  completionKeymap: true,
+  lintKeymap: true,
+};
 
 export default function FileEditor({
   files,
@@ -538,32 +572,7 @@ export default function FileEditor({
             extensions={extensions}
             onChange={handleChange}
             style={{ fontSize: 14, height: '100%' }}
-            basicSetup={{
-              lineNumbers: true,
-              highlightActiveLineGutter: true,
-              highlightSpecialChars: true,
-              history: true,
-              foldGutter: true,
-              drawSelection: true,
-              dropCursor: true,
-              allowMultipleSelections: true,
-              indentOnInput: true,
-              syntaxHighlighting: true,
-              bracketMatching: true,
-              closeBrackets: true,
-              autocompletion: true,
-              rectangularSelection: true,
-              crosshairCursor: false,
-              highlightActiveLine: true,
-              highlightSelectionMatches: true,
-              closeBracketsKeymap: true,
-              defaultKeymap: true,
-              searchKeymap: true,
-              historyKeymap: true,
-              foldKeymap: true,
-              completionKeymap: true,
-              lintKeymap: true,
-            }}
+            basicSetup={BASIC_SETUP}
           />
         )}
       </div>

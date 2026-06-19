@@ -311,6 +311,7 @@ function ContextMenu({ pos, item, onClose, onDownload, onEdit, onRename, onDelet
 
 export default function FileManager({ sessionId, addToast, isActive = true }) {
   const { t } = useTranslation();
+  const joinPath = (base, name) => base === '/' ? `/${name}` : `${base}/${name}`;
   const [currentPath, setCurrentPath] = useState('/');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -556,9 +557,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
   // Delete
   const handleDelete = async (item) => {
-    const remotePath = currentPath === '/'
-      ? `/${item.name}`
-      : `${currentPath}/${item.name}`;
+    const remotePath = joinPath(currentPath, item.name);
     if (!(await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？${t('此操作不可撤销')}`))) return;
     try {
       await AppGo.DeleteItem(sessionId, remotePath, item.isDirectory);
@@ -655,9 +654,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
   // Chmod
   const handleChmod = (item) => {
-    const itemPath = currentPath === '/'
-      ? `/${item.name}`
-      : `${currentPath}/${item.name}`;
+    const itemPath = joinPath(currentPath, item.name);
     setChmodTarget({ item, path: itemPath });
   };
 
@@ -746,8 +743,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
           if (files.length === 0) continue;
 
           const dirName = entry.name;
-          const baseRemote =
-            currentPath === '/' ? `/${dirName}` : `${currentPath}/${dirName}`;
+          const baseRemote = joinPath(currentPath, dirName);
 
           // 收集目录结构和文件任务
           const subDirs = new Set();

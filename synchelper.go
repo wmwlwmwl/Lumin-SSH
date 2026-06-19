@@ -70,7 +70,7 @@ func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte) (*SyncS
 	// 回退旧格式（纯连接列表）
 	var conns []Connection
 	if err := json.Unmarshal([]byte(decrypted), &conns); err != nil {
-		return nil, fmt.Errorf("解析备份文件出错：%v", err)
+		return nil, fmt.Errorf("解析备份文件出错：%w", err)
 	}
 	return &SyncSnapshot{Connections: conns}, nil
 }
@@ -168,7 +168,7 @@ func snapshotEqual(s1, s2 *SyncSnapshot) bool {
 func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error) {
 	files, err := s.ListFiles()
 	if err != nil {
-		return nil, fmt.Errorf("读取远程目录失败：%v", err)
+		return nil, fmt.Errorf("读取远程目录失败：%w", err)
 	}
 
 	var latest string
@@ -197,7 +197,10 @@ func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[
 		QuickCommands: c.loadRawFile(c.quickCmdFile),
 	}
 	data, _ := json.MarshalIndent(snap, "", "  ")
-	encrypted := c.encryptWithKey(string(data), s.EncryptKey())
+	encrypted, err := c.encryptWithKey(string(data), s.EncryptKey())
+	if err != nil {
+		return nil, fmt.Errorf("encrypt snapshot: %w", err)
+	}
 
 	// 文件名精度到毫秒，避免自动同步与手动同步在同一秒触发时写入同一文件名导致覆盖
 	timestamp := time.Now().Format("20060102_150405.000")
@@ -288,7 +291,9 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage) (map[string]interface{
 	// 合并快捷命令（双向：按 name 去重合并）
 	localQuickCmds := c.loadRawFile(c.quickCmdFile)
 	mergedQuickCmds := c.mergeQuickCommands(localQuickCmds, remoteSnap.QuickCommands)
-	os.WriteFile(c.quickCmdFile, []byte(mergedQuickCmds), 0600)
+	if err := os.WriteFile(c.quickCmdFile, []byte(mergedQuickCmds), 0600); err != nil {
+		log.Printf("[syncFromProvider] failed to write quick commands: %v", err)
+	}
 
 	var backupResult interface{}
 	changed := !connsEqual(deduped, remoteSnap.Connections) ||
@@ -395,11 +400,6 @@ func (c *ConfigManager) AutoSync() {
 		}(p)
 	}
 	wg.Wait()
-}
-
-// AutoSyncToWebdav 保留向后兼容
-func (c *ConfigManager) AutoSyncToWebdav() {
-	c.AutoSync()
 }
 
 // cmdKey 生成去重键：名称+命令（命令相同的项视为重复）
@@ -521,7 +521,9 @@ func (c *ConfigManager) restoreSnapshotToLocal(snap *SyncSnapshot) {
 	}
 	c.saveConnectionsFile(snap.Connections)
 	if snap.QuickCommands != "" {
-		os.WriteFile(c.quickCmdFile, []byte(snap.QuickCommands), 0600)
+		if err := os.WriteFile(c.quickCmdFile, []byte(snap.QuickCommands), 0600); err != nil {
+			log.Printf("[restoreSnapshotToLocal] failed to write quick commands: %v", err)
+		}
 	}
 }
 

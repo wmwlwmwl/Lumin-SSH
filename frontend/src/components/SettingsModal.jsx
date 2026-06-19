@@ -170,11 +170,11 @@ const PROVIDERS = {
   webdav: {
     name: 'WebDAV',
     icon: '☁️',
-    title: $t('WebDAV 配置'),
-    subtitle: $t('配置 WebDAV 端点用于加密同步服务器列表'),
+    titleKey: 'WebDAV 配置',
+    subtitleKey: '配置 WebDAV 端点用于加密同步服务器列表',
     accent: 'var(--green)',
     accentRgb: '16, 185, 129',
-    successMsg: $t('已成功绑定 WebDAV 服务'),
+    successMsgKey: '已成功绑定 WebDAV 服务',
     defaultForm: defaultWebdavForm,
     test: (f) => AppGo.TestWebdavConnection(f.url, f.username, f.password),
     save: (f) => AppGo.SaveWebdavConfig(f),
@@ -195,11 +195,11 @@ const PROVIDERS = {
   r2: {
     name: 'R2',
     icon: '🗄️',
-    title: $t('R2 (S3 兼容) 配置'),
-    subtitle: $t('配置 Cloudflare R2 或任意 S3 兼容对象存储用于加密同步'),
+    titleKey: 'R2 (S3 兼容) 配置',
+    subtitleKey: '配置 Cloudflare R2 或任意 S3 兼容对象存储用于加密同步',
     accent: '#3b82f6',
     accentRgb: '59, 130, 246',
-    successMsg: $t('已成功绑定 R2 对象存储'),
+    successMsgKey: '已成功绑定 R2 对象存储',
     defaultForm: defaultR2Form,
     test: (f) => AppGo.TestR2Connection(f.accessKeyId, f.secretAccessKey, f.bucket, f.endpoint),
     save: (f) => AppGo.SaveR2Config(f),
@@ -220,11 +220,11 @@ const PROVIDERS = {
   ftp: {
     name: 'FTP',
     icon: '📁',
-    title: $t('FTP 配置'),
-    subtitle: $t('配置 FTP 服务器用于加密同步服务器列表'),
+    titleKey: 'FTP 配置',
+    subtitleKey: '配置 FTP 服务器用于加密同步服务器列表',
     accent: '#f472b6',
     accentRgb: '244, 114, 182',
-    successMsg: $t('已成功绑定 FTP 服务器'),
+    successMsgKey: '已成功绑定 FTP 服务器',
     defaultForm: defaultFTPForm,
     test: (f) => AppGo.TestFTPConnection(f.host, f.port, f.username, f.password),
     save: (f) => AppGo.SaveFTPConfig({ host: f.host, port: String(f.port), username: f.username, password: f.password, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
@@ -246,11 +246,11 @@ const PROVIDERS = {
   sftp: {
     name: 'SFTP',
     icon: '🔒',
-    title: $t('SFTP (SSH) 配置'),
-    subtitle: $t('配置 SFTP 服务器用于加密同步服务器列表'),
+    titleKey: 'SFTP (SSH) 配置',
+    subtitleKey: '配置 SFTP 服务器用于加密同步服务器列表',
     accent: '#22c55e',
     accentRgb: '34, 197, 94',
-    successMsg: $t('已成功绑定 SFTP 服务器'),
+    successMsgKey: '已成功绑定 SFTP 服务器',
     defaultForm: defaultSFTPForm,
     test: (f) => AppGo.TestSFTPConnection(f.host, f.port, f.username, f.password, f.authMethod, f.privateKey),
     save: (f) => AppGo.SaveSFTPConfig({ host: f.host, port: String(f.port), username: f.username, password: f.password, authMethod: f.authMethod, privateKey: f.privateKey, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
@@ -286,8 +286,8 @@ function ProviderCard({ provider, form, configured, editing, onEdit, onCancelEdi
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--bg-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{provider.icon}</div>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)' }}>{provider.title}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-4)' }}>{provider.subtitle}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)' }}>{$t(provider.titleKey)}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-4)' }}>{$t(provider.subtitleKey)}</div>
         </div>
       </div>
 
@@ -312,7 +312,7 @@ function ProviderCard({ provider, form, configured, editing, onEdit, onCancelEdi
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: accent, boxShadow: `0 0 10px ${accent}` }}></div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', letterSpacing: '0.3px' }}>{provider.successMsg}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', letterSpacing: '0.3px' }}>{$t(provider.successMsgKey)}</div>
             </div>
             <button onClick={onEdit} style={{
               padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 500,
@@ -365,14 +365,14 @@ function ProviderCard({ provider, form, configured, editing, onEdit, onCancelEdi
 
 // 快捷键行配置
 const SHORTCUT_ROWS = [
-  { label: $t('从终端复制'), key: 'copy' },
-  { label: $t('粘贴到终端'), key: 'paste' },
-  { label: $t('清空终端缓冲区'), key: 'clear' },
-  { label: $t('新建本地标签页'), key: 'newTab' },
-  { label: $t('打断当前指令 (SIGINT)'), key: 'sigint' },
-  { label: $t('结束终端会话 (EOF)'), key: 'eof' },
-  { label: $t('后台挂起进程 (SIGTSTP)'), key: 'suspend' },
-  { label: $t('清空当前输入行'), key: 'clearLine' },
+  { labelKey: '从终端复制', key: 'copy' },
+  { labelKey: '粘贴到终端', key: 'paste' },
+  { labelKey: '清空终端缓冲区', key: 'clear' },
+  { labelKey: '新建本地标签页', key: 'newTab' },
+  { labelKey: '打断当前指令 (SIGINT)', key: 'sigint' },
+  { labelKey: '结束终端会话 (EOF)', key: 'eof' },
+  { labelKey: '后台挂起进程 (SIGTSTP)', key: 'suspend' },
+  { labelKey: '清空当前输入行', key: 'clearLine' },
 ];
 
 // 单个快捷键行
@@ -1385,7 +1385,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                     {SHORTCUT_ROWS.map((row, idx) => (
                       <ShortcutRow
                         key={row.key}
-                        label={row.label}
+                        label={$t(row.labelKey)}
                         keyName={row.key}
                         shortcuts={shortcuts}
                         listeningKey={listeningKey}

@@ -48,7 +48,9 @@ func (c *ConfigManager) GetR2Config() *R2Config {
 		return nil
 	}
 	var conf R2Config
-	json.Unmarshal(data, &conf)
+	if err := json.Unmarshal(data, &conf); err != nil {
+		return nil
+	}
 	conf.AccessKeyID = c.decrypt(conf.AccessKeyID)
 	conf.SecretAccessKey = c.decrypt(conf.SecretAccessKey)
 	if conf.Region == "" {
@@ -91,14 +93,23 @@ func (c *ConfigManager) SaveR2Config(config map[string]string) error {
 	}
 
 	conf := R2Config{
-		AccessKeyID:     c.encrypt(accessKey),
-		SecretAccessKey: c.encrypt(secretKey),
-		Bucket:          config["bucket"],
-		Endpoint:        sanitizeEndpoint(config["endpoint"]),
-		Region:          region,
-		Prefix:          prefix,
-		MaxBackups:      maxBackups,
+		Bucket:     config["bucket"],
+		Endpoint:   sanitizeEndpoint(config["endpoint"]),
+		Region:     region,
+		Prefix:     prefix,
+		MaxBackups: maxBackups,
 	}
+
+	encKey, err := c.encrypt(accessKey)
+	if err != nil {
+		return fmt.Errorf("encrypt access key: %w", err)
+	}
+	encSecret, err := c.encrypt(secretKey)
+	if err != nil {
+		return fmt.Errorf("encrypt secret key: %w", err)
+	}
+	conf.AccessKeyID = encKey
+	conf.SecretAccessKey = encSecret
 	r2File := filepath.Join(c.configDir, "r2.json")
 	data, _ := json.MarshalIndent(conf, "", "  ")
 	return os.WriteFile(r2File, data, 0600)

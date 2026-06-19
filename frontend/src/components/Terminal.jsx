@@ -11,6 +11,26 @@ import defaultTermBg from '../assets/term_bg.png';
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
+// 命令栏按钮样式辅助函数
+const btnStyle = (color) => ({
+  border: 'none',
+  background: 'transparent',
+  color: color === 'red' ? '#ff7b72' : '#8b949e',
+  cursor: 'pointer',
+  borderRadius: 3,
+  padding: '2px 6px',
+});
+const iconBtnStyle = (color, bg) => ({
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  width: 22, height: 22,
+  background: bg,
+  border: '1px solid transparent',
+  borderRadius: 3,
+  color,
+  cursor: 'pointer',
+  transition: 'all 0.1s',
+});
+
 // ── 多套终端主题定义 ──────────────────────────────────────────────
 const TERMINAL_THEMES = {
   'lumin': {
@@ -726,26 +746,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       AppGo.SaveCommandHistory(historyServerId, JSON.stringify(next)).catch(() => {});
     }
   };
-
-  // 命令栏按钮样式辅助函数
-  const btnStyle = (color) => ({
-    border: 'none',
-    background: 'transparent',
-    color: color === 'red' ? '#ff7b72' : '#8b949e',
-    cursor: 'pointer',
-    borderRadius: 3,
-    padding: '2px 6px',
-  });
-  const iconBtnStyle = (color, bg) => ({
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 22, height: 22,
-    background: bg,
-    border: '1px solid transparent',
-    borderRadius: 3,
-    color,
-    cursor: 'pointer',
-    transition: 'all 0.1s',
-  });
 
   return (
     <div 

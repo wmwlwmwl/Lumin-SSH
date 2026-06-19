@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -51,7 +52,9 @@ func (c *ConfigManager) GetSFTPConfig() *SFTPConfig {
 		return nil
 	}
 	var conf SFTPConfig
-	json.Unmarshal(data, &conf)
+	if err := json.Unmarshal(data, &conf); err != nil {
+		return nil
+	}
 	conf.Username = c.decrypt(conf.Username)
 	conf.Password = c.decrypt(conf.Password)
 	conf.PrivateKey = c.decrypt(conf.PrivateKey)
@@ -104,13 +107,26 @@ func (c *ConfigManager) SaveSFTPConfig(config map[string]string) error {
 	conf := SFTPConfig{
 		Host:       config["host"],
 		Port:       port,
-		Username:   c.encrypt(username),
 		AuthMethod: config["authMethod"],
-		Password:   c.encrypt(password),
-		PrivateKey: c.encrypt(privateKey),
 		RemoteDir:  remoteDir,
 		MaxBackups: maxBackups,
 	}
+
+	encUser, err := c.encrypt(username)
+	if err != nil {
+		return fmt.Errorf("encrypt username: %w", err)
+	}
+	encPass, err := c.encrypt(password)
+	if err != nil {
+		return fmt.Errorf("encrypt password: %w", err)
+	}
+	encKey, err := c.encrypt(privateKey)
+	if err != nil {
+		return fmt.Errorf("encrypt private key: %w", err)
+	}
+	conf.Username = encUser
+	conf.Password = encPass
+	conf.PrivateKey = encKey
 	sftpFile := filepath.Join(c.configDir, "sftp.json")
 	data, _ := json.MarshalIndent(conf, "", "  ")
 	return os.WriteFile(sftpFile, data, 0600)
@@ -120,14 +136,20 @@ func (c *ConfigManager) SaveSFTPConfig(config map[string]string) error {
 // 首次连接时自动将主机密钥写入 known_hosts；后续连接若密钥不匹配则拒绝。
 func sftpHostKeyCallback() ssh.HostKeyCallback {
 	hostKeyPath := getKnownHostsPath()
-	os.MkdirAll(filepath.Dir(hostKeyPath), 0700)
+	if err := os.MkdirAll(filepath.Dir(hostKeyPath), 0700); err != nil {
+		log.Printf("[sftpHostKeyCallback] MkdirAll for known_hosts dir failed: %v", err)
+	}
 	if _, err := os.Stat(hostKeyPath); os.IsNotExist(err) {
-		os.WriteFile(hostKeyPath, []byte(""), 0600)
+		if err := os.WriteFile(hostKeyPath, []byte(""), 0600); err != nil {
+			log.Printf("[sftpHostKeyCallback] failed to create known_hosts file: %v", err)
+		}
 	}
 	cb, err := knownhosts.New(hostKeyPath)
 	if err != nil {
 		// known_hosts 损坏，重建空文件后重试，而非禁用校验
-		os.WriteFile(hostKeyPath, []byte(""), 0600)
+		if err := os.WriteFile(hostKeyPath, []byte(""), 0600); err != nil {
+			log.Printf("[sftpHostKeyCallback] failed to recreate known_hosts file: %v", err)
+		}
 		cb, err = knownhosts.New(hostKeyPath)
 		if err != nil {
 			return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
@@ -166,7 +188,7 @@ func (c *ConfigManager) TestSFTPConnection(host string, port int, username, pass
 	if authMethod == "key" {
 		signer, err := ssh.ParsePrivateKey([]byte(privateKey))
 		if err != nil {
-			return fmt.Errorf("解析私钥失败：%v", err)
+			return fmt.Errorf("解析私钥失败：%w", err)
 		}
 		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	} else {
@@ -175,19 +197,19 @@ func (c *ConfigManager) TestSFTPConnection(host string, port int, username, pass
 
 	sshClient, err := ssh.Dial("tcp", dialAddr(host, port), sshConfig)
 	if err != nil {
-		return fmt.Errorf("SSH 连接失败：%v", err)
+		return fmt.Errorf("SSH 连接失败：%w", err)
 	}
 	defer sshClient.Close()
 
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
-		return fmt.Errorf("SFTP 初始化失败：%v", err)
+		return fmt.Errorf("SFTP 初始化失败：%w", err)
 	}
 	defer sftpClient.Close()
 
 	_, err = sftpClient.ReadDir("/")
 	if err != nil {
-		return fmt.Errorf("读取根目录失败：%v", err)
+		return fmt.Errorf("读取根目录失败：%w", err)
 	}
 
 	return nil
@@ -208,7 +230,7 @@ func (c *ConfigManager) newSFTPClient() (*sftp.Client, *ssh.Client, error) {
 	if conf.AuthMethod == "key" {
 		signer, err := ssh.ParsePrivateKey([]byte(conf.PrivateKey))
 		if err != nil {
-			return nil, nil, fmt.Errorf("解析私钥失败：%v", err)
+			return nil, nil, fmt.Errorf("解析私钥失败：%w", err)
 		}
 		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	} else {
@@ -217,13 +239,13 @@ func (c *ConfigManager) newSFTPClient() (*sftp.Client, *ssh.Client, error) {
 
 	sshClient, err := ssh.Dial("tcp", dialAddr(conf.Host, conf.Port), sshConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("SSH 连接失败：%v", err)
+		return nil, nil, fmt.Errorf("SSH 连接失败：%w", err)
 	}
 
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		sshClient.Close()
-		return nil, nil, fmt.Errorf("SFTP 初始化失败：%v", err)
+		return nil, nil, fmt.Errorf("SFTP 初始化失败：%w", err)
 	}
 
 	return sftpClient, sshClient, nil
@@ -238,7 +260,7 @@ func (c *ConfigManager) ensureSFTPDir(client *sftp.Client) error {
 	if err != nil {
 		err = client.MkdirAll(conf.RemoteDir)
 		if err != nil {
-			return fmt.Errorf("创建远程目录失败：%v", err)
+			return fmt.Errorf("创建远程目录失败：%w", err)
 		}
 	}
 	return nil

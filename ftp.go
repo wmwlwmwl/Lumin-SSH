@@ -47,7 +47,9 @@ func (c *ConfigManager) GetFTPConfig() *FTPConfig {
 		return nil
 	}
 	var conf FTPConfig
-	json.Unmarshal(data, &conf)
+	if err := json.Unmarshal(data, &conf); err != nil {
+		return nil
+	}
 	conf.Username = c.decrypt(conf.Username)
 	conf.Password = c.decrypt(conf.Password)
 	if conf.RemoteDir == "" {
@@ -95,11 +97,20 @@ func (c *ConfigManager) SaveFTPConfig(config map[string]string) error {
 	conf := FTPConfig{
 		Host:       config["host"],
 		Port:       port,
-		Username:   c.encrypt(username),
-		Password:   c.encrypt(password),
 		RemoteDir:  remoteDir,
 		MaxBackups: maxBackups,
 	}
+
+	encUser, err := c.encrypt(username)
+	if err != nil {
+		return fmt.Errorf("encrypt username: %w", err)
+	}
+	encPass, err := c.encrypt(password)
+	if err != nil {
+		return fmt.Errorf("encrypt password: %w", err)
+	}
+	conf.Username = encUser
+	conf.Password = encPass
 	ftpFile := filepath.Join(c.configDir, "ftp.json")
 	data, _ := json.MarshalIndent(conf, "", "  ")
 	return os.WriteFile(ftpFile, data, 0600)
@@ -172,7 +183,7 @@ func (c *ConfigManager) ensureFTPDir(client *ftp.ServerConn) error {
 		if err != nil {
 			err = client.MakeDir(current)
 			if err != nil {
-				return fmt.Errorf("failed to create directory %s: %v", current, err)
+				return fmt.Errorf("failed to create directory %s: %w", current, err)
 			}
 		}
 	}

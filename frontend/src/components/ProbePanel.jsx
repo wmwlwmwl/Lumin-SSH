@@ -122,6 +122,17 @@ const ftotal = (mb) => {
   return formatTransferTotal(mb);
 };
 
+function isInternalIP(ip) {
+  if (!ip) return true;
+  const parts = ip.trim().split('.');
+  if (parts.length !== 4) return true;
+  if (parts[0] === '10') return true;
+  if (parts[0] === '127') return true;
+  if (parts[0] === '172' && parseInt(parts[1]) >= 16 && parseInt(parts[1]) <= 31) return true;
+  if (parts[0] === '192' && parts[1] === '168') return true;
+  return false;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 export default function ProbePanel({ sessionId, host, addToast, enabled, onEnable }) {
   const { t } = useTranslation();
@@ -308,17 +319,6 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
   const cores = info.cpuCores?.length > 0 ? info.cpuCores : [info.cpuUsage];
   const cpuAvg = Math.round(cores.reduce((a, b) => a + b, 0) / cores.length);
   const osParts = info.os?.split(' ') || ['Linux'];
-
-  const isInternalIP = (ip) => {
-    if (!ip) return true;
-    const parts = ip.trim().split('.');
-    if (parts.length !== 4) return true;
-    if (parts[0] === '10') return true;
-    if (parts[0] === '127') return true;
-    if (parts[0] === '172' && parseInt(parts[1]) >= 16 && parseInt(parts[1]) <= 31) return true;
-    if (parts[0] === '192' && parts[1] === '168') return true;
-    return false;
-  };
 
   const displayIP = info.ip && !isInternalIP(info.ip) ? info.ip : host;
 

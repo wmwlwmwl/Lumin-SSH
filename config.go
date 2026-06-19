@@ -49,7 +49,9 @@ func NewConfigManager() *ConfigManager {
 	appData, _ := os.UserConfigDir()
 	dir := filepath.Join(appData, "Lumin", "config")
 
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Fatalf("无法创建配置目录 %s: %v", dir, err)
+	}
 
 	keyFile := filepath.Join(dir, "lumin.key")
 	var key []byte
@@ -60,7 +62,9 @@ func NewConfigManager() *ConfigManager {
 	quickCmdFile := filepath.Join(dir, "quick_commands.json")
 	paramHistFile := filepath.Join(dir, "param_history.json")
 	historyDir := filepath.Join(dir, "history")
-	os.MkdirAll(historyDir, 0755)
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		log.Printf("[NewConfigManager] 无法创建历史目录 %s: %v", historyDir, err)
+	}
 
 	// 检查是否存在本地独立密钥文件
 	if _, err := os.Stat(keyFile); err == nil {
@@ -101,28 +105,44 @@ func NewConfigManager() *ConfigManager {
 	}
 }
 
-func (c *ConfigManager) encrypt(text string) string {
+func (c *ConfigManager) encrypt(text string) (string, error) {
 	if text == "" {
-		return ""
+		return "", nil
 	}
-	block, _ := aes.NewCipher(c.key)
-	gcm, _ := cipher.NewGCM(block)
+	block, err := aes.NewCipher(c.key)
+	if err != nil {
+		return "", fmt.Errorf("aes.NewCipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("cipher.NewGCM: %w", err)
+	}
 	nonce := make([]byte, gcm.NonceSize())
-	io.ReadFull(rand.Reader, nonce)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
 	ciphertext := gcm.Seal(nonce, nonce, []byte(text), nil)
-	return fmt.Sprintf("%x", ciphertext)
+	return fmt.Sprintf("%x", ciphertext), nil
 }
 
-func (c *ConfigManager) encryptWithKey(text string, key []byte) string {
+func (c *ConfigManager) encryptWithKey(text string, key []byte) (string, error) {
 	if text == "" {
-		return ""
+		return "", nil
 	}
-	block, _ := aes.NewCipher(key)
-	gcm, _ := cipher.NewGCM(block)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("aes.NewCipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("cipher.NewGCM: %w", err)
+	}
 	nonce := make([]byte, gcm.NonceSize())
-	io.ReadFull(rand.Reader, nonce)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
 	ciphertext := gcm.Seal(nonce, nonce, []byte(text), nil)
-	return fmt.Sprintf("%x", ciphertext)
+	return fmt.Sprintf("%x", ciphertext), nil
 }
 
 func (c *ConfigManager) decrypt(hexText string) string {
@@ -168,7 +188,10 @@ func (c *ConfigManager) getConnectionsLocked() []Connection {
 		return []Connection{}
 	}
 	var conns []Connection
-	json.Unmarshal(data, &conns)
+	if err := json.Unmarshal(data, &conns); err != nil {
+		log.Printf("[getConnectionsLocked] json.Unmarshal failed: %v", err)
+		return []Connection{}
+	}
 	for i := range conns {
 		conns[i].Password = c.decrypt(conns[i].Password)
 		conns[i].Passphrase = c.decrypt(conns[i].Passphrase)
@@ -214,7 +237,7 @@ func (c *ConfigManager) SaveConnection(conn Connection) Connection {
 	if err := c.saveConnectionsFile(conns); err != nil {
 		log.Printf("[SaveConnection] failed to save connections: %v", err)
 	}
-	go c.AutoSyncToWebdav()
+	go c.AutoSync()
 	return conn
 }
 
@@ -223,8 +246,16 @@ func (c *ConfigManager) saveConnectionsFile(conns []Connection) error {
 	toSave := make([]Connection, len(conns))
 	copy(toSave, conns)
 	for i := range toSave {
-		toSave[i].Password = c.encrypt(toSave[i].Password)
-		toSave[i].Passphrase = c.encrypt(toSave[i].Passphrase)
+		encPass, err := c.encrypt(toSave[i].Password)
+		if err != nil {
+			return fmt.Errorf("encrypt password: %w", err)
+		}
+		encPhrase, err := c.encrypt(toSave[i].Passphrase)
+		if err != nil {
+			return fmt.Errorf("encrypt passphrase: %w", err)
+		}
+		toSave[i].Password = encPass
+		toSave[i].Passphrase = encPhrase
 	}
 	data, err := json.MarshalIndent(toSave, "", "  ")
 	if err != nil {
@@ -270,7 +301,7 @@ func (c *ConfigManager) DeleteConnection(id string) bool {
 	histPath := filepath.Join(c.historyDir, id+".json")
 	os.Remove(histPath)
 
-	go c.AutoSyncToWebdav()
+	go c.AutoSync()
 	return true
 }
 
@@ -289,7 +320,10 @@ func (c *ConfigManager) GetWebdavConfig() map[string]string {
 		return nil
 	}
 	var conf WebdavConfig
-	json.Unmarshal(data, &conf)
+	if err := json.Unmarshal(data, &conf); err != nil {
+		log.Printf("[GetWebdavConfig] json.Unmarshal failed: %v", err)
+		return nil
+	}
 	return map[string]string{
 		"url":        conf.Url,
 		"username":   c.decrypt(conf.Username),
@@ -322,10 +356,19 @@ func (c *ConfigManager) SaveWebdavConfig(config map[string]string) error {
 		fmt.Sscanf(config["maxBackups"], "%d", &maxBackups)
 	}
 
+	encUser, err := c.encrypt(config["username"])
+	if err != nil {
+		return fmt.Errorf("encrypt username: %w", err)
+	}
+	encPass, err := c.encrypt(pass)
+	if err != nil {
+		return fmt.Errorf("encrypt password: %w", err)
+	}
+
 	conf := WebdavConfig{
 		Url:        config["url"],
-		Username:   c.encrypt(config["username"]),
-		Password:   c.encrypt(pass),
+		Username:   encUser,
+		Password:   encPass,
 		RemotePath: config["remotePath"],
 		MaxBackups: maxBackups,
 	}
@@ -478,7 +521,7 @@ func (c *ConfigManager) SaveQuickCommands(jsonStr string) error {
 	defer c.mu.Unlock()
 	err := os.WriteFile(c.quickCmdFile, []byte(jsonStr), 0600)
 	if err == nil {
-		go c.AutoSyncToWebdav()
+		go c.AutoSync()
 	}
 	return err
 }

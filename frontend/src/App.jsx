@@ -296,26 +296,7 @@ export default function App() {
       setConnectingServer(null);
 
       // 连接成功后自动查询 OS信息并更新 sessions
-      try {
-        const info = await AppGo.SystemInfo(sessionId);
-        if (info) {
-          setSessions((prev) => prev.map((s) => s.id === sessionId ? { ...s, osInfo: info } : s));
-          // 检测到探针执行成功，自动启用监控面板，不需用户再次确认
-          setMonitoringEnabled((prev) => ({ ...prev, [sessionId]: true }));
-          const detectedOs = info.os || info.platform || '';
-          if (detectedOs) {
-            setServers(prevServers => {
-              const currentServer = prevServers.find(s => s.id === savedServer.id);
-              if (currentServer && currentServer.os !== detectedOs) {
-                const updatedServer = { ...currentServer, os: detectedOs };
-                AppGo.SaveConnection(updatedServer).catch(console.error);
-                return prevServers.map(s => s.id === updatedServer.id ? updatedServer : s);
-              }
-              return prevServers;
-            });
-          }
-        }
-      } catch (_) {}
+      await postConnectSetup(sessionId, savedServer.id);
 
       // 加入最近连接（仅保留非敏感字段）
       setRecentServers((prev) => {
@@ -352,6 +333,31 @@ export default function App() {
     const id = ++toastIdRef.current;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => { if (mountedRef.current) setToasts((prev) => prev.filter((t) => t.id !== id)); }, duration);
+  }, []);
+
+  // ── 连接成功后通用设置：查询 OS 信息、启用监控、持久化 OS ──
+  const postConnectSetup = useCallback(async (sessionId, serverId, extraServerFields = {}) => {
+    try {
+      const info = await AppGo.SystemInfo(sessionId);
+      if (info) {
+        setSessions((prev) => prev.map((s) => s.id === sessionId ? { ...s, osInfo: info } : s));
+        setMonitoringEnabled((prev) => ({ ...prev, [sessionId]: true }));
+        if (serverId) {
+          const detectedOs = info.os || info.platform || '';
+          if (detectedOs) {
+            setServers(prevServers => {
+              const currentServer = prevServers.find(s => s.id === serverId);
+              if (currentServer && currentServer.os !== detectedOs) {
+                const updatedServer = { ...currentServer, os: detectedOs, ...extraServerFields };
+                AppGo.SaveConnection(updatedServer).catch(console.error);
+                return prevServers.map(s => s.id === updatedServer.id ? updatedServer : s);
+              }
+              return prevServers;
+            });
+          }
+        }
+      }
+    } catch (_) {}
   }, []);
 
   // ── Load servers ───────────────────────────────────────────
@@ -443,25 +449,7 @@ export default function App() {
       }
 
       // 后台重新部署并激活探针状态
-      try {
-        const info = await AppGo.SystemInfo(session.id);
-        if (info) {
-          setSessions((prev) => prev.map((s) => s.id === session.id ? { ...s, osInfo: info } : s));
-          setMonitoringEnabled((prev) => ({ ...prev, [session.id]: true }));
-          const detectedOs = info.os || info.platform || '';
-          if (detectedOs) {
-            setServers(prevServers => {
-              const currentServer = prevServers.find(s => s.id === session.serverId);
-              if (currentServer && currentServer.os !== detectedOs) {
-                const updatedServer = { ...currentServer, os: detectedOs };
-                AppGo.SaveConnection(updatedServer).catch(console.error);
-                return prevServers.map(s => s.id === updatedServer.id ? updatedServer : s);
-              }
-              return prevServers;
-            });
-          }
-        }
-      } catch (_) {}
+      await postConnectSetup(session.id, session.serverId);
     } catch (err) {
       const errMsg = String(err);
       const isHostKeyChange = errMsg.includes('主机密钥已变更');
@@ -758,26 +746,7 @@ export default function App() {
       setConnectingServer(null); // 连接成功，关闭进度卡片
 
       // 连接成功后自动查询 OS 信息并更新 sessions
-      try {
-        const info = await AppGo.SystemInfo(sessionId);
-        if (info) {
-          setSessions((prev) => prev.map((s) => s.id === sessionId ? { ...s, osInfo: info } : s));
-          // 检测到探针执行成功，自动启用监控面板
-          setMonitoringEnabled((prev) => ({ ...prev, [sessionId]: true }));
-          const detectedOs = info.os || info.platform || '';
-          if (detectedOs) {
-            setServers(prevServers => {
-              const currentServer = prevServers.find(s => s.id === server.id);
-              if (currentServer && currentServer.os !== detectedOs) {
-                const updatedServer = { ...currentServer, os: detectedOs };
-                AppGo.SaveConnection(updatedServer).catch(console.error);
-                return prevServers.map(s => s.id === updatedServer.id ? updatedServer : s);
-              }
-              return prevServers;
-            });
-          }
-        }
-      } catch (_) {}
+      await postConnectSetup(sessionId, server.id);
 
       // 连接成功后加入最近连接列表（仅保留非敏感字段）
       const safeServer = { id: server.id, name: server.name, host: server.host, port: server.port, username: server.username };

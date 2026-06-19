@@ -77,7 +77,7 @@ function filterTree(items, keyword, parentPath = '') {
 }
 
 // ── 树形节点渲染组件 ────────────────────────────────────
-function TreeNode({ item, index, path, selectedPath, onSelect, onAddCmd, onAddGroup, contextMenu, onContextMenu, closeContextMenu, onExecute, onMove, onDragStart, onDropItem, onDragEnd, dragVersion }) {
+function TreeNode({ item, index, path, selectedPath, onSelect, contextMenu, onContextMenu, closeContextMenu, onExecute, onMove, onDragStart, onDropItem, onDragEnd, dragVersion }) {
   const { t } = useTranslation();
   const [hover, setHover] = useState(false);
   const [dropPos, setDropPos] = useState(null); // 'before' | 'inside' | 'after'
@@ -169,8 +169,6 @@ function TreeNode({ item, index, path, selectedPath, onSelect, onAddCmd, onAddGr
                 path={`${path}/${ci}`}
                 selectedPath={selectedPath}
                 onSelect={onSelect}
-                onAddCmd={onAddCmd}
-                onAddGroup={onAddGroup}
                 contextMenu={contextMenu}
                 onContextMenu={onContextMenu}
                 closeContextMenu={closeContextMenu}
@@ -819,7 +817,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
     width: '100%', boxSizing: 'border-box',
   };
 
-  const selectedItem = getSelectedItem();
+  const selectedItem = useMemo(() => getSelectedItem(), [selectedPath, commands]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#161b22', fontFamily: 'var(--font-ui)' }}>
