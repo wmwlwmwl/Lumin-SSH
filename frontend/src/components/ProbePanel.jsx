@@ -44,7 +44,7 @@ const MemDonut = React.memo(function MemDonut({ used, cache, total }) {
     <svg width={70} height={70} style={{ flexShrink: 0 }}>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={8} />
       {seg(f1, '#ef4444', 0)}
-      {seg(f2, 'var(--text-4)', f1)}
+      {seg(f2, '#6b7280', f1)}
       {seg(f3, '#22c55e', f1 + f2)}
     </svg>
   );
@@ -402,7 +402,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
             {[
               { dot: '#ef4444', label: t('已用'), val: fmem(info.memUsed) },
-              { dot: 'var(--text-4)', label: t('缓存'), val: fmem(info.memCache) },
+              { dot: '#6b7280', label: t('缓存'), val: fmem(info.memCache) },
               { dot: '#22c55e', label: t('空闲'), val: fmem(info.memFree) },
             ].map(({ dot, label, val }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-2)', borderRadius: 6, padding: '4px 8px' }}>
