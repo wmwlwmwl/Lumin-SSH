@@ -60,7 +60,7 @@ const getOSInfo = (name = '', os = '', osInfo = null) => {
   // ── 发行版检测（按优先级排列）──
   if (n.includes('ubuntu'))       return { icon: <UbuntuIcon />, bg: 'var(--bg-2)', label: 'Ubuntu' };
   if (n.includes('debian'))       return { icon: <DebianIcon />, bg: 'var(--bg-2)', label: 'Debian' };
-  if (n.includes('kali'))         return { icon: <KaliIcon />, bg: '#367bf0', label: 'Kali' };
+  if (n.includes('kali'))         return { icon: <KaliIcon />, bg: 'var(--bg-2)', label: 'Kali' };
   if (n.includes('centos stream'))return { icon: <CentosIcon />, bg: 'var(--bg-2)', label: 'CentOS Stream' };
   if (n.includes('centos'))       return { icon: <CentosIcon />, bg: 'var(--bg-2)', label: 'CentOS' };
   if (n.includes('rhel'))         return { icon: <RhelIcon />, bg: 'var(--bg-2)', label: 'RHEL' };
