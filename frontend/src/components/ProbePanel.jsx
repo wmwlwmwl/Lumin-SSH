@@ -11,7 +11,7 @@ import { Z } from '../constants/zIndex';
 import { useTranslation } from '../i18n.js';
 
 // ── Sparkline SVG ──────────────────────────────────────────────────────────
-const Sparkline = React.memo(function Sparkline({ data, color = '#22c55e', fill = true, height = 36, width = '100%' }) {
+const Sparkline = React.memo(function Sparkline({ data, color = 'var(--success)', fill = true, height = 36, width = '100%' }) {
   const pts = data || [];
   const { points, fillPts } = useMemo(() => {
     if (pts.length < 2) return { points: '', fillPts: '' };
@@ -23,8 +23,8 @@ const Sparkline = React.memo(function Sparkline({ data, color = '#22c55e', fill 
   if (pts.length < 2) return <div style={{ height }} />;
   return (
     <svg viewBox={`0 0 200 ${height}`} preserveAspectRatio="none" style={{ width, height, display: 'block' }}>
-      {fill && <polygon points={fillPts} fill={color} opacity={0.12} />}
-      <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      {fill && <polygon points={fillPts} style={{ fill: color }} opacity={0.12} />}
+      <polyline points={points} fill="none" style={{ stroke: color }} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 });
@@ -48,9 +48,9 @@ const MemDonut = React.memo(function MemDonut({ used, cache, free, total }) {
   return (
     <svg width={70} height={70} style={{ flexShrink: 0 }}>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={8} />
-      {seg(f1, '#ef4444', 0)}
-      {seg(f2, '#6b7280', f1)}
-      {seg(f3, '#22c55e', f1 + f2)}
+      {seg(f1, 'var(--danger)', 0)}
+      {seg(f2, 'var(--text-tertiary)', f1)}
+      {seg(f3, 'var(--success)', f1 + f2)}
     </svg>
   );
 });
@@ -58,7 +58,7 @@ const MemDonut = React.memo(function MemDonut({ used, cache, free, total }) {
 // ── CPU Bar ────────────────────────────────────────────────────────────────
 const CpuBar = React.memo(function CpuBar({ val = 0 }) {
   const pct = Math.min(Math.max(val, 0), 100);
-  const color = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#22c55e';
+  const color = pct > 80 ? 'var(--danger)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
   return (
     <div style={{ flex: 1, height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
       <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.4s ease' }} />
@@ -69,7 +69,7 @@ const CpuBar = React.memo(function CpuBar({ val = 0 }) {
 // ── Disk Partition Row ─────────────────────────────────────────────────────
 const PartRow = React.memo(function PartRow({ mount, size, avail, usedPct }) {
   const pct = Math.min(Math.max(usedPct, 0), 100);
-  const color = pct > 85 ? '#ef4444' : pct > 60 ? '#f59e0b' : '#22c55e';
+  const color = pct > 85 ? 'var(--danger)' : pct > 60 ? 'var(--warning)' : 'var(--success)';
   return (
     <div className="probe-partition-row">
       <span className="probe-partition-mount" title={mount}>{mount}</span>
@@ -87,7 +87,7 @@ const PartRow = React.memo(function PartRow({ mount, size, avail, usedPct }) {
 const Card = React.memo(function Card({ children, style }) {
   return (
     <div style={{
-      background: 'var(--bg-2)',
+      background: 'var(--surface-overlay)',
       border: '1px solid var(--border)',
       borderRadius: 10, padding: '10px 12px',
       ...style,
@@ -101,13 +101,13 @@ const Card = React.memo(function Card({ children, style }) {
 const SectionHeader = React.memo(function SectionHeader({ icon, title, badge, right }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-      <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-4)' }}>{icon}</span>
-      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', flex: 1 }}>{title}</span>
+      <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}>{icon}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{title}</span>
       {badge && (
         <span style={{
           fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 600,
-          color: '#22c55e', background: 'rgba(34,197,94,0.1)',
-          border: '1px solid rgba(34,197,94,0.3)',
+          color: 'var(--success)', background: 'rgba(var(--accent-rgb),0.1)',
+          border: '1px solid rgba(var(--accent-rgb),0.3)',
           padding: '2px 7px', borderRadius: 4,
         }}>{badge}</span>
       )}
@@ -266,52 +266,52 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
   // ── Not enabled: show welcome panel ──────────────────────────────────
   if (!enabled) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-0)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 50% 35%, rgba(34,197,94,0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--surface-base)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 50% 35%, rgba(var(--accent-rgb),0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 16px', gap: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 14, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#22c55e' }}><BarChart3 size={26} /></div>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: 'rgba(var(--accent-rgb),0.08)', border: '1px solid rgba(var(--accent-rgb),0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)' }}><BarChart3 size={26} /></div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', marginBottom: 6 }}>{t('系统监控')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-4)', lineHeight: 1.6, maxWidth: 220 }}>{t('实时查看服务器 CPU、内存、网络和磁盘使用情况')}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>{t('系统监控')}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6, maxWidth: 220 }}>{t('实时查看服务器 CPU、内存、网络和磁盘使用情况')}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 220 }}>
             {[[<Cpu size={14} />, t('CPU 每核心实时占用')], [<MemoryStick size={14} />, t('内存甜甜圈图分析')], [<Globe size={14} />, t('网络速率折线图')], [<HardDrive size={14} />, t('磁盘分区挂载表')], [<ClipboardList size={14} />, t('进程热点排行')]].map(([icon, text]) => (
-              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 11px', borderRadius: 6, background: 'var(--bg-1)', border: '1px solid var(--border-light)' }}>
-                <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: 'var(--text-4)' }}>{icon}</span>
-                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{text}</span>
+              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 11px', borderRadius: 6, background: 'var(--surface-raised)', border: '1px solid var(--border-light)' }}>
+                <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}>{icon}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{text}</span>
               </div>
             ))}
           </div>
-          <button onClick={() => setShowConfirm(true)} style={{ marginTop: 8, padding: '9px 26px', borderRadius: 8, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.5px' }}
-            onMouseOver={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.2)'; }}
-            onMouseOut={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.12)'; }}>
+          <button onClick={() => setShowConfirm(true)} style={{ marginTop: 8, padding: '9px 26px', borderRadius: 8, border: '1px solid rgba(var(--accent-rgb),0.5)', background: 'rgba(var(--accent-rgb),0.12)', color: 'var(--success)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.5px' }}
+            onMouseOver={e => { e.currentTarget.style.background = 'rgba(var(--accent-rgb),0.2)'; }}
+            onMouseOut={e => { e.currentTarget.style.background = 'rgba(var(--accent-rgb),0.12)'; }}>
             {t('开启监控')}
           </button>
         </div>
         {showConfirm && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14, zIndex: Z.COMPONENT_OVERLAY }}>
-            <div style={{ background: 'var(--bg-1)', border: '1px solid rgba(34,197,94,0.22)', borderRadius: 14, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 24px 64px rgba(0,0,0,0.65)', maxWidth: 260 }}>
+            <div style={{ background: 'var(--surface-raised)', border: '1px solid rgba(var(--accent-rgb),0.22)', borderRadius: 14, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 24px 64px rgba(0,0,0,0.65)', maxWidth: 260 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-4)' }}><Search size={16} /></span>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}><Search size={16} /></span>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{t('注入监控脚本')}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>LuminSSH Probe v2</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{t('注入监控脚本')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>LuminSSH Probe v2</div>
                 </div>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.7 }}>
-                {t('将在服务器写入')} <code style={{ color: '#4ade80', background: 'rgba(34,197,94,0.08)', padding: '2px 5px', borderRadius: 3, fontSize: 11 }}>~/.lumin/probe.sh</code>{t('，轻量监控脚本。')}
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
+                {t('将在服务器写入')} <code style={{ color: 'var(--success)', background: 'rgba(var(--accent-rgb),0.08)', padding: '2px 5px', borderRadius: 3, fontSize: 11 }}>~/.lumin/probe.sh</code>{t('，轻量监控脚本。')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {[
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-4)' }} key="1"><Check size={12} style={{ flexShrink: 0 }} /> {t('纯 Shell，读取 /proc 文件系统')}</div>,
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-4)' }} key="2"><Check size={12} style={{ flexShrink: 0 }} /> {t('无需安装任何软件或依赖')}</div>,
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-4)' }} key="3"><Check size={12} style={{ flexShrink: 0 }} /> {t('不修改系统配置，不常驻后台')}</div>,
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-4)' }} key="4"><Check size={12} style={{ flexShrink: 0 }} /> {t('断开连接后自动停止采集')}</div>,
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-tertiary)' }} key="1"><Check size={12} style={{ flexShrink: 0 }} /> {t('纯 Shell，读取 /proc 文件系统')}</div>,
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-tertiary)' }} key="2"><Check size={12} style={{ flexShrink: 0 }} /> {t('无需安装任何软件或依赖')}</div>,
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-tertiary)' }} key="3"><Check size={12} style={{ flexShrink: 0 }} /> {t('不修改系统配置，不常驻后台')}</div>,
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-tertiary)' }} key="4"><Check size={12} style={{ flexShrink: 0 }} /> {t('断开连接后自动停止采集')}</div>,
                 ]}
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setShowConfirm(false)} style={{ flex: 1, padding: '8.5px 0', borderRadius: 7, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-4)', fontSize: 12.5, cursor: 'pointer' }}>{t('取消')}</button>
-                <button onClick={handleConfirm} disabled={enabling} style={{ flex: 1, padding: '8.5px 0', borderRadius: 7, border: '1px solid rgba(34,197,94,0.5)', background: enabling ? 'rgba(34,197,94,0.05)' : 'rgba(34,197,94,0.15)', color: enabling ? 'var(--text-4)' : '#22c55e', fontSize: 12.5, fontWeight: 700, cursor: enabling ? 'default' : 'pointer' }}>
+                <button onClick={() => setShowConfirm(false)} style={{ flex: 1, padding: '8.5px 0', borderRadius: 7, border: '1px solid var(--border-light)', background: 'transparent', color: 'var(--text-tertiary)', fontSize: 12.5, cursor: 'pointer' }}>{t('取消')}</button>
+                <button onClick={handleConfirm} disabled={enabling} style={{ flex: 1, padding: '8.5px 0', borderRadius: 7, border: '1px solid rgba(var(--accent-rgb),0.5)', background: enabling ? 'rgba(var(--accent-rgb),0.05)' : 'rgba(var(--accent-rgb),0.15)', color: enabling ? 'var(--text-tertiary)' : 'var(--success)', fontSize: 12.5, fontWeight: 700, cursor: enabling ? 'default' : 'pointer' }}>
                   {enabling ? t('注入中...') : t('确认开启')}
                 </button>
               </div>
@@ -325,7 +325,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
   // ── Loading state ──────────────────────────────────────────────────────
   if (!info) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, color: '#4ade80', opacity: 0.5 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, color: 'var(--success)', opacity: 0.5 }}>
         <div style={{ fontSize: 22, animation: 'spin 1.2s linear infinite' }}>⟳</div>
         <div style={{ fontSize: 11 }}>{t('正在采集系统信息...')}</div>
       </div>
@@ -346,57 +346,57 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
       <Card>
         <div style={{ marginBottom: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-4)' }}><Monitor size={14} /></span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{t('系统')}</span>
+            <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}><Monitor size={14} /></span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{t('系统')}</span>
           </div>
           {displayIP && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0 }}>
-              <span title={hideIP ? '' : displayIP} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 700, background: 'var(--bg-3)', border: '1px solid var(--border)', padding: '1px 6px', borderRadius: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
+              <span title={hideIP ? '' : displayIP} style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--accent)', fontWeight: 700, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', padding: '2px 8px', borderRadius: 4, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1 }}>
                 {hideIP ? '***.***.***.***' : displayIP}
               </span>
               <button onClick={() => { navigator.clipboard.writeText(displayIP); addToast?.(t('已复制') + ' ' + displayIP, 'success'); }} title={t('复制 IP')}
-                style={{ background: 'none', border: 'none', color: 'var(--text-4)', cursor: 'pointer', padding: '2px 4px', fontSize: 13, lineHeight: 1, borderRadius: 3 }}
-                onMouseOver={e => e.currentTarget.style.color = 'var(--text-1)'}
-                onMouseOut={e => e.currentTarget.style.color = 'var(--text-4)'}><Clipboard size={13} /></button>
+                style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '2px 4px', fontSize: 13, lineHeight: 1, borderRadius: 3 }}
+                onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                onMouseOut={e => e.currentTarget.style.color = 'var(--text-tertiary)'}><Clipboard size={13} /></button>
               <button onClick={() => setHideIP(p => !p)} title={hideIP ? t('显示 IP') : t('隐藏 IP')}
-                style={{ background: 'none', border: 'none', color: 'var(--text-4)', cursor: 'pointer', padding: '2px 4px', fontSize: 13, lineHeight: 1, borderRadius: 3 }}
-                onMouseOver={e => e.currentTarget.style.color = 'var(--text-1)'}
-                onMouseOut={e => e.currentTarget.style.color = 'var(--text-4)'}>{hideIP ? <Eye size={13} /> : <EyeOff size={13} />}</button>
+                style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '2px 4px', fontSize: 13, lineHeight: 1, borderRadius: 3 }}
+                onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                onMouseOut={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>{hideIP ? <Eye size={13} /> : <EyeOff size={13} />}</button>
             </div>
           )}
         </div>
         <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
-          <span style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', fontWeight: 700 }}>{osParts[0]}</span>
-          <span style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 4, background: 'var(--border)', color: 'var(--text-3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.os?.replace(osParts[0], '').trim()}</span>
+          <span style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 4, background: 'rgba(var(--accent-rgb),0.12)', border: '1px solid rgba(var(--accent-rgb),0.3)', color: 'var(--success)', fontWeight: 700 }}>{osParts[0]}</span>
+          <span style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 4, background: 'var(--surface-sunken)', color: 'var(--text-tertiary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.os?.replace(osParts[0], '').trim()}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px' }}>
-          <div style={{ fontSize: 12, color: 'var(--text-4)' }}>{t('时区')} <span style={{ color: '#22c55e', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{info.timezone}</span></div>
-          <div style={{ fontSize: 12, color: 'var(--text-4)' }}>{t('运行')} <span style={{ color: '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 12 }}>{info.uptime}</span></div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('时区')} <span style={{ color: 'var(--success)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{info.timezone}</span></div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('运行')} <span style={{ color: 'var(--success)', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 12 }}>{info.uptime}</span></div>
         </div>
       </Card>
 
       {/* ── CPU ── */}
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{ display: 'flex', alignItems: 'center', color: '#6366f1' }}><Cpu size={14} /></span>
-          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)', flex: 1 }}>CPU {cores.length > 0 ? `${cores.length}${t('核')}` : ''}</span>
+          <span style={{ display: 'flex', alignItems: 'center', color: 'var(--info)' }}><Cpu size={14} /></span>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>CPU {cores.length > 0 ? `${cores.length}${t('核')}` : ''}</span>
           <div style={{ width: 76, height: 24 }}>
-            <Sparkline data={cpuHist} color="#6366f1" height={24} />
+            <Sparkline data={cpuHist} color="var(--info)" height={24} />
           </div>
-          <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: '#6366f1', fontWeight: 700, width: 34, textAlign: 'right' }}>{cpuAvg}%</span>
+          <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--info)', fontWeight: 700, width: 34, textAlign: 'right' }}>{cpuAvg}%</span>
         </div>
-        {info.cpuModel && <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginBottom: 6, wordBreak: 'break-all' }}>{info.cpuModel}</div>}
+        {info.cpuModel && <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginBottom: 6, wordBreak: 'break-all' }}>{info.cpuModel}</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {(cores.length > 8 && !cpuExpanded ? cores.slice(0, 8) : cores).map((val, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: '#4ade80', fontFamily: 'var(--font-mono)', width: 16, textAlign: 'right', flexShrink: 0 }}>{i}</span>
+              <span style={{ fontSize: 12, color: 'var(--success)', fontFamily: 'var(--font-mono)', width: 16, textAlign: 'right', flexShrink: 0 }}>{i}</span>
               <CpuBar val={val} />
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-3)', width: 38, textAlign: 'right', flexShrink: 0 }}>{val.toFixed(1)}%</span>
+              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', width: 38, textAlign: 'right', flexShrink: 0 }}>{val.toFixed(1)}%</span>
             </div>
           ))}
         </div>
         {cores.length > 8 && (
-          <button onClick={() => setCpuExpanded(v => !v)} style={{ display: 'block', width: '100%', marginTop: 6, padding: '4px 0', fontSize: 11, color: '#6366f1', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 5, cursor: 'pointer', textAlign: 'center' }}>
+          <button onClick={() => setCpuExpanded(v => !v)} style={{ display: 'block', width: '100%', marginTop: 6, padding: '4px 0', fontSize: 11, color: 'var(--info)', background: 'rgba(var(--info-rgb),0.08)', border: '1px solid rgba(var(--info-rgb),0.2)', borderRadius: 5, cursor: 'pointer', textAlign: 'center' }}>
             {cpuExpanded ? t('收起') : `${t('展开全部')} ${cores.length} ${t('核')}`}
           </button>
         )}
@@ -409,33 +409,33 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
           <MemDonut used={info.memUsed} cache={info.memCache} free={info.memFree} total={info.memTotal} />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
             {[
-              { dot: '#ef4444', label: t('已用'), val: fmem(info.memUsed) },
-              { dot: '#6b7280', label: t('缓存'), val: fmem(info.memCache) },
-              { dot: '#22c55e', label: t('空闲'), val: fmem(info.memFree) },
+              { dot: 'var(--danger)', label: t('已用'), val: fmem(info.memUsed) },
+              { dot: 'var(--text-tertiary)', label: t('缓存'), val: fmem(info.memCache) },
+              { dot: 'var(--success)', label: t('空闲'), val: fmem(info.memFree) },
             ].map(({ dot, label, val }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-2)', borderRadius: 6, padding: '4px 8px' }}>
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-overlay)', borderRadius: 6, padding: '4px 8px' }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0 }} />
-                <span style={{ fontSize: 12.5, color: 'var(--text-4)', flex: 1 }}>{label}</span>
-                <span style={{ fontSize: 13.5, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600 }}>{val}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)', flex: 1 }}>{label}</span>
+                <span style={{ fontSize: 13.5, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', fontWeight: 600 }}>{val}</span>
               </div>
             ))}
           </div>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-4)', textAlign: 'right', marginTop: 4 }}>
-          {t('使用率')} <span style={{ color: memPct >= 80 ? '#ef4444' : '#4ade80', fontWeight: 700 }}>{memPct}%</span>
+        <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', textAlign: 'right', marginTop: 4 }}>
+          {t('使用率')} <span style={{ color: memPct >= 80 ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>{memPct}%</span>
         </div>
         {info.swapTotal > 0 && (
           <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 11.5, color: 'var(--text-4)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeftRight size={12} /> SWAP</span>
-              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>{fmem(info.swapTotal)}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeftRight size={12} /> SWAP</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>{fmem(info.swapTotal)}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ flex: 1, height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${Math.min(info.swapUsed / info.swapTotal * 100, 100)}%`, height: '100%', background: '#a855f7', borderRadius: 3 }} />
+                <div style={{ width: `${Math.min(info.swapUsed / info.swapTotal * 100, 100)}%`, height: '100%', background: 'var(--info)', borderRadius: 3 }} />
               </div>
-              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: '#a855f7', fontWeight: 600, minWidth: 50, textAlign: 'right' }}>{fmem(info.swapUsed)}</span>
-              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', minWidth: 36, textAlign: 'right' }}>{Math.round(info.swapUsed / info.swapTotal * 100)}%</span>
+              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--info)', fontWeight: 600, minWidth: 50, textAlign: 'right' }}>{fmem(info.swapUsed)}</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', minWidth: 36, textAlign: 'right' }}>{Math.round(info.swapUsed / info.swapTotal * 100)}%</span>
             </div>
           </div>
         )}
@@ -444,28 +444,28 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
       {/* ── 网络 ── */}
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-4)' }}><Globe size={14} /></span>
-          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-1)', flex: 1 }}>{t('网络')}</span>
+          <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}><Globe size={14} /></span>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{t('网络')}</span>
         </div>
         <div style={{ marginBottom: 6 }}>
-          <Sparkline data={downloadHist} color="#3b82f6" height={36} />
+          <Sparkline data={downloadHist} color="var(--accent)" height={36} />
         </div>
         {/* Table */}
         <div style={{ display: 'grid', gridTemplateColumns: '62px 1fr 1fr', gap: '5px 0' }}>
-          <div style={{ fontSize: 11.5, color: 'var(--text-4)' }} />
-          <div style={{ fontSize: 11.5, color: 'var(--text-4)', textAlign: 'center' }}>{t('速度')}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-4)', textAlign: 'center' }}>{t('已用流量')}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', textAlign: 'center' }}>{t('速度')}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', textAlign: 'center' }}>{t('已用流量')}</div>
           {[
-            { dot: '#22c55e', label: t('上传'), speed: fspeed(info.netUp), total: ftotal(info.netUpTotal) },
-            { dot: '#3b82f6', label: t('下载'), speed: fspeed(info.netDown), total: ftotal(info.netDownTotal) },
+            { dot: 'var(--success)', label: t('上传'), speed: fspeed(info.netUp), total: ftotal(info.netUpTotal) },
+            { dot: 'var(--accent)', label: t('下载'), speed: fspeed(info.netDown), total: ftotal(info.netDownTotal) },
           ].map(({ dot, label, speed, total }) => (
             <Fragment key={label}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '3px 0' }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />
-                <span style={{ color: 'var(--text-3)' }}>{label}</span>
+                <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
               </div>
-              <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontWeight: 600, textAlign: 'center', alignSelf: 'center' }}>{speed}</div>
-              <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-4)', textAlign: 'center', alignSelf: 'center' }}>{total}</div>
+              <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', fontWeight: 600, textAlign: 'center', alignSelf: 'center' }}>{speed}</div>
+              <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', textAlign: 'center', alignSelf: 'center' }}>{total}</div>
             </Fragment>
           ))}
         </div>
@@ -476,19 +476,19 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
         <SectionHeader icon={<HardDrive size={14} />} title={t('磁盘')} badge={`${formatCapacity(info.diskUsed, 1)} / ${formatCapacity(info.diskTotal, 1)}`} />
         {/* Root partition info */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 7 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', marginRight: 5 }} />
-          <span style={{ fontSize: 12.5, color: 'var(--text-3)', flex: 1, fontFamily: 'var(--font-mono)' }}>/ ({info.diskDevice})</span>
-          <span style={{ fontSize: 11.5, color: 'var(--text-4)', marginRight: 4 }}>{t('类型')}</span>
-          <span style={{ fontSize: 11, background: '#ca8a04', color: '#fef9c3', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{info.diskType}</span>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)', marginRight: 5 }} />
+          <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)', flex: 1, fontFamily: 'var(--font-mono)' }}>/ ({info.diskDevice})</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginRight: 4 }}>{t('类型')}</span>
+          <span style={{ fontSize: 11, background: 'var(--warning)', color: '#fff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{info.diskType}</span>
         </div>
         {/* IO speeds */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 7 }}>
           {[
-            { label: t('读/s'), val: fspeed(info.diskReadSpeed), color: '#22c55e' },
-            { label: t('写/s'), val: fspeed(info.diskWriteSpeed), color: '#f97316' },
+            { label: t('读/s'), val: fspeed(info.diskReadSpeed), color: 'var(--success)' },
+            { label: t('写/s'), val: fspeed(info.diskWriteSpeed), color: 'var(--warning)' },
           ].map(({ label, val, color }) => (
-            <div key={label} style={{ background: 'var(--bg-2)', borderRadius: 6, padding: '5px 8px' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--text-4)', marginBottom: 2 }}>{label}</div>
+            <div key={label} style={{ background: 'var(--surface-overlay)', borderRadius: 6, padding: '5px 8px' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginBottom: 2 }}>{label}</div>
               <div style={{ fontSize: 13.5, fontFamily: 'var(--font-mono)', color, fontWeight: 700 }}>{val}</div>
             </div>
           ))}
@@ -512,22 +512,22 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
       {/* ── 进程管理 ── */}
       <Card style={{ marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-4)' }}><ClipboardList size={14} /></span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', flex: 1 }}>{t('进程管理')}</span>
-          <span style={{ fontSize: 11.5, color: 'var(--text-4)' }}>TOP CPU</span>
+          <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}><ClipboardList size={14} /></span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{t('进程管理')}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>TOP CPU</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '44px 56px 1fr', gap: '4px 8px' }}>
-          <span style={{ fontSize: 11.5, color: 'var(--text-4)', fontWeight: 700 }}>CPU</span>
-          <span style={{ fontSize: 11.5, color: 'var(--text-4)', fontWeight: 700 }}>{t('内存')}</span>
-          <span style={{ fontSize: 11.5, color: 'var(--text-4)', fontWeight: 700 }}>{t('进程')}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', fontWeight: 700 }}>CPU</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', fontWeight: 700 }}>{t('内存')}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', fontWeight: 700 }}>{t('进程')}</span>
           {info.processes?.length > 0 ? info.processes.slice(0, 5).map((p, i) => (
             <Fragment key={i}>
-              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: p.cpu > 5 ? '#f59e0b' : 'var(--text-3)' }}>{p.cpu?.toFixed(1)}%</span>
-              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-4)' }}>{fmem(p.mem)}</span>
-              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmd}</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: p.cpu > 5 ? 'var(--warning)' : 'var(--text-tertiary)' }}>{p.cpu?.toFixed(1)}%</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)' }}>{fmem(p.mem)}</span>
+              <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmd}</span>
             </Fragment>
           )) : (
-            <div style={{ gridColumn: '1/-1', fontSize: 11.5, color: 'var(--text-4)', textAlign: 'center', padding: '8px 0' }}>{t('暂无热点进程')}</div>
+            <div style={{ gridColumn: '1/-1', fontSize: 11.5, color: 'var(--text-tertiary)', textAlign: 'center', padding: '8px 0' }}>{t('暂无热点进程')}</div>
           )}
         </div>
       </Card>

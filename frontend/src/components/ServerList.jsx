@@ -51,38 +51,38 @@ const getOSInfo = (name = '', os = '', osInfo = null) => {
   if (_osInfoCache.has(n)) return _osInfoCache.get(n);
   let result;
   // ── 发行版检测（按优先级排列）──
-  if (n.includes('ubuntu'))       result = { icon: <UbuntuIcon />, bg: 'var(--bg-2)', label: 'Ubuntu' };
-  else if (n.includes('debian'))       result = { icon: <DebianIcon />, bg: 'var(--bg-2)', label: 'Debian' };
-  else if (n.includes('kali'))         result = { icon: <KaliIcon />, bg: 'var(--bg-2)', label: 'Kali' };
-  else if (n.includes('centos stream'))result = { icon: <CentosIcon />, bg: 'var(--bg-2)', label: 'CentOS Stream' };
-  else if (n.includes('tencent'))     result = { icon: <TencentIcon />, bg: 'var(--bg-2)', label: 'TencentOS' };
-  else if (n.includes('centos'))       result = { icon: <CentosIcon />, bg: 'var(--bg-2)', label: 'CentOS' };
-  else if (n.includes('rhel'))         result = { icon: <RhelIcon />, bg: 'var(--bg-2)', label: 'RHEL' };
-  else if (n.includes('almalinux'))    result = { icon: <AlmaIcon />, bg: 'var(--bg-2)', label: 'AlmaLinux' };
-  else if (n.includes('rocky'))        result = { icon: <RockyIcon />, bg: 'var(--bg-2)', label: 'Rocky' };
-  else if (n.includes('oracle'))       result = { icon: <OracleIcon />, bg: 'var(--bg-2)', label: 'Oracle' };
-  else if (n.includes('alibaba') || n.includes('aliyun')) result = { icon: <AlibabaIcon />, bg: 'var(--bg-2)', label: 'Alibaba' };
-  else if (n.includes('anolis'))       result = { icon: <AnolisIcon />, bg: 'var(--bg-2)', label: 'Anolis' };
-  else if (n.includes('opencloudos'))  result = { icon: <OpenCloudIcon />, bg: 'var(--bg-2)', label: 'OpenCloudOS' };
-  else if (n.includes('openeuler'))    result = { icon: <OpenEulerIcon />, bg: 'var(--bg-2)', label: 'openEuler' };
-  else if (n.includes('fedora'))       result = { icon: <FedoraIcon />, bg: 'var(--bg-2)', label: 'Fedora' };
-  else if (n.includes('opensuse'))     result = { icon: <OpenSuseIcon />, bg: 'var(--bg-2)', label: 'openSUSE' };
-  else if (n.includes('arch'))         result = { icon: <ArchIcon />, bg: 'var(--bg-2)', label: 'Arch' };
-  else if (n.includes('nixos'))        result = { icon: <NixosIcon />, bg: 'var(--bg-2)', label: 'NixOS' };
-  else if (n.includes('alpine'))       result = { icon: <AlpineIcon />, bg: 'var(--bg-2)', label: 'Alpine' };
-  else if (n.includes('gentoo'))       result = { icon: <GentooIcon />, bg: 'var(--bg-2)', label: 'Gentoo' };
-  else if (n.includes('aosc'))         result = { icon: <AoscIcon />, bg: 'var(--bg-2)', label: 'AOSC' };
-  else if (n.includes('freebsd'))      result = { icon: <FreeBSDIcon />, bg: 'var(--bg-2)', label: 'FreeBSD' };
+  if (n.includes('ubuntu'))       result = { icon: <UbuntuIcon />, bg: 'var(--surface-overlay)', label: 'Ubuntu' };
+  else if (n.includes('debian'))       result = { icon: <DebianIcon />, bg: 'var(--surface-overlay)', label: 'Debian' };
+  else if (n.includes('kali'))         result = { icon: <KaliIcon />, bg: 'var(--surface-overlay)', label: 'Kali' };
+  else if (n.includes('centos stream'))result = { icon: <CentosIcon />, bg: 'var(--surface-overlay)', label: 'CentOS Stream' };
+  else if (n.includes('tencent'))     result = { icon: <TencentIcon />, bg: 'var(--surface-overlay)', label: 'TencentOS' };
+  else if (n.includes('centos'))       result = { icon: <CentosIcon />, bg: 'var(--surface-overlay)', label: 'CentOS' };
+  else if (n.includes('rhel'))         result = { icon: <RhelIcon />, bg: 'var(--surface-overlay)', label: 'RHEL' };
+  else if (n.includes('almalinux'))    result = { icon: <AlmaIcon />, bg: 'var(--surface-overlay)', label: 'AlmaLinux' };
+  else if (n.includes('rocky'))        result = { icon: <RockyIcon />, bg: 'var(--surface-overlay)', label: 'Rocky' };
+  else if (n.includes('oracle'))       result = { icon: <OracleIcon />, bg: 'var(--surface-overlay)', label: 'Oracle' };
+  else if (n.includes('alibaba') || n.includes('aliyun')) result = { icon: <AlibabaIcon />, bg: 'var(--surface-overlay)', label: 'Alibaba' };
+  else if (n.includes('anolis'))       result = { icon: <AnolisIcon />, bg: 'var(--surface-overlay)', label: 'Anolis' };
+  else if (n.includes('opencloudos'))  result = { icon: <OpenCloudIcon />, bg: 'var(--surface-overlay)', label: 'OpenCloudOS' };
+  else if (n.includes('openeuler'))    result = { icon: <OpenEulerIcon />, bg: 'var(--surface-overlay)', label: 'openEuler' };
+  else if (n.includes('fedora'))       result = { icon: <FedoraIcon />, bg: 'var(--surface-overlay)', label: 'Fedora' };
+  else if (n.includes('opensuse'))     result = { icon: <OpenSuseIcon />, bg: 'var(--surface-overlay)', label: 'openSUSE' };
+  else if (n.includes('arch'))         result = { icon: <ArchIcon />, bg: 'var(--surface-overlay)', label: 'Arch' };
+  else if (n.includes('nixos'))        result = { icon: <NixosIcon />, bg: 'var(--surface-overlay)', label: 'NixOS' };
+  else if (n.includes('alpine'))       result = { icon: <AlpineIcon />, bg: 'var(--surface-overlay)', label: 'Alpine' };
+  else if (n.includes('gentoo'))       result = { icon: <GentooIcon />, bg: 'var(--surface-overlay)', label: 'Gentoo' };
+  else if (n.includes('aosc'))         result = { icon: <AoscIcon />, bg: 'var(--surface-overlay)', label: 'AOSC' };
+  else if (n.includes('freebsd'))      result = { icon: <FreeBSDIcon />, bg: 'var(--surface-overlay)', label: 'FreeBSD' };
   // ── 非 Linux 系统 ──
-  else if (n.includes('windows'))      result = { icon: <WinIcon />, bg: 'var(--bg-2)', label: 'Windows' };
-  else if (n.includes('mac') || n.includes('darwin')) result = { icon: <AppleIcon />, bg: 'var(--bg-2)', label: 'macOS' };
+  else if (n.includes('windows'))      result = { icon: <WinIcon />, bg: 'var(--surface-overlay)', label: 'Windows' };
+  else if (n.includes('mac') || n.includes('darwin')) result = { icon: <AppleIcon />, bg: 'var(--surface-overlay)', label: 'macOS' };
   // ── 环境关键词（基于服务器名称）──
   else if (n.includes('prod') || n.includes('生产'))  result = { icon: <LinuxIcon />, bg: '#059669', label: 'Prod' };
   else if (n.includes('dev') || n.includes('开发'))   result = { icon: <LinuxIcon />, bg: '#7c3aed', label: 'Dev' };
   else if (n.includes('test') || n.includes('测试'))  result = { icon: <LinuxIcon />, bg: '#dc2626', label: 'Test' };
   else if (n.includes('db') || n.includes('数据'))    result = { icon: <LinuxIcon />, bg: '#b45309', label: 'DB' };
   else if (n.includes('web') || n.includes('nginx'))  result = { icon: <LinuxIcon />, bg: '#0891b2', label: 'Web' };
-  else result = { icon: <LinuxIcon />, bg: 'var(--bg-3)', label: 'Linux' };
+  else result = { icon: <LinuxIcon />, bg: 'var(--surface-sunken)', label: 'Linux' };
   _osInfoCache.set(n, result);
   return result;
 };
@@ -194,21 +194,21 @@ export default function ServerList({
                 margin: 0,
                 // 亚克力效果
                 background: active
-                  ? 'rgba(16, 185, 129, 0.12)'
+                  ? 'var(--success-dim)'
                   : isHovered
-                  ? 'rgba(255,255,255,0.08)'
-                  : 'rgba(255,255,255,0.04)',
+                  ? 'var(--surface-hover)'
+                  : 'var(--surface-sunken)',
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
                 border: active
-                  ? '1px solid rgba(16,185,129,0.4)'
-                  : '1px solid rgba(255,255,255,0.08)',
+                  ? '1px solid var(--success-glow)'
+                  : '1px solid var(--border)',
                 transition: 'all 0.18s ease',
                 boxShadow: active
-                  ? '0 4px 20px rgba(16,185,129,0.15)'
+                  ? '0 4px 20px rgba(var(--success-rgb), 0.15)'
                   : isHovered
-                  ? '0 4px 16px rgba(0,0,0,0.25)'
-                  : '0 2px 8px rgba(0,0,0,0.15)',
+                  ? 'var(--shadow-lg)'
+                  : 'var(--shadow-md)',
               }}
             >
               {/* OS 系统图标 */}
@@ -228,17 +228,17 @@ export default function ServerList({
               </div>
 
               <div className="server-info" style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
-                <div className="server-name" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+                <div className="server-name" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {server.name || server.host}
                   </span>
                   {connected && (
-                    <span style={{ fontSize: 8, color: 'var(--green)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-                      ● CONN
+                    <span style={{ fontSize: 8, color: 'var(--success)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                      ● {t('已连接')}
                     </span>
                   )}
                 </div>
-                <div className="server-host" style={{ color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div className="server-host" style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {hideSensitive ? mask(`${server.username}@${server.host}`) : `${server.username}@${server.host}:${server.port || 22}`}
                 </div>
               </div>
@@ -250,27 +250,27 @@ export default function ServerList({
                     <span style={{
                       fontSize: 11,
                       fontFamily: 'var(--font-mono)',
-                      color: latClass === 'good' ? '#4ade80'
-                           : latClass === 'warn' ? '#facc15'
-                           : '#f87171',
+                      color: latClass === 'good' ? 'var(--success)'
+                           : latClass === 'warn' ? 'var(--warning)'
+                           : 'var(--danger)',
                     }}>
-                      {ping.latency === -1 ? '<1ms' : `${ping.latency}ms`}
+                      {ping.latency === -1 ? t('<1毫秒') : `${ping.latency}${t('毫秒')}`}
                     </span>
                     <div style={{
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      background: latClass === 'good' ? '#4ade80'
-                                : latClass === 'warn' ? '#facc15'
-                                : '#f87171',
-                      boxShadow: latClass === 'good' ? '0 0 8px #4ade80'
-                               : latClass === 'warn' ? '0 0 8px #facc15'
-                               : '0 0 8px #f87171',
+                      background: latClass === 'good' ? 'var(--success)'
+                                : latClass === 'warn' ? 'var(--warning)'
+                                : 'var(--danger)',
+                      boxShadow: latClass === 'good' ? '0 0 8px var(--success-glow)'
+                               : latClass === 'warn' ? '0 0 8px var(--warning)'
+                               : '0 0 8px var(--danger-glow)',
                     }} />
                   </>
                 ) : (
                   ping !== undefined && !ping?.online ? (
-                    <span style={{ fontSize: 14, color: '#f87171', fontWeight: 'bold', lineHeight: 1 }} title={t('服务器离线或不可达')}><X size={14} /></span>
+                    <span style={{ fontSize: 14, color: 'var(--danger)', fontWeight: 'bold', lineHeight: 1 }} title={t('服务器离线或不可达')}><X size={14} /></span>
                   ) : null
                 )}
 
@@ -284,7 +284,7 @@ export default function ServerList({
                     cursor: 'pointer',
                     padding: '4px 6px',
                     borderRadius: 6,
-                    color: isHovered ? 'var(--text-2)' : 'var(--text-4)',
+                    color: isHovered ? 'var(--text-primary)' : 'var(--text-muted)',
                     fontSize: 14,
                     opacity: isHovered ? 1 : 0,
                     transition: 'all 0.15s',
@@ -334,35 +334,35 @@ export default function ServerList({
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 20, height: 20, color: osInfo.bg }}>{osInfo.icon}</div>
-                      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{osInfo.label}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{osInfo.label}</span>
                     </div>
                   </td>
-                  <td style={{ fontWeight: 500, color: 'var(--text-1)' }}>
+                  <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
                     {server.name || server.host}
-                    {connected && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--green)', padding: '2px 4px', background: 'rgba(34,197,94,0.1)', borderRadius: 4 }}>CONN</span>}
+                    {connected && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--success)', padding: '2px 4px', background: 'var(--success-dim)', borderRadius: 4 }}>{t('已连接')}</span>}
                   </td>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-2)' }}>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-secondary)' }}>
                     {hideSensitive ? mask(server.host) : `${server.host}:${server.port || 22}`}
                   </td>
-                  <td style={{ color: 'var(--text-2)' }}>{hideSensitive ? mask(server.username) : server.username}</td>
+                  <td style={{ color: 'var(--text-secondary)' }}>{hideSensitive ? mask(server.username) : server.username}</td>
                   <td>
                     {ping?.online && ping?.latency !== undefined && ping?.latency !== null ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <div style={{
                           width: 8, height: 8, borderRadius: '50%',
-                          background: latClass === 'good' ? '#4ade80' : latClass === 'warn' ? '#facc15' : '#f87171'
+                          background: latClass === 'good' ? 'var(--success)' : latClass === 'warn' ? 'var(--warning)' : 'var(--danger)'
                         }} />
-                        <span style={{ fontSize: 12, color: latClass === 'good' ? '#4ade80' : latClass === 'warn' ? '#facc15' : '#f87171', fontFamily: 'var(--font-mono)' }}>
-                          {ping.latency === -1 ? '<1ms' : `${ping.latency}ms`}
+                        <span style={{ fontSize: 12, color: latClass === 'good' ? 'var(--success)' : latClass === 'warn' ? 'var(--warning)' : 'var(--danger)', fontFamily: 'var(--font-mono)' }}>
+                          {ping.latency === -1 ? t('<1毫秒') : `${ping.latency}${t('毫秒')}`}
                         </span>
                       </div>
                     ) : (
                       ping !== undefined && !ping?.online ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#f87171' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--danger)' }}>
                           <X size={14} />
-                          <span style={{ fontSize: 12 }}>Offline</span>
+                          <span style={{ fontSize: 12 }}>{t('离线')}</span>
                         </div>
-                      ) : <span style={{ color: 'var(--text-4)' }}>-</span>
+                      ) : <span style={{ color: 'var(--text-muted)' }}>-</span>
                     )}
                   </td>
                   <td>

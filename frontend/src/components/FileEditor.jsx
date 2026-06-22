@@ -326,7 +326,7 @@ export default function FileEditor({
     window.addEventListener('mouseup', onUp);
   };
 
-  // memo 化 lang 和 extensions，避免每次渲染创建新 LanguageSupport 实例导致 CodeMirror 重新装配
+  // memo 化 lang 和 extensions，避免每次渲染创建新的 LanguageSupport 实例导致 CodeMirror 重新装配
   const lang = useMemo(() => activeFile ? getLanguage(activeFile.name) : null, [activeFile?.name]);
   const extensions = useMemo(() => lang ? [lang] : [], [lang]);
   const ext = activeFile ? (activeFile.name.split('.').pop() || '').toLowerCase() : '';
@@ -429,7 +429,7 @@ export default function FileEditor({
       gap: 2,
       padding: '4px 8px 0',
       borderBottom: '1px solid var(--border)',
-      background: 'var(--bg-2)',
+      background: 'var(--surface-overlay)',
       overflowX: 'auto',
       flexShrink: 0,
     }}>
@@ -440,23 +440,9 @@ export default function FileEditor({
         return (
           <div
             key={f.path}
+            className={`terminal-sub-tab ${isActive ? 'active' : ''}`}
             onClick={() => onActivate(f.path)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '5px 12px',
-              fontSize: 12,
-              fontFamily: 'var(--font-mono)',
-              cursor: 'pointer',
-              borderRadius: 8,
-              border: isActive ? '1px solid var(--green)' : '1px solid var(--text-4)',
-              boxShadow: isActive ? '0 0 0 1px var(--green)' : 'none',
-              background: isActive ? 'var(--bg-4)' : 'var(--bg-3)',
-              color: isActive ? 'var(--text-1)' : 'var(--text-2)',
-              whiteSpace: 'nowrap',
-              opacity: isActive ? 1 : 0.7,
-            }}
+            style={{ fontFamily: 'var(--font-mono)', padding: '5px 12px' }}
           >
             <span>{f.name}{fModified ? ' ●' : ''}</span>
             <span
@@ -507,8 +493,8 @@ export default function FileEditor({
           {isModified && (
             <span style={{
               fontSize: 11,
-              background: 'var(--yellow-dim)',
-              color: 'var(--yellow)',
+              background: 'var(--warning-dim)',
+              color: 'var(--warning)',
               padding: '2px 8px',
               borderRadius: 4,
               fontWeight: 500,
@@ -520,9 +506,9 @@ export default function FileEditor({
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <span style={{
             fontSize: 11,
-            color: 'var(--text-4)',
+            color: 'var(--text-tertiary)',
             fontFamily: 'var(--font-mono)',
-            background: 'var(--bg-3)',
+            background: 'var(--surface-sunken)',
             padding: '2px 8px',
             borderRadius: 4,
           }}>
@@ -535,7 +521,7 @@ export default function FileEditor({
               className="btn btn-ghost btn-sm"
               value={splitPosition}
               onChange={(e) => onSplitPositionChange && onSplitPositionChange(e.target.value)}
-              style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', border: 'none', background: 'var(--bg-2)', color: 'var(--text-1)', borderRadius: 6 }}
+              style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', border: 'none', background: 'var(--surface-overlay)', color: 'var(--text-primary)', borderRadius: 6 }}
             >
               <option value="left">{t('左侧分栏')}</option>
               <option value="right">{t('右侧分栏')}</option>
@@ -547,7 +533,7 @@ export default function FileEditor({
             className="btn btn-ghost btn-sm"
             value={mode}
             onChange={(e) => onModeChange && onModeChange(e.target.value)}
-            style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', border: 'none', background: 'var(--bg-2)', color: 'var(--text-1)', borderRadius: 6 }}
+            style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', border: 'none', background: 'var(--surface-overlay)', color: 'var(--text-primary)', borderRadius: 6 }}
           >
             <option value="modal">{t('全屏弹窗')}</option>
             <option value="popup">{t('浮动面板')}</option>
@@ -576,7 +562,7 @@ export default function FileEditor({
       <div style={{
         padding: '4px 16px 8px',
         fontSize: 11,
-        color: 'var(--text-4)',
+        color: 'var(--text-tertiary)',
         fontFamily: 'var(--font-mono)',
         borderBottom: '1px solid var(--border)',
         overflow: 'auto',
@@ -611,11 +597,11 @@ export default function FileEditor({
         padding: '6px 16px',
         borderTop: '1px solid var(--border)',
         fontSize: 11,
-        color: 'var(--text-4)',
+        color: 'var(--text-tertiary)',
         fontFamily: 'var(--font-mono)',
       }}>
         <span>{currentContent.split('\n').length}{t('行')} · {byteSize}{t('字节')}</span>
-        <span>UTF-8 · {lang ? ext.toUpperCase() : 'Text'}</span>
+        <span>UTF-8 · {lang ? ext.toUpperCase() : t('文本')}</span>
       </div>
 
       {/* 右键菜单 */}
@@ -647,7 +633,7 @@ export default function FileEditor({
               key={item.action}
               className="context-menu-item"
               style={{ padding: '6px 12px', cursor: item.disabled ? 'default' : 'pointer', display: 'flex', justifyContent: 'space-between', fontSize: 13, opacity: item.disabled ? 0.4 : 1 }}
-              onMouseEnter={(e) => { if (!item.disabled) e.currentTarget.style.background = 'rgba(128,128,128,0.08)'; }}
+              onMouseEnter={(e) => { if (!item.disabled) e.currentTarget.style.background = 'rgba(128,128,128,0.12)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
               onClick={() => { if (!item.disabled) handleMenuAction(item.action); }}
             >
@@ -675,7 +661,7 @@ export default function FileEditor({
           alignItems: 'center',
           gap: 8,
           padding: '8px 16px',
-          background: 'var(--bg-2)',
+          background: 'var(--surface-overlay)',
           border: '1px solid var(--border)',
           borderRadius: 10,
           boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
@@ -689,11 +675,11 @@ export default function FileEditor({
           {activeFile ? activeFile.name : t('编辑器')}
         </span>
         {files.length > 1 && (
-          <span style={{ fontSize: 11, color: 'var(--text-4)', background: 'var(--bg-3)', padding: '1px 6px', borderRadius: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'var(--surface-sunken)', padding: '1px 6px', borderRadius: 4 }}>
             {files.length}
           </span>
         )}
-        {isModified && <span style={{ fontSize: 11, color: 'var(--yellow)' }}>{t('未保存')}</span>}
+        {isModified && <span style={{ fontSize: 11, color: 'var(--warning)' }}>{t('未保存')}</span>}
       </div>
     );
   }
@@ -711,7 +697,7 @@ export default function FileEditor({
           zIndex: Z.EDITOR_TOOLBAR,
           display: 'flex',
           flexDirection: 'column',
-          background: 'var(--bg-1)',
+          background: 'var(--surface-raised)',
           border: '1px solid var(--border)',
           borderRadius: 10,
           boxShadow: '0 20px 60px rgba(0,0,0,0.5)',

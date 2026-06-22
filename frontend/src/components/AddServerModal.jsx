@@ -62,6 +62,14 @@ export default function AddServerModal({ server, onSave, onClose }) {
       data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
       if (server?.id) data.id = server.id;
       if (server?.id && !data.password) delete data.password;
+      // 编辑时私钥是掩码占位符，不覆盖已保存的私钥
+      if (server?.id && (!data.privateKey || data.privateKey === '[key configured]')) {
+        delete data.privateKey;
+      }
+      // 编辑时密码短语是掩码占位符，不覆盖已保存的密码短语
+      if (server?.id && (!data.passphrase || data.passphrase === '****')) {
+        delete data.passphrase;
+      }
       await onSave(data);
     } finally {
       setSaving(false);
@@ -165,7 +173,7 @@ export default function AddServerModal({ server, onSave, onClose }) {
                       onChange={set('password')}
                       style={{ paddingRight: 36 }}
                     />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 12, bottom: 10, background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 12, bottom: 10, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
@@ -196,12 +204,12 @@ export default function AddServerModal({ server, onSave, onClose }) {
                       <input
                         className="input"
                         type={showPassphrase ? "text" : "password"}
-                        placeholder="Passphrase"
+                        placeholder={t('私钥密码短语')}
                         value={form.passphrase}
                         onChange={set('passphrase')}
                         style={{ paddingRight: 36 }}
                       />
-                      <button type="button" onClick={() => setShowPassphrase(!showPassphrase)} style={{ position: 'absolute', right: 12, bottom: 10, background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                      <button type="button" onClick={() => setShowPassphrase(!showPassphrase)} style={{ position: 'absolute', right: 12, bottom: 10, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
                         {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>

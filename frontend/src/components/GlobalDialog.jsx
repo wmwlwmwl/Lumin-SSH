@@ -114,10 +114,10 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
 
   return (
     <div className="modal modal-sm" style={{ padding: 32, textAlign: 'center' }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', marginBottom: 16 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
         {current.title}
       </div>
-      <div style={{ fontSize: 14, color: 'var(--text-3)', marginBottom: 28, lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: current.type === 'choice' ? 'pre-wrap' : undefined, textAlign: current.type === 'choice' ? 'left' : undefined }}>
+      <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginBottom: 28, lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: current.type === 'choice' ? 'pre-wrap' : undefined, textAlign: current.type === 'choice' ? 'left' : undefined }}>
         {current.message}
       </div>
       
@@ -142,11 +142,11 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
               onClick={() => setShowPassword(!showPassword)}
               style={{
                 position: 'absolute', right: 42, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer',
+                background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer',
                 padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 16, lineHeight: 1, borderRadius: 4, transition: 'background 0.15s',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(88,166,255,0.12)'}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--accent-rgb), 0.12)'}
               onMouseLeave={e => e.currentTarget.style.background = 'none'}
             >{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>
             <button
@@ -165,16 +165,16 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
               title={t('粘贴')}
               style={{
                 position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer',
+                background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer',
                 padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 16, lineHeight: 1, borderRadius: 4, transition: 'background 0.15s',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(88,166,255,0.12)'}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--accent-rgb), 0.12)'}
               onMouseLeave={e => e.currentTarget.style.background = 'none'}
             ><Clipboard size={16} /></button>
           </div>
           {current.checkboxLabel && (
-            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 28, fontSize: 13, color: 'var(--text-3)', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 28, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
               <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
               {current.checkboxLabel}
             </label>

@@ -33,8 +33,8 @@ export default function ConnectingCard({ connectingServer, t, onCancel }) {
             <div style={{ fontSize: 15, fontWeight: 700, color: C.inputColor, marginBottom: 3 }}>
               {server.name || server.host}
             </div>
-            <div style={{ fontSize: 12, color: '#3fb950', fontFamily: 'monospace' }}>
-              SSH {host}:{port || 22}
+            <div style={{ fontSize: 12, color: 'var(--success)', fontFamily: 'monospace' }}>
+              {t('SSH')} {host}:{port || 22}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -53,19 +53,19 @@ export default function ConnectingCard({ connectingServer, t, onCancel }) {
 
         {/* 双进度条 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', flexShrink: 0, boxShadow: '0 0 8px #22c55e' }} />
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--success)', flexShrink: 0, boxShadow: '0 0 8px var(--success)' }} />
           <div style={{ flex: 1, height: 4, borderRadius: 4, background: C.separator, overflow: 'hidden' }}>
             <div style={{
               height: '100%', borderRadius: 4,
-              background: 'linear-gradient(90deg, #22c55e, #86efac)',
+              background: 'linear-gradient(90deg, var(--success), var(--success))',
               animation: 'ssh-progress-indeterminate 1.4s ease-in-out infinite',
             }} />
           </div>
-          <div style={{ flexShrink: 0, fontSize: 14, color: '#22c55e' }}><Radio size={14} /></div>
+          <div style={{ flexShrink: 0, fontSize: 14, color: 'var(--success)' }}><Radio size={14} /></div>
           <div style={{ flex: 1, height: 4, borderRadius: 4, background: C.separator, overflow: 'hidden' }}>
             <div style={{
               height: '100%', borderRadius: 4,
-              background: 'linear-gradient(90deg, #22c55e, #86efac)',
+              background: 'linear-gradient(90deg, var(--success), var(--success))',
               animation: 'ssh-progress-indeterminate 1.4s ease-in-out 0.4s infinite',
             }} />
           </div>

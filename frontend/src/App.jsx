@@ -206,7 +206,8 @@ export default function App() {
     const useCustomAccent = localStorage.getItem('useCustomAccent') === 'true';
     const themeAccent = localStorage.getItem('themeAccent');
     if (useCustomAccent && themeAccent) {
-      document.documentElement.style.setProperty('--green', themeAccent);
+      document.documentElement.style.setProperty('--success', themeAccent);
+      document.documentElement.style.setProperty('--green', themeAccent); // 兼容旧组件
     }
 
     // 系统主题变化时自动跟随
@@ -987,17 +988,16 @@ export default function App() {
       {/* ── Topbar ───────────────────────────────────────── */}
       <div className="topbar">
         <div className="topbar-content">
-          <div className="topbar-logo" style={{ marginLeft: 8, cursor: 'pointer' }} onClick={() => { setActiveSessionId(null); setActiveTerminalId(null); setShowSettings(false); }}>
+          <div className="topbar-logo" onClick={() => { setActiveSessionId(null); setActiveTerminalId(null); setShowSettings(false); }}>
             <img src={logoImg} alt="Lumin SSH" />
-            <div className="topbar-title" style={{ userSelect: 'none' }}>Lumin</div>
+            <div className="topbar-title">Lumin</div>
           </div>
           
           {sessions.length > 0 && (
-            <div className="tab-bar" style={{ flex: 1, padding: '0 16px', background: 'transparent', borderBottom: 'none', height: '100%', alignItems: 'center' }}>
+            <div className="tab-bar">
               <button 
                 className="btn btn-ghost btn-sm no-drag" 
                 onClick={() => { setActiveSessionId(null); setActiveTerminalId(null); }} 
-                style={{ marginRight: 8, height: '26px', display: 'flex', alignItems: 'center', gap: 4 }}
                 title={t('返回主页')}
               >
                 <House size={14} />
@@ -1017,9 +1017,8 @@ export default function App() {
                       y: rect.bottom + 4,
                     });
                   }}
-                  style={{ height: '28px', minHeight: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', lineHeight: 1, background: s.status === 'connecting' ? '#f0c000' : s.status === 'connected' ? 'var(--green, #22c55e)' : (s.status === 'error' || s.status === 'closed') ? 'var(--red, #ef4444)' : '#6b7280' }} />
+                  <span className={`status-dot ${s.status === 'connecting' ? 'connecting' : s.status === 'connected' ? 'online' : (s.status === 'error' || s.status === 'closed') ? 'offline' : 'offline'}`} />
                   <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {s.serverName}
                   </span>
@@ -1031,24 +1030,14 @@ export default function App() {
                         reconnectSession(s);
                       }}
                       title={t('重新连接')}
-                      style={{
-                        cursor: 'pointer',
-                        opacity: 0.6,
-                        marginLeft: '2px',
-                        marginRight: '2px',
-                        fontSize: '12px',
-                        transition: 'opacity 0.2s',
-                        userSelect: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
+                      style={{ cursor: 'pointer', opacity: 0.6, display: 'flex', alignItems: 'center', transition: 'opacity 0.2s' }}
                       onMouseEnter={(e) => e.target.style.opacity = 1}
                       onMouseLeave={(e) => e.target.style.opacity = 0.6}
                     >
                       <RefreshCw size={12} />
                     </span>
                   )}
-                  <span className="tab-close no-drag" onClick={(e) => closeSession(s.id, e)} style={{ display: "flex", alignItems: "center" }}><X size={12} /></span>
+                  <span className="tab-close no-drag" onClick={(e) => closeSession(s.id, e)}><X size={12} /></span>
                 </div>
               ))}
             </div>
@@ -1056,18 +1045,11 @@ export default function App() {
           {sessions.length === 0 && <div style={{ flex: 1 }}></div>}
 
           <div className="window-controls">
-            <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowSettings(true)} title={t('设置')} aria-label={t('设置')} style={{ display: 'flex', alignItems: 'center' }}><Settings size={16} /></button>
-
-            <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 8px' }}></div>
-
-            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowMinimise} title={t('最小化')} aria-label={t('最小化')} style={{ display: 'flex', alignItems: 'center' }}><Minus size={14} /></button>
-            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowToggleMaximise} title={t('最大化')} aria-label={t('最大化')} style={{ display: 'flex', alignItems: 'center' }}><Square size={14} /></button>
-            <button
-              className="btn btn-ghost btn-icon no-drag"
-              title={t('关闭')}
-              aria-label={t('关闭')}
-              onClick={handleCloseWindow}
-            ><X size={14} /></button>
+            <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowSettings(true)} title={t('设置')} aria-label={t('设置')}><Settings size={16} /></button>
+            <div className="window-divider" />
+            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowMinimise} title={t('最小化')} aria-label={t('最小化')}><Minus size={14} /></button>
+            <button className="btn btn-ghost btn-icon no-drag" onClick={WindowToggleMaximise} title={t('最大化')} aria-label={t('最大化')}><Square size={14} /></button>
+            <button className="btn btn-ghost btn-icon no-drag" title={t('关闭')} aria-label={t('关闭')} onClick={handleCloseWindow}><X size={14} /></button>
           </div>
         </div>
       </div>
@@ -1081,7 +1063,7 @@ export default function App() {
               {/* ⚡ 闪电直连卡片 */}
               <div className="glass-card quick-connect-box">
                 <div className="card-header-icon-title">
-                  <span className="card-header-icon" style={{ display: "flex", alignItems: "center" }}><Zap size={18} /></span>
+                  <span className="card-header-icon"><Zap size={18} /></span>
                   <span className="card-header-title">{t('闪电直连')}</span>
                 </div>
                 <form onSubmit={handleQuickConnectDirect} className="quick-connect-form">
@@ -1111,7 +1093,7 @@ export default function App() {
                     <div className="form-group-compact" style={{ position: 'relative' }}>
                       <label>{t('密码')}</label>
                       <input className="input-compact" type={showQuickPass ? "text" : "password"} placeholder={t('请输入密码')} value={quickPass} onChange={e => setQuickPass(e.target.value)} style={{ paddingRight: 32 }} />
-                      <button type="button" aria-label={showQuickPass ? t('隐藏密码') : t('显示密码')} onClick={() => setShowQuickPass(!showQuickPass)} style={{ position: 'absolute', right: 6, bottom: 4, background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                      <button type="button" aria-label={showQuickPass ? t('隐藏密码') : t('显示密码')} onClick={() => setShowQuickPass(!showQuickPass)} style={{ position: 'absolute', right: 6, bottom: 4, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
                         {showQuickPass ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
                     </div>
@@ -1120,14 +1102,14 @@ export default function App() {
                       <div className="form-group-compact">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <label style={{ marginBottom: 0 }}>{t('私钥内容')}</label>
-                          <button type="button" className="btn-text-action" onClick={handleQuickPrivateKeyFile} style={{ display: "flex", alignItems: "center", gap: 4 }}><FolderOpen size={14} /> {t('浏览')}</button>
+                          <button type="button" className="btn-text-action" onClick={handleQuickPrivateKeyFile}><FolderOpen size={14} /> {t('浏览')}</button>
                         </div>
                         <textarea className="textarea-compact" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" value={quickKey} onChange={e => setQuickKey(e.target.value)} />
                       </div>
                       <div className="form-group-compact" style={{ position: 'relative' }}>
                         <label>{t('私钥密码短语 (可选)')}</label>
-                        <input className="input-compact" type={showQuickPassphrase ? "text" : "password"} placeholder="Passphrase" value={quickPassphrase} onChange={e => setQuickPassphrase(e.target.value)} style={{ paddingRight: 32 }} />
-                        <button type="button" aria-label={showQuickPassphrase ? t('隐藏密码短语') : t('显示密码短语')} onClick={() => setShowQuickPassphrase(!showQuickPassphrase)} style={{ position: 'absolute', right: 6, bottom: 4, background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                        <input className="input-compact" type={showQuickPassphrase ? "text" : "password"} placeholder={t('私钥密码短语')} value={quickPassphrase} onChange={e => setQuickPassphrase(e.target.value)} style={{ paddingRight: 32 }} />
+                        <button type="button" aria-label={showQuickPassphrase ? t('隐藏密码短语') : t('显示密码短语')} onClick={() => setShowQuickPassphrase(!showQuickPassphrase)} style={{ position: 'absolute', right: 6, bottom: 4, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
                           {showQuickPassphrase ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
                       </div>
@@ -1140,7 +1122,7 @@ export default function App() {
               {/* 📊 状态概览 */}
               <div className="glass-card status-overview-box">
                 <div className="card-header-icon-title">
-                  <span className="card-header-icon" style={{ display: "flex", alignItems: "center" }}><BarChart3 size={18} /></span>
+                  <span className="card-header-icon"><BarChart3 size={18} /></span>
                   <span className="card-header-title">{t('系统状态')}</span>
                   <button className={`btn-icon-spin ${isRefreshingPing ? 'spinning' : ''}`} onClick={handleRefreshPing} title={t('刷新延迟')} aria-label={t('刷新延迟')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, display: "flex", alignItems: "center" }}><RefreshCw size={14} /></button>
                 </div>
@@ -1150,11 +1132,11 @@ export default function App() {
                     <div className="stat-lbl">{t('服务器总数')}</div>
                   </div>
                   <div className="stat-item">
-                    <div className="stat-val" style={{ color: 'var(--green)' }}>{pingCounts.online}</div>
+                    <div className="stat-val" style={{ color: 'var(--success)' }}>{pingCounts.online}</div>
                     <div className="stat-lbl">{t('在线节点')}</div>
                   </div>
                   <div className="stat-item">
-                    <div className="stat-val" style={{ color: 'var(--red)' }}>{pingCounts.offline}</div>
+                    <div className="stat-val" style={{ color: 'var(--danger)' }}>{pingCounts.offline}</div>
                     <div className="stat-lbl">{t('离线节点')}</div>
                   </div>
                 </div>
@@ -1168,51 +1150,51 @@ export default function App() {
               <div className="hosts-section-container">
                 <div className="section-title-container">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-                    <span className="section-title-icon" style={{ display: "flex", alignItems: "center" }}><Monitor size={16} /></span>
+                    <span className="section-title-icon"><Monitor size={16} /></span>
                     <span className="section-title">{t('主机')}</span>
                     {/* 搜索框 */}
                     <div style={{ position: 'relative', flex: 1, maxWidth: 280, minWidth: 120 }}>
-                      <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)', pointerEvents: 'none' }} />
+                      <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                       <input
                         className="input-compact"
                         placeholder={t('搜索服务器...')}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        style={{ width: '100%', paddingLeft: 28, height: 30, fontSize: 12, borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--border)' }}
+                        style={{ width: '100%', paddingLeft: 28, height: 30, fontSize: 12, borderRadius: 8, background: 'var(--surface-overlay)', border: '1px solid var(--border)' }}
                       />
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 12 }}>
                     {/* 视图切换 - 分段控件 */}
-                    <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                    <div className="segment-control">
                       <button
                         onClick={() => { setServerListViewMode('grid'); localStorage.setItem('serverListViewMode', 'grid'); }}
                         title={t('卡片视图')}
-                        style={{ padding: '5px 10px', fontSize: 12, background: serverListViewMode === 'grid' ? 'var(--bg-3)' : 'var(--bg-1)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: serverListViewMode === 'grid' ? 'var(--text-1)' : 'var(--text-4)', transition: 'all 0.15s' }}
+                        className={serverListViewMode === 'grid' ? 'active' : ''}
                       >
                         <LayoutGrid size={14} />
                       </button>
-                      <div style={{ width: 1, background: 'var(--border)' }} />
+                      <div className="segment-control-divider" />
                       <button
                         onClick={() => { setServerListViewMode('table'); localStorage.setItem('serverListViewMode', 'table'); }}
                         title={t('列表视图')}
-                        style={{ padding: '5px 10px', fontSize: 12, background: serverListViewMode === 'table' ? 'var(--bg-3)' : 'var(--bg-1)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: serverListViewMode === 'table' ? 'var(--text-1)' : 'var(--text-4)', transition: 'all 0.15s' }}
+                        className={serverListViewMode === 'table' ? 'active' : ''}
                       >
                         <List size={14} />
                       </button>
                     </div>
                     {/* 隐藏敏感信息 */}
                     <button
+                      className="btn btn-ghost btn-icon"
                       onClick={() => { const v = !hideSensitive; setHideSensitive(v); localStorage.setItem('hideSensitive', v); }}
                       title={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')}
-                      style={{ padding: '5px 8px', background: hideSensitive ? 'var(--yellow-dim)' : 'var(--bg-1)', border: '1px solid ' + (hideSensitive ? 'var(--yellow)' : 'var(--border)'), borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: hideSensitive ? 'var(--yellow)' : 'var(--text-4)', transition: 'all 0.15s' }}
+                      style={hideSensitive ? { background: 'var(--warning-dim)', color: 'var(--warning)', border: '1px solid var(--warning)' } : {}}
                     >
                       {hideSensitive ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                     {/* 添加按钮 */}
                     <button
                       className="btn btn-primary btn-sm"
-                      style={{ fontSize: 12, padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 4 }}
                       onClick={() => { setEditServer(null); setShowAddServer(true); }}
                     >
                       <Plus size={14} /> {t('添加')}
@@ -1241,12 +1223,11 @@ export default function App() {
         <div style={{ display: activeSessionId !== null ? 'flex' : 'none', flexDirection: 'column', height: '100%', flex: 1 }}>
             {/* Content Type Tabs */}
             {activeSession && (
-              <div className="content-tab-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 16 }}>
+              <div className="content-tab-bar">
                 <div style={{ display: 'flex', gap: 2 }}>
                   <button
                     className={`content-tab ${contentTab === 'terminal' ? 'active' : ''}`}
                     onClick={() => setContentTab('terminal')}
-                    style={{ display: "flex", alignItems: "center", gap: 4 }}
                   >
                     <TerminalIcon size={14} /> {t('终端')}
                   </button>
@@ -1255,7 +1236,6 @@ export default function App() {
                       className={`content-tab ${contentTab === 'files' ? 'active' : ''}`}
                       onClick={() => setContentTab('files')}
                       disabled={activeSession.status !== 'connected'}
-                      style={{ display: "flex", alignItems: "center", gap: 4 }}
                     >
                       <Folder size={14} /> {t('文件管理')}
                     </button>
@@ -1264,7 +1244,6 @@ export default function App() {
                     className={`content-tab ${contentTab === 'history' ? 'active' : ''}`}
                     onClick={() => setContentTab('history')}
                     disabled={activeSession.status !== 'connected'}
-                    style={{ display: "flex", alignItems: "center", gap: 4 }}
                   >
                     <ScrollText size={14} /> {t('历史指令')}
                   </button>
@@ -1272,7 +1251,7 @@ export default function App() {
                 
                 {activeSession.status === 'connected' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{t('文件管理器布局')}:</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{t('文件管理器布局')}:</span>
                     <select
                       className="select-compact"
                       style={{ padding: '2px 8px', fontSize: 12, height: 24 }}
@@ -1282,7 +1261,7 @@ export default function App() {
                         setFileManagerPosition(val);
                         localStorage.setItem('fileManagerPosition', val);
                         if (val !== 'tab' && contentTab === 'files') {
-                          setContentTab('terminal'); // 如果切走，自动返回终端
+                          setContentTab('terminal');
                         }
                       }}
                     >
@@ -1297,67 +1276,30 @@ export default function App() {
 
             {/* ── 终端子标签栏（多终端支持） ──────────────────── */}
             {activeSession && contentTab === 'terminal' && activeSession.status === 'connected' && activeSession.terminals && activeSession.terminals.length >= 1 && (
-              <div className="terminal-sub-tab-bar" style={{
-                display: 'flex', alignItems: 'center', gap: 2,
-                padding: '2px 12px 1px',
-                background: 'var(--bg-1)',
-                borderBottom: '1px solid var(--border)',
-                flexShrink: 0,
-              }}>
-                {activeSession.terminals.map((term, idx) => (
+              <div className="terminal-sub-tab-bar">
+                {activeSession.terminals.map((term) => (
                   <div
                     key={term.id}
                     className={`terminal-sub-tab ${activeTerminalId === term.id ? 'active' : ''}`}
                     onClick={() => { setActiveTerminalId(term.id); setContentTab('terminal'); lastTerminalRef.current[activeSession.id] = term.id; }}
                     title={term.label}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      padding: '3px 10px',
-                      fontSize: 11,
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      background: activeTerminalId === term.id ? 'var(--bg-3)' : 'var(--bg-2)',
-                      color: activeTerminalId === term.id ? 'var(--text-1)' : 'var(--text-3)',
-                      border: activeTerminalId === term.id ? '1px solid var(--green)' : '1px solid var(--border)',
-                      borderBottom: activeTerminalId === term.id ? '1px solid var(--green)' : '1px solid var(--border)',
-                      transition: 'all 0.15s',
-                    }}
                   >
-                    <span style={{ display: "flex", alignItems: "center" }}><Monitor size={11} /></span>
+                    <Monitor size={11} />
                     <span>{term.label}</span>
                     {activeSession.terminals.length > 1 && (
                       <span
                         className="terminal-sub-tab-close"
                         onClick={(e) => closeTerminal(activeSession.id, term.id, e)}
-                        style={{
-                          marginLeft: 4, fontSize: 10, opacity: 0.5,
-                          cursor: 'pointer', lineHeight: 1, display: "flex", alignItems: "center",
-                        }}
-                        onMouseEnter={e2 => e2.currentTarget.style.opacity = 1}
-                        onMouseLeave={e2 => e2.currentTarget.style.opacity = 0.5}
                       ><X size={10} /></span>
                     )}
                   </div>
                 ))}
                 {/* ── 新建终端按钮 ── */}
                 <button
-                  className="btn-ghost"
+                  className="btn btn-ghost btn-sm"
                   onClick={() => openNewTerminal(activeSession.id)}
                   title={t('新建终端')}
-                  style={{
-                    marginLeft: 2, padding: '5px 12px',
-                    fontSize: 12, lineHeight: 1,
-                    cursor: 'pointer',
-                    border: '1px solid var(--text-4)',
-                    background: 'var(--bg-3)', color: 'var(--text-2)',
-                    borderRadius: 8,
-                    opacity: 0.7,
-                    transition: 'all 0.2s',
-                    display: 'flex', alignItems: 'center', gap: 4,
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'var(--bg-4)'; e.currentTarget.style.borderColor = 'var(--text-3)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.background = 'var(--bg-3)'; e.currentTarget.style.borderColor = 'var(--text-4)'; }}
+                  style={{ marginLeft: 2 }}
                 ><Plus size={14} /> {t('新建终端')}</button>
               </div>
             )}
@@ -1398,16 +1340,7 @@ export default function App() {
                         <div
                           className="split-resizer-v"
                           onMouseDown={(e) => startDrag(e, 'left')}
-                          style={{
-                            width: '4px',
-                            cursor: 'col-resize',
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            zIndex: Z.PANEL_BUTTON,
-                            position: 'relative',
-                            marginLeft: '-2px',
-                            marginRight: '-2px',
-                            transition: 'background 0.2s',
-                          }}
+                          style={{ zIndex: Z.PANEL_BUTTON, marginLeft: '-2px', marginRight: '-2px' }}
                         />
                       </>
                     )}
@@ -1461,16 +1394,7 @@ export default function App() {
                         <div
                           className="split-resizer-h"
                           onMouseDown={(e) => startDrag(e, 'bottom')}
-                          style={{
-                            height: '4px',
-                            cursor: 'row-resize',
-                            background: 'rgba(255, 255, 255, 0.02)',
-                            zIndex: Z.PANEL_BUTTON,
-                            position: 'relative',
-                            marginTop: '-2px',
-                            marginBottom: '-2px',
-                            transition: 'background 0.2s',
-                          }}
+                          style={{ zIndex: Z.PANEL_BUTTON, marginTop: '-2px', marginBottom: '-2px' }}
                         />
                         <div style={{
                           height: bottomSplitHeight + 'px',
@@ -1602,26 +1526,12 @@ export default function App() {
 
       {/* ── 标签右键菜单 ── */}
       {tabContextMenu && (
-        <div style={{
-            position: 'fixed',
-            left: tabContextMenu.x,
-            top: tabContextMenu.y,
-            zIndex: 10000,
-            background: 'var(--bg-2)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '4px 0',
-            minWidth: 140,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-          }}>
+        <div className="tab-context-menu" style={{ left: tabContextMenu.x, top: tabContextMenu.y }}>
             <div
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer', color: 'var(--text-2)', transition: 'background 0.1s' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-3)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              className="tab-context-menu-item"
               onClick={() => {
                 const sessionId = tabContextMenu.sessionId;
                 setTabContextMenu(null);
-                // 直接关闭，不弹确认框
                 const session = sessionsRef.current.find(s => s.id === sessionId);
                 const termIds = session?.terminals ? session.terminals.map(t => t.id) : [sessionId];
                 termIds.forEach(id => {

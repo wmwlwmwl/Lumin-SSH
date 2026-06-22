@@ -121,7 +121,7 @@ function TreeNode({ item, index, path, selectedPath, onSelect, contextMenu, onCo
     return (
       <div style={{
         position: 'absolute', left: 4, right: 4, height: 2,
-        background: '#22c55e', borderRadius: 1, zIndex: Z.SCROLLBAR,
+        background: 'var(--success)', borderRadius: 1, zIndex: Z.SCROLLBAR,
         [pos === 'before' ? 'top' : 'bottom']: -1,
       }} />
     );
@@ -150,9 +150,9 @@ function TreeNode({ item, index, path, selectedPath, onSelect, contextMenu, onCo
             {...commonDragProps}
             style={{
               display: 'flex', alignItems: 'center', gap: 4, padding: '5px 8px', cursor: 'pointer',
-              borderRadius: 3, fontSize: 13, color: isSelected ? '#58a6ff' : theme.inputColor,
-              background: dropPos === 'inside' ? 'rgba(34,197,94,0.15)' : isSelected ? 'rgba(88,166,255,0.1)' : hover ? 'rgba(128,128,128,0.06)' : 'transparent',
-              outline: dropPos === 'inside' ? '1px dashed #22c55e' : 'none',
+              borderRadius: 3, fontSize: 13, color: isSelected ? 'var(--accent)' : theme.inputColor,
+              background: dropPos === 'inside' ? 'rgba(var(--success-rgb), 0.15)' : isSelected ? 'rgba(var(--accent-rgb), 0.1)' : hover ? 'rgba(128,128,128,0.06)' : 'transparent',
+              outline: dropPos === 'inside' ? '1px dashed var(--success)' : 'none',
               userSelect: 'none',
               transition: 'background 0.1s',
             }}
@@ -216,8 +216,8 @@ function TreeNode({ item, index, path, selectedPath, onSelect, contextMenu, onCo
         {...commonDragProps}
         style={{
           display: 'flex', alignItems: 'center', padding: '5px 8px', cursor: 'pointer',
-          borderRadius: 3, fontSize: 12, color: isSelected ? '#22c55e' : theme.inputColor,
-          background: isSelected ? 'rgba(34,197,94,0.08)' : hover ? 'rgba(128,128,128,0.06)' : 'transparent',
+          borderRadius: 3, fontSize: 12, color: isSelected ? 'var(--success)' : theme.inputColor,
+          background: isSelected ? 'rgba(var(--success-rgb), 0.08)' : hover ? 'rgba(128,128,128,0.06)' : 'transparent',
           userSelect: 'none',
         }}
       >
@@ -831,7 +831,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
     padding: '6px 14px', cursor: 'pointer', color: C.inputColor,
     display: 'flex', alignItems: 'center', gap: 6,
     transition: 'background 0.1s',
-    _hover: { background: 'rgba(88,166,255,0.1)' },
+    _hover: { background: 'rgba(var(--accent-rgb), 0.1)' },
   };
 
   const _menuSepStyle = {
@@ -847,7 +847,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
       {/* ── 工具栏 ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0,
+        borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
       }}>
         <button
           onClick={() => {
@@ -862,11 +862,11 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
             }
             setDlgName(''); setDlgCmd(''); setDlgAddCR(true);
           }}
-          style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e', borderRadius: 3, padding: '3px 8px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+          style={{ background: 'rgba(var(--success-rgb), 0.1)', border: '1px solid rgba(var(--success-rgb), 0.25)', color: 'var(--success)', borderRadius: 3, padding: '3px 8px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
         >{t('＋ 添加命令')}</button>
         <button
           onClick={() => { closeContextMenu(); setDialog({ type: 'addGroup', contextPath: '', parentList: commands }); setDlgName(''); setDlgCmd(''); setDlgAddCR(true); }}
-          style={{ background: 'rgba(88,166,255,0.1)', border: '1px solid rgba(88,166,255,0.25)', color: '#58a6ff', borderRadius: 3, padding: '3px 8px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+          style={{ background: 'rgba(var(--accent-rgb), 0.1)', border: '1px solid rgba(var(--accent-rgb), 0.25)', color: 'var(--accent)', borderRadius: 3, padding: '3px 8px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
         ><FolderPlus size={14} /> {t('添加分组')}</button>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 10, color: C.mutedColor }}>{t('Ctrl+S 保存')}</span>
@@ -883,10 +883,10 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
           onDragLeave={(e) => { if (e.currentTarget === e.target) setRootDragOver(false); }}
           onDrop={(e) => { e.preventDefault(); handleDropToRoot(); }}
           style={{
-            width: 220, flexShrink: 0, borderRight: '1px solid rgba(255,255,255,0.06)',
+            width: 220, flexShrink: 0, borderRight: '1px solid var(--border-subtle)',
             overflowY: 'auto', padding: '4px 6px',
-            background: rootDragOver ? 'rgba(34,197,94,0.08)' : C.inputBg,
-            outline: rootDragOver ? '1px dashed #22c55e' : 'none',
+            background: rootDragOver ? 'rgba(var(--success-rgb), 0.08)' : C.inputBg,
+            outline: rootDragOver ? '1px dashed var(--success)' : 'none',
             display: 'flex', flexDirection: 'column',
             transition: 'background 0.1s',
           }}
@@ -968,7 +968,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                     r.parent[r.idx].name = editGroupName.trim() || selectedItem.name;
                     save(list);
                   }}
-                  style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e', borderRadius: 3, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}
+                  style={{ background: 'rgba(var(--success-rgb), 0.1)', border: '1px solid rgba(var(--success-rgb), 0.25)', color: 'var(--success)', borderRadius: 3, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}
                 ><Save size={13} /> {t('保存名称')}</button>
                 <button
                   onClick={() => {
@@ -978,7 +978,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                     setDialog({ type: 'add', targetChildren: r.item.children, parentList: list, groupName: r.item.name });
                     setDlgName(''); setDlgCmd(''); setDlgAddCR(true);
                   }}
-                  style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', color: '#22c55e', borderRadius: 3, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}
+                  style={{ background: 'rgba(var(--success-rgb), 0.1)', border: '1px solid rgba(var(--success-rgb), 0.25)', color: 'var(--success)', borderRadius: 3, padding: '3px 10px', fontSize: 11, cursor: 'pointer' }}
                 >{t('＋ 添加命令')}</button>
               </div>
               <div style={{ fontSize: 12, color: C.mutedColor, marginTop: 8 }}>
@@ -1041,7 +1041,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
 
                 {/* 参数预览 */}
                 {extractParams(editCmdText).length > 0 && (
-                  <div style={{ marginTop: 6, fontSize: 11, color: '#d29922', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <Zap size={12} />
                     {t('含')} {extractParams(editCmdText).length} {t('个动态参数：')} {extractParams(editCmdText).map(p => `[p#${p.num}${p.label ? ' ' + p.label : ''}]`).join(', ')}
                   </div>
@@ -1051,13 +1051,13 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
               {/* 底部工具栏（FinalShell 风格：命令预览 + 参数区 + 发送） */}
               <div style={{
                 display: 'flex', flexDirection: 'column',
-                borderTop: '1px solid rgba(255,255,255,0.06)',
+                borderTop: '1px solid var(--border-subtle)',
                 paddingTop: 8, marginTop: 'auto',
                 flexShrink: 0,
               }}>
                 {/* 第一行：命令名 + 命令预览 + 编辑按钮 */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <span style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', fontSize: 11, padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>
+                  <span style={{ background: 'rgba(var(--success-rgb), 0.15)', color: 'var(--success)', fontSize: 11, padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>
                     {editCmdName}
                   </span>
                   <span style={{ flex: 1, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.inputColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1065,7 +1065,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                   </span>
                   <button
                     onClick={() => { commitCmdEdit(); save(commands); setDirty(false); if (addToast) addToast(t('已保存'), 'success', 1500); }}
-                    style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', borderRadius: 3, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}
+                    style={{ background: 'rgba(var(--success-rgb), 0.15)', border: '1px solid rgba(var(--success-rgb), 0.3)', color: 'var(--success)', borderRadius: 3, padding: '2px 10px', fontSize: 11, cursor: 'pointer' }}
                   >{t('保存')}</button>
                   <button
                     onClick={() => {
@@ -1117,7 +1117,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                                   data-history-dropdown="true"
                                   style={{
                                     background: 'transparent', border: '1px solid ' + C.btnBorder,
-                                    color: '#58a6ff', borderRadius: 2,
+                                    color: 'var(--accent)', borderRadius: 2,
                                     fontSize: 10, cursor: 'pointer', padding: '1px 7px',
                                     whiteSpace: 'nowrap',
                                   }}
@@ -1132,12 +1132,12 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                                     position: 'absolute', bottom: '100%', left: 0, zIndex: Z.POPUP,
                                     minWidth: 180, maxHeight: 200, display: 'flex', flexDirection: 'column',
                                     background: C.popupBg, border: '1px solid ' + C.btnBorder,
-                                    borderRadius: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.5)',
+                                    borderRadius: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.3)',
                                     marginBottom: 2,
                                   }}
                                 >
                                   {/* 搜索框 */}
-                                  <div style={{ padding: 4, flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                                  <div style={{ padding: 4, flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
                                     <input
                                       type="text"
                                       autoFocus
@@ -1167,8 +1167,8 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                                       setHistorySearch('');
                                     }}
                                     style={{
-                                      padding: '4px 10px', fontSize: 11, color: '#f85149',
-                                      cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                                      padding: '4px 10px', fontSize: 11, color: 'var(--danger)',
+                                      cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
                                       flexShrink: 0,
                                     }}
                                   >{t('清空列表')}</div>
@@ -1194,9 +1194,9 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                                             padding: '4px 10px', fontSize: 11,
                                             color: C.inputColor, cursor: 'pointer',
                                             fontFamily: "'JetBrains Mono', monospace",
-                                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                            borderBottom: '1px solid var(--border-subtle)',
                                           }}
-                                          onMouseEnter={e => e.target.style.background = 'rgba(88,166,255,0.08)'}
+                                          onMouseEnter={e => e.target.style.background = 'rgba(var(--accent-rgb), 0.08)'}
                                           onMouseLeave={e => e.target.style.background = 'transparent'}
                                         >{val}</div>
                                       ));
@@ -1213,7 +1213,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                 })()}
 
                 {/* 第三行：CR选项 + 发送 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4, borderTop: '1px solid var(--border-subtle)' }}>
                   <label style={{ fontSize: 11, color: C.statusBarColor, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                     <input
                       type="checkbox"
@@ -1224,7 +1224,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                         r.parent[r.idx].addCR = e.target.checked;
                         save(list);
                       }}
-                      style={{ accentColor: '#22c55e' }}
+                      style={{ accentColor: 'var(--success)' }}
                     />
                     {t('末尾添加回车符CR')}
                   </label>
@@ -1249,8 +1249,8 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                   <button
                     onClick={() => doExecute(selectedItem)}
                     style={{
-                      background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.35)',
-                      color: '#22c55e', borderRadius: 3, padding: '4px 14px', fontSize: 12, cursor: 'pointer',
+                      background: 'rgba(var(--success-rgb), 0.15)', border: '1px solid rgba(var(--success-rgb), 0.35)',
+                      color: 'var(--success)', borderRadius: 3, padding: '4px 14px', fontSize: 12, cursor: 'pointer',
                       display: 'flex', alignItems: 'center', gap: 4,
                     }}
                   ><Rocket size={14} /> {t('发送')}</button>
@@ -1270,7 +1270,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
       {/* ── 底部快速命令栏（不保存，直接发送） ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--border-subtle)',
         padding: '5px 10px', background: C.inputBg, flexShrink: 0,
       }}>
         <span style={{ fontSize: 11, color: C.statusBarColor, whiteSpace: 'nowrap' }}>{t('快速命令')}</span>
@@ -1307,9 +1307,9 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
           onClick={sendQuick}
           disabled={!quickCmd.trim()}
           style={{
-            background: quickCmd.trim() ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)',
-            border: '1px solid ' + (quickCmd.trim() ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.1)'),
-            color: quickCmd.trim() ? '#22c55e' : '#484f58',
+            background: quickCmd.trim() ? 'rgba(var(--success-rgb), 0.15)' : 'var(--border-subtle)',
+            border: '1px solid ' + (quickCmd.trim() ? 'rgba(var(--success-rgb), 0.35)' : 'var(--border)'),
+            color: quickCmd.trim() ? 'var(--success)' : 'var(--text-muted)',
             borderRadius: 3, padding: '3px 12px', fontSize: 11, cursor: quickCmd.trim() ? 'pointer' : 'default',
             transition: 'all 0.15s',
           }}
@@ -1323,7 +1323,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
           <div style={{
             position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: Z.MENU,
             background: C.popupBg, border: '1px solid ' + C.btnBorder, borderRadius: 6,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: '4px 0', minWidth: 160,
+            boxShadow: 'var(--shadow-lg)', padding: '4px 0', minWidth: 160,
             fontSize: 12,
           }}>
             {contextMenu.type === 'group' ? (
@@ -1333,14 +1333,14 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                 <div style={_menuSepStyle} />
                 <div onClick={() => doContextAction('editGroup')} style={_menuItemStyle}><Pencil size={14} /> {t('重命名分组')}</div>
                 <div style={_menuSepStyle} />
-                <div onClick={() => doContextAction('delete')} style={{ ..._menuItemStyle, color: '#ff7b72' }}><Trash2 size={14} /> {t('删除分组')}</div>
+                <div onClick={() => doContextAction('delete')} style={{ ..._menuItemStyle, color: 'var(--danger)' }}><Trash2 size={14} /> {t('删除分组')}</div>
               </>
             ) : (
               <>
                 <div onClick={() => doContextAction('execute')} style={_menuItemStyle}><Rocket size={14} /> {t('执行')}</div>
                 <div onClick={() => doContextAction('edit')} style={_menuItemStyle}><SquarePen size={14} /> {t('编辑')}</div>
                 <div style={_menuSepStyle} />
-                <div onClick={() => doContextAction('delete')} style={{ ..._menuItemStyle, color: '#ff7b72' }}><Trash2 size={14} /> {t('删除')}</div>
+                <div onClick={() => doContextAction('delete')} style={{ ..._menuItemStyle, color: 'var(--danger)' }}><Trash2 size={14} /> {t('删除')}</div>
               </>
             )}
           </div>
@@ -1369,11 +1369,11 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
               >{t('取消')}</button>
               <button
                 onClick={handleConfirmDiscard}
-                style={{ background: 'transparent', border: '1px solid #f85149', color: '#f85149', borderRadius: 4, padding: '5px 16px', fontSize: 12, cursor: 'pointer' }}
+                style={{ background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)', borderRadius: 4, padding: '5px 16px', fontSize: 12, cursor: 'pointer' }}
               >{t('不保存')}</button>
               <button
                 onClick={handleConfirmSave}
-                style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', borderRadius: 4, padding: '5px 16px', fontSize: 12, cursor: 'pointer' }}
+                style={{ background: 'rgba(var(--success-rgb), 0.15)', border: '1px solid rgba(var(--success-rgb), 0.3)', color: 'var(--success)', borderRadius: 4, padding: '5px 16px', fontSize: 12, cursor: 'pointer' }}
               >{t('保存')}</button>
             </div>
           </div>
@@ -1407,20 +1407,20 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 5,
                     padding: '2px 10px', borderRadius: 4,
-                    background: 'rgba(88,166,255,0.1)',
-                    border: '1px solid rgba(88,166,255,0.25)',
-                    color: '#58a6ff', fontWeight: 500, fontSize: 12,
+                    background: 'rgba(var(--accent-rgb), 0.1)',
+                    border: '1px solid rgba(var(--accent-rgb), 0.25)',
+                    color: 'var(--accent)', fontWeight: 500, fontSize: 12,
                     cursor: 'pointer', userSelect: 'none',
                     transition: 'all 0.15s',
                     lineHeight: '20px',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = 'rgba(88,166,255,0.2)';
-                    e.currentTarget.style.borderColor = 'rgba(88,166,255,0.4)';
+                    e.currentTarget.style.background = 'rgba(var(--accent-rgb), 0.2)';
+                    e.currentTarget.style.borderColor = 'rgba(var(--accent-rgb), 0.4)';
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = 'rgba(88,166,255,0.1)';
-                    e.currentTarget.style.borderColor = 'rgba(88,166,255,0.25)';
+                    e.currentTarget.style.background = 'rgba(var(--accent-rgb), 0.1)';
+                    e.currentTarget.style.borderColor = 'rgba(var(--accent-rgb), 0.25)';
                   }}
                 >
                   {dialog.groupName || t('根目录')}
@@ -1477,7 +1477,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
 
               {/* 参数预览 */}
               {extractParams(dlgCmd).length > 0 && (
-                <div style={{ marginTop: 4, fontSize: 11, color: '#d29922' }}>
+                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--warning)' }}>
                   {t('含')} {extractParams(dlgCmd).length} {t('个动态参数：')}{extractParams(dlgCmd).map(p => `[p#${p.num}${p.label ? ' ' + p.label : ''}]`).join(', ')}
                 </div>
               )}
@@ -1492,7 +1492,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                 type="checkbox"
                 checked={dlgAddCR}
                 onChange={e => setDlgAddCR(e.target.checked)}
-                style={{ accentColor: '#22c55e' }}
+                style={{ accentColor: 'var(--success)' }}
               />
               {t('末尾添加回车符CR')}
             </label>
@@ -1508,8 +1508,8 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                 onClick={handleDlgSave}
                 disabled={!dlgName.trim() || (dialog.type !== 'addGroup' && dialog.type !== 'editGroup' && !dlgCmd.trim())}
                 style={{
-                  background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.35)',
-                  color: '#22c55e', borderRadius: 4, padding: '5px 16px', fontSize: 12,
+                  background: 'rgba(var(--success-rgb), 0.15)', border: '1px solid rgba(var(--success-rgb), 0.35)',
+                  color: 'var(--success)', borderRadius: 4, padding: '5px 16px', fontSize: 12,
                   cursor: (!dlgName.trim() || (dialog.type !== 'addGroup' && dialog.type !== 'editGroup' && !dlgCmd.trim())) ? 'not-allowed' : 'pointer',
                   opacity: (!dlgName.trim() || (dialog.type !== 'addGroup' && dialog.type !== 'editGroup' && !dlgCmd.trim())) ? 0.5 : 1,
                 }}
@@ -1530,7 +1530,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                 position: 'fixed', left: groupPickerPos.x, top: groupPickerPos.y, zIndex: Z.SUBMENU,
                 minWidth: 160, maxHeight: 220, overflowY: 'auto',
                 background: C.popupBg, border: '1px solid ' + C.btnBorder, borderRadius: 6,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: '4px 0',
+                boxShadow: 'var(--shadow-lg)', padding: '4px 0',
               }}>
                 {/* 根目录 */}
                 <div
@@ -1542,7 +1542,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                     padding: '5px 14px', fontSize: 12, color: C.inputColor, cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(88,166,255,0.08)'}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--accent-rgb), 0.08)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 ><Folder size={14} /> {t('根目录')}</div>
                 {/* 所有分组 */}
@@ -1569,7 +1569,7 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
                         padding: '5px 14px', fontSize: 12, color: C.inputColor, cursor: 'pointer',
                         display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none',
                       }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(88,166,255,0.08)'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--accent-rgb), 0.08)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     ><Folder size={14} /> {g.name}</div>
                   ));
@@ -1585,4 +1585,3 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
 });
 
 export default QuickCommands;
-

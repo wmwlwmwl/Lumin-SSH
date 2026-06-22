@@ -154,14 +154,14 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
 
   // ── UI ──
   return (
-    <div style={{ padding: '24px 32px', height: '100%', overflowY: 'auto', background: 'var(--bg-1)' }}>
+    <div style={{ padding: '24px 32px', height: '100%', overflowY: 'auto', background: 'var(--surface-raised)' }}>
       {/* 标题行 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center' }}><ScrollText size={18} /></span> {t('历史指令')}
         </h3>
         {history.length > 0 && (
-          <button className="btn btn-ghost btn-sm" onClick={clear} style={{ color: 'var(--text-4)' }}>
+          <button className="btn btn-ghost btn-sm" onClick={clear} style={{ color: 'var(--text-tertiary)' }}>
             {t('清空列表')}
           </button>
         )}
@@ -176,10 +176,10 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
           style={{
             flex: 1,
             padding: '6px 10px',
-            background: 'var(--bg-0)',
+            background: 'var(--surface-base)',
             border: '1px solid var(--border)',
             borderRadius: 6,
-            color: 'var(--text-1)',
+            color: 'var(--text-primary)',
             fontSize: 13,
             outline: 'none',
           }}
@@ -187,11 +187,11 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
         <button
           onClick={() => setHistoryMode('server')}
           style={{
-            border: '1px solid ' + (historyMode === 'global' ? 'var(--border)' : 'rgba(88,166,255,0.3)'),
+            border: '1px solid ' + (historyMode === 'global' ? 'var(--border)' : 'rgba(var(--accent-rgb), 0.3)'),
             borderRadius: 6,
             padding: '5px 12px',
-            background: historyMode === 'server' ? 'rgba(88,166,255,0.12)' : 'transparent',
-            color: historyMode === 'server' ? '#58a6ff' : 'var(--text-3)',
+            background: historyMode === 'server' ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+            color: historyMode === 'server' ? 'var(--accent)' : 'var(--text-tertiary)',
             cursor: 'pointer', fontSize: 13,
             whiteSpace: 'nowrap',
           }}
@@ -201,11 +201,11 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
         <button
           onClick={() => setHistoryMode('global')}
           style={{
-            border: '1px solid ' + (historyMode === 'server' ? 'var(--border)' : 'rgba(88,166,255,0.3)'),
+            border: '1px solid ' + (historyMode === 'server' ? 'var(--border)' : 'rgba(var(--accent-rgb), 0.3)'),
             borderRadius: 6,
             padding: '5px 12px',
-            background: historyMode === 'global' ? 'rgba(88,166,255,0.12)' : 'transparent',
-            color: historyMode === 'global' ? '#58a6ff' : 'var(--text-3)',
+            background: historyMode === 'global' ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+            color: historyMode === 'global' ? 'var(--accent)' : 'var(--text-tertiary)',
             cursor: 'pointer', fontSize: 13,
             whiteSpace: 'nowrap',
           }}
@@ -218,22 +218,22 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
       {filteredHistory.length === 0 ? (
         <div className="empty-state" style={{ marginTop: '10vh' }}>
           <div style={{ fontSize: 48, opacity: 0.3 }}><Keyboard size={48} /></div>
-          <p style={{ marginTop: 16, color: 'var(--text-2)', fontSize: 15, fontWeight: 500 }}>
+          <p style={{ marginTop: 16, color: 'var(--text-secondary)', fontSize: 15, fontWeight: 500 }}>
             {searchQuery ? t('未找到匹配的命令') : t('您还没有执行过任何命令')}
           </p>
-          <span style={{ fontSize: 13, color: 'var(--text-4)', maxWidth: 300, textAlign: 'center', lineHeight: 1.6, marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-tertiary)', maxWidth: 300, textAlign: 'center', lineHeight: 1.6, marginTop: 8 }}>
             {searchQuery ? t('尝试其他搜索词') : t('在此服务器中执行过的命令会自动留存，方便您浏览与重复运行。')}
           </span>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {filteredHistory.map((item) => (
-            <div key={item.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 18px', background: 'var(--bg-0)', borderColor: 'var(--border-light)' }}>
+            <div key={item.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 18px', background: 'var(--surface-base)', borderColor: 'var(--border-light)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--green)', wordBreak: 'break-all', fontWeight: 600 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--success)', wordBreak: 'break-all', fontWeight: 600 }}>
                   $ {item.command}
                 </span>
-                <span style={{ fontSize: 12, color: 'var(--text-4)', whiteSpace: 'nowrap', marginLeft: 12, opacity: 0.8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', marginLeft: 12, opacity: 0.8 }}>
                   {new Date(item.time).toLocaleTimeString()}
                 </span>
               </div>
@@ -242,10 +242,10 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
                 <button className="btn btn-ghost btn-sm" onClick={() => copy(item.command)} style={{ fontSize: 12, padding: '4px 12px' }}>
                   <Clipboard size={12} style={{ verticalAlign: 'middle', marginRight: 2 }} /> {t('复制')}
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => deleteItem(item.id)} style={{ fontSize: 12, padding: '4px 12px', color: '#ff7b72' }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => deleteItem(item.id)} style={{ fontSize: 12, padding: '4px 12px', color: 'var(--danger)' }}>
                   <Trash2 size={12} style={{ verticalAlign: 'middle', marginRight: 2 }} /> {t('删除')}
                 </button>
-                <button className="btn btn-primary btn-sm" onClick={() => exec(item.command)} style={{ fontSize: 12, padding: '4px 12px', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid rgba(88,166,255,0.2)' }}>
+                <button className="btn btn-primary btn-sm" onClick={() => exec(item.command)} style={{ fontSize: 12, padding: '4px 12px', background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(var(--accent-rgb), 0.2)' }}>
                   <Rocket size={13} style={{ marginRight: 4 }} /> {t('再次运行')}
                 </button>
               </div>

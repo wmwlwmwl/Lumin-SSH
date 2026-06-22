@@ -240,6 +240,14 @@ func (c *ConfigManager) SaveConnection(conn Connection) Connection {
 				if conn.Password == "" && existing.Password != "" {
 					conn.Password = existing.Password
 				}
+				// If no new private key provided, keep old
+				if conn.PrivateKey == "" && existing.PrivateKey != "" {
+					conn.PrivateKey = existing.PrivateKey
+				}
+				// If no new passphrase provided, keep old
+				if conn.Passphrase == "" && existing.Passphrase != "" {
+					conn.Passphrase = existing.Passphrase
+				}
 				conns[i] = conn
 				found = true
 				break

@@ -19,7 +19,7 @@ const textEncoder = new TextEncoder();
 const btnStyle = (color) => ({
   border: 'none',
   background: 'transparent',
-  color: color === 'red' ? '#ff7b72' : '#8b949e',
+  color: color === 'red' ? 'var(--danger)' : '#8b949e',
   cursor: 'pointer',
   borderRadius: 3,
   padding: '2px 6px',
@@ -454,9 +454,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     if (!termRef.current) return;
     const sw = smartWriteRef.current;
     if (status === 'error') {
-      sw ? sw('\r\n\x1b[31m✗  Connection failed\x1b[0m\r\n') : termRef.current.write('\r\n\x1b[31m✗  Connection failed\x1b[0m\r\n');
+      sw ? sw('\r\n\x1b[31m✗  ' + t('连接失败') + '\x1b[0m\r\n') : termRef.current.write('\r\n\x1b[31m✗  ' + t('连接失败') + '\x1b[0m\r\n');
     } else if (status === 'closed') {
-      sw ? sw('\r\n\x1b[33m●  Disconnected\x1b[0m\r\n') : termRef.current.write('\r\n\x1b[33m●  Disconnected\x1b[0m\r\n');
+      sw ? sw('\r\n\x1b[33m●  ' + t('已断开') + '\x1b[0m\r\n') : termRef.current.write('\r\n\x1b[33m●  ' + t('已断开') + '\x1b[0m\r\n');
     }
   }, [status]);
 
@@ -829,10 +829,10 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         {/* 右侧极简状态显示 */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 11, opacity: 0.5, fontFamily: 'var(--font-mono)' }}>
-            {isConnected  ? 'Connected'
-             : isConnecting ? 'Connecting...'
-             : isError      ? 'Error'
-             : 'Offline'}
+            {isConnected  ? t('已连接')
+             : isConnecting ? t('连接中...')
+             : isError      ? t('错误')
+             : t('离线')}
           </span>
           {(isError || status === 'closed') && (
             <button
@@ -841,22 +841,22 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               }}
               style={{
                 padding: '2px 8px',
-                background: 'rgba(34, 197, 94, 0.15)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
+                background: 'rgba(var(--success-rgb), 0.15)',
+                border: '1px solid rgba(var(--success-rgb), 0.3)',
                 borderRadius: '4px',
-                color: '#22c55e',
+                color: 'var(--success)',
                 fontSize: '11px',
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 transition: 'all 0.2s',
               }}
               onMouseEnter={(e) => {
-                e.target.style.background = 'rgba(34, 197, 94, 0.25)';
-                e.target.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+                e.target.style.background = 'rgba(var(--success-rgb), 0.25)';
+                e.target.style.borderColor = 'rgba(var(--success-rgb), 0.5)';
               }}
               onMouseLeave={(e) => {
-                e.target.style.background = 'rgba(34, 197, 94, 0.15)';
-                e.target.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+                e.target.style.background = 'rgba(var(--success-rgb), 0.15)';
+                e.target.style.borderColor = 'rgba(var(--success-rgb), 0.3)';
               }}
             >
               {t('重新连接')}
@@ -906,7 +906,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             padding: '7px 10px',
             minHeight: 32,
             background: getTerminalTheme().container.inputBg,
-            borderColor: cmdInput ? 'rgba(34,197,94,0.3)' : 'rgba(48,54,61,0.5)',
+            borderColor: cmdInput ? 'rgba(var(--success-rgb), 0.3)' : getTerminalTheme().container.btnBorder,
           }}
         />
 
@@ -919,9 +919,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px',
             fontSize: 11,
-            color: showHistory ? '#22c55e' : getTerminalTheme().container.statusBarColor,
-            background: showHistory ? 'rgba(34,197,94,0.1)' : 'transparent',
-            border: `1px solid ${showHistory ? 'rgba(34,197,94,0.3)' : getTerminalTheme().container.btnBorder}`,
+            color: showHistory ? 'var(--success)' : getTerminalTheme().container.statusBarColor,
+            background: showHistory ? 'rgba(var(--success-rgb), 0.1)' : 'transparent',
+            border: `1px solid ${showHistory ? 'rgba(var(--success-rgb), 0.3)' : getTerminalTheme().container.btnBorder}`,
             borderRadius: 4,
             cursor: 'pointer',
             whiteSpace: 'nowrap',
@@ -941,9 +941,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px',
             fontSize: 11,
-            color: showCommands ? '#22c55e' : getTerminalTheme().container.statusBarColor,
-            background: showCommands ? 'rgba(34,197,94,0.1)' : 'transparent',
-            border: `1px solid ${showCommands ? 'rgba(34,197,94,0.3)' : getTerminalTheme().container.btnBorder}`,
+            color: showCommands ? 'var(--success)' : getTerminalTheme().container.statusBarColor,
+            background: showCommands ? 'rgba(var(--success-rgb), 0.1)' : 'transparent',
+            border: `1px solid ${showCommands ? 'rgba(var(--success-rgb), 0.3)' : getTerminalTheme().container.btnBorder}`,
             borderRadius: 4,
             cursor: 'pointer',
             whiteSpace: 'nowrap',
@@ -962,10 +962,10 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 30, height: 30,
-            background: (cmdTrimmed && isConnected) ? 'rgba(34,197,94,0.15)' : 'transparent',
-            border: `1px solid ${(cmdTrimmed && isConnected) ? 'rgba(34,197,94,0.35)' : getTerminalTheme().container.btnBorder}`,
+            background: (cmdTrimmed && isConnected) ? 'rgba(var(--success-rgb), 0.15)' : 'transparent',
+            border: `1px solid ${(cmdTrimmed && isConnected) ? 'rgba(var(--success-rgb), 0.35)' : getTerminalTheme().container.btnBorder}`,
             borderRadius: 4,
-            color: (cmdTrimmed && isConnected) ? '#22c55e' : getTerminalTheme().container.btnMuted,
+            color: (cmdTrimmed && isConnected) ? 'var(--success)' : getTerminalTheme().container.btnMuted,
             cursor: (cmdTrimmed && isConnected) ? 'pointer' : 'not-allowed',
             transition: 'all 0.15s',
             flexShrink: 0,
@@ -982,10 +982,10 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 30, height: 30,
-            background: cmdTrimmed ? 'rgba(88,166,255,0.15)' : 'transparent',
-            border: `1px solid ${cmdTrimmed ? 'rgba(88,166,255,0.35)' : getTerminalTheme().container.btnBorder}`,
+            background: cmdTrimmed ? 'rgba(var(--accent-rgb), 0.15)' : 'transparent',
+            border: `1px solid ${cmdTrimmed ? 'rgba(var(--accent-rgb), 0.35)' : getTerminalTheme().container.btnBorder}`,
             borderRadius: 4,
-            color: cmdTrimmed ? '#58a6ff' : getTerminalTheme().container.btnMuted,
+            color: cmdTrimmed ? 'var(--accent)' : getTerminalTheme().container.btnMuted,
             cursor: cmdTrimmed ? 'pointer' : 'not-allowed',
             transition: 'all 0.15s',
             flexShrink: 0,
@@ -1070,7 +1070,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   borderBottom: `1px solid ${getTerminalTheme().container.separator}`,
                   transition: 'background 0.1s',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(34,197,94,0.06)'}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(var(--success-rgb), 0.06)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <span
@@ -1092,7 +1092,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   <button
                     onClick={() => executeCommand(item.command)}
                     title={t('执行')}
-                    style={{ ...iconBtnStyle('#22c55e', 'rgba(34,197,94,0.15)') }}
+                    style={{ ...iconBtnStyle('var(--success)', 'rgba(var(--success-rgb), 0.15)') }}
                   >
                     <Play size={12} />
                   </button>
@@ -1100,14 +1100,14 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   <button
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(item.command).catch(() => {}); }}
                     title={t('复制')}
-                    style={{ ...iconBtnStyle('#58a6ff', 'rgba(88,166,255,0.15)') }}>
+                    style={{ ...iconBtnStyle('var(--accent)', 'rgba(var(--accent-rgb), 0.15)') }}>
                     <Clipboard size={12} />
                   </button>
                   {/* 删除（红色） */}
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteHistoryItem(item.id); }}
                     title={t('删除')}
-                    style={{ ...iconBtnStyle('#ff7b72', 'rgba(255,123,114,0.15)') }}
+                    style={{ ...iconBtnStyle('var(--danger)', 'rgba(255,123,114,0.15)') }}
                   >
                     <X size={12} />
                   </button>
@@ -1141,11 +1141,11 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               <button
                 onClick={() => setHistoryMode('server')}
                 style={{
-                  border: '1px solid ' + (historyMode === 'global' ? 'rgba(48,54,61,0.8)' : 'rgba(88,166,255,0.3)'),
+                  border: '1px solid ' + (historyMode === 'global' ? getTerminalTheme().container.btnBorder : 'rgba(var(--accent-rgb), 0.3)'),
                   borderRadius: 4,
                   padding: '3px 8px',
-                  background: historyMode === 'server' ? 'rgba(88,166,255,0.15)' : 'transparent',
-                  color: historyMode === 'server' ? '#58a6ff' : getTerminalTheme().container.mutedColor,
+                  background: historyMode === 'server' ? 'rgba(var(--accent-rgb), 0.15)' : 'transparent',
+                  color: historyMode === 'server' ? 'var(--accent)' : getTerminalTheme().container.mutedColor,
                   cursor: 'pointer', fontSize: 10,
                   whiteSpace: 'nowrap',
                 }}
@@ -1155,11 +1155,11 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               <button
                 onClick={() => setHistoryMode('global')}
                 style={{
-                  border: '1px solid ' + (historyMode === 'server' ? 'rgba(48,54,61,0.8)' : 'rgba(88,166,255,0.3)'),
+                  border: '1px solid ' + (historyMode === 'server' ? getTerminalTheme().container.btnBorder : 'rgba(var(--accent-rgb), 0.3)'),
                   borderRadius: 4,
                   padding: '3px 8px',
-                  background: historyMode === 'global' ? 'rgba(88,166,255,0.15)' : 'transparent',
-                  color: historyMode === 'global' ? '#58a6ff' : getTerminalTheme().container.mutedColor,
+                  background: historyMode === 'global' ? 'rgba(var(--accent-rgb), 0.15)' : 'transparent',
+                  color: historyMode === 'global' ? 'var(--accent)' : getTerminalTheme().container.mutedColor,
                   cursor: 'pointer', fontSize: 10,
                   whiteSpace: 'nowrap',
                 }}

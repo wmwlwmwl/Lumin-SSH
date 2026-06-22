@@ -35,7 +35,7 @@ function fmtDate(ts) {
 // 文件图标
 const ICON_SIZE = 16;
 function fileIcon(name, isDir) {
-  if (isDir) return <Folder size={ICON_SIZE} style={{ color: '#f5a623' }} />;
+  if (isDir) return <Folder size={ICON_SIZE} style={{ color: 'var(--warning)' }} />;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const colorMap = {
     js: '#f7df1e', jsx: '#f7df1e', ts: '#3178c6', tsx: '#3178c6', vue: '#42b883',
@@ -223,9 +223,9 @@ function ChmodDialog({ path, permission, mode, onSave, onClose, t }) {
               {/* Header */}
               <div className="chmod-row">
                 <span></span>
-                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-4)' }}>{t('读取')}</span>
-                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-4)' }}>{t('写入')}</span>
-                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-4)' }}>{t('执行')}</span>
+                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>{t('读取')}</span>
+                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>{t('写入')}</span>
+                <span style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-tertiary)' }}>{t('执行')}</span>
               </div>
               {/* User row */}
               <div className="chmod-row">
@@ -256,7 +256,7 @@ function ChmodDialog({ path, permission, mode, onSave, onClose, t }) {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{t('八进制:')}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('八进制:')}</span>
               <input className="chmod-octal-input" value={octal} onChange={handleOctalChange} />
             </div>
           </div>
@@ -1091,7 +1091,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
                   <button
                     className="btn btn-ghost btn-sm btn-icon"
                     title={t('删除')}
-                    style={{ color: 'var(--red)' }}
+                    style={{ color: 'var(--danger)' }}
                     onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
                   ><Trash2 size={14} /></button>
                 </div>
@@ -1147,7 +1147,7 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
 
       {/* File Editor (modal/popup/split 均由 FileEditor 内部决定渲染方式) */}
       {openEditFiles.length > 0 && (
-        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-4)' }}>Loading...</div>}>
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-tertiary)' }}>{t('加载中...')}</div>}>
           <FileEditor
             files={openEditFiles}
             activePath={activeEditPath}
