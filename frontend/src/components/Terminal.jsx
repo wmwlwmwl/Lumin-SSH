@@ -68,7 +68,39 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const [commandsPopupPos, setCommandsPopupPos] = useState(null);
   const commandsBtnRef                        = useRef(null);
   const quickCmdsRef                          = useRef(null);
+  const quickCmdsPopupRef                     = useRef(null);
+  const historyPopupRef                       = useRef(null);
   const pendingCmdRef                         = useRef('');
+
+  // ── 点击快捷命令弹窗外关闭（document 级 mousedown，不阻塞 click） ──
+  useEffect(() => {
+    if (!showCommands) return;
+    const handler = (e) => {
+      if (quickCmdsPopupRef.current && !quickCmdsPopupRef.current.contains(e.target)) {
+        if (quickCmdsRef.current?.isDirty?.()) {
+          quickCmdsRef.current.showCloseConfirm();
+        } else {
+          setShowCommands(false);
+          setCommandsPopupPos(null);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showCommands]);
+
+  // ── 点击历史弹窗外关闭（document 级 mousedown） ──
+  useEffect(() => {
+    if (!showHistory) return;
+    const handler = (e) => {
+      if (historyPopupRef.current && !historyPopupRef.current.contains(e.target)) {
+        setShowHistory(false);
+        setHistoryPopupPos(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showHistory]);
 
   // 热路径缓存：避免在按键和消息回调中频繁读取 localStorage
   const shortcutsRef = useRef(null);
@@ -959,14 +991,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
 
       {/* ── 历史指令弹窗（fixed 定位，不受 overflow:hidden 裁剪） ── */}
       {showHistory && historyPopupPos && (
-        <>
-          {/* 透明遮罩层，点击关闭 */}
-          <div
-            className="term-popup-backdrop"
-            onClick={() => { setShowHistory(false); setHistoryPopupPos(null); }}
-            style={{ zIndex: Z.POPUP_BACKDROP }}
-          />
-          <div className="term-popup" style={{
+        <div ref={historyPopupRef} className="term-popup" style={{
             left: historyPopupPos.left,
             bottom: historyPopupPos.bottom,
             width: 480,
@@ -1018,6 +1043,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               <div
                 key={item.id}
                 className="history-item"
+                onClick={() => selectHistoryCmd(item.command)}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '6px 10px',
@@ -1027,7 +1053,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                 }}
               >
                 <span
-                  onClick={() => selectHistoryCmd(item.command)}
                   style={{
                     flex: 1,
                     color: T.container.inputColor,
@@ -1043,7 +1068,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                 <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                   {/* 执行（绿色） */}
                   <button
-                    onClick={() => executeCommand(item.command)}
+                    onClick={(e) => { e.stopPropagation(); executeCommand(item.command); }}
                     title={t('执行')}
                     style={{ ...iconBtnStyle('var(--success)', 'rgba(var(--success-rgb), 0.15)') }}
                   >
@@ -1121,25 +1146,11 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               </button>
             </div>
           </div>
-        </>
       )}
 
       {/* ── 快捷命令弹窗（fixed 定位，不受 overflow:hidden 裁剪） ── */}
       {showCommands && commandsPopupPos && (
-        <>
-          {/* 透明遮罩层，点击关闭（有未保存修改时弹出确认） */}
-          <div
-            onClick={() => {
-              if (quickCmdsRef.current?.isDirty?.()) {
-                quickCmdsRef.current.showCloseConfirm();
-              } else {
-                setShowCommands(false);
-                setCommandsPopupPos(null);
-              }
-            }}
-            style={{ zIndex: Z.POPUP_BACKDROP }}
-          />
-          <div className="term-popup" style={{
+        <div ref={quickCmdsPopupRef} className="term-popup" style={{
             left: commandsPopupPos.left,
             bottom: commandsPopupPos.bottom,
             width: 680,
@@ -1149,7 +1160,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           }}>
             <QuickCommands ref={quickCmdsRef} sessionId={sessionId} addToast={() => {}} connectedSessions={connectedSessions} onClose={() => { setShowCommands(false); setCommandsPopupPos(null); }} />
           </div>
-        </>
       )}
 
       {/* ── 右键上下文菜单（增强版：图标 + 边界检测 + disabled 状态） ── */}
