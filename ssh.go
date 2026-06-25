@@ -95,6 +95,22 @@ func NewSSHManager() *SSHManager {
 	}
 }
 
+// ponytail: 判断是否为瞬态网络错误（连接重置、EOF、超时等），这类错误可重试
+func isTransientNetError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "forcibly closed") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "EOF") ||
+		strings.Contains(s, "i/o timeout") ||
+		strings.Contains(s, "wsarecv") ||
+		strings.Contains(s, "wsasend") ||
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "unexpected EOF")
+}
+
 func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 	// 去除密码首尾空白（防止复制粘贴带入不可见字符）
 	conn.Password = strings.TrimSpace(conn.Password)
@@ -212,109 +228,119 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			m.pendingMu.Unlock()
 		}()
 
-		var d net.Dialer
-		d.Timeout = config.Timeout
-		netConn, dialErr := d.DialContext(cancelCtx, "tcp", target)
-		if dialErr != nil {
-			// 用户取消连接时不弹错误，直接返回
-			if errors.Is(dialErr, context.Canceled) || cancelCtx.Err() != nil {
-				return fmt.Errorf("连接已取消")
+		// ponytail: 瞬态网络错误自动重试最多2次
+		const maxRetries = 2
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			if attempt > 0 {
+				time.Sleep(time.Duration(attempt) * time.Second)
+				log.Printf("[Connect] 瞬态网络错误重试 %d/%d: %s", attempt, maxRetries, conn.Host)
 			}
-			// TCP 连接失败（超时、拒绝等），按原始逻辑处理
-			errStr := dialErr.Error()
-			if strings.Contains(errStr, "connection refused") {
-				if m.ctx != nil {
-					runtime.EventsEmit(m.ctx, "ssh-auth-failed", map[string]interface{}{
-						"sessionId": sessionId,
-						"connId":    conn.ID,
-						"host":      conn.Host,
-						"port":      conn.Port,
-						"username":  conn.Username,
-						"error":     errStr,
-					})
+
+			var d net.Dialer
+			d.Timeout = config.Timeout
+			netConn, dialErr := d.DialContext(cancelCtx, "tcp", target)
+			if dialErr != nil {
+				if errors.Is(dialErr, context.Canceled) || cancelCtx.Err() != nil {
+					return fmt.Errorf("连接已取消")
 				}
-				return fmt.Errorf("认证失败")
+				errStr := dialErr.Error()
+				if strings.Contains(errStr, "connection refused") {
+					if m.ctx != nil {
+						runtime.EventsEmit(m.ctx, "ssh-auth-failed", map[string]interface{}{
+							"sessionId": sessionId,
+							"connId":    conn.ID,
+							"host":      conn.Host,
+							"port":      conn.Port,
+							"username":  conn.Username,
+							"error":     errStr,
+						})
+					}
+					return fmt.Errorf("认证失败")
+				}
+				// 瞬态错误继续重试
+				if attempt < maxRetries && isTransientNetError(dialErr) {
+					continue
+				}
+				return dialErr
 			}
-			return dialErr
-		}
 
-		// 再检查一次取消信号（DialContext 返回后 context 可能刚被取消）
-		if cancelCtx.Err() != nil {
-			netConn.Close()
-			return fmt.Errorf("连接已取消")
-		}
-
-		// 在握手期间监听取消：context 取消时关闭 netConn，使 NewClientConn 快速失败
-		handshakeDone := make(chan struct{})
-		go func() {
-			select {
-			case <-cancelCtx.Done():
-				netConn.Close()
-			case <-handshakeDone:
-			}
-		}()
-
-		sshConn, chans, reqs, handshakeErr := ssh.NewClientConn(netConn, target, config)
-		close(handshakeDone)
-
-		if handshakeErr != nil {
-			// 用户取消导致的握手失败
 			if cancelCtx.Err() != nil {
+				netConn.Close()
 				return fmt.Errorf("连接已取消")
 			}
-			if errors.Is(handshakeErr, ErrHostKeyChanged) {
-				if m.ctx != nil {
-					// 在锁内读取 pendingHostKeys，避免与 AcceptHostKeyChange 并发写入竞争
-					m.mu.RLock()
-					pending, ok := m.pendingHostKeys[sessionId]
-					if !ok || pending == nil {
+
+			handshakeDone := make(chan struct{})
+			go func() {
+				select {
+				case <-cancelCtx.Done():
+					netConn.Close()
+				case <-handshakeDone:
+				}
+			}()
+
+			sshConn, chans, reqs, handshakeErr := ssh.NewClientConn(netConn, target, config)
+			close(handshakeDone)
+
+			if handshakeErr != nil {
+				if cancelCtx.Err() != nil {
+					return fmt.Errorf("连接已取消")
+				}
+				if errors.Is(handshakeErr, ErrHostKeyChanged) {
+					if m.ctx != nil {
+						m.mu.RLock()
+						pending, ok := m.pendingHostKeys[sessionId]
+						if !ok || pending == nil {
+							m.mu.RUnlock()
+							return fmt.Errorf("主机密钥已变更，但未找到待确认信息")
+						}
+						hostname := pending.Hostname
+						newFingerprint := pending.NewFingerprint
+						oldFingerprints := make([]string, 0, len(pending.OldKeys))
+						for _, k := range pending.OldKeys {
+							oldFingerprints = append(oldFingerprints, ssh.FingerprintSHA256(k.Key))
+						}
+						isNew := len(pending.OldKeys) == 0
 						m.mu.RUnlock()
-						return fmt.Errorf("主机密钥已变更，但未找到待确认信息")
+						runtime.EventsEmit(m.ctx, "ssh-host-key-changed", map[string]interface{}{
+							"sessionId":       sessionId,
+							"hostname":        hostname,
+							"host":            conn.Host,
+							"port":            conn.Port,
+							"newFingerprint":  newFingerprint,
+							"oldFingerprints": oldFingerprints,
+							"isNew":           isNew,
+						})
 					}
-					hostname := pending.Hostname
-					newFingerprint := pending.NewFingerprint
-					oldFingerprints := make([]string, 0, len(pending.OldKeys))
-					for _, k := range pending.OldKeys {
-						oldFingerprints = append(oldFingerprints, ssh.FingerprintSHA256(k.Key))
-					}
-					isNew := len(pending.OldKeys) == 0
-					m.mu.RUnlock()
-					runtime.EventsEmit(m.ctx, "ssh-host-key-changed", map[string]interface{}{
-						"sessionId":       sessionId,
-						"hostname":        hostname,
-						"host":            conn.Host,
-						"port":            conn.Port,
-						"newFingerprint":  newFingerprint,
-						"oldFingerprints": oldFingerprints,
-						"isNew":           isNew,
-					})
+					return fmt.Errorf("主机密钥已变更，请在弹窗中确认")
 				}
-				return fmt.Errorf("主机密钥已变更，请在弹窗中确认")
+
+				errStr := handshakeErr.Error()
+				if strings.Contains(errStr, "unable to authenticate") ||
+					strings.Contains(errStr, "no supported methods remain") {
+					if m.ctx != nil {
+						runtime.EventsEmit(m.ctx, "ssh-auth-failed", map[string]interface{}{
+							"sessionId": sessionId,
+							"connId":    conn.ID,
+							"host":      conn.Host,
+							"port":      conn.Port,
+							"username":  conn.Username,
+							"error":     errStr,
+						})
+					}
+					return fmt.Errorf("认证失败")
+				}
+
+				// 瞬态错误继续重试
+				if attempt < maxRetries && isTransientNetError(handshakeErr) {
+					continue
+				}
+				return handshakeErr
 			}
 
-			// 认证失败或连接被拒绝，立即返回错误
-			errStr := handshakeErr.Error()
-			if strings.Contains(errStr, "unable to authenticate") ||
-				strings.Contains(errStr, "no supported methods remain") ||
-				strings.Contains(errStr, "EOF") ||
-				strings.Contains(errStr, "connection reset") {
-				if m.ctx != nil {
-					runtime.EventsEmit(m.ctx, "ssh-auth-failed", map[string]interface{}{
-						"sessionId": sessionId,
-						"connId":    conn.ID,
-						"host":      conn.Host,
-						"port":      conn.Port,
-						"username":  conn.Username,
-						"error":     errStr,
-					})
-				}
-				return fmt.Errorf("认证失败")
-			}
-
-			return handshakeErr
+			// 握手成功
+			client = ssh.NewClient(sshConn, chans, reqs)
+			break
 		}
-
-		client = ssh.NewClient(sshConn, chans, reqs)
 
 		var sftpErr error
 		sftpClient, sftpErr = sftp.NewClient(client)
