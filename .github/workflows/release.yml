@@ -72,6 +72,8 @@ jobs:
           } > build/deb/DEBIAN/control
           cp build/bin/Lumin build/deb/usr/bin/lumin
           sudo chown root:root build/deb/usr/bin/lumin
+          cp build/appicon.png build/deb/usr/share/icons/hicolor/256x256/apps/lumin.png
+          cp build/linux/lumin.desktop build/deb/usr/share/applications/lumin.desktop
           sudo dpkg-deb --root-owner-group --build build/deb "build/lumin_V${VERSION}-amd64.deb"
           sha256sum "build/lumin_V${VERSION}-amd64.deb" > "build/lumin_V${VERSION}-amd64.deb.sha256"
           echo "deb=${{ github.workspace }}/build/lumin_V${VERSION}-amd64.deb" >> $GITHUB_ENV
