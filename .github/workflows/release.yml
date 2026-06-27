@@ -63,11 +63,17 @@ jobs:
           echo "deb=${{ github.workspace }}/build/lumin_${VERSION}_amd64.deb" >> $GITHUB_ENV
           echo "deb_sha=${{ github.workspace }}/build/lumin_${VERSION}_amd64.deb.sha256" >> $GITHUB_ENV
           # Convert .deb to .rpm via alien
-          sudo alien -r build/lumin_${VERSION}_amd64.deb --release=1 --scripts 2>/dev/null || echo "alien_rpm_failed=true" >> $GITHUB_ENV
+          sudo alien -r build/lumin_${VERSION}_amd64.deb --scripts || echo "alien_rpm_failed=true" >> $GITHUB_ENV
           RPM_FILE=$(find . -name "*.rpm" 2>/dev/null | head -1)
           if [ -n "$RPM_FILE" ]; then
             mv "$RPM_FILE" build/
             RPM_BASENAME=$(basename "$RPM_FILE")
+            # 统一 release 为 1
+            RPM_BASENAME_CLEAN=$(echo "$RPM_BASENAME" | sed 's/-[0-9]\+\.x86_64/-1.x86_64/')
+            if [ "$RPM_BASENAME" != "$RPM_BASENAME_CLEAN" ] && [ -f "build/$RPM_BASENAME" ]; then
+              mv "build/$RPM_BASENAME" "build/$RPM_BASENAME_CLEAN"
+              RPM_BASENAME="$RPM_BASENAME_CLEAN"
+            fi
             sha256sum "build/$RPM_BASENAME" > "build/$RPM_BASENAME.sha256"
             echo "rpm=${{ github.workspace }}/build/$RPM_BASENAME" >> $GITHUB_ENV
             echo "rpm_sha=${{ github.workspace }}/build/$RPM_BASENAME.sha256" >> $GITHUB_ENV
