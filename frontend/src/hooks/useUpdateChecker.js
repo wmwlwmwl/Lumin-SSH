@@ -24,6 +24,11 @@ function isLinux() {
   return navigator.userAgent.includes('Linux') || navigator.platform.includes('Linux');
 }
 
+// 判断当前是否 macOS 平台
+function isMacOS() {
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform) || navigator.userAgent.includes('Mac OS');
+}
+
 // 匹配下载资源（便携版/安装版/兜底）
 async function resolveDownloadAsset(data) {
   let isPortable = false;
@@ -32,6 +37,14 @@ async function resolveDownloadAsset(data) {
   }
   if (data.assets && data.assets.length > 0) {
     let targetAsset = null;
+
+    // macOS: Release 使用 DMG 分发，忽略配套的 .sha256 文件
+    if (isMacOS()) {
+      targetAsset = data.assets.find(a => a.name.toLowerCase().endsWith('.dmg'));
+      if (targetAsset) {
+        return { url: targetAsset.browser_download_url, filename: targetAsset.name };
+      }
+    }
 
     // Linux: 优先选取 .deb 包，其次 .rpm
     if (isLinux()) {
@@ -57,7 +70,7 @@ async function resolveDownloadAsset(data) {
       return { url: targetAsset.browser_download_url, filename: targetAsset.name };
     }
   }
-  const fallbackName = isLinux() ? 'update.deb' : 'update.exe';
+  const fallbackName = isMacOS() ? 'update.dmg' : (isLinux() ? 'update.deb' : 'update.exe');
   return { url: data.html_url || '', filename: fallbackName };
 }
 
@@ -109,8 +122,9 @@ export function useUpdateChecker({ onResult, onError } = {}) {
   const applyUpdate = useCallback(async (updateInfo) => {
     if (!updateInfo || !updateInfo.url) return;
     if (downloadProgress >= 0) return;
-    // 非 exe/deb/rpm 的链接直接打开浏览器
-    if (!updateInfo.url.endsWith('.exe') && !updateInfo.url.endsWith('.deb') && !updateInfo.url.endsWith('.rpm')) {
+    // 非平台安装包的链接直接打开浏览器
+    const packageName = (updateInfo.filename || updateInfo.url).toLowerCase();
+    if (!/\.(exe|deb|rpm|dmg)$/.test(packageName)) {
       window.runtime?.BrowserOpenURL(updateInfo.url);
       return;
     }
@@ -118,6 +132,7 @@ export function useUpdateChecker({ onResult, onError } = {}) {
     let defaultName = 'update.exe';
     if (updateInfo.url.endsWith('.deb')) defaultName = 'update.deb';
     else if (updateInfo.url.endsWith('.rpm')) defaultName = 'update.rpm';
+    else if (updateInfo.url.endsWith('.dmg')) defaultName = 'update.dmg';
     try {
       await AppGo.UpdateApp(updateInfo.url, updateInfo.filename || defaultName);
     } catch (err) {

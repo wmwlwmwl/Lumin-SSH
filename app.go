@@ -655,11 +655,17 @@ func (a *App) PingServer(host string, port int) map[string]interface{} {
 	return PingServer(host, port)
 }
 
-// UpdateApp downloads the new exe from the given url, replaces the current running exe, and restarts the app.
+// UpdateApp downloads a platform update package, verifies it, and starts the
+// platform-specific installation or executable replacement flow.
 func (a *App) UpdateApp(downloadUrl string, filename string) error {
 	// 1. 强制 HTTPS，防止明文下载可执行文件被篡改
 	if !strings.HasPrefix(downloadUrl, "https://") {
 		return fmt.Errorf("更新地址必须使用 HTTPS")
+	}
+	// Release asset names must not escape the temporary/download directory.
+	filename = filepath.Base(strings.TrimSpace(filename))
+	if filename == "." || filename == "" {
+		return fmt.Errorf("更新文件名无效")
 	}
 	// 2. 发起请求下载新文件（带超时，防止慢网络永久阻塞）
 	client := &http.Client{Timeout: 10 * time.Minute}
@@ -691,6 +697,7 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 
 	isDeb := strings.HasSuffix(strings.ToLower(filename), ".deb")
 	isRpm := strings.HasSuffix(strings.ToLower(filename), ".rpm")
+	isDmg := strings.HasSuffix(strings.ToLower(filename), ".dmg")
 	isSetup := strings.Contains(strings.ToLower(filename), "installer") || strings.Contains(strings.ToLower(filename), "setup")
 	var targetPath string
 	var exePath string
@@ -703,8 +710,8 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 	}
 	exePath = exe
 
-	if isSetup || isDeb || isRpm {
-		// 安装包、.deb 和 .rpm 都下载到临时目录
+	if isSetup || isDeb || isRpm || isDmg {
+		// 安装包、.deb、.rpm 和 .dmg 都下载到临时目录
 		targetPath = filepath.Join(os.TempDir(), filename)
 	} else {
 		// 便携版：下载到 exe 同级目录，或权限不足时降级到临时目录
@@ -818,7 +825,16 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 		return nil
 	}
 
-	// 4. 区分 Setup 还是 Portable 替换
+	// 4. macOS DMG 由独立更新进程替换 .app，并在旧进程退出后重启。
+	if isDmg {
+		if err := installDmgPackage(targetPath, exePath); err != nil {
+			return err
+		}
+		os.Exit(0)
+		return nil
+	}
+
+	// Windows 安装包交给系统安装器处理；其他文件走 Portable 替换。
 	if isSetup {
 		if err := launchInstaller(targetPath); err != nil {
 			return err

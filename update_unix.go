@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux
 
 package main
 
@@ -60,6 +60,10 @@ func installRpmPackage(rpmPath string) error {
 		}
 	}
 	return nil
+}
+
+func installDmgPackage(_, _ string) error {
+	return fmt.Errorf("dmg packages are not supported on Linux")
 }
 
 // applyUpdateElevated 以提权方式执行便携版热替换。
