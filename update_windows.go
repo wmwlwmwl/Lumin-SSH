@@ -29,6 +29,7 @@ func restartApp(exePath string) error {
 }
 
 // ponytail: Windows 平台 stubs — Linux 专属的更新路径不会走到
-func installDebPackage(_ string) error           { return nil }
-func installRpmPackage(_ string) error           { return nil }
-func applyUpdateElevated(_, _ string) error      { return nil }
+func installDebPackage(_ string) error      { return nil }
+func installRpmPackage(_ string) error      { return nil }
+func installDmgPackage(_, _ string) error   { return nil }
+func applyUpdateElevated(_, _ string) error { return nil }
