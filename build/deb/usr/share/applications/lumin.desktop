@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Lumin
-Comment=Lightweight SSH Client
-Exec=lumin
-Icon=lumin
-Terminal=false
-Categories=Network;RemoteAccess;
-StartupNotify=true

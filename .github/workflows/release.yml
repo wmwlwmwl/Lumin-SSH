@@ -53,11 +53,25 @@ jobs:
       - name: Package .deb & .rpm
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+          mkdir -p build/deb/DEBIAN
           mkdir -p build/deb/usr/bin
+          mkdir -p build/deb/usr/share/applications
+          mkdir -p build/deb/usr/share/icons/hicolor/256x256/apps
+          # 生成 control 文件
+          { \
+            echo "Package: lumin"; \
+            echo "Version: ${VERSION}"; \
+            echo "Section: net"; \
+            echo "Priority: optional"; \
+            echo "Architecture: amd64"; \
+            echo "Depends: libgtk-3-0, libwebkit2gtk-4.1-0, libglib2.0-0, libc6, libayatana-appindicator3-1"; \
+            echo "Maintainer: Lumin <admin@662662.xyz>"; \
+            echo "Description: Lightweight SSH Client"; \
+            echo " A modern, lightweight SSH client built with Wails."; \
+            echo " Quickly manage and connect to your SSH servers."; \
+          } > build/deb/DEBIAN/control
           cp build/bin/Lumin build/deb/usr/bin/lumin
           sudo chown root:root build/deb/usr/bin/lumin
-          # 更新 DEBIAN/control 中的版本号
-          sed -i "s/^Version:.*/Version: ${VERSION}/" build/deb/DEBIAN/control
           sudo dpkg-deb --root-owner-group --build build/deb "build/lumin_V${VERSION}_amd64.deb"
           sha256sum "build/lumin_V${VERSION}_amd64.deb" > "build/lumin_V${VERSION}_amd64.deb.sha256"
           echo "deb=${{ github.workspace }}/build/lumin_V${VERSION}_amd64.deb" >> $GITHUB_ENV
@@ -68,8 +82,8 @@ jobs:
           if [ -n "$RPM_FILE" ]; then
             mv "$RPM_FILE" build/
             RPM_BASENAME=$(basename "$RPM_FILE")
-            # 统一命名：加入 V 前缀
-            RPM_BASENAME_CLEAN=$(echo "$RPM_BASENAME" | sed "s/lumin-[0-9.]\+\(.*\)\.rpm/lumin-V${VERSION}\1.rpm/")
+            # 统一命名：加入 V 前缀，去掉 alien 的 release 号
+            RPM_BASENAME_CLEAN=$(echo "$RPM_BASENAME" | sed "s/lumin-[0-9.]\+-\([0-9]\+\)\(.*\)\.rpm/lumin-V${VERSION}\2.rpm/")
             if [ "$RPM_BASENAME" != "$RPM_BASENAME_CLEAN" ] && [ -f "build/$RPM_BASENAME" ]; then
               mv "build/$RPM_BASENAME" "build/$RPM_BASENAME_CLEAN"
               RPM_BASENAME="$RPM_BASENAME_CLEAN"
@@ -79,9 +93,34 @@ jobs:
             echo "rpm_sha=${{ github.workspace }}/build/$RPM_BASENAME.sha256" >> $GITHUB_ENV
           fi
 
+      - name: Get clean version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
+          name: "Lumin SSH Client ${{ github.ref_name }}"
+          body: |
+            ## 功能增强
+            - Windows 安装版添加"运行 Lumin"复选框
+            - 异地多活支持（跨地域多实例数据库同步）
+            - 连接断开时自动重连，确保持续可用
+
+            ## Bug 修复
+            - NSIS 安装器中文字符乱码（添加 UTF-8 BOM 解决跨语言编码问题）
+            - 更新后自动重启 --nsis 参数修复
+            - macOS 闪退（托盘初始化冲突修复）
+            - Release workflow YAML 语法错误修复（heredoc 缩进导致 Actions 解析失败）
+
+            ## 构建信息
+            - Linux 便携版 (Lumin-V${{ steps.version.outputs.version }}-linux-amd64)：即下即用
+            - DEB 安装包 (lumin_V${{ steps.version.outputs.version }}_amd64.deb)：Debian/Ubuntu 安装包
+            - RPM 安装包 (lumin-V${{ steps.version.outputs.version }}.x86_64.rpm)：Red Hat/Fedora 安装包
+            - macOS 磁盘映像 (Lumin-V${{ steps.version.outputs.version }}.dmg)：macOS 安装包
+            - 便携绿色版 (Lumin-V${{ steps.version.outputs.version }}-portable.exe)：内嵌 WebView2，即下即用
+            - 标准安装版 (Lumin-V${{ steps.version.outputs.version }}-amd64-installer.exe)：NSIS 安装包
+            - 每个产物附带 .sha256 校验文件，自动更新时校验 SHA256 确保文件完整性
           files: |
             ${{ env.binary }}
             ${{ env.binary_sha }}
