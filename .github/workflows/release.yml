@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -45,6 +48,7 @@ jobs:
       - name: Package .deb
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+          mkdir -p build/deb/usr/bin
           cp build/bin/Lumin build/deb/usr/bin/lumin
           sudo chown root:root build/deb/usr/bin/lumin
           sudo dpkg-deb --root-owner-group --build build/deb build/lumin_${VERSION}_amd64.deb
@@ -81,6 +85,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
         working-directory: frontend
+
+      - name: Wails Doctor
+        run: |
+          export PATH=$HOME/go/bin:$PATH
+          wails doctor
 
       - name: Build Wails
         run: |
