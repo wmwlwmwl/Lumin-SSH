@@ -63,6 +63,7 @@ jobs:
           echo "deb=${{ github.workspace }}/build/lumin_${VERSION}_amd64.deb" >> $GITHUB_ENV
           echo "deb_sha=${{ github.workspace }}/build/lumin_${VERSION}_amd64.deb.sha256" >> $GITHUB_ENV
           # Convert .deb to .rpm via alien
+          sudo apt-get install alien -y 2>/dev/null
           sudo alien -r build/lumin_${VERSION}_amd64.deb --release=1 --scripts 2>/dev/null || echo "alien_rpm_failed=true" >> $GITHUB_ENV
           RPM_FILE=$(find . -name "*.rpm" 2>/dev/null | head -1)
           if [ -n "$RPM_FILE" ]; then
