@@ -66,6 +66,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const quickCmdsPopupRef                     = useRef(null);
   const historyPopupRef                       = useRef(null);
   const pendingCmdRef                         = useRef('');
+  const awaitingPasswordRef                   = useRef(false); // 检测到密码提示后，下一行输入不记入命令历史
 
   // ── 点击快捷命令弹窗外关闭（document 级 mousedown，不阻塞 click） ──
   useEffect(() => {
@@ -291,7 +292,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     let ws = null;
     let cancelled = false;
     const pendingEchoes = [];
-    let awaitingPassword = false; // 检测到密码提示后，下一行输入不记入命令历史
 
     // 并行获取端口与鉴权 token，后端要求连接时通过 ?token=xxx 携带，防止本机恶意进程注入命令
     Promise.all([AppGo.GetWsPort(), AppGo.GetWsToken()]).then(([port, token]) => {
@@ -305,10 +305,13 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         if (!termRef.current) return;
 
         // 检测密码提示，标记下一行输入为密码（不记入命令历史）
-        if (!awaitingPassword) {
+        if (!awaitingPasswordRef.current) {
           const probeText = typeof ev.data === 'string' ? ev.data : textDecoder.decode(ev.data);
-          if (/[Pp]assword|密码|passphrase/i.test(probeText)) {
-            awaitingPassword = true;
+          // ponytail: 只在最后一行像密码提示时触发（含 password/密码 且行尾冒号），
+          // 避免 "admin password: xxx" 之类信息性输出误判，导致下一条普通命令被跳过
+          const lastLine = probeText.split(/\r?\n/).pop().trim();
+          if (/(password|passwd|passphrase|密码)/i.test(lastLine) && /[:：]\s*$/.test(lastLine)) {
+            awaitingPasswordRef.current = true;
           }
         }
 
@@ -397,25 +400,35 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         wsRef.current.send(textEncoder.encode(data));
       }
 
-      // ── 按键累计记录命令（仅跟踪可打印字符，方向键和控制序列自动放弃）──
-      if (data === '\r' || data === '\n' || data === '\r\n') {
-        // 密码输入不记入命令历史；executeCommand 已记录则跳过
-        if (!awaitingPassword && !skipNextHistoryRef.current) {
-          const cmd = pendingCmdRef.current.trim();
-          if (cmd.length > 1 && !/^\d+$/.test(cmd)) {
-            window.dispatchEvent(new CustomEvent('ssh-command-history', {
-              detail: { sessionId: serverIdRef.current, command: cmd, time: new Date().toISOString(), source: 'input' }
-            }));
-          }
+      // ── 命令记录：回车时从 xterm buffer 提取当前行命令 ──
+      // ponytail: 直接从 buffer 读（比逐字符累加可靠，能捕获方向键调出/Tab 补全/粘贴的命令）。
+      // 局限：命令含 # 或 $ 时 lastIndexOf 可能误切提示符；多行命令只取最后一行
+      if (data.includes('\r') || data.includes('\n')) {
+        const nlIdx = data.search(/[\r\n]/);
+        if (nlIdx > 0) {
+          pendingCmdRef.current += data.slice(0, nlIdx).replace(/[\x00-\x1F\x7F]/g, '');
         }
-        skipNextHistoryRef.current = false;
-        awaitingPassword = false;
+        let cmd = '';
+        const buf = term.buffer.active;
+        const bufLine = buf.getLine(buf.baseY + buf.cursorY);
+        if (bufLine) {
+          const text = bufLine.translateToString(true);
+          const idx = Math.max(text.lastIndexOf('#'), text.lastIndexOf('$'));
+          cmd = idx >= 0 ? text.slice(idx + 1).trim() : text.trim();
+        }
+        if (!cmd) cmd = pendingCmdRef.current.trim();
+        if (!awaitingPasswordRef.current && cmd.length > 1 && !/^\d+$/.test(cmd)) {
+          window.dispatchEvent(new CustomEvent('ssh-command-history', {
+            detail: { sessionId: serverIdRef.current, command: cmd, time: new Date().toISOString(), source: 'input' }
+          }));
+        }
+        awaitingPasswordRef.current = false;
         pendingCmdRef.current = '';
       } else if (data === '\x7F' || data === '\b') {
         pendingCmdRef.current = pendingCmdRef.current.slice(0, -1);
       } else if (!/[\x00-\x1F\x7F]/.test(data)) {
         pendingCmdRef.current += data;
-      } else {
+      } else if (data === '\x03' || data === '\x04') {
         pendingCmdRef.current = '';
       }
 
@@ -794,23 +807,20 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     cmdInputRef.current?.focus();
   };
 
-  // ponytail: 用于跳过 executeCommand 触发的 onData 回车（避免重复记录）
-  const skipNextHistoryRef = useRef(false);
-
   const executeCommand = (directCmd) => {
     const cmd = directCmd || cmdInput;
     if (!isConnected) return;
     const text = (cmd ?? '').trim();
-    skipNextHistoryRef.current = true; // 标记：下一次 onData(\r) 不记录
     AppGo.WriteTerminal(sessionId, text + '\r').catch((err) => {
       console.error('WriteTerminal failed:', err);
     });
     termRef.current?.scrollToBottom();
-    if (text && text.length > 1 && !/^\d+$/.test(text)) {
+    if (text && text.length > 1 && !/^\d+$/.test(text) && !awaitingPasswordRef.current) {
       window.dispatchEvent(new CustomEvent('ssh-command-history', {
         detail: { sessionId: serverId, command: text, time: new Date().toISOString(), source: 'input' }
       }));
     }
+    awaitingPasswordRef.current = false;
     setCmdInput('');
     setShowHistory(false);
     setHistoryPopupPos(null);

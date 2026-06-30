@@ -9,6 +9,11 @@ export default function CommandHistory({ sessionId, historyServerId, addToast })
   const [searchQuery, setSearchQuery] = useState('');
   const [historyMode, setHistoryMode] = useState('server'); // 'server' | 'global'
   const perServerRef = useRef([]);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // ── 串行化全局历史更新，避免 read-modify-write 竞态 ──
   const globalHistoryUpdateLock = useRef(Promise.resolve());
