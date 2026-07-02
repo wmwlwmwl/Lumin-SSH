@@ -1,10 +1,11 @@
-import { Zap, BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, Plus, RefreshCw, FolderOpen } from 'lucide-react';
+import { Zap, BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, Plus, RefreshCw, FolderOpen, KeyRound } from 'lucide-react';
 import { useTranslation } from '../i18n.js';
 import PasswordField from './PasswordField.jsx';
 import ServerList from './ServerList.jsx';
 
 export default function Dashboard({
   quickForm, dispatchQuick, onQuickConnect, onQuickPrivateKeyFile,
+  credentials, onOpenCredentials,
   searchQuery, onSearchChange,
   hideSensitive, onHideSensitiveToggle,
   serverListViewMode, onViewModeChange,
@@ -45,9 +46,20 @@ export default function Dashboard({
               <select className="select-compact" value={quickForm.auth} onChange={e => dispatchQuick({ type: 'auth', value: e.target.value })}>
                 <option value="password">{t('密码认证')}</option>
                 <option value="key">{t('私钥认证')}</option>
+                {credentials.length > 0 && <option value="credential">{t('使用凭据')}</option>}
               </select>
             </div>
-            {quickForm.auth === 'password' ? (
+            {quickForm.auth === 'credential' ? (
+              <div className="form-group-compact">
+                <label>{t('选择凭据')}</label>
+                <select className="select-compact" value={quickForm.credId || ''} onChange={e => dispatchQuick({ type: 'credId', value: e.target.value })}>
+                  <option value="">{t('请选择凭据')}</option>
+                  {credentials.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.username})</option>
+                  ))}
+                </select>
+              </div>
+            ) : quickForm.auth === 'password' ? (
               <div className="form-group-compact">
                 <label>{t('密码')}</label>
                 <PasswordField value={quickForm.pass} onChange={e => dispatchQuick({ type: 'pass', value: e.target.value })} placeholder={t('请输入密码')} showPassword={quickForm.showPass} onToggleShow={() => dispatchQuick({ type: 'showPass', value: !quickForm.showPass })} />
@@ -68,7 +80,10 @@ export default function Dashboard({
               </>
             )}
             <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: 12 }}>{t('立即闪连')}</button>
-           </form>
+	            <button type="button" className="btn btn-ghost" onClick={onOpenCredentials} style={{ width: '100%', marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, border: '1px solid var(--accent)', color: 'var(--accent)' }}>
+	              <KeyRound size={14} /> {t('凭据管理')}
+	            </button>
+	           </form>
          </div>
 
         {/* 📊 状态概览 */}

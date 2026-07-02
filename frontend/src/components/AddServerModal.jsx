@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, Pencil, Plus, X, Monitor, Key, FolderOpen, SquarePen } from 'lucide-react';
+import { Eye, EyeOff, Pencil, Plus, X, Monitor, Key, FolderOpen, SquarePen, KeyRound } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { useTranslation } from '../i18n.js';
 
@@ -14,7 +14,7 @@ const defaultForm = {
   passphrase: '',
 };
 
-export default function AddServerModal({ server, onSave, onClose, allGroups = [] }) {
+export default function AddServerModal({ server, onSave, onClose, allGroups = [], credentials = [], onOpenCredentials }) {
   const { t } = useTranslation();
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
@@ -22,8 +22,14 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
   const [showPassword, setShowPassword] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
 
+  const [authMode, setAuthMode] = useState('custom'); // 'custom' | 'credential'
+  const [selectedCredId, setSelectedCredId] = useState('');
+
   useEffect(() => {
     if (server) {
+      const useCred = !!server.credentialId;
+      setAuthMode(useCred ? 'credential' : 'custom');
+      setSelectedCredId(useCred ? server.credentialId : '');
       setForm({
         ...defaultForm,
         ...server,
@@ -32,6 +38,8 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
         passphrase: server.passphrase || '',
       });
     } else {
+      setAuthMode('custom');
+      setSelectedCredId('');
       setForm(defaultForm);
     }
   }, [server]);
@@ -53,23 +61,35 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.host.trim()) return window.luminDialog?.alert(t('请填写主机地址'));
-    if (!form.username.trim()) return window.luminDialog?.alert(t('请填写用户名'));
+    if (authMode === 'custom' && !form.username.trim()) return window.luminDialog?.alert(t('请填写用户名'));
+    if (authMode === 'credential' && !selectedCredId) return window.luminDialog?.alert(t('请选择凭据'));
 
     setSaving(true);
     try {
       const data = { ...form };
       data.port = parseInt(data.port, 10) || 22;
-      data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
-      if (server?.id) data.id = server.id;
-      if (server?.id && !data.password) delete data.password;
-      // 编辑时私钥是掩码占位符，不覆盖已保存的私钥
-      if (server?.id && (!data.privateKey || data.privateKey === '[key configured]')) {
+
+      if (authMode === 'credential') {
+        data.credentialId = selectedCredId;
+        // 使用凭据时清除内联认证字段
+        delete data.password;
         delete data.privateKey;
-      }
-      // 编辑时密码短语是掩码占位符，不覆盖已保存的密码短语
-      if (server?.id && (!data.passphrase || data.passphrase === '****')) {
         delete data.passphrase;
+        delete data.authMethod;
+        delete data.authType;
+      } else {
+        data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
+        data.credentialId = ''; // 清除凭据引用
+        if (server?.id && !data.password) delete data.password;
+        if (server?.id && (!data.privateKey || data.privateKey === '[key configured]')) {
+          delete data.privateKey;
+        }
+        if (server?.id && (!data.passphrase || data.passphrase === '****')) {
+          delete data.passphrase;
+        }
       }
+
+      if (server?.id) data.id = server.id;
       await onSave(data);
     } finally {
       setSaving(false);
@@ -165,6 +185,48 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
             <div className="webdav-section">
               <div className="webdav-section-title"><span style={{ display: 'inline-flex', alignItems: 'center', marginRight: 4 }}><Key size={16} /></span> {t('认证方式')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* 自定义/使用凭据 切换 */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button type="button" className={`btn ${authMode === 'custom' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAuthMode('custom')} style={{ fontSize: 12, padding: '4px 12px', ...(authMode !== 'custom' ? { border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}) }}>
+                    {t('自定义')}
+                  </button>
+                  <button type="button" className={`btn ${authMode === 'credential' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAuthMode('credential')} style={{ fontSize: 12, padding: '4px 12px', ...(authMode !== 'credential' ? { border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}) }}>
+                    {t('使用凭据')}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={onOpenCredentials} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--accent)', color: 'var(--accent)' }}>
+                    <KeyRound size={13} /> {t('凭据管理')}
+                  </button>
+                </div>
+
+                {authMode === 'credential' ? (
+                  credentials.length === 0 ? (
+                    <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                      {t('暂无凭据，请先创建')}
+                    </div>
+                  ) : (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">{t('选择凭据')} *</label>
+                      <select className="select" value={selectedCredId} onChange={(e) => setSelectedCredId(e.target.value)}>
+                        <option value="">{t('请选择凭据')}</option>
+                        {credentials.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.username})</option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedCredId && (() => {
+                      const sel = credentials.find((c) => c.id === selectedCredId);
+                      if (!sel) return null;
+                      return (
+                        <div style={{ padding: '8px 12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-secondary)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--text-secondary)' }}>
+                          {sel.authMethod === 'privateKey' ? t('私钥认证') : t('密码认证')} · {sel.username}
+                        </div>
+                      );
+                    })()}
+                  </>
+                  )
+                ) : (
+                  <>
                 <div className="form-group">
                   <label className="form-label">{t('认证方式')}</label>
                   <select className="select" value={form.authType} onChange={set('authType')}>
@@ -227,6 +289,8 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
                       </button>
                     </div>
                   </>
+                )}
+                </>
                 )}
 
 

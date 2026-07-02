@@ -50,6 +50,7 @@ type storageCloser interface {
 // SyncSnapshot 同步快照，包含连接和快捷命令等所有可同步数据
 type SyncSnapshot struct {
 	Connections   []Connection `json:"connections"`
+	Credentials   []Credential `json:"credentials,omitempty"`
 	QuickCommands string       `json:"quick_commands,omitempty"`
 	SnapshotTime  int64        `json:"snapshot_time,omitempty"` // 快照总时间戳（Unix 毫秒），用于判断同步方向
 }
@@ -109,8 +110,34 @@ func snapshotEqual(s1, s2 *SyncSnapshot) bool {
 	if !connsEqual(s1.Connections, s2.Connections) {
 		return false
 	}
+	if !credsEqual(s1.Credentials, s2.Credentials) {
+		return false
+	}
 	if s1.QuickCommands != s2.QuickCommands {
 		return false
+	}
+	return true
+}
+
+// credsEqual 比较两个凭据列表是否内容一致
+func credsEqual(a, b []Credential) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]Credential, len(a))
+	for _, c := range a {
+		m[c.ID] = c
+	}
+	for _, c := range b {
+		e, ok := m[c.ID]
+		if !ok {
+			return false
+		}
+		if e.Name != c.Name || e.AuthMethod != c.AuthMethod ||
+			e.Username != c.Username || e.Password != c.Password ||
+			e.PrivateKey != c.PrivateKey || e.Passphrase != c.Passphrase {
+			return false
+		}
 	}
 	return true
 }
@@ -147,6 +174,7 @@ func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error
 func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[string]interface{}, error) {
 	snap := SyncSnapshot{
 		Connections:   c.GetConnections(),
+		Credentials:   c.GetCredentials(),
 		QuickCommands: c.loadRawFile(c.quickCmdFile),
 		SnapshotTime:  c.loadSnapshotTime(),
 	}
@@ -258,6 +286,17 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage) (map[string]interface{
 		log.Printf("[syncFromProvider] failed to save connections: %v", err)
 	}
 	c.connCacheDirty = true
+
+	// 合并凭据
+	var mergedCreds []Credential
+	if remoteSnap.Credentials != nil {
+		localCreds := c.getCredentialsLocked()
+		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime)
+		if err := c.saveCredentialsFile(mergedCreds); err != nil {
+			log.Printf("[syncFromProvider] failed to save credentials: %v", err)
+		}
+		c.credCacheDirty = true
+	}
 	c.mu.Unlock()
 	c.CleanupOrphanedHistory() // 清理已不存在的连接的历史文件
 
@@ -270,7 +309,8 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage) (map[string]interface{
 
 	var backupResult interface{}
 	changed := !connsEqual(deduped, remoteSnap.Connections) ||
-		!quickCmdsEqual(mergedQuickCmds, remoteSnap.QuickCommands)
+		!quickCmdsEqual(mergedQuickCmds, remoteSnap.QuickCommands) ||
+		(mergedCreds != nil && !credsEqual(mergedCreds, remoteSnap.Credentials))
 	if changed {
 		c.bumpSnapshotTime() // 手动同步后更新总时间戳，确保下次自动同步方向正确
 		// 通过可选接口获取后端配置的 maxBackups，未实现者默认 0（不清理）
@@ -328,15 +368,26 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	// 连接合并：重叠按 LastModified 取最新，单侧独有按 lastSyncTime 判断删除
 	merged := c.mergeWithDeletionPropagation(localConns, remoteSnap.Connections, lastSyncTime)
 
+	// 凭据合并
+	var mergedCreds []Credential
+	localCreds := c.GetCredentials()
+	if remoteSnap.Credentials != nil {
+		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime)
+	} else {
+		mergedCreds = localCreds
+	}
+
 	// 快捷命令合并：重叠按 last_modified 取最新，单侧独有按 lastSyncTime 判断删除
 	localQuickCmds := c.loadRawFile(c.quickCmdFile)
 	mergedQuickCmds := c.mergeQuickCommands(localQuickCmds, remoteSnap.QuickCommands, lastSyncTime)
 
 	// 本地有变化 → 保存
-	localChanged := !connsEqual(merged, localConns) || !quickCmdsEqual(mergedQuickCmds, localQuickCmds)
+	credsChanged := remoteSnap.Credentials != nil && !credsEqual(mergedCreds, localCreds)
+	localChanged := !connsEqual(merged, localConns) || !quickCmdsEqual(mergedQuickCmds, localQuickCmds) || credsChanged
 
 	// 云端有变化 → 需要上传
-	cloudChanged := !connsEqual(merged, remoteSnap.Connections) || !quickCmdsEqual(mergedQuickCmds, remoteSnap.QuickCommands)
+	cloudCredsChanged := !credsEqual(mergedCreds, remoteSnap.Credentials)
+	cloudChanged := !connsEqual(merged, remoteSnap.Connections) || !quickCmdsEqual(mergedQuickCmds, remoteSnap.QuickCommands) || cloudCredsChanged
 
 	// 无变化 → 静默跳过
 	if !localChanged && !cloudChanged {
@@ -359,6 +410,12 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 			log.Printf("[autoSyncProvider] save: %v", err)
 		}
 		c.connCacheDirty = true
+		if credsChanged {
+			if err := c.saveCredentialsFile(mergedCreds); err != nil {
+				log.Printf("[autoSyncProvider] save creds: %v", err)
+			}
+			c.credCacheDirty = true
+		}
 		if !quickCmdsEqual(mergedQuickCmds, localQuickCmds) {
 			// staleness check: 重读文件确认没有被并发 SaveQuickCommands 覆盖
 			// ponytail: 已持写锁，不能再调 loadRawFile（它会 RLock 自死锁），直接 os.ReadFile
@@ -464,6 +521,49 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 		}
 	}
 	return deduped
+}
+
+// mergeCredentials 合并本地和云端凭据，逻辑与 mergeWithDeletionPropagation 一致
+func (c *ConfigManager) mergeCredentials(localCreds, remoteCreds []Credential, lastSyncTime int64) []Credential {
+	localMap := make(map[string]Credential, len(localCreds))
+	for _, lc := range localCreds {
+		localMap[lc.ID] = lc
+	}
+	remoteMap := make(map[string]Credential, len(remoteCreds))
+	for _, rc := range remoteCreds {
+		remoteMap[rc.ID] = rc
+	}
+
+	merged := make([]Credential, 0, len(localCreds)+len(remoteCreds))
+	added := make(map[string]bool)
+
+	for _, lc := range localCreds {
+		if added[lc.ID] {
+			continue
+		}
+		if rc, hasRemote := remoteMap[lc.ID]; hasRemote {
+			if lc.LastModified >= rc.LastModified {
+				merged = append(merged, lc)
+			} else {
+				merged = append(merged, rc)
+			}
+			added[lc.ID] = true
+		} else {
+			if lc.LastModified > lastSyncTime {
+				merged = append(merged, lc)
+			}
+			added[lc.ID] = true
+		}
+	}
+	for _, rc := range remoteCreds {
+		if !added[rc.ID] {
+			if rc.LastModified > lastSyncTime {
+				merged = append(merged, rc)
+			}
+			added[rc.ID] = true
+		}
+	}
+	return merged
 }
 
 // ─── 同步模式分发 ─────────────────────────────────────────
@@ -763,12 +863,17 @@ func (c *ConfigManager) restoreSnapshotToLocal(snap *SyncSnapshot) {
 	if snap == nil {
 		return
 	}
-	// 加锁保存并失效缓存（saveConnectionsFile 要求调用方持有 c.mu）
 	c.mu.Lock()
 	if err := c.saveConnectionsFile(snap.Connections); err != nil {
 		log.Printf("[restoreSnapshotToLocal] failed to save connections: %v", err)
 	}
 	c.connCacheDirty = true
+	if snap.Credentials != nil {
+		if err := c.saveCredentialsFile(snap.Credentials); err != nil {
+			log.Printf("[restoreSnapshotToLocal] failed to save credentials: %v", err)
+		}
+		c.credCacheDirty = true
+	}
 	c.mu.Unlock()
 	if snap.QuickCommands != "" {
 		if err := atomicWriteFile(c.quickCmdFile, []byte(snap.QuickCommands), 0600); err != nil {

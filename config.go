@@ -44,12 +44,26 @@ type Connection struct {
 	Passphrase   string `json:"passphrase,omitempty"`
 	Group        string `json:"group,omitempty"` // 服务器分组，空=未分组
 	Os           string `json:"os,omitempty"`
+	CredentialID string `json:"credentialId,omitempty"`  // ponytail: 非空时用 Credential 认证，忽略内联字段
 	LastModified int64  `json:"last_modified,omitempty"` // Unix 毫秒时间戳，合并时判断新旧
+}
+
+// Credential 可复用的认证凭据，多个 Connection 可引用同一 Credential
+type Credential struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	AuthMethod   string `json:"authMethod"` // "password" | "privateKey"
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`      // 加密存储
+	PrivateKey   string `json:"privateKey,omitempty"`    // 加密存储
+	Passphrase   string `json:"passphrase,omitempty"`    // 加密存储
+	LastModified int64  `json:"last_modified,omitempty"` // Unix 毫秒时间戳
 }
 
 type ConfigManager struct {
 	configDir      string
 	connFile       string
+	credFile       string
 	davFile        string
 	key            []byte
 	gcm            cipher.AEAD // ponytail: 缓存 GCM cipher，避免每次 encrypt/decrypt 重建
@@ -63,6 +77,8 @@ type ConfigManager struct {
 	mu             sync.RWMutex
 	connCache      []Connection    // 缓存连接列表
 	connCacheDirty bool            // 缓存是否需要刷新
+	credCache      []Credential    // 缓存凭据列表
+	credCacheDirty bool            // 凭据缓存是否需要刷新
 	syncRunning    atomic.Bool     // AutoSync 并发去重
 	wailsCtx       context.Context // 用于向 Wails 前端发送事件
 }
@@ -86,6 +102,7 @@ func NewConfigManager() *ConfigManager {
 	var key []byte
 
 	connFile := filepath.Join(dir, "connections.json")
+	credFile := filepath.Join(dir, "credentials.json")
 	davFile := filepath.Join(dir, "webdav.json")
 	quickCmdFile := filepath.Join(dir, "quick_commands.json")
 	paramHistFile := filepath.Join(dir, "param_history.json")
@@ -120,6 +137,7 @@ func NewConfigManager() *ConfigManager {
 	return &ConfigManager{
 		configDir:      dir,
 		connFile:       connFile,
+		credFile:       credFile,
 		davFile:        davFile,
 		key:            key,
 		gcm:            gcm,
@@ -515,6 +533,208 @@ func (c *ConfigManager) DeleteConnection(id string) bool {
 
 	go c.AutoSync()
 	return true
+}
+
+// ── Credential 凭据管理 ──────────────────────────────────────────
+
+func (c *ConfigManager) GetCredentials() []Credential {
+	c.mu.RLock()
+	if !c.credCacheDirty && c.credCache != nil {
+		result := make([]Credential, len(c.credCache))
+		copy(result, c.credCache)
+		c.mu.RUnlock()
+		return result
+	}
+	c.mu.RUnlock()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.credCacheDirty && c.credCache != nil {
+		result := make([]Credential, len(c.credCache))
+		copy(result, c.credCache)
+		return result
+	}
+	creds := c.getCredentialsLocked()
+	c.credCache = creds
+	c.credCacheDirty = false
+	result := make([]Credential, len(creds))
+	copy(result, creds)
+	return result
+}
+
+// getCredentialsLocked 读取凭据列表，调用方需持有 c.mu
+func (c *ConfigManager) getCredentialsLocked() []Credential {
+	data, err := os.ReadFile(c.credFile)
+	if err != nil {
+		return []Credential{}
+	}
+	var creds []Credential
+	if err := json.Unmarshal(data, &creds); err != nil {
+		log.Printf("[getCredentialsLocked] json.Unmarshal failed: %v", err)
+		return []Credential{}
+	}
+	for i := range creds {
+		creds[i].Password = c.decrypt(creds[i].Password)
+		creds[i].Passphrase = c.decrypt(creds[i].Passphrase)
+		creds[i].PrivateKey = c.decryptOrPassthrough(creds[i].PrivateKey)
+	}
+	return creds
+}
+
+func (c *ConfigManager) GetCredentialByID(id string) (Credential, bool) {
+	creds := c.GetCredentials()
+	for _, cr := range creds {
+		if cr.ID == id {
+			return cr, true
+		}
+	}
+	return Credential{}, false
+}
+
+func (c *ConfigManager) GetCredentialsMasked() []Credential {
+	creds := c.GetCredentials()
+	for i := range creds {
+		if creds[i].Password != "" {
+			creds[i].Password = "****"
+		}
+		if creds[i].PrivateKey != "" {
+			creds[i].PrivateKey = "[key configured]"
+		}
+		if creds[i].Passphrase != "" {
+			creds[i].Passphrase = "****"
+		}
+	}
+	return creds
+}
+
+func (c *ConfigManager) SaveCredential(cred Credential) Credential {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	creds := c.getCredentialsLocked()
+
+	if cred.ID == "" {
+		b := make([]byte, 8)
+		if _, err := rand.Read(b); err != nil {
+			cred.ID = strconv.FormatInt(time.Now().UnixNano(), 10)
+		} else {
+			cred.ID = fmt.Sprintf("%x", b)
+		}
+		creds = append(creds, cred)
+	} else {
+		found := false
+		for i, existing := range creds {
+			if existing.ID == cred.ID {
+				if cred.Password == "" && existing.Password != "" {
+					cred.Password = existing.Password
+				}
+				if cred.PrivateKey == "" && existing.PrivateKey != "" {
+					cred.PrivateKey = existing.PrivateKey
+				}
+				if cred.Passphrase == "" && existing.Passphrase != "" {
+					cred.Passphrase = existing.Passphrase
+				}
+				creds[i] = cred
+				found = true
+				break
+			}
+		}
+		if !found {
+			creds = append(creds, cred)
+		}
+	}
+
+	cred.LastModified = time.Now().UnixMilli()
+	for i, s := range creds {
+		if s.ID == cred.ID {
+			creds[i].LastModified = cred.LastModified
+			break
+		}
+	}
+
+	if err := c.saveCredentialsFile(creds); err != nil {
+		log.Printf("[SaveCredential] failed to save credentials: %v", err)
+	}
+	c.credCacheDirty = true
+	c.bumpSnapshotTime()
+	go c.AutoSync()
+	return cred
+}
+
+func (c *ConfigManager) DeleteCredential(id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	conns := c.getConnectionsLocked()
+	// 检查是否有连接引用此凭据
+	for _, conn := range conns {
+		if conn.CredentialID == id {
+			refName := conn.Name
+			if refName == "" {
+				refName = conn.Host
+			}
+			return fmt.Errorf("该凭据仍被服务器「%s」引用，无法删除", refName)
+		}
+	}
+
+	creds := c.getCredentialsLocked()
+	filtered := make([]Credential, 0, len(creds))
+	for _, cr := range creds {
+		if cr.ID != id {
+			filtered = append(filtered, cr)
+		}
+	}
+	if err := c.saveCredentialsFile(filtered); err != nil {
+		log.Printf("[DeleteCredential] failed to save credentials: %v", err)
+	}
+	c.credCacheDirty = true
+	c.bumpSnapshotTime()
+	go c.AutoSync()
+	return nil
+}
+
+// saveCredentialsFile 加密并原子写入凭据列表，调用方需持有 c.mu
+func (c *ConfigManager) saveCredentialsFile(creds []Credential) error {
+	toSave := make([]Credential, len(creds))
+	copy(toSave, creds)
+	for i := range toSave {
+		encPass, err := c.encrypt(toSave[i].Password)
+		if err != nil {
+			return fmt.Errorf("encrypt password: %w", err)
+		}
+		encPhrase, err := c.encrypt(toSave[i].Passphrase)
+		if err != nil {
+			return fmt.Errorf("encrypt passphrase: %w", err)
+		}
+		encKey, err := c.encrypt(toSave[i].PrivateKey)
+		if err != nil {
+			return fmt.Errorf("encrypt privateKey: %w", err)
+		}
+		toSave[i].Password = encPass
+		toSave[i].Passphrase = encPhrase
+		toSave[i].PrivateKey = encKey
+	}
+	data, err := json.MarshalIndent(toSave, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal credentials: %w", err)
+	}
+	return atomicWriteFile(c.credFile, data, 0600)
+}
+
+// ResolveConnectionAuth 如果 Connection 引用了 Credential，返回用凭据填充认证字段的副本
+func (c *ConfigManager) ResolveConnectionAuth(conn Connection) Connection {
+	if conn.CredentialID == "" {
+		return conn
+	}
+	cred, ok := c.GetCredentialByID(conn.CredentialID)
+	if !ok {
+		log.Printf("[ResolveConnectionAuth] credential %s not found for connection %s, using inline fields", conn.CredentialID, conn.ID)
+		return conn
+	}
+	conn.AuthMethod = cred.AuthMethod
+	conn.Username = cred.Username
+	conn.Password = cred.Password
+	conn.PrivateKey = cred.PrivateKey
+	conn.Passphrase = cred.Passphrase
+	return conn
 }
 
 // WEBDAV

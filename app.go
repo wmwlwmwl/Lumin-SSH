@@ -281,26 +281,40 @@ func (a *App) ConnectSSH(sessionId string, connId string) error {
 	if !ok {
 		return fmt.Errorf("connection not found")
 	}
+	conn = a.configManager.ResolveConnectionAuth(conn)
 	return a.sshManager.Connect(sessionId, conn)
 }
 
 // ReconnectWithPassword 更新密码并重连（认证失败后使用）
-// persist: true=保存到已知主机列表, false=仅本次会话使用
+// persist: true=保存密码, false=仅本次会话使用
 func (a *App) ReconnectWithPassword(sessionId string, connId string, newPassword string, persist bool) error {
 	conn, ok := a.configManager.GetConnectionByID(connId)
 	if !ok {
 		return fmt.Errorf("connection not found")
 	}
-	conn.Password = newPassword
-	if persist {
-		a.configManager.SaveConnection(conn, true) // noSync: 连接成功后 OS 更新一起同步
+
+	// 持久化：凭据连接更新凭据，内联连接更新服务器
+	if persist && conn.CredentialID != "" {
+		cred, credOk := a.configManager.GetCredentialByID(conn.CredentialID)
+		if credOk {
+			cred.Password = newPassword
+			a.configManager.SaveCredential(cred)
+		}
+	}
+
+	resolved := a.configManager.ResolveConnectionAuth(conn)
+	resolved.Password = newPassword
+
+	if persist && conn.CredentialID == "" {
+		conn.Password = newPassword
+		a.configManager.SaveConnection(conn, true)
 	}
 
 	// 清理旧会话
 	a.sshManager.Disconnect(sessionId)
 
 	// 重新连接
-	return a.sshManager.Connect(sessionId, conn)
+	return a.sshManager.Connect(sessionId, resolved)
 }
 
 // DisconnectSSH closes an SSH connection
@@ -907,4 +921,18 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 
 	os.Exit(0)
 	return nil
+}
+
+// ── Credential 凭据管理 ──────────────────────────────────────────
+
+func (a *App) GetCredentials() []Credential {
+	return a.configManager.GetCredentialsMasked()
+}
+
+func (a *App) SaveCredential(cred Credential) Credential {
+	return a.configManager.SaveCredential(cred)
+}
+
+func (a *App) DeleteCredential(id string) error {
+	return a.configManager.DeleteCredential(id)
 }
