@@ -72,6 +72,8 @@ function fileIcon(name, isDir) {
 
 // 判断是否可以编辑（文本文件）
 function isEditable(name) {
+  // ponytail: 以 . 开头的文件（如 .htaccess, .bashrc, .env）视为配置文件，默认可编辑
+  if (name.startsWith('.')) return true;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const editable = [
     'txt', 'md', 'log', 'json', 'yaml', 'yml', 'toml', 'ini', 'env', 'conf', 'config',
