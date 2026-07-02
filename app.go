@@ -156,9 +156,10 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
-	// 启动时清理孤儿历史文件 + 后台同步
 	a.configManager.CleanupOrphanedHistory()
 	go a.configManager.AutoSync()
+	applyMCPOutputCompressionSettings(a.configManager.GetMCPOutputCompressionSettings())
+	startMCPServer(a)
 }
 
 // AckClose 前端响应了关闭弹窗（tray/cancel），取消 5s 兜底强制退出

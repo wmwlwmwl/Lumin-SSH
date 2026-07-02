@@ -581,14 +581,15 @@ func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *co
 				}
 				continue
 			}
+			m.emitSessionOutput(sessionId, data)
 			if m.app != nil {
 				m.app.WriteWsOutput(sessionId, data)
 			} else if m.ctx != nil {
-				// fallback: WebSocket 未初始化时用 Events
 				runtime.EventsEmit(m.ctx, "terminal-data-"+sessionId, string(data))
 			}
 		}
 		if err != nil {
+			m.closeSessionOutputTaps(sessionId)
 			return
 		}
 	}
@@ -691,6 +692,7 @@ func (m *SSHManager) Disconnect(sessionId string) {
 	if clientToClose != nil {
 		closeWithTimeout(clientToClose, 3*time.Second)
 	}
+	m.closeSessionOutputTaps(sessionId)
 }
 
 // closeWithTimeout 关闭资源，最多等待 timeout，超时放弃避免半死服务端卡住调用方

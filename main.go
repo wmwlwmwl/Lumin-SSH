@@ -82,6 +82,7 @@ func main() {
 			startSystray(app)
 		},
 		OnShutdown: func(ctx context.Context) {
+			stopMCPServer(app)
 			systrayEnd()
 		},
 		// 拦截窗口关闭：弹出对话框让用户选择退出 / 系统托盘 / 取消

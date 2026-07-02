@@ -6,6 +6,7 @@ import Terminal from './components/Terminal.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProbePanel from './components/ProbePanel.jsx';
 import FileManager from './components/FileManager.jsx';
+import AIPanel from './components/AIPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import Toast from './components/Toast.jsx';
 import CommandHistory from './components/CommandHistory.jsx';
@@ -88,10 +89,15 @@ export default function App() {
     return clampPanelWidth(localStorage.getItem('probePanelWidth') || '320');
   });
   const [probePanelPosition, setProbePanelPosition] = useState(() => localStorage.getItem('probePanelPosition') || 'left');
+  const [aiPanelWidth, setAiPanelWidth] = useState(() => {
+    return clampPanelWidth(localStorage.getItem('aiPanelWidth') || '320');
+  });
+  const [showAIPanel, setShowAIPanel] = useState(localStorage.getItem('showAIPanel') !== 'false');
 
   const leftSplitWidthRef = useRef(leftSplitWidth);
   const bottomSplitHeightRef = useRef(bottomSplitHeight);
   const probePanelWidthRef = useRef(probePanelWidth);
+  const aiPanelWidthRef = useRef(aiPanelWidth);
 
   const updateLeftSplitWidth = useCallback((w) => {
     setLeftSplitWidth(w);
@@ -105,6 +111,11 @@ export default function App() {
     const next = clampPanelWidth(w);
     setProbePanelWidth(next);
     probePanelWidthRef.current = next;
+  }, []);
+  const updateAiPanelWidth = useCallback((w) => {
+    const next = clampPanelWidth(w);
+    setAiPanelWidth(next);
+    aiPanelWidthRef.current = next;
   }, []);
 
   // ── 清理旧 localStorage 残留数据 ──────────────────────
@@ -155,6 +166,7 @@ export default function App() {
     const startWidth = leftSplitWidthRef.current;
     const startHeight = bottomSplitHeightRef.current;
     const startProbeWidth = probePanelWidthRef.current;
+    const startAiWidth = aiPanelWidthRef.current;
 
     const resizer = e.target;
     resizer.classList.add('dragging');
@@ -172,6 +184,11 @@ export default function App() {
           ? moveEvent.clientX - startX
           : startX - moveEvent.clientX;
         updateProbePanelWidth(startProbeWidth + deltaX);
+      } else if (direction === 'ai') {
+        const deltaX = probePanelPosition === 'left'
+          ? startX - moveEvent.clientX
+          : moveEvent.clientX - startX;
+        updateAiPanelWidth(startAiWidth + deltaX);
       } else {
         const deltaY = startY - moveEvent.clientY; // 往上拖高度变大
         const newHeight = Math.max(100, Math.min(600, startHeight + deltaY));
@@ -187,6 +204,8 @@ export default function App() {
           localStorage.setItem('leftSplitWidth', leftSplitWidthRef.current.toString());
         } else if (direction === 'probe') {
           localStorage.setItem('probePanelWidth', probePanelWidthRef.current.toString());
+        } else if (direction === 'ai') {
+          localStorage.setItem('aiPanelWidth', aiPanelWidthRef.current.toString());
         } else {
           localStorage.setItem('bottomSplitHeight', bottomSplitHeightRef.current.toString());
         }
@@ -207,6 +226,18 @@ export default function App() {
     window.addEventListener('mouseup', handleMouseUp);
   }, [probePanelPosition]);
   // ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (typeof e.detail === 'boolean') {
+        setShowAIPanel(e.detail);
+        return;
+      }
+      setShowAIPanel(localStorage.getItem('showAIPanel') !== 'false');
+    };
+    window.addEventListener('ai-panel-visibility-changed', handler);
+    return () => window.removeEventListener('ai-panel-visibility-changed', handler);
+  }, []);
 
   const pingTimerRef = useRef(null);
   const mountedRef = useRef(true);
@@ -954,6 +985,9 @@ export default function App() {
       onShowAllProcesses={() => setContentTab('process')}
     />
   ) : null;
+  const aiPanelNode = showAIPanel && activeSession && activeSession.status === 'connected' ? (
+    <AIPanel width={aiPanelWidth} side={probePanelPosition} />
+  ) : null;
 
   // 同步 activeTerminalId 到 ref，记住每个 session 最后选中的终端
   useEffect(() => {
@@ -1188,6 +1222,14 @@ export default function App() {
         </div>
 
         <div style={{ display: activeSessionId !== null ? 'flex' : 'none', flexDirection: 'row', height: '100%', flex: 1, overflow: 'hidden' }}>
+          {aiPanelNode && probePanelPosition === 'right' && aiPanelNode}
+          {aiPanelNode && probePanelPosition === 'right' && (
+            <div
+              className="split-resizer-v"
+              onMouseDown={(e) => startDrag(e, 'ai')}
+              title={t('调整大小')}
+            />
+          )}
           {/* 系统监控探针面板（独立分栏，左侧） */}
           {probePanelNode && probePanelPosition === 'left' && (
             <>
@@ -1503,6 +1545,16 @@ export default function App() {
               >
                 {probePanelNode}
               </div>
+            </>
+          )}
+          {aiPanelNode && probePanelPosition === 'left' && (
+            <>
+              <div
+                className="split-resizer-v"
+                onMouseDown={(e) => startDrag(e, 'ai')}
+                title={t('调整大小')}
+              />
+              {aiPanelNode}
             </>
           )}
         </div>

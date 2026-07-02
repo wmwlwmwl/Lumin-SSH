@@ -60,3 +60,5 @@ CLAUDE.md
 AGENTS.md
 .cursor/
 ponytail/
+*.bat
+.vscode/
