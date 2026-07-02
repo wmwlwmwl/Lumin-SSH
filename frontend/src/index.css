@@ -183,6 +183,13 @@ body.theme-light {
   --card-hover-shadow: 0 4px 16px rgba(28, 25, 23, 0.10), 0 0 0 1px var(--accent-border);
 }
 
+.mention-context-textarea-highlight {
+  background-color: color-mix(in srgb, var(--info) 26%, transparent);
+  border-radius: 3px;
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--info) 34%, transparent);
+  color: transparent;
+}
+
 /* ── Reset ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

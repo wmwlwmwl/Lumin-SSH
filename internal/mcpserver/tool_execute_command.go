@@ -85,7 +85,7 @@ func (c *Catalog) callExecuteCommand(arguments map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c.commandProvider.ExecuteCommand(session.SessionID, command, purpose, isMutatingValue == 1, cwd, shellType, defaultExecuteCommandTimeout)
+	return executeCommandWithContext(c.commandProvider, c.callCtx, session.SessionID, command, purpose, isMutatingValue == 1, cwd, shellType, defaultExecuteCommandTimeout)
 }
 
 func parseZeroOrOneValue(rawValue any) (int, bool) {

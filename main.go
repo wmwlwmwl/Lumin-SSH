@@ -105,6 +105,8 @@ func main() {
 		},
 		Bind: []interface{}{
 			app,
+			NewAIBindings(app),
+			NewAIProviderBindings(app.configManager),
 		},
 	}
 

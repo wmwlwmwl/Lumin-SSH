@@ -71,7 +71,7 @@ func (c *Catalog) callWriteToFile(arguments map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := c.fileProvider.WriteTextFile(session.SessionID, remotePath, content); err != nil {
+	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, content); err != nil {
 		return nil, err
 	}
 	return WriteFileResult{

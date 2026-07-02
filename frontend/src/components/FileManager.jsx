@@ -364,6 +364,14 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   const [currentPath, setCurrentPath] = useState('/');
   const currentPathRef = useRef(currentPath);
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
+  useEffect(() => {
+    if (!sessionId) return;
+    window.__luminFileManagerPaths = window.__luminFileManagerPaths || {};
+    window.__luminFileManagerPaths[sessionId] = currentPath;
+    window.dispatchEvent(new CustomEvent('ssh-file-manager-path-changed', {
+      detail: { sessionId, path: currentPath }
+    }));
+  }, [currentPath, sessionId]);
   const [editingPath, setEditingPath] = useState(null);
   const [items, setItems] = useState([]);
   const [sortField, setSortField] = useState('name');  // name, size, permissions, modified
@@ -404,6 +412,21 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
   const openEditFilesRef = useRef([]);
   useEffect(() => { openEditFilesRef.current = openEditFiles; }, [openEditFiles]);
   const [activeEditPath, setActiveEditPath] = useState(null);  // 当前激活的文件路径
+  useEffect(() => {
+    if (!sessionId) return;
+    window.__luminEditorStates = window.__luminEditorStates || {};
+    window.__luminEditorStates[sessionId] = {
+      openFilePaths: openEditFiles.map((file) => file?.path).filter(Boolean),
+      activeFilePath: activeEditPath || '',
+    };
+  }, [activeEditPath, openEditFiles, sessionId]);
+  useEffect(() => {
+    return () => {
+      if (sessionId && window.__luminEditorStates) {
+        delete window.__luminEditorStates[sessionId];
+      }
+    };
+  }, [sessionId]);
   const [editorMode, setEditorMode] = useState(() => localStorage.getItem('fileEditorMode') || 'modal');
   const [editorSplitPosition, setEditorSplitPosition] = useState(() => localStorage.getItem('editorSplitPosition') || 'right');
   const [transferInfo, setTransferInfo] = useState(null);

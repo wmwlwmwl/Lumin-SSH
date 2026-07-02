@@ -5,33 +5,45 @@ import "fmt"
 func searchReplaceToolDefinition() ToolDefinition {
 	return ToolDefinition{
 		Name: "search_replace",
-		Description: "Replace exactly one matching text block in a remote file for the provided session_id. Use this for a single precise replacement. The old_string must match exactly one location. If it matches zero or multiple locations, the tool fails. Required arguments: session_id, path, remaining_file_edits, old_string, new_string. Example: old_string='hello', new_string='world'.",
+		Description: "Apply one or more exact search/replace operations to a remote file for the provided session_id. Use this for precise replacements in one file. Each operation is applied in order to the latest in-memory content and each search must match exactly one location at execution time. Required arguments: session_id, path, remaining_file_edits, operations. Each operations item must be an object with search and replace fields. For a single replacement, pass operations with one item.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"session_id": map[string]any{
-					"type": "string",
+					"type":        "string",
 					"description": "Connected SSH terminal session identifier returned by list_connected_sessions.",
 				},
 				"path": map[string]any{
-					"type": "string",
+					"type":        "string",
 					"description": "Remote file path to modify.",
 				},
 				"remaining_file_edits": map[string]any{
-					"type": "integer",
+					"type":        "integer",
 					"description": "Estimated remaining file edits including the current file.",
-					"minimum": 1,
+					"minimum":     1,
 				},
-				"old_string": map[string]any{
-					"type": "string",
-					"description": "Exact text block to search for. It must uniquely match one location in the target file.",
-				},
-				"new_string": map[string]any{
-					"type": "string",
-					"description": "Replacement text block for the unique old_string match.",
+				"operations": map[string]any{
+					"type":        "array",
+					"description": "Ordered search/replace operations. Each operation is applied to the latest in-memory content. Example: [{\"search\":\"old1\",\"replace\":\"new1\"},{\"search\":\"old2\",\"replace\":\"new2\"}].",
+					"minItems":    1,
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"search": map[string]any{
+								"type":        "string",
+								"description": "Exact text block to search for. It must uniquely match one location when that step executes.",
+							},
+							"replace": map[string]any{
+								"type":        "string",
+								"description": "Replacement text block for that step.",
+							},
+						},
+						"required":             []string{"search", "replace"},
+						"additionalProperties": false,
+					},
 				},
 			},
-			"required": []string{"session_id", "path", "remaining_file_edits", "old_string", "new_string"},
+			"required":             []string{"session_id", "path", "remaining_file_edits", "operations"},
 			"additionalProperties": false,
 		},
 	}
@@ -44,7 +56,7 @@ func (c *Catalog) callSearchReplace(arguments map[string]any) (any, error) {
 	if c.fileProvider == nil {
 		return nil, fmt.Errorf("file provider unavailable")
 	}
-	if err := validateAllowedArguments(arguments, "session_id", "path", "remaining_file_edits", "old_string", "new_string"); err != nil {
+	if err := validateAllowedArguments(arguments, "session_id", "path", "remaining_file_edits", "operations"); err != nil {
 		return nil, err
 	}
 	session, err := requireSessionArgument(c.service, arguments)
@@ -65,89 +77,105 @@ func (c *Catalog) callSearchReplace(arguments map[string]any) (any, error) {
 	if !hasRemaining || remainingFileEdits < 1 {
 		return nil, fmt.Errorf("argument remaining_file_edits must be an integer greater than or equal to 1")
 	}
-	oldString, err := requireStringArgumentAllowEmpty(arguments, "old_string")
+	operations, err := requireSearchReplaceOperations(arguments, "operations")
 	if err != nil {
 		return nil, err
 	}
-	newString, err := requireStringArgumentAllowEmpty(arguments, "new_string")
-	if err != nil {
-		return nil, err
+	capabilities := getRemoteEditCapabilitiesWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID)
+	result := SearchAndReplaceResult{
+		SessionID:        session.SessionID,
+		Path:             remotePath,
+		Handler:          EditHandlerFileProviderFallback,
+		Capabilities:     capabilities,
+		Applied:          false,
+		OperationResults: make([]SearchReplaceOperationResult, 0, len(operations)),
 	}
-	capabilities := getRemoteEditCapabilities(c.remoteEditExecutor, session.SessionID)
-	if oldString == "" {
-		return SearchReplaceResult{
-			SessionID: session.SessionID,
-			Path: remotePath,
-			Handler: EditHandlerFileProviderFallback,
-			Capabilities: capabilities,
-			Failure: &EditMatchFailure{Reason: "old_string must not be empty"},
-		}, nil
+	for index, operation := range operations {
+		if operation.Search == "" {
+			operationResult := SearchReplaceOperationResult{
+				Index:   index,
+				Failure: &EditMatchFailure{Reason: "search must not be empty"},
+			}
+			result.OperationResults = append(result.OperationResults, operationResult)
+			result.Failure = operationResult.Failure
+			return result, nil
+		}
 	}
 	if c.remoteEditExecutor != nil && capabilities.Python3 {
-		remoteResult, remoteErr := c.remoteEditExecutor.ApplyPatchAtomic(session.SessionID, []ApplyPatchFileOperation{
+		hunks := make([]ApplyPatchHunk, 0, len(operations))
+		for _, operation := range operations {
+			hunks = append(hunks, ApplyPatchHunk{
+				Search:  operation.Search,
+				Replace: operation.Replace,
+			})
+		}
+		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, []ApplyPatchFileOperation{
 			{
 				Action: "update",
-				Path: remotePath,
-				Hunks: []ApplyPatchHunk{
-					{Search: oldString, Replace: newString},
-				},
+				Path:   remotePath,
+				Hunks:  hunks,
 			},
 		})
 		if remoteErr != nil {
 			return nil, remoteErr
 		}
-		result := SearchReplaceResult{
-			SessionID: session.SessionID,
-			Path: remotePath,
-			Handler: remoteResult.Handler,
-			Capabilities: remoteResult.Capabilities,
-			Applied: remoteResult.Applied,
-		}
+		result.Handler = remoteResult.Handler
+		result.Capabilities = remoteResult.Capabilities
+		result.Applied = remoteResult.Applied
 		if remoteResult.Applied {
-			result.Occurrences = 1
-		} else {
-			failure := firstPatchFailure(remoteResult)
-			result.Failure = failure
-			result.Occurrences = failure.Occurrences
+			for index := range operations {
+				result.OperationResults = append(result.OperationResults, SearchReplaceOperationResult{
+					Index:       index,
+					Occurrences: 1,
+					Applied:     true,
+				})
+			}
+			return result, nil
 		}
+		result.Failure = firstPatchFailure(remoteResult)
 		return result, nil
 	}
-	content, err := c.fileProvider.ReadTextFile(session.SessionID, remotePath)
+	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
 	if err != nil {
 		return nil, err
 	}
-	occurrences := countOccurrences(content, oldString)
-	if occurrences != 1 {
-		failure := &EditMatchFailure{
+	nextContent := content
+	for index, operation := range operations {
+		occurrences := countOccurrences(nextContent, operation.Search)
+		operationResult := SearchReplaceOperationResult{
+			Index:       index,
 			Occurrences: occurrences,
 		}
-		if occurrences == 0 {
-			failure.Reason = "old_string not found exactly"
-			failure.BestMatch = extractBestMatchSnippet(content, oldString)
-		} else {
-			failure.Reason = "old_string matched multiple locations"
+		if operation.Search == "" {
+			operationResult.Failure = &EditMatchFailure{Reason: "search must not be empty"}
+			result.OperationResults = append(result.OperationResults, operationResult)
+			result.Failure = operationResult.Failure
+			return result, nil
 		}
-		return SearchReplaceResult{
-			SessionID: session.SessionID,
-			Path: remotePath,
-			Handler: EditHandlerFileProviderFallback,
-			Capabilities: capabilities,
-			Occurrences: occurrences,
-			Applied: false,
-			Failure: failure,
-		}, nil
+		if occurrences != 1 {
+			failure := &EditMatchFailure{
+				Occurrences: occurrences,
+			}
+			if occurrences == 0 {
+				failure.Reason = "search not found exactly"
+				failure.BestMatch = extractBestMatchSnippet(nextContent, operation.Search)
+			} else {
+				failure.Reason = "search matched multiple locations"
+			}
+			operationResult.Failure = failure
+			result.OperationResults = append(result.OperationResults, operationResult)
+			result.Failure = failure
+			return result, nil
+		}
+		updatedContent, _ := replaceExactlyOnce(nextContent, operation.Search, operation.Replace)
+		nextContent = updatedContent
+		operationResult.Applied = true
+		result.OperationResults = append(result.OperationResults, operationResult)
 	}
-	nextContent, _ := replaceExactlyOnce(content, oldString, newString)
-	if err := c.fileProvider.WriteTextFile(session.SessionID, remotePath, nextContent); err != nil {
+	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, nextContent); err != nil {
 		return nil, err
 	}
-	return SearchReplaceResult{
-		SessionID: session.SessionID,
-		Path: remotePath,
-		Handler: EditHandlerFileProviderFallback,
-		Capabilities: capabilities,
-		Occurrences: 1,
-		BytesWritten: len([]byte(nextContent)),
-		Applied: true,
-	}, nil
+	result.Applied = true
+	result.BytesWritten = len([]byte(nextContent))
+	return result, nil
 }

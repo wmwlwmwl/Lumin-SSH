@@ -65,44 +65,58 @@ func (c *Catalog) callApplyDiff(arguments map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	blocks, err := parseApplyDiffBlocks(diffPayload)
+	capabilities := getRemoteEditCapabilitiesWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID)
+	result := ApplyDiffResult{
+		SessionID:    session.SessionID,
+		Path:         remotePath,
+		Handler:      EditHandlerFileProviderFallback,
+		Capabilities: capabilities,
+		Applied:      false,
+		BlockResults: []ApplyDiffBlockResult{},
+	}
+
+	originalContent, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
 	if err != nil {
 		return nil, err
 	}
-	capabilities := getRemoteEditCapabilities(c.remoteEditExecutor, session.SessionID)
-	result := ApplyDiffResult{
-		SessionID: session.SessionID,
-		Path: remotePath,
-		Handler: EditHandlerFileProviderFallback,
-		Capabilities: capabilities,
-		Applied: false,
-		BlockResults: make([]ApplyDiffBlockResult, 0, len(blocks)),
+	preview, err := BuildApplyDiffPreview(remotePath, originalContent, diffPayload)
+	if err != nil {
+		return nil, err
 	}
-	for _, block := range blocks {
-		if block.Search == "" {
-			blockResult := ApplyDiffBlockResult{
-				Index: block.Index,
-				StartLine: block.StartLine,
-				Failure: &EditMatchFailure{Reason: "search block must not be empty"},
-			}
-			result.BlockResults = append(result.BlockResults, blockResult)
-			result.Failure = blockResult.Failure
-			return result, nil
-		}
+	for _, block := range preview.Blocks {
+		result.BlockResults = append(result.BlockResults, ApplyDiffBlockResult{
+			Index:       block.Index,
+			StartLine:   block.StartLine,
+			Occurrences: 1,
+			Applied:     true,
+		})
 	}
+	if preview.Failure != nil {
+		result.Failure = preview.Failure
+		result.BlockResults = append(result.BlockResults, ApplyDiffBlockResult{
+			Index:       preview.FailureBlockIndex,
+			StartLine:   preview.FailureBlockStartLine,
+			Occurrences: preview.Failure.Occurrences,
+			Applied:     false,
+			Failure:     preview.Failure,
+		})
+		result.BlocksApplied = len(preview.Blocks)
+		return result, nil
+	}
+
 	if c.remoteEditExecutor != nil && capabilities.Python3 {
-		hunks := make([]ApplyPatchHunk, 0, len(blocks))
-		for _, block := range blocks {
+		hunks := make([]ApplyPatchHunk, 0, len(preview.Blocks))
+		for _, block := range preview.Blocks {
 			hunks = append(hunks, ApplyPatchHunk{
-				Search: block.Search,
+				Search:  block.MatchedSearch,
 				Replace: block.Replace,
 			})
 		}
-		remoteResult, remoteErr := c.remoteEditExecutor.ApplyPatchAtomic(session.SessionID, []ApplyPatchFileOperation{
+		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, []ApplyPatchFileOperation{
 			{
 				Action: "update",
-				Path: remotePath,
-				Hunks: hunks,
+				Path:   remotePath,
+				Hunks:  hunks,
 			},
 		})
 		if remoteErr != nil {
@@ -111,64 +125,20 @@ func (c *Catalog) callApplyDiff(arguments map[string]any) (any, error) {
 		result.Handler = remoteResult.Handler
 		result.Capabilities = remoteResult.Capabilities
 		result.Applied = remoteResult.Applied
+		result.BlocksApplied = len(preview.Blocks)
 		if remoteResult.Applied {
-			result.BlocksApplied = len(blocks)
-			for _, block := range blocks {
-				result.BlockResults = append(result.BlockResults, ApplyDiffBlockResult{
-					Index: block.Index,
-					StartLine: block.StartLine,
-					Occurrences: 1,
-					Applied: true,
-				})
-			}
+			result.BytesWritten = len([]byte(preview.PreviewContent))
 			return result, nil
 		}
 		result.Failure = firstPatchFailure(remoteResult)
 		return result, nil
 	}
-	content, err := c.fileProvider.ReadTextFile(session.SessionID, remotePath)
-	if err != nil {
+
+	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, preview.PreviewContent); err != nil {
 		return nil, err
 	}
-	nextContent := content
-	for _, block := range blocks {
-		occurrences := countOccurrences(nextContent, block.Search)
-		blockResult := ApplyDiffBlockResult{
-			Index: block.Index,
-			StartLine: block.StartLine,
-			Occurrences: occurrences,
-		}
-		if block.Search == "" {
-			blockResult.Failure = &EditMatchFailure{Reason: "search block must not be empty"}
-			result.BlockResults = append(result.BlockResults, blockResult)
-			result.Failure = blockResult.Failure
-			return result, nil
-		}
-		if occurrences != 1 {
-			failure := &EditMatchFailure{
-				Occurrences: occurrences,
-			}
-			if occurrences == 0 {
-				failure.Reason = "search block not found exactly"
-				failure.BestMatch = extractBestMatchSnippet(nextContent, block.Search)
-			} else {
-				failure.Reason = "search block matched multiple locations"
-			}
-			blockResult.Failure = failure
-			result.BlockResults = append(result.BlockResults, blockResult)
-			result.Failure = failure
-			return result, nil
-		}
-		updatedContent, _ := replaceExactlyOnce(nextContent, block.Search, block.Replace)
-		nextContent = updatedContent
-		blockResult.Applied = true
-		result.BlockResults = append(result.BlockResults, blockResult)
-		result.BlocksApplied++
-	}
-	if err := c.fileProvider.WriteTextFile(session.SessionID, remotePath, nextContent); err != nil {
-		return nil, err
-	}
+	result.BlocksApplied = len(preview.Blocks)
+	result.BytesWritten = len([]byte(preview.PreviewContent))
 	result.Applied = true
-	result.BytesWritten = len([]byte(nextContent))
 	return result, nil
 }

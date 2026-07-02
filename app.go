@@ -17,23 +17,33 @@ import (
 	"sync/atomic"
 	"time"
 
+	ai "luminssh-go/internal/ai"
+
 	"github.com/gorilla/websocket"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
 type App struct {
-	ctx           context.Context
-	sshManager    *SSHManager
-	configManager *ConfigManager
-	wsPort        int
-	wsToken       string
-	wsMu          sync.Mutex
-	wsConns       map[string]*wsEntry // sessionId -> active WebSocket
-	wsServer      *http.Server        // WebSocket HTTP 服务器，用于优雅关闭
-	wsListener    net.Listener        // WebSocket 监听器，用于关闭时释放端口
-	quitting      atomic.Bool         // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
-	closeAck      atomic.Bool         // 前端已响应关闭请求（tray/cancel），取消 5s 兜底强制退出
+	ctx                  context.Context
+	sshManager           *SSHManager
+	configManager        *ConfigManager
+	wsPort               int
+	wsToken              string
+	wsMu                 sync.Mutex
+	wsConns              map[string]*wsEntry // sessionId -> active WebSocket
+	wsServer             *http.Server        // WebSocket HTTP 服务器，用于优雅关闭
+	wsListener           net.Listener        // WebSocket 监听器，用于关闭时释放端口
+	quitting             atomic.Bool         // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
+	closeAck             atomic.Bool         // 前端已响应关闭弹窗（tray/cancel），取消 5s 兜底强制退出
+	aiChatReqMu               sync.Mutex
+	aiChatReqCancel           map[string]context.CancelFunc
+	aiPendingToolMu           sync.Mutex
+	aiPendingToolBatches      map[string]*ai.PendingToolBatch
+	aiToolExecMu              sync.Mutex
+	aiToolExecutions          map[string]*ai.ToolExecutionState
+	aiSkipNextAutoReqMu       sync.Mutex
+	aiSkipNextAutomaticReqMap map[string]bool
 }
 
 // wsEntry 包装一个 WebSocket 连接及其独立写锁。
@@ -46,9 +56,13 @@ type wsEntry struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		sshManager:    NewSSHManager(),
-		configManager: NewConfigManager(),
-		wsConns:       make(map[string]*wsEntry),
+		sshManager:               NewSSHManager(),
+		configManager:            NewConfigManager(),
+		wsConns:                  make(map[string]*wsEntry),
+		aiChatReqCancel:          make(map[string]context.CancelFunc),
+		aiPendingToolBatches:     make(map[string]*ai.PendingToolBatch),
+		aiToolExecutions:         make(map[string]*ai.ToolExecutionState),
+		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
 }
 

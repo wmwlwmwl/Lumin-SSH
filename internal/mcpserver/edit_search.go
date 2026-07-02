@@ -26,6 +26,78 @@ func replaceExactlyOnce(content string, search string, replace string) (string, 
 	return content[:index] + replace + content[index+len(search):], 1
 }
 
+func normalizeEditSearchString(value string) string {
+	replacer := strings.NewReplacer(
+		"\r\n", "\n",
+		"\u2018", "'",
+		"\u2019", "'",
+		"\u201c", "\"",
+		"\u201d", "\"",
+		"\u00a0", " ",
+	)
+	return replacer.Replace(value)
+}
+
+func levenshteinDistance(left string, right string) int {
+	if left == right {
+		return 0
+	}
+	leftRunes := []rune(left)
+	rightRunes := []rune(right)
+	if len(leftRunes) == 0 {
+		return len(rightRunes)
+	}
+	if len(rightRunes) == 0 {
+		return len(leftRunes)
+	}
+	previous := make([]int, len(rightRunes)+1)
+	current := make([]int, len(rightRunes)+1)
+	for j := 0; j <= len(rightRunes); j++ {
+		previous[j] = j
+	}
+	for i := 1; i <= len(leftRunes); i++ {
+		current[0] = i
+		for j := 1; j <= len(rightRunes); j++ {
+			cost := 0
+			if leftRunes[i-1] != rightRunes[j-1] {
+				cost = 1
+			}
+			deletion := previous[j] + 1
+			insertion := current[j-1] + 1
+			substitution := previous[j-1] + cost
+			current[j] = deletion
+			if insertion < current[j] {
+				current[j] = insertion
+			}
+			if substitution < current[j] {
+				current[j] = substitution
+			}
+		}
+		copy(previous, current)
+	}
+	return previous[len(rightRunes)]
+}
+
+func calculateSimilarity(left string, right string) float64 {
+	if right == "" {
+		return 0
+	}
+	normalizedLeft := normalizeEditSearchString(left)
+	normalizedRight := normalizeEditSearchString(right)
+	if normalizedLeft == normalizedRight {
+		return 1
+	}
+	maxLength := len([]rune(normalizedLeft))
+	if rightLength := len([]rune(normalizedRight)); rightLength > maxLength {
+		maxLength = rightLength
+	}
+	if maxLength == 0 {
+		return 1
+	}
+	dist := levenshteinDistance(normalizedLeft, normalizedRight)
+	return 1 - float64(dist)/float64(maxLength)
+}
+
 func extractBestMatchSnippet(content string, search string) string {
 	if search == "" || content == "" {
 		return ""

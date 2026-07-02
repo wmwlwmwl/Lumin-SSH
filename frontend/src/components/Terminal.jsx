@@ -15,6 +15,23 @@ import { getTerminalTheme } from '../utils/theme.js';
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
+function getTerminalBufferSnapshotText(term) {
+  if (!term?.buffer?.active) {
+    return ''
+  }
+  const buffer = term.buffer.active
+  const totalLines = Math.max(Number(buffer.length) || 0, (Number(buffer.baseY) || 0) + (Number(term.rows) || 0))
+  const lines = []
+  for (let index = 0; index < totalLines; index += 1) {
+    const line = buffer.getLine(index)
+    if (!line) {
+      continue
+    }
+    lines.push(line.translateToString(true))
+  }
+  return lines.join('\n').trim()
+}
+
 // 命令栏按钮样式辅助函数
 const btnStyle = (color) => ({
   border: 'none',
@@ -183,6 +200,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
 
     termRef.current    = term;
     fitAddonRef.current = fitAddon;
+    window.__luminTerminalSnapshots = window.__luminTerminalSnapshots || {};
+    window.__luminTerminalSnapshots[sessionId] = () => getTerminalBufferSnapshotText(termRef.current || term);
 
     const fitTimer = setTimeout(() => {
       try { fitAddon.fit(); } catch (_) {}
@@ -478,6 +497,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       if (ws) { try { ws.close(); } catch (_) {} }
       // 移除 wheel 监听器，避免内存泄漏
       containerRef.current?.removeEventListener('wheel', wheelHandler);
+      if (window.__luminTerminalSnapshots?.[sessionId]) {
+        delete window.__luminTerminalSnapshots[sessionId];
+      }
       termRef.current     = null;
       fitAddonRef.current = null;
       try { term.dispose(); } catch (_) {}

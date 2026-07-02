@@ -64,9 +64,9 @@ func (c *Catalog) callApplyPatch(arguments map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	capabilities := getRemoteEditCapabilities(c.remoteEditExecutor, session.SessionID)
+	capabilities := getRemoteEditCapabilitiesWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID)
 	if c.remoteEditExecutor != nil && capabilities.Python3 {
-		remoteResult, remoteErr := c.remoteEditExecutor.ApplyPatchAtomic(session.SessionID, operations)
+		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, operations)
 		if remoteErr == nil {
 			return remoteResult, nil
 		}
@@ -89,19 +89,19 @@ func (c *Catalog) callApplyPatch(arguments map[string]any) (any, error) {
 		}
 		switch operation.Action {
 		case "add":
-			if err := c.fileProvider.WriteTextFile(session.SessionID, operation.Path, operation.Content); err != nil {
+			if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, operation.Path, operation.Content); err != nil {
 				return nil, err
 			}
 			change.Applied = true
 			result.FilesChanged++
 		case "delete":
-			if err := c.fileProvider.DeleteFile(session.SessionID, operation.Path); err != nil {
+			if err := deleteFileWithContext(c.fileProvider, c.callCtx, session.SessionID, operation.Path); err != nil {
 				return nil, err
 			}
 			change.Applied = true
 			result.FilesChanged++
 		case "update":
-			content, err := c.fileProvider.ReadTextFile(session.SessionID, operation.Path)
+			content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, operation.Path)
 			if err != nil {
 				return nil, err
 			}
@@ -125,7 +125,7 @@ func (c *Catalog) callApplyPatch(arguments map[string]any) (any, error) {
 				}
 				nextContent, _ = replaceExactlyOnce(nextContent, hunk.Search, hunk.Replace)
 			}
-			if err := c.fileProvider.WriteTextFile(session.SessionID, operation.Path, nextContent); err != nil {
+			if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, operation.Path, nextContent); err != nil {
 				return nil, err
 			}
 			change.Applied = true

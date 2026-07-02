@@ -16,6 +16,7 @@ import AppearanceTab from './settings/AppearanceTab';
 import AITab from './settings/AITab';
 import ShortcutsTab from './settings/ShortcutsTab';
 import SyncTab from './settings/SyncTab';
+import { getAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js';
 
 const TAB_ICON = { general: SlidersHorizontal, network: Globe, appearance: Palette, ai: Bot, shortcuts: Keyboard, sync: Cloud, app: Info };
 
@@ -271,9 +272,10 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
   const [terminalColorTheme, setTerminalColorTheme] = useState(localStorage.getItem('terminalColorTheme') || 'lumin');
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [rememberWindowSize, setRememberWindowSize] = useState(localStorage.getItem('rememberWindowSize') !== 'false');
-  const [showAIPanel, setShowAIPanel] = useState(localStorage.getItem('showAIPanel') === 'true');
+  const [showAIPanel, setShowAIPanel] = useState(localStorage.getItem('showAIPanel') !== 'false');
   const [terminalOutputLineLimit, setTerminalOutputLineLimit] = useState(500);
   const [terminalOutputCharacterLimit, setTerminalOutputCharacterLimit] = useState(35000);
+  const [aiTerminalIsolation, setAiTerminalIsolation] = useState(true);
 
   // Shortcuts state
   const defaultShortcuts = {
@@ -490,6 +492,22 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     window.dispatchEvent(new CustomEvent('ai-panel-visibility-changed', { detail: next }));
   };
 
+  const handleToggleAiTerminalIsolation = async () => {
+    const next = !aiTerminalIsolation;
+    setAiTerminalIsolation(next);
+    try {
+      const currentSettings = await getAIGlobalSettings();
+      await saveAIGlobalSettings({
+        ...currentSettings,
+        terminalIsolation: next,
+      });
+      addToast($t('终端隔离设置已保存，修改将在下次启动应用后生效'), 'success');
+    } catch (error) {
+      setAiTerminalIsolation(!next);
+      addToast(`${$t('保存失败')}: ${String(error)}`, 'error');
+    }
+  };
+
   const clampTerminalOutputLineLimit = (value) => Math.max(10, Math.min(5000, value || 0));
   const clampTerminalOutputCharacterLimit = (value) => Math.max(1000, Math.min(500000, value || 0));
 
@@ -581,6 +599,10 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
         if (cancelled || !c) return;
         setTerminalOutputLineLimit(clampTerminalOutputLineLimit(c.terminalOutputLineLimit || 0));
         setTerminalOutputCharacterLimit(clampTerminalOutputCharacterLimit(c.terminalOutputCharacterLimit || 0));
+      }).catch(() => {}),
+      getAIGlobalSettings().then(settings => {
+        if (cancelled) return;
+        setAiTerminalIsolation(settings.terminalIsolation !== false);
       }).catch(() => {}),
     ]);
 
@@ -840,6 +862,8 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
               <AITab
                 showAIPanel={showAIPanel}
                 onToggleShowAIPanel={handleToggleShowAIPanel}
+                aiTerminalIsolation={aiTerminalIsolation}
+                onToggleAiTerminalIsolation={handleToggleAiTerminalIsolation}
                 terminalOutputLineLimit={terminalOutputLineLimit}
                 onTerminalOutputLineLimitChange={handleTerminalOutputLineLimitChange}
                 terminalOutputCharacterLimit={terminalOutputCharacterLimit}

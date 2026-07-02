@@ -1,6 +1,9 @@
 package mcpserver
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 type ToolDefinition struct {
 	Name string `json:"name"`
@@ -13,10 +16,17 @@ type Catalog struct {
 	fileProvider FileProvider
 	commandProvider CommandProvider
 	remoteEditExecutor RemoteEditExecutor
+	callCtx context.Context
 }
 
 func NewCatalog(service *Service, fileProvider FileProvider, commandProvider CommandProvider, remoteEditExecutor RemoteEditExecutor) *Catalog {
-	return &Catalog{service: service, fileProvider: fileProvider, commandProvider: commandProvider, remoteEditExecutor: remoteEditExecutor}
+	return &Catalog{
+		service: service,
+		fileProvider: fileProvider,
+		commandProvider: commandProvider,
+		remoteEditExecutor: remoteEditExecutor,
+		callCtx: context.Background(),
+	}
 }
 
 func (c *Catalog) List() []ToolDefinition {
@@ -27,7 +37,6 @@ func (c *Catalog) List() []ToolDefinition {
 		writeToFileToolDefinition(),
 		executeCommandToolDefinition(),
 		searchReplaceToolDefinition(),
-		searchAndReplaceToolDefinition(),
 		applyDiffToolDefinition(),
 		editFileToolDefinition(),
 		applyPatchToolDefinition(),
@@ -35,27 +44,34 @@ func (c *Catalog) List() []ToolDefinition {
 }
 
 func (c *Catalog) Call(name string, arguments map[string]any) (any, error) {
+	return c.CallWithContext(context.Background(), name, arguments)
+}
+
+func (c *Catalog) CallWithContext(ctx context.Context, name string, arguments map[string]any) (any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	clone := *c
+	clone.callCtx = ctx
 	switch name {
 	case "list_connected_sessions":
-		return c.callListConnectedSessions(arguments)
+		return clone.callListConnectedSessions(arguments)
 	case "list_files":
-		return c.callListFiles(arguments)
+		return clone.callListFiles(arguments)
 	case "read_file":
-		return c.callReadFile(arguments)
+		return clone.callReadFile(arguments)
 	case "write_to_file":
-		return c.callWriteToFile(arguments)
+		return clone.callWriteToFile(arguments)
 	case "execute_command":
-		return c.callExecuteCommand(arguments)
+		return clone.callExecuteCommand(arguments)
 	case "search_replace":
-		return c.callSearchReplace(arguments)
-	case "search_and_replace":
-		return c.callSearchAndReplace(arguments)
+		return clone.callSearchReplace(arguments)
 	case "apply_diff":
-		return c.callApplyDiff(arguments)
+		return clone.callApplyDiff(arguments)
 	case "edit_file":
-		return c.callEditFile(arguments)
+		return clone.callEditFile(arguments)
 	case "apply_patch":
-		return c.callApplyPatch(arguments)
+		return clone.callApplyPatch(arguments)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}

@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 )
@@ -321,8 +320,7 @@ func normalizeErrorData(data any) any {
 	if data == nil {
 		return nil
 	}
-	var err error
-	if errors.As(asError(data), &err) {
+	if err := asError(data); err != nil {
 		return err.Error()
 	}
 	return data

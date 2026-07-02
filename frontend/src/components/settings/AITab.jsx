@@ -5,6 +5,8 @@ import { ToggleSwitch } from './SharedComponents';
 export default function AITab({
   showAIPanel,
   onToggleShowAIPanel,
+  aiTerminalIsolation,
+  onToggleAiTerminalIsolation,
   terminalOutputLineLimit,
   onTerminalOutputLineLimitChange,
   terminalOutputCharacterLimit,
@@ -21,6 +23,14 @@ export default function AITab({
               <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('控制会话页是否显示 AI 代理面板')}</div>
             </div>
             <ToggleSwitch checked={showAIPanel} onChange={onToggleShowAIPanel} />
+          </div>
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('终端隔离')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('为每个终端创建独立的 AI 面板与运行期会话。修改后将在下次启动应用时生效。')}</div>
+            </div>
+            <ToggleSwitch checked={aiTerminalIsolation} onChange={onToggleAiTerminalIsolation} />
           </div>
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

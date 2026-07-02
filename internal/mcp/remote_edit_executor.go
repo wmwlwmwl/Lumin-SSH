@@ -1,6 +1,7 @@
-package main
+package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -134,13 +135,21 @@ if __name__ == "__main__":
     sys.exit(main())
 `
 
-type mcpRemoteEditExecutor struct {
-	app *App
+type RemoteEditExecutor struct {
+	host Host
 }
 
-func (e mcpRemoteEditExecutor) GetCapabilities(sessionID string) (mcpserver.RemoteEditCapabilities, error) {
+func NewRemoteEditExecutor(host Host) RemoteEditExecutor {
+	return RemoteEditExecutor{host: host}
+}
+
+func (e RemoteEditExecutor) GetCapabilities(sessionID string) (mcpserver.RemoteEditCapabilities, error) {
+	return e.GetCapabilitiesContext(context.Background(), sessionID)
+}
+
+func (e RemoteEditExecutor) GetCapabilitiesContext(ctx context.Context, sessionID string) (mcpserver.RemoteEditCapabilities, error) {
 	capabilities := mcpserver.RemoteEditCapabilities{}
-	output, err := e.runCommand(sessionID, "sh -lc 'command -v python3 >/dev/null 2>&1 && echo python3=1 || echo python3=0; command -v perl >/dev/null 2>&1 && echo perl=1 || echo perl=0; command -v patch >/dev/null 2>&1 && echo patch=1 || echo patch=0; command -v flock >/dev/null 2>&1 && echo flock=1 || echo flock=0'")
+	output, err := e.runCommandContext(ctx, sessionID, "sh -lc 'command -v python3 >/dev/null 2>&1 && echo python3=1 || echo python3=0; command -v perl >/dev/null 2>&1 && echo perl=1 || echo perl=0; command -v patch >/dev/null 2>&1 && echo patch=1 || echo patch=0; command -v flock >/dev/null 2>&1 && echo flock=1 || echo flock=0'")
 	if err != nil {
 		return capabilities, err
 	}
@@ -160,9 +169,13 @@ func (e mcpRemoteEditExecutor) GetCapabilities(sessionID string) (mcpserver.Remo
 	return capabilities, nil
 }
 
-func (e mcpRemoteEditExecutor) ApplyPatchAtomic(sessionID string, operations []mcpserver.ApplyPatchFileOperation) (mcpserver.ApplyPatchResult, error) {
+func (e RemoteEditExecutor) ApplyPatchAtomic(sessionID string, operations []mcpserver.ApplyPatchFileOperation) (mcpserver.ApplyPatchResult, error) {
+	return e.ApplyPatchAtomicContext(context.Background(), sessionID, operations)
+}
+
+func (e RemoteEditExecutor) ApplyPatchAtomicContext(ctx context.Context, sessionID string, operations []mcpserver.ApplyPatchFileOperation) (mcpserver.ApplyPatchResult, error) {
 	result := mcpserver.ApplyPatchResult{SessionID: sessionID}
-	capabilities, err := e.GetCapabilities(sessionID)
+	capabilities, err := e.GetCapabilitiesContext(ctx, sessionID)
 	if err != nil {
 		return result, err
 	}
@@ -175,17 +188,17 @@ func (e mcpRemoteEditExecutor) ApplyPatchAtomic(sessionID string, operations []m
 	if err != nil {
 		return result, err
 	}
-	scriptPath, err := e.uploadTempText(sessionID, ".py", remotePatchPythonScript, 0700)
+	scriptPath, err := e.uploadTempTextContext(ctx, sessionID, ".py", remotePatchPythonScript, 0700)
 	if err != nil {
 		return result, err
 	}
 	defer e.removeTempFile(sessionID, scriptPath)
-	payloadPath, err := e.uploadTempText(sessionID, ".json", string(payload), 0600)
+	payloadPath, err := e.uploadTempTextContext(ctx, sessionID, ".json", string(payload), 0600)
 	if err != nil {
 		return result, err
 	}
 	defer e.removeTempFile(sessionID, payloadPath)
-	output, err := e.runCommand(sessionID, "python3 "+quotePOSIX(scriptPath)+" "+quotePOSIX(payloadPath)+" 2>&1")
+	output, err := e.runCommandContext(ctx, sessionID, "python3 "+quotePOSIX(scriptPath)+" "+quotePOSIX(payloadPath)+" 2>&1")
 	if err != nil {
 		return result, err
 	}
@@ -200,50 +213,27 @@ func (e mcpRemoteEditExecutor) ApplyPatchAtomic(sessionID string, operations []m
 	return result, nil
 }
 
-func (e mcpRemoteEditExecutor) runCommand(sessionID string, command string) (string, error) {
-	if e.app == nil || e.app.sshManager == nil {
+func (e RemoteEditExecutor) runCommandContext(ctx context.Context, sessionID string, command string) (string, error) {
+	if e.host == nil {
 		return "", fmt.Errorf("ssh manager unavailable")
 	}
-	client, _, err := e.app.sshManager.getClientEntry(sessionID)
-	if err != nil {
-		return "", err
-	}
-	return e.app.sshManager.executeCmdWithClient(client, command)
+	return e.host.RunCommandContext(ctx, sessionID, command)
 }
 
-func (e mcpRemoteEditExecutor) uploadTempText(sessionID string, suffix string, content string, mode os.FileMode) (string, error) {
-	if e.app == nil || e.app.sshManager == nil {
+func (e RemoteEditExecutor) uploadTempTextContext(ctx context.Context, sessionID string, suffix string, content string, mode os.FileMode) (string, error) {
+	if e.host == nil {
 		return "", fmt.Errorf("ssh manager unavailable")
 	}
-	sftpClient, err := e.app.sshManager.getSFTPClient(sessionID)
-	if err != nil {
-		return "", err
-	}
-	path := "/tmp/lumin_mcp_" + newCommandExecutionToken() + suffix
-	file, err := sftpClient.Create(path)
-	if err != nil {
-		return "", err
-	}
-	if _, err := file.Write([]byte(content)); err != nil {
-		file.Close()
-		return "", err
-	}
-	if err := file.Close(); err != nil {
-		return "", err
-	}
-	if err := sftpClient.Chmod(path, mode); err != nil {
-		return "", err
-	}
-	return path, nil
+	return e.host.UploadTempTextContext(ctx, sessionID, suffix, content, mode)
 }
 
-func (e mcpRemoteEditExecutor) removeTempFile(sessionID string, path string) {
-	if e.app == nil || e.app.sshManager == nil || strings.TrimSpace(path) == "" {
+func (e RemoteEditExecutor) removeTempFile(sessionID string, path string) {
+	if e.host == nil || strings.TrimSpace(path) == "" {
 		return
 	}
-	sftpClient, err := e.app.sshManager.getSFTPClient(sessionID)
-	if err != nil {
-		return
-	}
-	_ = sftpClient.Remove(path)
+	e.host.RemoveFile(sessionID, path)
+}
+
+func quotePOSIX(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }

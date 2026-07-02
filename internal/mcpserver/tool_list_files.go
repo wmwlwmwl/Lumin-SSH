@@ -86,7 +86,7 @@ func (c *Catalog) callListFiles(arguments map[string]any) (any, error) {
 		Recursive: recursive,
 	}
 	if !recursive {
-		entries, listErr := c.fileProvider.ListDirectory(session.SessionID, remotePath)
+		entries, listErr := listDirectoryWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
 		if listErr != nil {
 			return nil, listErr
 		}
@@ -107,9 +107,16 @@ func (c *Catalog) walkDirectory(sessionID string, rootPath string) ([]ListFilesE
 	var result []ListFilesEntry
 	truncated := false
 	for len(queue) > 0 {
+		if c.callCtx != nil {
+			select {
+			case <-c.callCtx.Done():
+				return nil, false, c.callCtx.Err()
+			default:
+			}
+		}
 		currentPath := queue[0]
 		queue = queue[1:]
-		entries, err := c.fileProvider.ListDirectory(sessionID, currentPath)
+		entries, err := listDirectoryWithContext(c.fileProvider, c.callCtx, sessionID, currentPath)
 		if err != nil {
 			return nil, false, err
 		}

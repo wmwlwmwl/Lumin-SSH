@@ -7,6 +7,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProbePanel from './components/ProbePanel.jsx';
 import FileManager from './components/FileManager.jsx';
 import AIPanel from './components/AIPanel.jsx';
+import AIChangeReviewWorkbench from './components/ai/AIChangeReviewWorkbench.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import CredentialsModal from './components/CredentialsModal.jsx';
 import Toast from './components/Toast.jsx';
@@ -62,6 +63,7 @@ export default function App() {
   const connectingServerRef = useRef(connectingServer);
   useEffect(() => { connectingServerRef.current = connectingServer; }, [connectingServer]);
   const [toasts, setToasts] = useState([]);
+  const [changeReviewQueue, setChangeReviewQueue] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [monitoringEnabled, setMonitoringEnabled] = useState({}); // { [sessionId]: boolean }
   const [serverListViewMode, setServerListViewMode] = useState(localStorage.getItem('serverListViewMode') || 'grid'); // 'grid' | 'table'
@@ -413,6 +415,57 @@ export default function App() {
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => { if (mountedRef.current) setToasts((prev) => prev.filter((t) => t.id !== id)); }, duration);
   }, []);
+
+  const activeChangeReview = changeReviewQueue.length > 0 ? changeReviewQueue[0] : null;
+
+  const enqueueChangeReview = useCallback((review) => {
+    if (!review || typeof review !== 'object' || !review.reviewId || !review.requestId) {
+      return;
+    }
+    setChangeReviewQueue((prev) => {
+      if (prev.some((item) => item.reviewId === review.reviewId)) {
+        return prev;
+      }
+      return [...prev, review];
+    });
+  }, []);
+
+  const removeChangeReviewById = useCallback((reviewId) => {
+    const normalizedId = typeof reviewId === 'string' ? reviewId.trim() : '';
+    if (!normalizedId) {
+      return;
+    }
+    setChangeReviewQueue((prev) => prev.filter((item) => item.reviewId !== normalizedId));
+  }, []);
+
+  const removeChangeReviewsByRequestId = useCallback((requestId) => {
+    const normalizedRequestId = typeof requestId === 'string' ? requestId.trim() : '';
+    if (!normalizedRequestId) {
+      return;
+    }
+    setChangeReviewQueue((prev) => prev.filter((item) => item.requestId !== normalizedRequestId));
+  }, []);
+
+  const removeChangeReviewsBySessionId = useCallback((sessionId) => {
+    const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!normalizedSessionId) {
+      return;
+    }
+    setChangeReviewQueue((prev) => prev.filter((item) => item.sessionId !== normalizedSessionId));
+  }, []);
+
+  useEffect(() => {
+    const handleClearChangeReview = (event) => {
+      const sessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      if (!sessionId) {
+        return;
+      }
+      removeChangeReviewsBySessionId(sessionId);
+    };
+
+    window.addEventListener('ai-change-review-clear', handleClearChangeReview);
+    return () => window.removeEventListener('ai-change-review-clear', handleClearChangeReview);
+  }, [removeChangeReviewsBySessionId]);
 
   // ── 连接错误通用处理 ──────────────────────────────────────
   const handleConnectError = useCallback((sessionId, err) => {
@@ -832,6 +885,29 @@ export default function App() {
     return () => { if (unbind) unbind(); };
   }, [addToast, t]);
 
+  useEffect(() => {
+    const unbind = EventsOn('ai-chat-stream', (payload) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      if (payload.kind === 'change_review_required' && payload.review) {
+        enqueueChangeReview(payload.review);
+        return;
+      }
+      if (
+        payload.kind === 'tool_approval_resolved'
+        || payload.kind === 'tool_rejected'
+        || payload.kind === 'error'
+        || payload.kind === 'cancelled'
+      ) {
+        removeChangeReviewsByRequestId(payload.requestId);
+      }
+    });
+    return () => {
+      if (unbind) unbind();
+    };
+  }, [enqueueChangeReview, removeChangeReviewsByRequestId]);
+
   // ── 监听终端触发的重连请求 ──────────────────────────────────
   useEffect(() => {
     const handleReconnectTrigger = (e) => {
@@ -1045,8 +1121,46 @@ export default function App() {
       onShowAllProcesses={() => setContentTab('process')}
     />
   ) : null;
-  const aiPanelNode = showAIPanel && activeSession && activeSession.status === 'connected' ? (
-    <AIPanel width={aiPanelWidth} side={probePanelPosition} />
+  const aiPanelNode = sessions.length > 0 ? (
+    <div
+      style={{
+        width: aiPanelWidth,
+        minWidth: aiPanelWidth,
+        height: '100%',
+        display: showAIPanel ? 'flex' : 'none',
+        flexShrink: 0,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {sessions.map((s) => (
+        getEffectiveTerminals(s).map((t) => {
+          const isPanelActive =
+            showAIPanel
+            && activeSessionId === s.id
+            && activeTerminalId === t.id
+            && s.status === 'connected';
+
+          return (
+            <div
+              key={`ai-panel-${s.id}-${t.id}`}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: isPanelActive ? 'flex' : 'none',
+              }}
+            >
+              <AIPanel
+                width="100%"
+                side={probePanelPosition}
+                sessionId={s.id}
+                terminalId={t.id}
+              />
+            </div>
+          );
+        })
+      ))}
+    </div>
   ) : null;
 
   // 同步 activeTerminalId 到 ref，记住每个 session 最后选中的终端
@@ -1314,8 +1428,8 @@ export default function App() {
         </div>
 
         <div style={{ display: activeSessionId !== null ? 'flex' : 'none', flexDirection: 'row', height: '100%', flex: 1, overflow: 'hidden' }}>
-          {aiPanelNode && probePanelPosition === 'right' && aiPanelNode}
-          {aiPanelNode && probePanelPosition === 'right' && (
+          {showAIPanel && aiPanelNode && probePanelPosition === 'right' && aiPanelNode}
+          {showAIPanel && aiPanelNode && probePanelPosition === 'right' && (
             <div
               className="split-resizer-v"
               onMouseDown={(e) => startDrag(e, 'ai')}
@@ -1616,6 +1730,12 @@ export default function App() {
                 }}
               />
               <div id="editor-split-host" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', order: 2, width: 0, transition: 'width 0.2s ease, height 0.2s ease' }} />
+              {activeChangeReview ? (
+                <AIChangeReviewWorkbench
+                  review={activeChangeReview}
+                  queueLength={changeReviewQueue.length}
+                />
+              ) : null}
             </div>
             </div>
           </div>
@@ -1639,7 +1759,7 @@ export default function App() {
               </div>
             </>
           )}
-          {aiPanelNode && probePanelPosition === 'left' && (
+          {showAIPanel && aiPanelNode && probePanelPosition === 'left' && (
             <>
               <div
                 className="split-resizer-v"

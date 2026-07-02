@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	ai "luminssh-go/internal/ai"
 	"luminssh-go/internal/mcpserver"
 )
 
@@ -72,6 +73,114 @@ func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, 
 			result.TimedOut = true
 			result.Output = sanitizeInteractiveCommandOutput(raw, startMarker, endMarker)
 			return result, nil
+		}
+	}
+}
+
+func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
+	result := mcpserver.CommandExecutionResult{
+		SessionID: sessionID,
+		Command: command,
+		Purpose: purpose,
+		IsMutating: isMutating,
+		CWD: cwd,
+		ShellType: shellType,
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	m.mu.RLock()
+	sessionData, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !ok || sessionData == nil || sessionData.Stdin == nil {
+		return result, ai.ToolExecutionActionNone, fmt.Errorf("session not found")
+	}
+	startMarker := "[Lumin_START_" + newCommandExecutionToken() + "]"
+	endMarker := "[Lumin_END_" + newCommandExecutionToken() + "]"
+	wrappedCommand, err := buildInteractiveCommandWrapper(command, cwd, shellType, startMarker, endMarker)
+	if err != nil {
+		return result, ai.ToolExecutionActionNone, err
+	}
+	_, outputChannel, cancel := m.registerSessionOutputTap(sessionID)
+	defer cancel()
+	if !strings.HasSuffix(wrappedCommand, "\n") {
+		wrappedCommand += "\n"
+	}
+	m.WriteBytes(sessionID, []byte(wrappedCommand))
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	var terminateTimer *time.Timer
+	var terminateDeadline <-chan time.Time
+	defer func() {
+		if terminateTimer != nil {
+			terminateTimer.Stop()
+		}
+	}()
+
+	var captured strings.Builder
+	decisionRequired := false
+	terminationRequested := false
+
+	for {
+		select {
+		case action, ok := <-control:
+			if !ok {
+				continue
+			}
+			switch action {
+			case ai.ToolExecutionActionContinue:
+				if decisionRequired {
+					result.Output = sanitizeInteractiveCommandOutput(captured.String(), startMarker, endMarker)
+					return result, ai.ToolExecutionActionContinue, nil
+				}
+			case ai.ToolExecutionActionTerminate:
+				terminationRequested = true
+				m.WriteBytes(sessionID, []byte{3})
+				if terminateTimer == nil {
+					terminateTimer = time.NewTimer(3 * time.Second)
+					terminateDeadline = terminateTimer.C
+				}
+			}
+		case chunk, ok := <-outputChannel:
+			raw := captured.String()
+			if ok {
+				captured.Write(chunk)
+				raw = captured.String()
+			}
+			snapshot := sanitizeInteractiveCommandOutput(raw, startMarker, endMarker)
+			if !decisionRequired && strings.TrimSpace(snapshot) != "" && !strings.Contains(raw, endMarker) {
+				decisionRequired = true
+				if onCommandOutput != nil {
+					onCommandOutput(snapshot)
+				}
+			}
+			if strings.Contains(raw, endMarker) || !ok {
+				exitCode, hasExitCode := extractInteractiveExitCode(raw)
+				if hasExitCode {
+					result.ExitCode = &exitCode
+				}
+				result.Output = snapshot
+				if terminationRequested {
+					return result, ai.ToolExecutionActionTerminate, nil
+				}
+				return result, ai.ToolExecutionActionNone, nil
+			}
+		case <-terminateDeadline:
+			result.Output = sanitizeInteractiveCommandOutput(captured.String(), startMarker, endMarker)
+			return result, ai.ToolExecutionActionTerminate, nil
+		case <-deadline.C:
+			raw := captured.String()
+			exitCode, hasExitCode := extractInteractiveExitCode(raw)
+			if hasExitCode {
+				result.ExitCode = &exitCode
+			}
+			result.TimedOut = true
+			result.Output = sanitizeInteractiveCommandOutput(raw, startMarker, endMarker)
+			if terminationRequested {
+				return result, ai.ToolExecutionActionTerminate, nil
+			}
+			return result, ai.ToolExecutionActionNone, nil
 		}
 	}
 }

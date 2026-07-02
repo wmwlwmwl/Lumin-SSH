@@ -1,9 +1,11 @@
 package mcpserver
 
 type EditMatchFailure struct {
-	Reason string `json:"reason"`
-	Occurrences int `json:"occurrences,omitempty"`
-	BestMatch string `json:"best_match,omitempty"`
+	Reason             string  `json:"reason"`
+	Occurrences        int     `json:"occurrences,omitempty"`
+	BestMatch          string  `json:"best_match,omitempty"`
+	Similarity         float64 `json:"similarity,omitempty"`
+	RequiredSimilarity float64 `json:"required_similarity,omitempty"`
 }
 
 type SearchReplaceResult struct {

@@ -23,7 +23,7 @@ type ReadFileBatchResult struct {
 func readFileToolDefinition() ToolDefinition {
 	return ToolDefinition{
 		Name: "read_file",
-		Description: "Read one or more remote files from a connected SSH session. Supports RooCode-compatible args XML, files array, and optional 1-based line ranges.",
+		Description: "Read one or more remote files from a connected SSH session. Supports task-scoped args XML, files array, and optional 1-based line ranges.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -33,7 +33,7 @@ func readFileToolDefinition() ToolDefinition {
 				},
 				"args": map[string]any{
 					"type": "string",
-					"description": "Optional RooCode-compatible XML file list payload.",
+					"description": "Optional task-scoped XML file list payload.",
 				},
 				"files": map[string]any{
 					"type": "array",
@@ -120,7 +120,7 @@ func (c *Catalog) callReadFile(arguments map[string]any) (any, error) {
 }
 
 func (c *Catalog) buildReadFileResult(sessionID string, request ReadFileRequest) (ReadFileResult, error) {
-	content, err := c.fileProvider.ReadTextFile(sessionID, request.Path)
+	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, sessionID, request.Path)
 	if err != nil {
 		return ReadFileResult{}, err
 	}

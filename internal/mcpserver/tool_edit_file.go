@@ -90,7 +90,7 @@ func (c *Catalog) callEditFile(arguments map[string]any) (any, error) {
 	if expectedReplacements < 1 {
 		return nil, fmt.Errorf("argument expected_replacements must be greater than or equal to 1")
 	}
-	capabilities := getRemoteEditCapabilities(c.remoteEditExecutor, session.SessionID)
+	capabilities := getRemoteEditCapabilitiesWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID)
 	if oldString == "" {
 		return EditFileResult{
 			SessionID: session.SessionID,
@@ -102,7 +102,7 @@ func (c *Catalog) callEditFile(arguments map[string]any) (any, error) {
 		}, nil
 	}
 	if expectedReplacements == 1 && c.remoteEditExecutor != nil && capabilities.Python3 {
-		remoteResult, remoteErr := c.remoteEditExecutor.ApplyPatchAtomic(session.SessionID, []ApplyPatchFileOperation{
+		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, []ApplyPatchFileOperation{
 			{
 				Action: "update",
 				Path: remotePath,
@@ -131,7 +131,7 @@ func (c *Catalog) callEditFile(arguments map[string]any) (any, error) {
 		}
 		return result, nil
 	}
-	content, err := c.fileProvider.ReadTextFile(session.SessionID, remotePath)
+	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (c *Catalog) callEditFile(arguments map[string]any) (any, error) {
 	} else {
 		nextContent = strings.ReplaceAll(content, oldString, newString)
 	}
-	if err := c.fileProvider.WriteTextFile(session.SessionID, remotePath, nextContent); err != nil {
+	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, nextContent); err != nil {
 		return nil, err
 	}
 	return EditFileResult{

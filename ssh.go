@@ -964,17 +964,25 @@ func (m *SSHManager) Resize(sessionId string, cols, rows int) {
 
 // executeCmdWithClient executes a command on a separate temporary session using the given client
 func (m *SSHManager) executeCmdWithClient(client *ssh.Client, cmd string) (string, error) {
+	return m.executeCmdWithClientContext(context.Background(), client, cmd)
+}
+
+func (m *SSHManager) executeCmdWithClientContext(ctx context.Context, client *ssh.Client, cmd string) (string, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return "", err
 	}
 	defer session.Close()
 
-	return runCommandWithSession(session, cmd, 30*time.Second)
+	return runCommandWithSessionContext(ctx, session, cmd, 30*time.Second)
 }
 
 // runCommandWithSession 在 session 上执行命令，带超时控制
 func runCommandWithSession(session *ssh.Session, cmd string, timeout time.Duration) (string, error) {
+	return runCommandWithSessionContext(context.Background(), session, cmd, timeout)
+}
+
+func runCommandWithSessionContext(ctx context.Context, session *ssh.Session, cmd string, timeout time.Duration) (string, error) {
 	var stdoutBuf bytes.Buffer
 	session.Stdout = &stdoutBuf
 
@@ -990,14 +998,19 @@ func runCommandWithSession(session *ssh.Session, cmd string, timeout time.Durati
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+
+	var ctxDone <-chan struct{}
+	if ctx != nil {
+		ctxDone = ctx.Done()
+	}
+
 	select {
 	case err := <-errCh:
 		return stdoutBuf.String(), err
+	case <-ctxDone:
+		go session.Close()
+		return "", ctx.Err()
 	case <-timer.C:
-		// ponytail: session.Close() may block if server is unresponsive.
-		// The goroutine will be cleaned up when the parent SSH client is closed.
-		// 仅 Close()，不动 Stdout 字段：session.Run goroutine 仍读 Stdout，主 goroutine 写入会触发数据竞争。
-		// stdoutBuf 撑爆风险接受：Close 生效前的窗口期短，且 buf 容量足够容纳一次命令输出。
 		go session.Close()
 		return "", fmt.Errorf("command timed out after %v", timeout)
 	}
@@ -1679,7 +1692,45 @@ ip route get 1.1.1.1 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}' || 
 
 // SFTP Methods
 
+func ensureContextActive(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+func writeStringChunksWithContext(ctx context.Context, writer io.Writer, content string) error {
+	const chunkSize = 32768
+	for offset := 0; offset < len(content); {
+		if err := ensureContextActive(ctx); err != nil {
+			return err
+		}
+		end := offset + chunkSize
+		if end > len(content) {
+			end = len(content)
+		}
+		written, err := writer.Write([]byte(content[offset:end]))
+		if err != nil {
+			return err
+		}
+		offset += written
+	}
+	return ensureContextActive(ctx)
+}
+
 func (m *SSHManager) ListDir(sessionId string, path string) ([]map[string]interface{}, error) {
+	return m.ListDirContext(context.Background(), sessionId, path)
+}
+
+func (m *SSHManager) ListDirContext(ctx context.Context, sessionId string, path string) ([]map[string]interface{}, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
 	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return nil, err
@@ -1689,13 +1740,18 @@ func (m *SSHManager) ListDir(sessionId string, path string) ([]map[string]interf
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
 
 	var results []map[string]interface{}
 	for _, f := range files {
+		if err := ensureContextActive(ctx); err != nil {
+			return nil, err
+		}
 		permStr := f.Mode().String()
 		modeNumeric := fmt.Sprintf("%o", f.Mode().Perm())
 
-		// 尝试从 Sys() 获取 UID/GID（*sftp.FileStat），非 sftp 环境可能为 nil
 		uid := "-"
 		gid := "-"
 		if stat, ok := f.Sys().(interface{ GetUID() uint32 }); ok {
@@ -1742,6 +1798,13 @@ func (m *SSHManager) ChmodFile(sessionId string, path string, modeStr string) er
 }
 
 func (m *SSHManager) ReadFile(sessionId string, path string) (string, error) {
+	return m.ReadFileContext(context.Background(), sessionId, path)
+}
+
+func (m *SSHManager) ReadFileContext(ctx context.Context, sessionId string, path string) (string, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return "", err
+	}
 	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return "", err
@@ -1758,35 +1821,76 @@ func (m *SSHManager) ReadFile(sessionId string, path string) (string, error) {
 		return "", err
 	}
 
-	const maxFileSize = 50 * 1024 * 1024 // 50MB
+	const maxFileSize = 50 * 1024 * 1024
 	if stat.Size() > maxFileSize {
 		return "", fmt.Errorf("文件过大 (%.1f MB)，请使用终端命令查看", float64(stat.Size())/(1024*1024))
 	}
 
 	var b bytes.Buffer
 	b.Grow(int(stat.Size()))
-	_, err = io.Copy(&b, f)
-	if err != nil {
-		return "", err
+	buf := make([]byte, 32768)
+	for {
+		if err := ensureContextActive(ctx); err != nil {
+			return "", err
+		}
+		n, readErr := f.Read(buf)
+		if n > 0 {
+			b.Write(buf[:n])
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return "", readErr
+		}
 	}
 	return b.String(), nil
 }
 
 func (m *SSHManager) WriteFile(sessionId string, path string, content string) error {
+	return m.WriteFileContext(context.Background(), sessionId, path, content)
+}
+
+func (m *SSHManager) WriteFileContext(ctx context.Context, sessionId string, path string, content string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
 	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
 
-	f, err := sftpClient.Create(path)
+	tempPath := path + ".lumin_tmp_" + newCommandExecutionToken()
+	f, err := sftpClient.Create(tempPath)
 	if err != nil {
 		return err
 	}
-	_, writeErr := f.Write([]byte(content))
-	if closeErr := f.Close(); writeErr == nil {
-		return closeErr
+	if writeErr := writeStringChunksWithContext(ctx, f, content); writeErr != nil {
+		f.Close()
+		_ = sftpClient.Remove(tempPath)
+		return writeErr
 	}
-	return writeErr
+	if err := f.Close(); err != nil {
+		_ = sftpClient.Remove(tempPath)
+		return err
+	}
+	if err := ensureContextActive(ctx); err != nil {
+		_ = sftpClient.Remove(tempPath)
+		return err
+	}
+	if err := sftpClient.Rename(tempPath, path); err != nil {
+		renameErr := err
+		if removeErr := sftpClient.Remove(path); removeErr == nil {
+			if retryErr := sftpClient.Rename(tempPath, path); retryErr == nil {
+				return nil
+			} else {
+				renameErr = retryErr
+			}
+		}
+		_ = sftpClient.Remove(tempPath)
+		return renameErr
+	}
+	return nil
 }
 
 // isDangerousPath 检查是否为危险路径（根目录、家目录等），防止误删
@@ -1805,7 +1909,13 @@ func rmRfCmd(path string) string {
 }
 
 func (m *SSHManager) DeleteItem(sessionId string, path string, isDir bool) error {
-	// 拒绝删除危险路径，防止误删根目录或家目录
+	return m.DeleteItemContext(context.Background(), sessionId, path, isDir)
+}
+
+func (m *SSHManager) DeleteItemContext(ctx context.Context, sessionId string, path string, isDir bool) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
 	if isDangerousPath(path) {
 		return fmt.Errorf("refusing to delete dangerous path: %q", path)
 	}
@@ -1814,23 +1924,32 @@ func (m *SSHManager) DeleteItem(sessionId string, path string, isDir bool) error
 		return err
 	}
 	if isDir {
-		// 先试 SFTP RemoveAll，失败则用 rm -rf（和 FinalShell 一致）
 		if sftpClient != nil {
 			if err := sftpClient.RemoveAll(path); err == nil {
-				return nil
+				return ensureContextActive(ctx)
 			}
 		}
-		_, err := m.executeCmdWithClient(client, rmRfCmd(path))
+		_, err := m.executeCmdWithClientContext(ctx, client, rmRfCmd(path))
 		return err
 	}
 	if sftpClient == nil {
 		return fmt.Errorf("SFTP not available")
+	}
+	if err := ensureContextActive(ctx); err != nil {
+		return err
 	}
 	return sftpClient.Remove(path)
 }
 
 // DeleteItemShell 用 rm -rf 删除（和 FinalShell 一致）
 func (m *SSHManager) DeleteItemShell(sessionId string, path string) error {
+	return m.DeleteItemShellContext(context.Background(), sessionId, path)
+}
+
+func (m *SSHManager) DeleteItemShellContext(ctx context.Context, sessionId string, path string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
 	if isDangerousPath(path) {
 		return fmt.Errorf("refusing to delete dangerous path: %q", path)
 	}
@@ -1838,11 +1957,18 @@ func (m *SSHManager) DeleteItemShell(sessionId string, path string) error {
 	if err != nil {
 		return err
 	}
-	_, err = m.executeCmdWithClient(client, rmRfCmd(path))
+	_, err = m.executeCmdWithClientContext(ctx, client, rmRfCmd(path))
 	return err
 }
 
 func (m *SSHManager) Mkdir(sessionId string, path string) error {
+	return m.MkdirContext(context.Background(), sessionId, path)
+}
+
+func (m *SSHManager) MkdirContext(ctx context.Context, sessionId string, path string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
 	_, sftpClient, err := m.getClientEntry(sessionId)
 	if err != nil {
 		return err
@@ -1854,6 +1980,13 @@ func (m *SSHManager) Mkdir(sessionId string, path string) error {
 }
 
 func (m *SSHManager) RenameItem(sessionId string, oldPath string, newPath string) error {
+	return m.RenameItemContext(context.Background(), sessionId, oldPath, newPath)
+}
+
+func (m *SSHManager) RenameItemContext(ctx context.Context, sessionId string, oldPath string, newPath string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
 	_, sftpClient, err := m.getClientEntry(sessionId)
 	if err != nil {
 		return err
