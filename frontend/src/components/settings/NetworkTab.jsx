@@ -12,7 +12,7 @@ export default function NetworkTab({ pingProtocol, onPingProtocolChange, probeIn
         <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('选择如何测量服务器网络延迟，不同协议适用于不同的网络环境。')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            { id: 'ssh', label: <>{$t('SSH Banner RTT')} <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.4)', color: 'var(--success)', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{$t('推荐')}</span></>, desc: $t('通过读取 SSH 握手包测速，穿透 TUN 代理测出真实网络延迟，推荐') },
+            { id: 'ssh', label: <>{$t('SSH Banner RTT')} <span style={{ fontSize: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{$t('推荐')}</span></>, desc: $t('通过读取 SSH 握手包测速，穿透 TUN 代理测出真实网络延迟，推荐') },
             { id: 'tcp', label: $t('TCP Dial'), desc: $t('通过 TCP 连接建立测速，适用于局域网/私有网络或未开代理的环境') },
           ].map(opt => (
             <RadioOption key={opt.id} selected={pingProtocol === opt.id} label={opt.label} description={opt.desc} onClick={() => onPingProtocolChange(opt.id)} />

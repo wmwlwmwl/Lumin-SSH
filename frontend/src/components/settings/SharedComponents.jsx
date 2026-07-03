@@ -16,12 +16,12 @@ export function ToggleSwitch({ checked, onChange }) {
 
 export function RadioOption({ selected, label, description, onClick }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'background 0.15s', background: selected ? 'var(--accent-dim)' : 'transparent', border: selected ? '1px solid var(--accent-border)' : '1px solid transparent' }}>
-      <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, border: `2px solid ${selected ? 'var(--success)' : 'var(--border)'}`, background: selected ? 'var(--success)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'all 0.15s', background: selected ? 'var(--accent-dim)' : 'var(--surface-overlay)', border: `1px solid ${selected ? 'var(--accent-border)' : 'var(--border)'}`, boxShadow: selected ? '0 0 0 1px var(--accent-border) inset' : 'none' }}>
+      <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, border: `2px solid ${selected ? 'var(--accent)' : 'var(--border)'}`, background: selected ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {selected && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
       </div>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: selected ? 'var(--text-primary)' : 'var(--text-secondary)', marginBottom: 2 }}>{label}</div>
         {description && <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{description}</div>}
       </div>
     </div>
