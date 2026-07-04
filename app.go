@@ -708,7 +708,7 @@ func (a *App) PingServer(host string, port int) map[string]interface{} {
 
 // UpdateApp downloads a platform update package, verifies it, and starts the
 // platform-specific installation or executable replacement flow.
-func (a *App) UpdateApp(downloadUrl string, filename string) error {
+func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) error {
 	// 1. 强制 HTTPS，防止明文下载可执行文件被篡改
 	if !strings.HasPrefix(downloadUrl, "https://") {
 		return fmt.Errorf("更新地址必须使用 HTTPS")
@@ -723,10 +723,16 @@ func (a *App) UpdateApp(downloadUrl string, filename string) error {
 	// 旧实现只在 Get() 阶段切换 URL，io.Copy 阶段超时直接放弃（"failed to save update file"），
 	// 不会重试代理 URL。大文件 + 慢网络下直连极易在 body 读取阶段超时。
 	client := &http.Client{Timeout: 10 * time.Minute}
-	const ghProxy = "https://ghfast.top/"
-	tryUrls := []string{downloadUrl}
+	ghProxies := []string{"https://ghfast.top/", "https://proxy.gitwarp.top/"}
+	var tryUrls []string
 	if strings.Contains(downloadUrl, "github.com") {
-		tryUrls = append(tryUrls, ghProxy+downloadUrl)
+		if proxyFirst {
+			tryUrls = []string{ghProxies[0] + downloadUrl, ghProxies[1] + downloadUrl, downloadUrl}
+		} else {
+			tryUrls = []string{downloadUrl, ghProxies[0] + downloadUrl, ghProxies[1] + downloadUrl}
+		}
+	} else {
+		tryUrls = []string{downloadUrl}
 	}
 
 	isDeb := strings.HasSuffix(strings.ToLower(filename), ".deb")

@@ -457,6 +457,7 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
   const [confirmCloseSession, setConfirmCloseSession] = useState(localStorage.getItem('skipCloseSessionConfirm') !== 'true');
   const [confirmCloseAll, setConfirmCloseAll] = useState(localStorage.getItem('skipCloseAllConfirm') !== 'true');
   const [windowCloseAction, setWindowCloseAction] = useState(localStorage.getItem('windowCloseAction') || 'ask');
+  const [updateUseProxy, setUpdateUseProxy] = useState(localStorage.getItem('updateUseProxy') === 'true');
 
   const handleToggleConfirmCloseSession = () => {
     const next = !confirmCloseSession;
@@ -474,6 +475,12 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
     setWindowCloseAction(value);
     if (value === 'ask') localStorage.removeItem('windowCloseAction');
     else localStorage.setItem('windowCloseAction', value);
+  };
+  const handleToggleUpdateUseProxy = () => {
+    const next = !updateUseProxy;
+    setUpdateUseProxy(next);
+    if (next) localStorage.setItem('updateUseProxy', 'true');
+    else localStorage.removeItem('updateUseProxy');
   };
 
   const handleToggleShowAIPanel = () => {
@@ -789,6 +796,8 @@ export default function SettingsModal({ onClose, addToast, onRestored }) {
                 onToggleConfirmCloseAll={handleToggleConfirmCloseAll}
                 windowCloseAction={windowCloseAction}
                 onWindowCloseActionChange={handleWindowCloseActionChange}
+                updateUseProxy={updateUseProxy}
+                onToggleUpdateUseProxy={handleToggleUpdateUseProxy}
               />
             )}
 

@@ -6,6 +6,7 @@ export default function GeneralTab({
   confirmCloseSession, onToggleConfirmCloseSession,
   confirmCloseAll, onToggleConfirmCloseAll,
   windowCloseAction, onWindowCloseActionChange,
+  updateUseProxy, onToggleUpdateUseProxy,
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
@@ -54,6 +55,19 @@ export default function GeneralTab({
               <option value="quit">{$t('直接退出')}</option>
               <option value="tray">{$t('最小化到托盘')}</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('更新下载')}</h3>
+        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('优先使用代理下载')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('通过多个代理加速 GitHub 更新下载，失败自动回退直连')}</div>
+            </div>
+            <ToggleSwitch checked={updateUseProxy} onChange={onToggleUpdateUseProxy} />
           </div>
         </div>
       </div>

@@ -37,7 +37,7 @@ export default function AppTab({ CURRENT_VERSION, updateInfo, checkingUpdate, do
             <span style={{ fontSize: 14, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
               {CURRENT_VERSION}
             </span>
-            {updateInfo?.hasUpdate && (
+            {(updateInfo?.hasUpdate || downloadProgress >= 0) && (
               <span
                 onClick={onApplyUpdate}
                 style={{

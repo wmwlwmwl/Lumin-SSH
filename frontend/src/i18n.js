@@ -649,6 +649,9 @@ const dict = {
     "已上传": "已上传",
     "数据一致，无需变更": "数据一致，无需变更",
     "本地数据已同步到云端": "本地数据已同步到云端",
+    "更新下载": "更新下载",
+    "优先使用代理下载": "优先使用代理下载",
+    "通过多个代理加速 GitHub 更新下载，失败自动回退直连": "通过多个代理加速 GitHub 更新下载，失败自动回退直连",
   },
   "en-US": {
     "闪电直连": "Quick Connect",
@@ -1299,6 +1302,9 @@ const dict = {
     "已上传": "uploaded",
     "数据一致，无需变更": "Data is in sync, no changes needed",
     "本地数据已同步到云端": "Local data synced to cloud",
+    "更新下载": "Update Download",
+    "优先使用代理下载": "Prefer Proxy Download",
+    "通过多个代理加速 GitHub 更新下载，失败自动回退直连": "Use multiple proxies to speed up GitHub update downloads, falls back to direct on failure",
   }
 };
 

@@ -134,7 +134,8 @@ export function useUpdateChecker({ onResult, onError } = {}) {
     else if (updateInfo.url.endsWith('.rpm')) defaultName = 'update.rpm';
     else if (updateInfo.url.endsWith('.dmg')) defaultName = 'update.dmg';
     try {
-      await AppGo.UpdateApp(updateInfo.url, updateInfo.filename || defaultName);
+      const proxyFirst = localStorage.getItem('updateUseProxy') === 'true';
+      await AppGo.UpdateApp(updateInfo.url, updateInfo.filename || defaultName, proxyFirst);
     } catch (err) {
       setDownloadProgress(-1);
       throw err;
