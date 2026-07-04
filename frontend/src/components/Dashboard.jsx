@@ -11,7 +11,7 @@ export default function Dashboard({
   serverListViewMode, onViewModeChange,
   servers, pingCounts, isRefreshingPing, onRefreshPing,
   filteredServers, pings, sessions, activeSessionId,
-  onConnect, onEdit, onDelete, onMoveGroup, addToast,
+  onConnect, onEdit, onClone, onDelete, onMoveGroup, addToast,
 }) {
   const { t } = useTranslation();
 
@@ -179,6 +179,7 @@ export default function Dashboard({
               hideSensitive={hideSensitive}
               onConnect={onConnect}
               onEdit={onEdit}
+              onClone={onClone}
               onDelete={onDelete}
               onMoveGroup={onMoveGroup}
               addToast={addToast}

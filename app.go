@@ -255,6 +255,15 @@ func (a *App) GetConnectionsMasked() []Connection {
 	return a.configManager.GetConnectionsMasked()
 }
 
+// GetConnectionByID 返回指定连接的真实数据（含解密密码），供克隆等场景使用
+func (a *App) GetConnectionByID(id string) (Connection, error) {
+	conn, ok := a.configManager.GetConnectionByID(id)
+	if !ok {
+		return Connection{}, fmt.Errorf("connection not found")
+	}
+	return conn, nil
+}
+
 // SaveConnection saves a new or existing connection
 func (a *App) SaveConnection(conn Connection, noSync bool) Connection {
 	return a.configManager.SaveConnection(conn, noSync)

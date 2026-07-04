@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from '../i18n.js';
-import { Monitor, Pencil, Link, Trash2, X, SquarePen, Folder, FolderOpen, ChevronUp, ChevronDown } from 'lucide-react';
+import { Monitor, Pencil, Link, Trash2, X, SquarePen, Folder, FolderOpen, ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import { clampMenuPosition } from '../utils/menuPosition.js';
 
 const MENU_ESTIMATED_WIDTH = 196;
@@ -98,6 +98,7 @@ export default function ServerList({
   hideSensitive = false,
   onConnect,
   onEdit,
+  onClone,
   onDelete,
   onMoveGroup,
   addToast,
@@ -498,6 +499,12 @@ export default function ServerList({
             onClick={() => { onEdit(menuServer); setMenuServer(null); }}
           >
             <SquarePen size={14} style={{ marginRight: 8 }} /> {t('编辑配置')}
+          </div>
+          <div
+            className="context-menu-item"
+            onClick={() => { onClone(menuServer); setMenuServer(null); }}
+          >
+            <Copy size={14} style={{ marginRight: 8 }} /> {t('克隆')}
           </div>
           {onMoveGroup && (
             <div

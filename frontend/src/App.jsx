@@ -358,6 +358,17 @@ export default function App() {
       credentialId: quickForm.auth === 'credential' ? quickForm.credId : '',
     };
 
+    // 检查同 host+port+username 的重复服务器
+    const dup = serversRef.current.some(s =>
+      s.host === tempServer.host &&
+      (s.port || 22) === tempServer.port &&
+      s.username === tempServer.username
+    );
+    if (dup) {
+      addToast(t('已存在相同主机、端口和用户名的服务器'), 'error');
+      return;
+    }
+
     const sessionId = `session_${Date.now()}`;
     const newSession = {
       id: sessionId,
@@ -1107,6 +1118,17 @@ export default function App() {
 
   // ── Server CRUD ────────────────────────────────────────────
   const handleSaveServer = useCallback(async (data) => {
+    // 检查同 host+port+username 的重复服务器
+    const dup = serversRef.current.some(s =>
+      s.id !== data.id &&
+      s.host === data.host &&
+      (s.port || 22) === (parseInt(data.port) || 22) &&
+      s.username === data.username
+    );
+    if (dup) {
+      addToast(t('已存在相同主机、端口和用户名的服务器'), 'error');
+      return;
+    }
     try {
       await AppGo.SaveConnection(data, false);
       await loadServers();
@@ -1115,7 +1137,7 @@ export default function App() {
       addToast(err, 'error');
     }
     setAddServerModal({ open: false, server: null });
-  }, [loadServers, addToast]);
+  }, [loadServers, addToast, t]);
 
   const handleDeleteServer = useCallback(async (id) => {
     try {
@@ -1275,6 +1297,15 @@ export default function App() {
             activeSessionId={activeSessionId}
             onConnect={connectServer}
             onEdit={(s) => setAddServerModal({ open: true, server: s })}
+            onClone={async (s) => {
+              try {
+                const real = await AppGo.GetConnectionByID(s.id);
+                setAddServerModal({ open: true, server: { ...real, id: null } });
+              } catch {
+                // fallback: 用现有数据克隆
+                setAddServerModal({ open: true, server: { ...s, id: null, name: s.name || s.host } });
+              }
+            }}
             onDelete={handleDeleteServer}
             onMoveGroup={handleMoveGroup}
             addToast={addToast}

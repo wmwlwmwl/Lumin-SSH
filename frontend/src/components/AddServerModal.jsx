@@ -34,7 +34,7 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
         ...defaultForm,
         ...server,
         authType: server.authMethod ? (server.authMethod === 'privateKey' ? 'key' : 'password') : (server.authType || 'password'),
-        password: '',       // 编辑时不回填密码，留空则不修改
+        password: '',
         passphrase: server.passphrase || '',
       });
     } else {
@@ -81,6 +81,8 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
         data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
         data.credentialId = ''; // 清除凭据引用
         if (server?.id && !data.password) delete data.password;
+        // 克隆时自动拷贝密码
+        if (!server?.id && server && !data.password && server.password) data.password = server.password;
         if (server?.id && (!data.privateKey || data.privateKey === '[key configured]')) {
           delete data.privateKey;
         }
