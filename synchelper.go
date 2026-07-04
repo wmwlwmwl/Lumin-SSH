@@ -151,23 +151,51 @@ func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error
 		return nil, fmt.Errorf("读取远程目录失败：%w", err)
 	}
 
-	var latest string
-	var latestTime time.Time
+	// 按文件名（含毫秒精度时间戳）降序排列，跨平台一致性优于 ModTime
+	var backups []string
 	for _, f := range files {
-		if !f.IsDir && strings.HasPrefix(f.Name, "connections_backup_") && f.ModTime.After(latestTime) {
-			latestTime = f.ModTime
-			latest = f.Name
+		if !f.IsDir && strings.HasPrefix(f.Name, "connections_backup_") {
+			backups = append(backups, f.Name)
 		}
 	}
-	if latest == "" {
+	if len(backups) == 0 {
 		return nil, fmt.Errorf("云端没有备份文件")
 	}
+	sort.Sort(sort.Reverse(sort.StringSlice(backups)))
 
-	data, err := s.ReadFile(latest)
-	if err != nil {
-		return nil, err
+	// 取最新有效快照；若缺少 credentials 则遍历旧文件补充
+	var snap *SyncSnapshot
+	for _, name := range backups {
+		data, err := s.ReadFile(name)
+		if err != nil {
+			log.Printf("fetchLatestBackup: read %s: %v (skipping)", name, err)
+			continue
+		}
+		parsed, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey())
+		if err != nil {
+			log.Printf("fetchLatestBackup: decrypt %s: %v (skipping)", name, err)
+			continue
+		}
+		if parsed.Connections == nil {
+			continue
+		}
+		if snap == nil {
+			snap = parsed
+			log.Printf("fetchLatestBackup: selected %s (snapTime=%d creds=%d)", name, snap.SnapshotTime, len(snap.Credentials))
+		}
+		// 最新快照缺凭据时，从旧文件中补充
+		if snap.Credentials == nil && parsed.Credentials != nil {
+			snap.Credentials = parsed.Credentials
+			log.Printf("fetchLatestBackup: recovered %d credentials from older backup %s", len(parsed.Credentials), name)
+		}
+		if snap.Connections != nil && snap.Credentials != nil {
+			break
+		}
 	}
-	return c.decryptAndParseSnapshot(string(data), s.EncryptKey())
+	if snap == nil {
+		return nil, fmt.Errorf("无法解析任何备份文件")
+	}
+	return snap, nil
 }
 
 // backupConnections 加密本地所有可同步数据并上传到远端，同时清理超出 maxBackups 的旧备份
@@ -525,6 +553,12 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 
 // mergeCredentials 合并本地和云端凭据，逻辑与 mergeWithDeletionPropagation 一致
 func (c *ConfigManager) mergeCredentials(localCreds, remoteCreds []Credential, lastSyncTime int64) []Credential {
+	// ponytail: 本地无凭据说明是首次同步凭据的新设备，
+	// lastSyncTime 可能已被其他数据类型（连接）的同步设置，不应因此丢弃远程凭据
+	if len(localCreds) == 0 {
+		lastSyncTime = 0
+	}
+
 	localMap := make(map[string]Credential, len(localCreds))
 	for _, lc := range localCreds {
 		localMap[lc.ID] = lc

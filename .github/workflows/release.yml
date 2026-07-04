@@ -74,18 +74,18 @@ jobs:
           sudo chown root:root build/deb/usr/bin/lumin
           cp build/appicon.png build/deb/usr/share/icons/hicolor/256x256/apps/lumin.png
           cp build/linux/lumin.desktop build/deb/usr/share/applications/lumin.desktop
-          sudo dpkg-deb --root-owner-group --build build/deb "build/lumin_V${VERSION}-amd64.deb"
-          sha256sum "build/lumin_V${VERSION}-amd64.deb" | sed 's|build/||' > "build/lumin_V${VERSION}-amd64.deb.sha256"
-          echo "deb=${{ github.workspace }}/build/lumin_V${VERSION}-amd64.deb" >> $GITHUB_ENV
-          echo "deb_sha=${{ github.workspace }}/build/lumin_V${VERSION}-amd64.deb.sha256" >> $GITHUB_ENV
+          sudo dpkg-deb --root-owner-group --build build/deb "build/Lumin-V${VERSION}-amd64.deb"
+          sha256sum "build/Lumin-V${VERSION}-amd64.deb" | sed 's|build/||' > "build/Lumin-V${VERSION}-amd64.deb.sha256"
+          echo "deb=${{ github.workspace }}/build/Lumin-V${VERSION}-amd64.deb" >> $GITHUB_ENV
+          echo "deb_sha=${{ github.workspace }}/build/Lumin-V${VERSION}-amd64.deb.sha256" >> $GITHUB_ENV
           # Convert .deb to .rpm via alien
-          sudo alien -r "build/lumin_V${VERSION}-amd64.deb" --scripts || echo "alien_rpm_failed=true" >> $GITHUB_ENV
+          sudo alien -r "build/Lumin-V${VERSION}-amd64.deb" --scripts || echo "alien_rpm_failed=true" >> $GITHUB_ENV
           RPM_FILE=$(find . -name "*.rpm" 2>/dev/null | head -1)
           if [ -n "$RPM_FILE" ]; then
             mv "$RPM_FILE" build/
             RPM_BASENAME=$(basename "$RPM_FILE")
             # 统一命名：加入 V 前缀，x86_64 → amd64，去掉 alien release 号
-            RPM_BASENAME_CLEAN=$(echo "$RPM_BASENAME" | sed "s/lumin-[0-9.]\+-\([0-9]\+\)\.x86_64\.rpm/lumin-V${VERSION}-amd64.rpm/")
+            RPM_BASENAME_CLEAN=$(echo "$RPM_BASENAME" | sed "s/lumin-[0-9.]\+-\([0-9]\+\)\.x86_64\.rpm/Lumin-V${VERSION}-amd64.rpm/")
             if [ "$RPM_BASENAME" != "$RPM_BASENAME_CLEAN" ] && [ -f "build/$RPM_BASENAME" ]; then
               mv "build/$RPM_BASENAME" "build/$RPM_BASENAME_CLEAN"
               RPM_BASENAME="$RPM_BASENAME_CLEAN"
@@ -121,11 +121,12 @@ jobs:
             - 更新下载 io.Copy 阶段超时后自动重试代理 URL
             - DEB/RPM sha256 产物路径前缀修复
             - 关闭设置重开后更新进度不显示：下载中重新打开关于页，进度条异常消失
+            - 跨设备凭据同步失败：新设备首次同步时 lastSyncTime 误过滤云端凭据；fetchLatestBackup 按 ModTime 选备份导致凭据丢失
 
             ## 产物下载
             - Linux 便携版 ([Lumin-V${{ steps.version.outputs.version }}-linux-amd64](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-linux-amd64))：即下即用
-            - Linux DEB 安装包 ([lumin_V${{ steps.version.outputs.version }}-amd64.deb](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/lumin_V${{ steps.version.outputs.version }}-amd64.deb))：Debian/Ubuntu 安装包
-            - Linux RPM 安装包 ([lumin-V${{ steps.version.outputs.version }}-amd64.rpm](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/lumin-V${{ steps.version.outputs.version }}-amd64.rpm))：Red Hat/Fedora 安装包
+            - Linux DEB 安装包 ([Lumin-V${{ steps.version.outputs.version }}-amd64.deb](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-amd64.deb))：Debian/Ubuntu 安装包
+            - Linux RPM 安装包 ([Lumin-V${{ steps.version.outputs.version }}-amd64.rpm](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-amd64.rpm))：Red Hat/Fedora 安装包
             - macOS 磁盘映像 ([Lumin-V${{ steps.version.outputs.version }}.dmg](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}.dmg))：macOS 安装包
             - Windows 便携绿色版 ([Lumin-V${{ steps.version.outputs.version }}-portable.exe](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-portable.exe))：内嵌 WebView2，即下即用
             - Windows 标准安装版 ([Lumin-V${{ steps.version.outputs.version }}-amd64-installer.exe](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-amd64-installer.exe))：NSIS 安装包
@@ -135,7 +136,7 @@ jobs:
             ### DEB 包（Debian/Ubuntu）
             ```bash
             # 安装
-            sudo dpkg -i lumin_V${{ steps.version.outputs.version }}-amd64.deb
+            sudo dpkg -i Lumin-V${{ steps.version.outputs.version }}-amd64.deb
             # 卸载
             sudo dpkg -r lumin
             ```
@@ -143,7 +144,7 @@ jobs:
             ### RPM 包（Red Hat/Fedora）
             ```bash
             # 安装
-            sudo rpm -ivh lumin-V${{ steps.version.outputs.version }}-amd64.rpm
+            sudo rpm -ivh Lumin-V${{ steps.version.outputs.version }}-amd64.rpm
             # 卸载
             sudo rpm -e lumin
             ```
