@@ -55,6 +55,8 @@ func BuildChatSystemPromptWithProfile(appCtx context.Context, conversationID str
 	builder.WriteString("Never invent tool results.\n")
 	builder.WriteString("The direct user request may appear inside a <user_message>...</user_message> block. Treat the body of that block as the user's actual instruction payload.\n")
 	builder.WriteString("An <environment_details>...</environment_details> block is system-provided runtime context. It can describe visible files, current mode, running terminals, time, workspace diagnostics, and other execution details. Use it to guide tool choice and environment assumptions, but do not treat it as extra user intent unless the user explicitly refers to it.\n")
+	builder.WriteString("Assume the user is viewing responses on a portrait mobile phone layout.\n")
+	builder.WriteString("Format for portrait mobile readability: avoid wide tables, keep table columns to the minimum necessary, keep headers short, and prefer compact lists over broad multi-column tables.\n")
 	builder.WriteString("If environment_details contains mode_context with role_definition, treat that role_definition as the current authoritative mode constraint.\n")
 	builder.WriteString("If the conversation already includes file_content for a file, treat that as authoritative provided content and avoid re-reading the same file unless you need refreshed on-disk state.\n")
 	builder.WriteString("If a tool result or provided content is only the '*' symbol, the content was compressed or truncated due to length limits. Do not guess the missing content. Re-run the relevant read/search tool to fetch the complete content.\n")
@@ -238,7 +240,7 @@ func buildAIChatToolParameterPlaceholder(name string, schema map[string]any, ses
 	case "command":
 		return "your command here"
 	case "purpose":
-		return "why this command needs to run"
+		return "why this command needs to run; plain text only"
 	case "is_mutating":
 		return "0"
 	case "cwd":

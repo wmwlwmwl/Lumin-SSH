@@ -524,7 +524,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     const bridge = getAppBridge()
     if (!bridge?.ValidateAIProviderWebSearch) {
       setWebSearchValidationPassed(false)
-      setWebSearchValidationMessage(t('当前环境不支持验证'))
+      setWebSearchValidationMessage(t('不支持'))
       return
     }
 
@@ -542,13 +542,12 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
         modelMaxTokens: normalizePositiveInteger(draft.modelMaxTokens),
         modelMaxThinkingTokens: normalizePositiveInteger(draft.modelMaxThinkingTokens),
       }))
-      setWebSearchValidationPassed(result?.success === true)
-      setWebSearchValidationMessage(typeof result?.message === 'string' && result.message.trim()
-        ? result.message.trim()
-        : (result?.success ? t('验证通过') : t('验证失败')))
-    } catch (error) {
+      const passed = result?.success === true
+      setWebSearchValidationPassed(passed)
+      setWebSearchValidationMessage(passed ? t('支持') : t('不支持'))
+    } catch {
       setWebSearchValidationPassed(false)
-      setWebSearchValidationMessage(error instanceof Error ? error.message : t('验证失败'))
+      setWebSearchValidationMessage(t('不支持'))
     } finally {
       setValidatingWebSearch(false)
     }

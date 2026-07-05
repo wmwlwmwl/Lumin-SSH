@@ -24,7 +24,7 @@ func executeCommandToolDefinition() ToolDefinition {
 				},
 				"purpose": map[string]any{
 					"type": "string",
-					"description": "Short purpose statement for the command.",
+					"description": "Plain-text purpose statement only. Do not use markdown, XML, JSON, code fences, or other structured formatting.",
 				},
 				"is_mutating": map[string]any{
 					"type": "integer",

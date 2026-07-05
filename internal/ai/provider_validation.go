@@ -18,6 +18,8 @@ const (
 	aiProviderWebSearchValidationURL           = "https://www.ghxi.com/user/2179447699"
 	aiProviderWebSearchValidationExpectedTitle = "小影哟"
 	aiProviderWebSearchValidationPrompt        = "请访问 https://www.ghxi.com/user/2179447699,然后只回答这个用户的昵称,不要输出任何解释."
+	aiProviderWebSearchSupportedMessage        = "支持"
+	aiProviderWebSearchUnsupportedMessage      = "不支持"
 )
 
 type AIProviderWebSearchValidationResult struct {
@@ -69,17 +71,20 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 	profile := AIProviderProfile{}
 	if strings.TrimSpace(jsonStr) != "" {
 		if err := json.Unmarshal([]byte(jsonStr), &profile); err != nil {
-			result.Message = fmt.Sprintf("验证失败:%s", err.Error())
+			result.Message = aiProviderWebSearchUnsupportedMessage
+			result.RawOutput = err.Error()
 			return result
 		}
 	}
 	resolvedProfile, _, err := a.resolveAIProviderWebSearchValidationProfile(profile)
 	if err != nil {
-		result.Message = fmt.Sprintf("验证失败:%s", err.Error())
+		result.Message = aiProviderWebSearchUnsupportedMessage
+		result.RawOutput = err.Error()
 		return result
 	}
 	if resolvedProfile.BaseURL == "" || resolvedProfile.APIKey == "" || resolvedProfile.Model == "" {
-		result.Message = "验证失败:请先完整填写基础 URL、API 密钥和模型"
+		result.Message = aiProviderWebSearchUnsupportedMessage
+		result.RawOutput = "请先完整填写基础 URL、API 密钥和模型"
 		return result
 	}
 
@@ -93,7 +98,8 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 
 	requestBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		result.Message = fmt.Sprintf("验证失败:%s", err.Error())
+		result.Message = aiProviderWebSearchUnsupportedMessage
+		result.RawOutput = err.Error()
 		return result
 	}
 
@@ -103,7 +109,8 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 	endpoint := strings.TrimRight(resolvedProfile.BaseURL, "/") + "/responses"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBytes))
 	if err != nil {
-		result.Message = fmt.Sprintf("验证失败:%s", err.Error())
+		result.Message = aiProviderWebSearchUnsupportedMessage
+		result.RawOutput = err.Error()
 		return result
 	}
 	request.Header.Set("Content-Type", "application/json")
@@ -112,7 +119,8 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 
 	response, err := (&http.Client{}).Do(request)
 	if err != nil {
-		result.Message = fmt.Sprintf("验证失败:%s", err.Error())
+		result.Message = aiProviderWebSearchUnsupportedMessage
+		result.RawOutput = err.Error()
 		return result
 	}
 	defer response.Body.Close()
@@ -123,7 +131,7 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 		if errorText == "" {
 			errorText = response.Status
 		}
-		result.Message = fmt.Sprintf("验证失败:%s", errorText)
+		result.Message = aiProviderWebSearchUnsupportedMessage
 		result.RawOutput = errorText
 		return result
 	}
@@ -134,7 +142,7 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 	var outputBuilder strings.Builder
 	for scanner.Scan() {
 		if ctx.Err() != nil {
-			result.Message = fmt.Sprintf("验证失败:%s", ctx.Err().Error())
+			result.Message = aiProviderWebSearchUnsupportedMessage
 			result.RawOutput = ctx.Err().Error()
 			return result
 		}
@@ -173,7 +181,7 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 	}
 
 	if err := scanner.Err(); err != nil {
-		result.Message = fmt.Sprintf("验证失败:%s", err.Error())
+		result.Message = aiProviderWebSearchUnsupportedMessage
 		result.RawOutput = err.Error()
 		return result
 	}
@@ -185,10 +193,13 @@ func (a *App) ValidateAIProviderWebSearch(jsonStr string) AIProviderWebSearchVal
 	result.ActualTitle = actualTitle
 	if actualTitle != "" {
 		result.RawOutput = actualTitle
-		result.Message = actualTitle
 	} else {
 		result.RawOutput = "未返回内容"
-		result.Message = "未返回内容"
+	}
+	if result.Success {
+		result.Message = aiProviderWebSearchSupportedMessage
+	} else {
+		result.Message = aiProviderWebSearchUnsupportedMessage
 	}
 	return result
 }
