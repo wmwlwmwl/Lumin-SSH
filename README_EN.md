@@ -77,10 +77,16 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 - **Auto-Sync Updates** — Editing a credential automatically updates all referencing servers
 - **Passphrase Support** — Optional passphrase for private key credentials
 
-### AI Agent Integration (MCP)
+### AI Chat & Agent Integration
+- **Built-in AI Chat Panel** — In-app AI chat interface with multi-turn conversations, message edit/retry, streaming output, and reasoning trace display
+- **Multi-Provider Support** — Compatible with OpenAI API formats (Compatible / Messages / Responses protocols), freely switch between providers
+- **Slash Commands & @Mentions** — Type `/` to trigger custom commands, type `@` to reference terminal output or remote files/directories
+- **Tool Approval & Execution** — Approval cards for AI tool calls, approve/reject individually, configurable auto-approve (read/write/execute)
+- **Smart Context Compression** — One-click token compression when conversations grow long
 - **Built-in MCP Server** — Auto-starts a Streamable HTTP MCP server on app launch, exposing SSH session access to AI tools
 - **AI Agent Panel** — In-session panel showing MCP server URL, available tools list, and connection guide
 - **Visibility Control** — Toggle AI panel on/off in Settings (default: off)
+- **Terminal Isolation** — Create independent AI panels and runtime sessions per terminal
 - **Terminal Output Limits** — Configurable max lines and characters for MCP terminal reads
 - **Zero-Config Setup** — AI editors (Windsurf, Cursor, VS Code + Copilot, etc.) connect via standard MCP client config
 
@@ -133,7 +139,7 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 - **Internationalization** — 简体中文 / English toggle
 
 ### Window Memory
-- **Remember Window Size** — Auto-restores the last window size on startup
+- **Remember Window Size** — Auto-restores the last window size and maximized state on startup
 - **Adaptive Screen** — Adjusts initial window size based on screen resolution (10% margin)
 
 ---
@@ -183,6 +189,9 @@ On first run, Lumin creates `Lumin/config/` under the user config directory:
 | `sync_mode.json` | Auto-sync mode configuration |
 | `last_sync_time` | Last sync timestamp |
 | `snapshot_time` | Snapshot timestamp |
+| `ai_global_settings.json` | AI global settings (provider selection, auto-approve, slash commands, etc.) |
+| `ai_providers.json` | AI provider configuration list |
+| `tasks/` | AI conversation storage (one subdirectory per conversation, containing metadata, messages, settings) |
 
 ---
 
@@ -210,7 +219,7 @@ Lumin provides a comprehensive settings panel organized in tabs:
 | **General** | Language, close session confirmation, close all confirmation, window close behavior |
 | **Network** | Ping protocol (SSH Banner RTT / TCP Dial), probe & ping refresh intervals |
 | **Appearance** | Terminal font size, local echo, color theme, UI theme, accent colors, terminal wallpaper |
-| **AI Integration** | Show/hide AI agent panel, MCP terminal output line/character limits |
+| **AI Integration** | AI chat panel visibility, terminal isolation, MCP terminal output line/character limits |
 | **Shortcuts** | All terminal operation shortcut rebinding |
 | **Sync & Cloud** | WebDAV / R2 / FTP / SFTP configuration and auto-sync strategy |
 | **About** | Version info, update check, community links |

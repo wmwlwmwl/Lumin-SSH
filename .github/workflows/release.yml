@@ -105,23 +105,10 @@ jobs:
           name: "Lumin SSH Client ${{ github.ref_name }}"
           body: |
             ## 功能增强
-            - 凭据管理系统：独立弹窗、闪电直连/服务器表单可选凭据、认证失败更新凭据密码
-            - AI 面板（MCP 服务集成）：SSH 会话 MCP 服务 + AI 面板，支持自然语言执行命令
-            - 设置重构：GeneralTab、操作确认框、关闭全部、AI 面板默认隐藏
-            - 服务器克隆、重复检测、GetConnectionByID 绑定
-            - 文件管理器右键添加复制路径并修复目录切换滚动位置
-            - Toast 提示增加背景毛玻璃
-            - 替换 logo
-            - 优先使用代理下载：设置通用页新增开关，更新下载优先走代理，失败自动回退直连
+            - AI 对话面板：完整的 AI 聊天界面，支持多轮对话、流式输出、MCP 命令执行、上下文管理
 
             ## Bug 修复
-            - 点文件（如 .htaccess）在文件管理器中不可编辑
-            - RadioOption 选中态不明显优化 + i18n 搜索服务器缺失
-            - ProbePanel 竞态、ProcessPage 表头 remount、IME 误触发、超时数据竞争、移除 ssh-rsa
-            - 更新下载 io.Copy 阶段超时后自动重试代理 URL
-            - DEB/RPM sha256 产物路径前缀修复
-            - 关闭设置重开后更新进度不显示：下载中重新打开关于页，进度条异常消失
-            - 跨设备凭据同步失败：新设备首次同步时 lastSyncTime 误过滤云端凭据；fetchLatestBackup 按 ModTime 选备份导致凭据丢失
+            - 窗口最大化状态持久化：重启后恢复最大化窗口；托盘退出时正确清理后台进程
 
             ## 产物下载
             - Linux 便携版 ([Lumin-V${{ steps.version.outputs.version }}-linux-amd64](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-linux-amd64))：即下即用
