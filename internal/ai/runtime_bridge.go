@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"luminssh-go/internal/mcpserver"
+
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-	"luminssh-go/internal/mcpserver"
 )
 
 type SessionProviderDelegate interface {
@@ -59,13 +60,13 @@ type SSHManager struct {
 
 func NewRuntimeApp(ctx context.Context, configDir string, sessionProvider SessionProviderDelegate, sshDelegate SSHDelegate) *App {
 	return &App{
-		ctx:            ctx,
-		sshManager:     &SSHManager{delegate: sshDelegate},
-		configManager:  &ConfigManager{configDir: configDir},
-		sessionProvider: sessionProvider,
-		aiChatReqCancel: make(map[string]context.CancelFunc),
-		aiPendingToolBatches: make(map[string]*PendingToolBatch),
-		aiToolExecutions: make(map[string]*ToolExecutionState),
+		ctx:                       ctx,
+		sshManager:                &SSHManager{delegate: sshDelegate},
+		configManager:             &ConfigManager{configDir: configDir},
+		sessionProvider:           sessionProvider,
+		aiChatReqCancel:           make(map[string]context.CancelFunc),
+		aiPendingToolBatches:      make(map[string]*PendingToolBatch),
+		aiToolExecutions:          make(map[string]*ToolExecutionState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
 }
@@ -132,15 +133,7 @@ func writeStringChunksWithContext(ctx context.Context, file *sftp.File, content 
 }
 
 func quotePOSIX(value string) string {
-	return "'" + stringsReplaceAll(value, "'", `'"'"'`) + "'"
-}
-
-func stringsReplaceAll(value string, old string, new string) string {
-	return stringReplaceAll(value, old, new)
-}
-
-func stringReplaceAll(value string, old string, new string) string {
-	return pathpkg.Clean(value[:0] + value)
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func newRuntimeToken() string {

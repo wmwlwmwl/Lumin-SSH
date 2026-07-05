@@ -146,7 +146,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
   const [hist, setHist] = useState({ cpu: Array(30).fill(0), up: Array(30).fill(0), down: Array(30).fill(0) });
   const [showConfirm, setShowConfirm] = useState(false);
   const [enabling, setEnabling] = useState(false);
-  const [hideIP, setHideIP] = useState(false);
+  const [hideIP, setHideIP] = useState(() => localStorage.getItem('probeHideIP') === 'true');
   const [cpuExpanded, setCpuExpanded] = useState(false);
   const [probeError, setProbeError] = useState(null);
   const probeErrorCountRef = useRef(0);
@@ -402,7 +402,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
               </span>
               <button onClick={() => { navigator.clipboard.writeText(displayIP); addToast?.(t('已复制') + ' ' + displayIP, 'success'); }} title={t('复制 IP')}
                 className="probe-icon-btn"><Clipboard size={13} /></button>
-              <button onClick={() => setHideIP(p => !p)} title={hideIP ? t('显示 IP') : t('隐藏 IP')}
+              <button onClick={() => setHideIP(p => { const next = !p; localStorage.setItem('probeHideIP', next); return next; })} title={hideIP ? t('显示 IP') : t('隐藏 IP')}
                 className="probe-icon-btn">{hideIP ? <Eye size={13} /> : <EyeOff size={13} />}</button>
             </div>
           )}

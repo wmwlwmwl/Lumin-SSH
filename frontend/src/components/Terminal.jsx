@@ -751,21 +751,25 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   useEffect(() => {
     if (!showHistory) return;
     scrollOnNextUpdate.current = true;
+    let cancelled = false;
     (async () => {
       try {
         const raw = historyMode === 'global'
           ? await AppGo.GetGlobalCommandHistory()
           : await AppGo.GetCommandHistory(historyServerId);
+        if (cancelled) return;
         const entries = JSON.parse(raw);
         const arr = Array.isArray(entries) ? entries : [];
         setHistoryList(arr);
         // 数据为空则无需滚动，直接清空列表
         if (arr.length === 0) scrollOnNextUpdate.current = false;
       } catch {
+        if (cancelled) return;
         setHistoryList([]);
         scrollOnNextUpdate.current = false;
       }
     })();
+    return () => { cancelled = true; };
   }, [showHistory, historyMode]);
 
   // 数据渲染后滚到底部（仅首次打开时，删除条目不滚动）

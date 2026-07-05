@@ -21,16 +21,22 @@ export default function CredentialsModal({ onClose, onChange, addToast }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
 
-  const loadCredentials = async () => {
+  const loadCredentials = async (signal) => {
     try {
       const list = await AppGo.GetCredentials();
+      if (signal?.cancelled) return;
       setCredentials(list || []);
     } catch (e) {
+      if (signal?.cancelled) return;
       console.error('Failed to load credentials:', e);
     }
   };
 
-  useEffect(() => { loadCredentials(); }, []);
+  useEffect(() => {
+    const signal = { cancelled: false };
+    void loadCredentials(signal);
+    return () => { signal.cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };

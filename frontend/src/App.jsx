@@ -22,7 +22,7 @@ import { useUpdateChecker } from './hooks/useUpdateChecker.js';
 import ConnectingCard from './components/ConnectingCard.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Terminal as TerminalIcon, Folder, ScrollText, ClipboardList } from 'lucide-react';
+import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Terminal as TerminalIcon, Folder, ScrollText, ClipboardList, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Z } from './constants/zIndex';
 
 import logoImg from './assets/logo.png';
@@ -94,6 +94,14 @@ export default function App() {
     return clampPanelWidth(localStorage.getItem('probePanelWidth') || '320');
   });
   const [probePanelPosition, setProbePanelPosition] = useState(() => localStorage.getItem('probePanelPosition') || 'left');
+  const [probePanelCollapsed, setProbePanelCollapsed] = useState(() => localStorage.getItem('probePanelCollapsed') === 'true');
+  const toggleProbePanel = useCallback(() => {
+    setProbePanelCollapsed(v => {
+      const next = !v;
+      localStorage.setItem('probePanelCollapsed', next);
+      return next;
+    });
+  }, []);
   const [aiPanelWidth, setAiPanelWidth] = useState(() => {
     return clampPanelWidth(localStorage.getItem('aiPanelWidth') || '320');
   });
@@ -1393,7 +1401,7 @@ export default function App() {
           {sessions.length === 0 && <div style={{ flex: 1 }}></div>}
 
           <div className="window-controls">
-            <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowAIPanel(v => !v)} title={showAIPanel ? t('收起 AI 助手面板') : t('打开 AI 助手面板')} aria-label={showAIPanel ? t('收起 AI 助手面板') : t('打开 AI 助手面板')} style={{ color: showAIPanel ? 'var(--accent)' : undefined }}><Bot size={16} /></button>
+            {sessions.length > 0 && <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowAIPanel(v => !v)} title={showAIPanel ? t('收起 AI 助手面板') : t('打开 AI 助手面板')} aria-label={showAIPanel ? t('收起 AI 助手面板') : t('打开 AI 助手面板')} style={{ color: showAIPanel ? 'var(--accent)' : undefined }}><Bot size={16} /></button>}
             <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowSettings(true)} title={t('设置')} aria-label={t('设置')}><Settings size={16} /></button>
             <div className="window-divider" />
             <button className="btn btn-ghost btn-icon no-drag" onClick={WindowMinimise} title={t('最小化')} aria-label={t('最小化')}><Minus size={14} /></button>
@@ -1444,7 +1452,7 @@ export default function App() {
           />
         </div>
 
-        <div style={{ display: activeSessionId !== null ? 'flex' : 'none', flexDirection: 'row', height: '100%', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: activeSessionId !== null ? 'flex' : 'none', flexDirection: 'row', height: '100%', flex: 1, overflow: 'hidden', position: 'relative' }}>
           {showAIPanel && aiPanelNode && probePanelPosition === 'right' && aiPanelNode}
           {showAIPanel && aiPanelNode && probePanelPosition === 'right' && (
             <div
@@ -1456,22 +1464,35 @@ export default function App() {
           {/* 系统监控探针面板（独立分栏，左侧） */}
           {probePanelNode && probePanelPosition === 'left' && (
             <>
-              <div
-                className="probe-panel-wrapper probe-panel-wrapper-left"
-                style={{
-                  width: probePanelWidth,
-                  minWidth: probePanelWidth,
-                  borderLeft: 'none',
-                  borderRight: '1px solid var(--border)',
-                }}
+              {!probePanelCollapsed && (
+                <>
+                  <div
+                    className="probe-panel-wrapper probe-panel-wrapper-left"
+                    style={{
+                      width: probePanelWidth,
+                      minWidth: probePanelWidth,
+                      borderLeft: 'none',
+                      borderRight: '1px solid var(--border)',
+                    }}
+                  >
+                    {probePanelNode}
+                  </div>
+                  <div
+                    className="split-resizer-v probe-resizer"
+                    onMouseDown={(e) => startDrag(e, 'probe')}
+                    title={t('调整监控边栏宽度')}
+                  />
+                </>
+              )}
+              <button
+                className="probe-panel-toggle no-drag"
+                style={{ position: 'absolute', left: probePanelCollapsed ? 0 : `calc(${probePanelWidth}px + 4px)`, top: '50%', transform: 'translateY(-50%)' }}
+                onClick={toggleProbePanel}
+                title={probePanelCollapsed ? t('展开监控面板') : t('收起监控面板')}
+                aria-label={probePanelCollapsed ? t('展开监控面板') : t('收起监控面板')}
               >
-                {probePanelNode}
-              </div>
-              <div
-                className="split-resizer-v probe-resizer"
-                onMouseDown={(e) => startDrag(e, 'probe')}
-                title={t('调整监控边栏宽度')}
-              />
+                {probePanelCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+              </button>
             </>
           )}
           {/* 左侧主区域：标签、终端子标签、会话内容 */}
@@ -1760,20 +1781,33 @@ export default function App() {
           {/* 系统监控探针面板（独立分栏，右侧） */}
           {probePanelNode && probePanelPosition === 'right' && (
             <>
-              <div
-                className="split-resizer-v probe-resizer"
-                onMouseDown={(e) => startDrag(e, 'probe')}
-                title={t('调整监控边栏宽度')}
-              />
-              <div
-                className="probe-panel-wrapper"
-                style={{
-                  width: probePanelWidth,
-                  minWidth: probePanelWidth,
-                }}
+              <button
+                className="probe-panel-toggle no-drag"
+                style={{ position: 'absolute', right: probePanelCollapsed ? 0 : `calc(${probePanelWidth}px + 4px)`, top: '50%', transform: 'translateY(-50%)' }}
+                onClick={toggleProbePanel}
+                title={probePanelCollapsed ? t('展开监控面板') : t('收起监控面板')}
+                aria-label={probePanelCollapsed ? t('展开监控面板') : t('收起监控面板')}
               >
-                {probePanelNode}
-              </div>
+                {probePanelCollapsed ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+              </button>
+              {!probePanelCollapsed && (
+                <>
+                  <div
+                    className="split-resizer-v probe-resizer"
+                    onMouseDown={(e) => startDrag(e, 'probe')}
+                    title={t('调整监控边栏宽度')}
+                  />
+                  <div
+                    className="probe-panel-wrapper"
+                    style={{
+                      width: probePanelWidth,
+                      minWidth: probePanelWidth,
+                    }}
+                  >
+                    {probePanelNode}
+                  </div>
+                </>
+              )}
             </>
           )}
           {showAIPanel && aiPanelNode && probePanelPosition === 'left' && (

@@ -841,6 +841,27 @@ textarea:focus:not(:focus-visible) {
   margin-right: -2px;
 }
 
+.probe-panel-toggle {
+  width: 20px;
+  height: 48px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+  z-index: 10;
+}
+.probe-panel-toggle:hover {
+  background: var(--surface-hover, var(--surface-base));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ponytail: 监控面板在左侧时，把垂直滚动条翻到左侧（远离终端），内容保持 LTR */
 .probe-panel-wrapper-left .probe-panel { direction: rtl; }
 .probe-panel-wrapper-left .probe-panel > * { direction: ltr; }

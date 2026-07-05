@@ -1100,6 +1100,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }))
     }
     resetComposerEditState()
+    const previousRequestId = terminalPanelsRef.current[panelInstanceKey]?.activeRequestId
+    if (previousRequestId) {
+      void cancelAIChat(previousRequestId)
+    }
     setPanelState(panelInstanceKey, (current) => ({
       ...current,
       activeConversationId: '',
@@ -1120,6 +1124,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       isCondensingContext: false,
     }))
   }, [panelInstanceKey, resetComposerEditState, setPanelState, terminalId])
+
+  // ponytail: unmount/会话关闭时取消未决的 AI 请求，避免后端 aiPendingToolBatches 等 map 残留
+  useEffect(() => {
+    return () => {
+      const id = terminalPanelsRef.current[panelInstanceKey]?.activeRequestId
+      if (id) {
+        void cancelAIChat(id)
+      }
+    }
+  }, [panelInstanceKey])
 
   const handleOpenConversation = useCallback(async (conversationId) => {
     resetComposerEditState()

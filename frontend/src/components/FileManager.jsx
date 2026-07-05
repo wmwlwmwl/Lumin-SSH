@@ -372,6 +372,13 @@ export default function FileManager({ sessionId, addToast, isActive = true }) {
       detail: { sessionId, path: currentPath }
     }));
   }, [currentPath, sessionId]);
+  useEffect(() => {
+    return () => {
+      if (sessionId && window.__luminFileManagerPaths) {
+        delete window.__luminFileManagerPaths[sessionId];
+      }
+    };
+  }, [sessionId]);
   const [editingPath, setEditingPath] = useState(null);
   const [items, setItems] = useState([]);
   const [sortField, setSortField] = useState('name');  // name, size, permissions, modified

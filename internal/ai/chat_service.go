@@ -11,8 +11,9 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"luminssh-go/internal/mcpserver"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type AIChatRequestMessage struct {
@@ -22,11 +23,11 @@ type AIChatRequestMessage struct {
 }
 
 type AIChatRequestPayload struct {
-	ConversationID            string                 `json:"conversationId"`
-	SessionID                 string                 `json:"sessionId"`
-	AutoApprove               bool                   `json:"autoApprove"`
-	SkipNextAutomaticRequest  bool                   `json:"skipNextAutomaticRequest"`
-	Messages                  []AIChatRequestMessage `json:"messages"`
+	ConversationID           string                 `json:"conversationId"`
+	SessionID                string                 `json:"sessionId"`
+	AutoApprove              bool                   `json:"autoApprove"`
+	SkipNextAutomaticRequest bool                   `json:"skipNextAutomaticRequest"`
+	Messages                 []AIChatRequestMessage `json:"messages"`
 }
 
 type aiTaskScopedToolXMLTagSet struct {
@@ -1570,11 +1571,11 @@ func (a *App) executeParsedToolUses(requestID string, assistantMessageID string,
 			"kind":      "api_message_append",
 			"requestId": requestID,
 			"message": map[string]interface{}{
-				"messageId":   fmt.Sprintf("api-tool-result-%d", time.Now().UnixNano()),
-				"role":        "user",
-				"content":     fmt.Sprintf("[%s] Result:\n%s", tool.Name, rawResultText),
+				"messageId":    fmt.Sprintf("api-tool-result-%d", time.Now().UnixNano()),
+				"role":         "user",
+				"content":      fmt.Sprintf("[%s] Result:\n%s", tool.Name, rawResultText),
 				"uiMessageIds": []string{buildToolMessageID(assistantMessageID, index)},
-				"ts":          time.Now().UnixMilli(),
+				"ts":           time.Now().UnixMilli(),
 			},
 		})
 		results = append(results, AIChatRequestMessage{
