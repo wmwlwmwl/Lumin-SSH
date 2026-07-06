@@ -376,6 +376,11 @@ func (a *App) SystemInfo(sessionId string) (map[string]interface{}, error) {
 	return a.sshManager.GetSystemInfo(sessionId)
 }
 
+// NetworkInfo retrieves full network probe info including connection details.
+func (a *App) NetworkInfo(sessionId string) (map[string]interface{}, error) {
+	return a.sshManager.GetNetworkInfo(sessionId)
+}
+
 // GetServerStaticInfo retrieves static server info (OS/timezone/hostname/CPU model)
 func (a *App) GetServerStaticInfo(sessionId string) (map[string]interface{}, error) {
 	return a.sshManager.GetServerStaticInfo(sessionId)

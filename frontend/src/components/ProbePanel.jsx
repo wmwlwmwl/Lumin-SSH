@@ -139,7 +139,7 @@ function isInternalIP(ip) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-export default function ProbePanel({ sessionId, host, addToast, enabled, onEnable, onShowAllProcesses }) {
+export default function ProbePanel({ sessionId, host, addToast, enabled, onEnable, onShowAllProcesses, onShowNetworkDetails }) {
   const { t } = useTranslation();
   const [info, setInfo] = useState(null);
   // ponytail: 合并 3 个历史数组为 1 个状态更新，减少 3 次渲染为 1 次
@@ -193,6 +193,11 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
     if (!sessionId || !onShowAllProcesses) return;
     onShowAllProcesses();
   }, [sessionId, onShowAllProcesses]);
+
+  const handleShowNetworkDetails = useCallback(() => {
+    if (!sessionId || !onShowNetworkDetails) return;
+    onShowNetworkDetails();
+  }, [sessionId, onShowNetworkDetails]);
 
   const fetchInfo = useCallback(async () => {
     if (!sessionId || !enabled) return;
@@ -484,6 +489,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, onEnabl
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
           <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}><Globe size={14} /></span>
           <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', flex: 1 }}>{t('网络')}</span>
+          <span onClick={handleShowNetworkDetails} style={{ fontSize: 11.5, color: 'var(--accent)', cursor: 'pointer', userSelect: 'none' }}>{t('查看详情')}</span>
         </div>
         <div style={{ marginBottom: 6 }}>
           <Sparkline data={hist.down} color="var(--accent)" height={36} />

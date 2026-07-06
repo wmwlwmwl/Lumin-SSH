@@ -238,21 +238,23 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
                 </div>
 
                 {form.authType === 'password' ? (
-                  <div className="form-group" style={{ position: 'relative' }}>
+                  <div className="form-group">
                     <label className="form-label">
                       {server ? t('新密码（留空则不修改）') : t('密码')} *
                     </label>
-                    <input
-                      className="input"
-                      type={showPassword ? "text" : "password"}
-                      placeholder={t('请输入密码')}
-                      value={form.password}
-                      onChange={set('password')}
-                      style={{ paddingRight: 36 }}
-                    />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 12, bottom: 10, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        className="input"
+                        type={showPassword ? "text" : "password"}
+                        placeholder={t('请输入密码')}
+                        value={form.password}
+                        onChange={set('password')}
+                        style={{ paddingRight: 36 }}
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -276,19 +278,21 @@ export default function AddServerModal({ server, onSave, onClose, allGroups = []
                         onChange={set('privateKey')}
                       />
                     </div>
-                    <div className="form-group" style={{ position: 'relative' }}>
+                    <div className="form-group">
                       <label className="form-label">{t('私钥密码短语 (可选)')}</label>
-                      <input
-                        className="input"
-                        type={showPassphrase ? "text" : "password"}
-                        placeholder={t('私钥密码短语')}
-                        value={form.passphrase}
-                        onChange={set('passphrase')}
-                        style={{ paddingRight: 36 }}
-                      />
-                      <button type="button" onClick={() => setShowPassphrase(!showPassphrase)} style={{ position: 'absolute', right: 12, bottom: 10, background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex' }}>
-                        {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          className="input"
+                          type={showPassphrase ? "text" : "password"}
+                          placeholder={t('私钥密码短语')}
+                          value={form.passphrase}
+                          onChange={set('passphrase')}
+                          style={{ paddingRight: 36 }}
+                        />
+                        <button type="button" onClick={() => setShowPassphrase(!showPassphrase)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                          {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}

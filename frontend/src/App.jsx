@@ -13,6 +13,7 @@ import CredentialsModal from './components/CredentialsModal.jsx';
 import Toast from './components/Toast.jsx';
 import CommandHistory from './components/CommandHistory.jsx';
 import ProcessPage from './components/ProcessPage.jsx';
+import NetworkPage from './components/NetworkPage.jsx';
 import GlobalDialog from './components/GlobalDialog.jsx';
 import GlobalContextMenu from './components/GlobalContextMenu.jsx';
 import { clampPanelWidth } from './components/probeFormatting.js';
@@ -22,7 +23,7 @@ import { useUpdateChecker } from './hooks/useUpdateChecker.js';
 import ConnectingCard from './components/ConnectingCard.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, Search } from 'lucide-react';
+import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, Search, Globe } from 'lucide-react';
 import { Z } from './constants/zIndex';
 
 import logoImg from './assets/logo.png';
@@ -1262,6 +1263,7 @@ export default function App() {
       enabled={!!monitoringEnabled[activeSession.id]}
       onEnable={() => setMonitoringEnabled(prev => ({ ...prev, [activeSession.id]: true }))}
       onShowAllProcesses={() => setContentTab('process')}
+      onShowNetworkDetails={() => setContentTab('network')}
     />
   ) : null;
   const aiPanelNode = sessions.length > 0 ? (
@@ -1646,7 +1648,7 @@ export default function App() {
           {/* 左侧主区域：标签、终端子标签、会话内容 */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%', overflow: 'hidden' }}>
             {/* ── 终端子标签栏（多终端支持） ──────────────────── */}
-            {activeSession && (contentTab === 'terminal' || contentTab === 'process' || contentTab === 'history' || (fileManagerPosition === 'tab' && contentTab === 'files')) && activeSession.status === 'connected' && activeSession.terminals && activeSession.terminals.length >= 1 && (
+            {activeSession && (contentTab === 'terminal' || contentTab === 'process' || contentTab === 'network' || contentTab === 'history' || (fileManagerPosition === 'tab' && contentTab === 'files')) && activeSession.status === 'connected' && activeSession.terminals && activeSession.terminals.length >= 1 && (
               <div className="terminal-sub-tab-bar">
                 <div className="terminal-sub-tab-scroll">
                   {activeSession.terminals.map((term) => (
@@ -1683,6 +1685,13 @@ export default function App() {
                   >
                     <Cpu size={14} />
                     {t('进程管理')}
+                  </button>
+                  <button
+                    className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'network' ? 'active' : ''}`}
+                    onClick={() => setContentTab(contentTab === 'network' ? 'terminal' : 'network')}
+                  >
+                    <Globe size={14} />
+                    {t('网络监控')}
                   </button>
                   <button
                     className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'history' ? 'active' : ''}`}
@@ -1723,7 +1732,7 @@ export default function App() {
                       }}
                     >
                     {/* 辅助视口 (分屏模式下的文件管理器，如果是左侧则排在前面) */}
-                    {s.status === 'connected' && fileManagerPosition === 'left' && contentTab !== 'process' && mountedSessions.has(s.id) && (
+                    {s.status === 'connected' && fileManagerPosition === 'left' && contentTab !== 'process' && contentTab !== 'network' && mountedSessions.has(s.id) && (
                       <>
                         <div style={{
                           width: leftSplitWidth + 'px',
@@ -1795,10 +1804,18 @@ export default function App() {
                           />
                         </div>
                       )}
+                      {s.status === 'connected' && mountedSessions.has(s.id) && (
+                        <div style={{ display: contentTab === 'network' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
+                          <NetworkPage
+                            sessionId={s.id}
+                            active={contentTab === 'network' && activeSessionId === s.id}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* 辅助视口 (分屏模式下的文件管理器，如果是底部则排在后面) */}
-                    {s.status === 'connected' && fileManagerPosition === 'bottom' && contentTab !== 'process' && mountedSessions.has(s.id) && (
+                    {s.status === 'connected' && fileManagerPosition === 'bottom' && contentTab !== 'process' && contentTab !== 'network' && mountedSessions.has(s.id) && (
                       <>
                         <div
                           className="split-resizer-h"

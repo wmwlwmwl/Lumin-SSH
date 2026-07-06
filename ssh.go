@@ -1021,14 +1021,18 @@ df -k | grep -vE '^tmpfs|^udev|^devtmpfs|Filesystem'
 echo ---CPU1---
 grep '^cpu' /proc/stat
 echo ---NET1---
-cat /proc/net/dev
+if [ -r /proc/net/dev ]; then cat /proc/net/dev; elif command -v ifconfig >/dev/null 2>&1; then ifconfig -a; elif command -v ip >/dev/null 2>&1; then ip -s link; fi
+echo ---NETCONN1---
+if [ "$1" = "network" ]; then if command -v ss >/dev/null 2>&1; then out=$(ss -H -tnapni 2>/dev/null); if [ -n "$out" ]; then printf '%s\n' "$out"; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; fi
 echo ---DISKIO1---
 cat /proc/diskstats
 sleep 1
 echo ---CPU2---
 grep '^cpu' /proc/stat
 echo ---NET2---
-cat /proc/net/dev
+if [ -r /proc/net/dev ]; then cat /proc/net/dev; elif command -v ifconfig >/dev/null 2>&1; then ifconfig -a; elif command -v ip >/dev/null 2>&1; then ip -s link; fi
+echo ---NETCONN2---
+if [ "$1" = "network" ]; then if command -v ss >/dev/null 2>&1; then out=$(ss -H -tnapni 2>/dev/null); if [ -n "$out" ]; then printf '%s\n' "$out"; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; fi
 echo ---DISKIO2---
 cat /proc/diskstats
 echo ---PROC---
@@ -1112,7 +1116,15 @@ func extractSection(lines []string, startMarker, endMarker string) []string {
 	return out
 }
 
-func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interface{}, err error) {
+func (m *SSHManager) GetSystemInfo(sessionId string) (map[string]interface{}, error) {
+	return m.getSystemInfo(sessionId, false)
+}
+
+func (m *SSHManager) GetNetworkInfo(sessionId string) (map[string]interface{}, error) {
+	return m.getSystemInfo(sessionId, true)
+}
+
+func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections bool) (result map[string]interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic in GetSystemInfo: %v", r)
@@ -1138,7 +1150,11 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 		return nil, fmt.Errorf("probe script deploy failed: %w", err)
 	}
 
-	out, err := m.executeCmdWithClient(client, `sh -c 'f=~/.lumin/probe.sh; [ -f "$f" ] && sh "$f" || sh /tmp/.lumin/probe.sh'`)
+	probeArg := ""
+	if includeNetworkConnections {
+		probeArg = " network"
+	}
+	out, err := m.executeCmdWithClient(client, fmt.Sprintf(`sh -c 'f=~/.lumin/probe.sh; [ -f "$f" ] && sh "$f"%s || sh /tmp/.lumin/probe.sh%s'`, probeArg, probeArg))
 	if err != nil || len(strings.TrimSpace(out)) == 0 {
 		// 执行失败（文件被删除或不可用），清除标记以便下次重新部署
 		m.mu.Lock()
@@ -1334,34 +1350,101 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 	}
 
 	// ── Parse Network ─────────────────────────────────────────────────
-	parseNetDev2 := func(lines []string) map[string][]uint64 {
+	shouldIgnoreNetIf := func(name string) bool {
+		name = strings.TrimSpace(name)
+		return name == "" || name == "lo" || strings.HasPrefix(name, "lo:") ||
+			strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") ||
+			strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "virbr") ||
+			strings.HasPrefix(name, "vmnet") || strings.HasPrefix(name, "tun") ||
+			strings.HasPrefix(name, "tap") || strings.HasPrefix(name, "wg")
+	}
+
+	parseNetworkStats := func(lines []string) map[string][]uint64 {
 		res := make(map[string][]uint64)
-		for _, l := range lines {
-			if !strings.Contains(l, ":") {
+		for i := 0; i < len(lines); i++ {
+			l := strings.TrimSpace(lines[i])
+			if l == "" {
 				continue
 			}
-			parts := strings.SplitN(l, ":", 2)
-			name := strings.TrimSpace(parts[0])
-			if name == "lo" {
-				continue
+
+			// /proc/net/dev: eth0: rx ... tx
+			if strings.Contains(l, ":") {
+				parts := strings.SplitN(l, ":", 2)
+				name := strings.TrimSpace(parts[0])
+				fields := strings.Fields(parts[1])
+				if !shouldIgnoreNetIf(name) && len(fields) >= 16 {
+					rx, _ := strconv.ParseUint(fields[0], 10, 64)
+					tx, _ := strconv.ParseUint(fields[8], 10, 64)
+					res[name] = []uint64{rx, tx}
+					continue
+				}
 			}
-			fields := strings.Fields(parts[1])
-			if len(fields) < 9 {
-				continue
+
+			// ifconfig: eth0 ... / RX bytes ... TX bytes ...
+			if fields := strings.Fields(l); len(fields) > 0 && !strings.HasPrefix(fields[0], "RX") && !strings.HasPrefix(fields[0], "TX") {
+				name := strings.TrimSuffix(fields[0], ":")
+				if _, err := strconv.Atoi(name); err == nil {
+					name = ""
+				}
+				if shouldIgnoreNetIf(name) {
+					continue
+				}
+				var rx, tx uint64
+				for j := i + 1; j < len(lines) && j < i+10; j++ {
+					ll := strings.TrimSpace(lines[j])
+					parts := strings.Fields(ll)
+					for k, token := range parts {
+						var v uint64
+						var ok bool
+						if strings.HasPrefix(token, "bytes:") {
+							v, _ = strconv.ParseUint(strings.TrimPrefix(token, "bytes:"), 10, 64)
+							ok = true
+						} else if token == "bytes" && k+1 < len(parts) {
+							v, _ = strconv.ParseUint(parts[k+1], 10, 64)
+							ok = true
+						}
+						if ok && strings.HasPrefix(ll, "RX") {
+							rx = v
+						} else if ok && strings.HasPrefix(ll, "TX") {
+							tx = v
+						}
+					}
+				}
+				if rx > 0 || tx > 0 {
+					res[name] = []uint64{rx, tx}
+				}
 			}
-			rx, _ := strconv.ParseUint(fields[0], 10, 64)
-			tx, _ := strconv.ParseUint(fields[8], 10, 64)
-			res[name] = []uint64{rx, tx}
+
+			// ip -s link: iface line followed by RX/TX blocks.
+			if strings.Contains(l, ": ") {
+				parts := strings.SplitN(l, ": ", 3)
+				if len(parts) >= 2 {
+					name := strings.TrimSpace(strings.Split(parts[1], "@")[0])
+					if shouldIgnoreNetIf(name) || i+5 >= len(lines) {
+						continue
+					}
+					rxFields := strings.Fields(lines[i+3])
+					txFields := strings.Fields(lines[i+5])
+					if len(rxFields) > 0 && len(txFields) > 0 {
+						rx, _ := strconv.ParseUint(rxFields[0], 10, 64)
+						tx, _ := strconv.ParseUint(txFields[0], 10, 64)
+						if rx > 0 || tx > 0 {
+							res[name] = []uint64{rx, tx}
+						}
+					}
+				}
+			}
 		}
 		return res
 	}
 
-	netLines1 := extractSection(lines1, "---NET1---", "---DISKIO1---")
-	netLines2 := extractSection(lines2, "---NET2---", "---DISKIO2---")
-	nets1 := parseNetDev2(netLines1)
-	nets2 := parseNetDev2(netLines2)
+	netLines1 := extractSection(lines1, "---NET1---", "---NETCONN1---")
+	netLines2 := extractSection(lines2, "---NET2---", "---NETCONN2---")
+	nets1 := parseNetworkStats(netLines1)
+	nets2 := parseNetworkStats(netLines2)
 
 	var netUpSpeed, netDownSpeed, netUpTotal, netDownTotal float64
+	var networkInterfaces []map[string]interface{}
 	for ifName, v2 := range nets2 {
 		v1, ok := nets1[ifName]
 		if !ok {
@@ -1377,13 +1460,19 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 		if v2[1] >= v1[1] {
 			txSpeed = float64(v2[1]-v1[1]) / 1024.0
 		}
-		if rxSpeed > netDownSpeed {
-			netDownSpeed = rxSpeed
-		}
-		if txSpeed > netUpSpeed {
-			netUpSpeed = txSpeed
-		}
+		netDownSpeed += rxSpeed
+		netUpSpeed += txSpeed
+		networkInterfaces = append(networkInterfaces, map[string]interface{}{
+			"name":          ifName,
+			"uploadSpeed":   txSpeed,
+			"downloadSpeed": rxSpeed,
+			"uploadTotal":   float64(v2[1]) / (1024.0 * 1024.0),
+			"downloadTotal": float64(v2[0]) / (1024.0 * 1024.0),
+		})
 	}
+	sort.Slice(networkInterfaces, func(i, j int) bool {
+		return networkInterfaces[i]["name"].(string) < networkInterfaces[j]["name"].(string)
+	})
 
 	// ── Parse Disk IO ─────────────────────────────────────────────────
 	parseDiskIO := func(lines []string) map[string][]uint64 {
@@ -1440,6 +1529,240 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 		})
 	}
 
+	// ── Parse Network Connections ─────────────────────────────────────
+	connLines1 := extractSection(lines1, "---NETCONN1---", "---DISKIO1---")
+	connLines := extractSection(lines2, "---NETCONN2---", "---DISKIO2---")
+	type netConnAgg struct {
+		PID        string
+		Name       string
+		ListenIP   string
+		Port       string
+		IPs        map[string]struct{}
+		ConnCount  int
+		UploadMB   float64
+		DownloadMB float64
+		Peers      []map[string]interface{}
+	}
+	connAgg := make(map[string]*netConnAgg)
+	extractPIDName := func(line string) (string, string) {
+		pid := "-"
+		name := "-"
+		if idx := strings.Index(line, "pid="); idx >= 0 {
+			rest := line[idx+4:]
+			end := strings.IndexAny(rest, ",) ")
+			if end < 0 {
+				end = len(rest)
+			}
+			pid = strings.Trim(rest[:end], "\"")
+		}
+		if idx := strings.Index(line, "users:((\""); idx >= 0 {
+			rest := line[idx+9:]
+			if end := strings.Index(rest, "\""); end >= 0 {
+				name = rest[:end]
+			}
+		} else if idx := strings.LastIndex(line, "/"); idx >= 0 {
+			rest := strings.TrimSpace(line[idx+1:])
+			if rest != "" && !strings.Contains(rest, ":") {
+				name = strings.Fields(rest)[0]
+			}
+		}
+		return pid, name
+	}
+	splitHostPort := func(addr string) (string, string) {
+		addr = strings.Trim(addr, "[]")
+		if addr == "" || addr == "*" {
+			return "*", "-"
+		}
+		idx := strings.LastIndex(addr, ":")
+		if idx < 0 {
+			return addr, "-"
+		}
+		host := strings.Trim(addr[:idx], "[]")
+		port := addr[idx+1:]
+		if host == "" {
+			host = "*"
+		}
+		return host, port
+	}
+	addrFamily := func(host string) string {
+		if strings.Contains(host, ":") || host == "::" {
+			return "6"
+		}
+		return "4"
+	}
+	peerLocation := func(host string) string {
+		ip := net.ParseIP(strings.Trim(host, "[]"))
+		if ip == nil {
+			return "-"
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return "reserved"
+		}
+		return "-"
+	}
+	parseSSBytesMB := func(line string) (float64, float64) {
+		var sent, received uint64
+		for _, token := range strings.Fields(line) {
+			if strings.HasPrefix(token, "bytes_sent:") {
+				sent, _ = strconv.ParseUint(strings.TrimPrefix(token, "bytes_sent:"), 10, 64)
+			} else if strings.HasPrefix(token, "bytes_received:") {
+				received, _ = strconv.ParseUint(strings.TrimPrefix(token, "bytes_received:"), 10, 64)
+			}
+		}
+		return float64(sent) / (1024.0 * 1024.0), float64(received) / (1024.0 * 1024.0)
+	}
+	connByteKey := func(pid, name, local, peer string) string {
+		return pid + "|" + name + "|" + local + "|" + peer
+	}
+	isConnHeader := func(fields []string) bool {
+		if len(fields) < 5 {
+			return false
+		}
+		proto := strings.ToLower(fields[0])
+		if strings.HasPrefix(proto, "tcp") {
+			return true
+		}
+		_, err1 := strconv.Atoi(fields[1])
+		_, err2 := strconv.Atoi(fields[2])
+		return err1 == nil && err2 == nil
+	}
+	parseConnBytes := func(lines []string) map[string][2]float64 {
+		res := make(map[string][2]float64)
+		for i, l := range lines {
+			fields := strings.Fields(l)
+			if len(fields) < 5 {
+				continue
+			}
+			if !isConnHeader(fields) {
+				continue
+			}
+			localIdx := 3
+			if len(fields) >= 6 {
+				if _, err := strconv.Atoi(fields[1]); err != nil {
+					localIdx = 4
+				}
+			}
+			peerIdx := localIdx + 1
+			if len(fields) <= peerIdx || i+1 >= len(lines) {
+				continue
+			}
+			nextFields := strings.Fields(lines[i+1])
+			if isConnHeader(nextFields) {
+				continue
+			}
+			sent, received := parseSSBytesMB(lines[i+1])
+			pid, name := extractPIDName(l)
+			res[connByteKey(pid, name, fields[localIdx], fields[peerIdx])] = [2]float64{sent, received}
+		}
+		return res
+	}
+	connBytes1 := parseConnBytes(connLines1)
+	for i, l := range connLines {
+		fields := strings.Fields(l)
+		if len(fields) < 5 {
+			continue
+		}
+		if isConnHeader(fields) {
+			localIdx := 3
+			if len(fields) >= 6 {
+				if _, err := strconv.Atoi(fields[1]); err != nil {
+					localIdx = 4
+				}
+			}
+			peerIdx := localIdx + 1
+			if len(fields) <= peerIdx {
+				continue
+			}
+			local := fields[localIdx]
+			peer := fields[peerIdx]
+			listenIP, port := splitHostPort(local)
+			peerIP, peerPort := splitHostPort(peer)
+			pid, name := extractPIDName(l)
+			uploadMB, downloadMB := 0.0, 0.0
+			if i+1 < len(connLines) {
+				nextFields := strings.Fields(connLines[i+1])
+				if !isConnHeader(nextFields) {
+					uploadNow, downloadNow := parseSSBytesMB(connLines[i+1])
+					if prev, ok := connBytes1[connByteKey(pid, name, local, peer)]; ok {
+						if uploadNow >= prev[0] {
+							uploadMB = uploadNow - prev[0]
+						}
+						if downloadNow >= prev[1] {
+							downloadMB = downloadNow - prev[1]
+						}
+					}
+				}
+			}
+			key := pid + "|" + name + "|" + listenIP + "|" + port
+			item := connAgg[key]
+			if item == nil {
+				item = &netConnAgg{PID: pid, Name: name, ListenIP: listenIP, Port: port, IPs: map[string]struct{}{}}
+				connAgg[key] = item
+			}
+			isRealPeer := peerIP != "" && peerIP != "*" && peerIP != "0.0.0.0" && peerIP != "::"
+			if isRealPeer {
+				item.IPs[peerIP] = struct{}{}
+				item.ConnCount++
+				item.Peers = append(item.Peers, map[string]interface{}{
+					"location": peerLocation(peerIP),
+					"ip":       peerIP,
+					"port":     peerPort,
+					"upload":   uploadMB,
+					"download": downloadMB,
+				})
+			}
+			item.UploadMB += uploadMB
+			item.DownloadMB += downloadMB
+		}
+	}
+	listenerByPortFamily := make(map[string]*netConnAgg)
+	for _, item := range connAgg {
+		if item.Port == "-" {
+			continue
+		}
+		if item.ListenIP == "0.0.0.0" || item.ListenIP == "::" || item.ListenIP == "*" {
+			listenerByPortFamily[item.Port+"|"+addrFamily(item.ListenIP)] = item
+		}
+	}
+	for key, item := range connAgg {
+		if target := listenerByPortFamily[item.Port+"|"+addrFamily(item.ListenIP)]; target != nil && target != item {
+			for ip := range item.IPs {
+				target.IPs[ip] = struct{}{}
+			}
+			target.ConnCount += item.ConnCount
+			target.UploadMB += item.UploadMB
+			target.DownloadMB += item.DownloadMB
+			target.Peers = append(target.Peers, item.Peers...)
+			delete(connAgg, key)
+		}
+	}
+
+	var networkConnections []map[string]interface{}
+	for _, item := range connAgg {
+		networkConnections = append(networkConnections, map[string]interface{}{
+			"pid":       item.PID,
+			"name":      item.Name,
+			"listenIP":  item.ListenIP,
+			"port":      item.Port,
+			"ipCount":   len(item.IPs),
+			"connCount": item.ConnCount,
+			"upload":    item.UploadMB,
+			"download":  item.DownloadMB,
+			"peers":     item.Peers,
+		})
+	}
+	sort.Slice(networkConnections, func(i, j int) bool {
+		ci := networkConnections[i]["connCount"].(int)
+		cj := networkConnections[j]["connCount"].(int)
+		if ci == cj {
+			return fmt.Sprint(networkConnections[i]["port"]) < fmt.Sprint(networkConnections[j]["port"])
+		}
+		return ci > cj
+	})
+	if len(networkConnections) > 200 {
+		networkConnections = networkConnections[:200]
+	}
+
 	// ── Parse Processes ───────────────────────────────────────────────
 	procLines := extractSection(lines2, "---PROC---", "---DONE---")
 	var processes []map[string]interface{}
@@ -1491,6 +1814,8 @@ func (m *SSHManager) GetSystemInfo(sessionId string) (result map[string]interfac
 			"downloadSpeed": netDownSpeed,
 			"uploadTotal":   netUpTotal,
 			"downloadTotal": netDownTotal,
+			"interfaces":    networkInterfaces,
+			"connections":   networkConnections,
 		},
 		"processes": processes,
 	}, nil
