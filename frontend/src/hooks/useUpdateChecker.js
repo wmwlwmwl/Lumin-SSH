@@ -5,6 +5,14 @@ import { EventsOn } from '../../wailsjs/runtime/runtime.js';
 
 const RELEASE_API = 'https://api.github.com/repos/wmwlwmwl/Lumin-SSH/releases/latest';
 
+let sharedDownloadProgress = -1;
+const downloadProgressListeners = new Set();
+
+function setSharedDownloadProgress(progress) {
+  sharedDownloadProgress = progress;
+  downloadProgressListeners.forEach((listener) => listener(progress));
+}
+
 // 语义化版本比较：latest > current 返回 true
 export function compareVersions(latestVer, currentVer) {
   if (latestVer === currentVer) return false;
@@ -82,16 +90,20 @@ async function resolveDownloadAsset(data) {
  */
 export function useUpdateChecker({ onResult, onError } = {}) {
   const [checking, setChecking] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(-1);
+  const [downloadProgress, setDownloadProgress] = useState(sharedDownloadProgress);
 
   const cbRef = useRef({ onResult, onError });
   cbRef.current = { onResult, onError };
 
   useEffect(() => {
+    downloadProgressListeners.add(setDownloadProgress);
     const off = EventsOn('app-update-progress', (progress) => {
-      if (typeof progress === 'number') setDownloadProgress(progress);
+      if (typeof progress === 'number') setSharedDownloadProgress(progress);
     });
-    return off;
+    return () => {
+      downloadProgressListeners.delete(setDownloadProgress);
+      off?.();
+    };
   }, []);
 
   const checkUpdate = useCallback(async () => {
@@ -128,7 +140,7 @@ export function useUpdateChecker({ onResult, onError } = {}) {
       window.runtime?.BrowserOpenURL(updateInfo.url);
       return;
     }
-    setDownloadProgress(0);
+    setSharedDownloadProgress(0);
     let defaultName = 'update.exe';
     if (updateInfo.url.endsWith('.deb')) defaultName = 'update.deb';
     else if (updateInfo.url.endsWith('.rpm')) defaultName = 'update.rpm';
@@ -137,7 +149,7 @@ export function useUpdateChecker({ onResult, onError } = {}) {
       const proxyFirst = localStorage.getItem('updateUseProxy') === 'true';
       await AppGo.UpdateApp(updateInfo.url, updateInfo.filename || defaultName, proxyFirst);
     } catch (err) {
-      setDownloadProgress(-1);
+      setSharedDownloadProgress(-1);
       throw err;
     }
   }, [downloadProgress]);
