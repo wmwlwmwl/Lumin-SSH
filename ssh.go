@@ -1843,7 +1843,9 @@ func (m *SSHManager) WriteFileContext(ctx context.Context, sessionId string, pat
 		return err
 	}
 
-	tempPath := path + ".lumin_tmp_" + newCommandExecutionToken()
+	token := newCommandExecutionToken()
+	tempPath := path + ".lumin_tmp_" + token
+	backupPath := path + ".lumin_bak_" + token
 	f, err := sftpClient.Create(tempPath)
 	if err != nil {
 		return err
@@ -1862,16 +1864,19 @@ func (m *SSHManager) WriteFileContext(ctx context.Context, sessionId string, pat
 		return err
 	}
 	if err := sftpClient.Rename(tempPath, path); err != nil {
-		renameErr := err
-		if removeErr := sftpClient.Remove(path); removeErr == nil {
-			if retryErr := sftpClient.Rename(tempPath, path); retryErr == nil {
-				return nil
-			} else {
-				renameErr = retryErr
-			}
+		if backupErr := sftpClient.Rename(path, backupPath); backupErr != nil {
+			_ = sftpClient.Remove(tempPath)
+			return err
 		}
-		_ = sftpClient.Remove(tempPath)
-		return renameErr
+		if retryErr := sftpClient.Rename(tempPath, path); retryErr != nil {
+			restoreErr := sftpClient.Rename(backupPath, path)
+			_ = sftpClient.Remove(tempPath)
+			if restoreErr != nil {
+				return fmt.Errorf("replace failed: %w; restore failed: %v", retryErr, restoreErr)
+			}
+			return retryErr
+		}
+		_ = sftpClient.Remove(backupPath)
 	}
 	return nil
 }
@@ -2081,20 +2086,28 @@ func (m *SSHManager) UploadDir(sessionId string, localDir string, remoteDir stri
 		if err != nil {
 			return err
 		}
-		defer src.Close()
 
 		dst, err := sftpClient.Create(remotePath)
 		if err != nil {
+			src.Close()
 			return err
 		}
-		defer dst.Close()
 
 		var totalSize int64
 		if stat, err := src.Stat(); err == nil {
 			totalSize = stat.Size()
 		}
 
-		return m.copyWithProgress(dst, src, sessionId, totalSize)
+		copyErr := m.copyWithProgress(dst, src, sessionId, totalSize)
+		closeSrcErr := src.Close()
+		closeDstErr := dst.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeSrcErr != nil {
+			return closeSrcErr
+		}
+		return closeDstErr
 	})
 }
 

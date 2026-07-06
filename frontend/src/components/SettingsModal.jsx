@@ -773,11 +773,11 @@ export default function SettingsModal({
             {activeTab === 'network' && (
               <NetworkTab
                 pingProtocol={pingProtocol}
-                onPingProtocolChange={(id) => { setPingProtocol(id); localStorage.setItem('pingProtocol', id); }}
+                onPingProtocolChange={handlePingProtocolChange}
                 probeInterval={probeInterval}
-                onProbeIntervalChange={(s) => { setProbeInterval(s); localStorage.setItem('probeInterval', String(s)); window.dispatchEvent(new Event('probeIntervalChanged')); }}
+                onProbeIntervalChange={handleProbeIntervalChange}
                 pingInterval={pingInterval}
-                onPingIntervalChange={(s) => { setPingInterval(s); localStorage.setItem('pingInterval', String(s)); window.dispatchEvent(new Event('pingIntervalChanged')); }}
+                onPingIntervalChange={handlePingIntervalChange}
               />
             )}
             {activeTab === 'appearance' && (

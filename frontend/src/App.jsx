@@ -98,6 +98,15 @@ export default function App() {
 
   // ponytail: 3 处 s.terminals?.length > 0 ? s.terminals : [{ id: s.id }] 提取为帮助函数
   const getEffectiveTerminals = (s) => s.terminals?.length > 0 ? s.terminals : [{ id: s.id }];
+
+  const renderSessionFileManagers = (s) => getEffectiveTerminals(s).map(t => {
+    const isActive = activeSessionId === s.id && activeTerminalId === t.id;
+    return (
+      <div key={t.id} style={isActive ? { display: 'contents' } : { display: 'none' }}>
+        <FileManager sessionId={t.id} addToast={addToast} isActive={isActive} />
+      </div>
+    );
+  });
   
   // ── 新增自动检测更新状态 ──────────────────────────────
   const [startupUpdateInfo, setStartupUpdateInfo] = useState(null);
@@ -381,8 +390,8 @@ export default function App() {
 
   // ── 初始化全局主题 ──────────────────────────────────────
   useEffect(() => {
-    const savedTheme = localStorage.getItem('themeMode') || 'dark';
     const applyTheme = () => {
+      const savedTheme = localStorage.getItem('themeMode') || 'dark';
       const isSystemLight = window.matchMedia('(prefers-color-scheme: light)').matches;
       const applyLight = savedTheme === 'light' || (savedTheme === 'system' && isSystemLight);
       if (applyLight) document.body.classList.add('theme-light');
@@ -1705,11 +1714,7 @@ export default function App() {
                           minWidth: 180,
                           flexShrink: 0,
                         }}>
-                          {getEffectiveTerminals(s).map(t => (
-                            <div key={t.id} style={activeSessionId === s.id && activeTerminalId === t.id ? { display: 'contents' } : { display: 'none' }}>
-                              <FileManager sessionId={t.id} addToast={addToast} isActive={activeSessionId === s.id && activeTerminalId === t.id} />
-                            </div>
-                          ))}
+                          {renderSessionFileManagers(s)}
                         </div>
                         <div
                           className="split-resizer-v"
@@ -1750,11 +1755,7 @@ export default function App() {
                       </div>
                       {s.status === 'connected' && fileManagerPosition === 'tab' && mountedSessions.has(s.id) && (
                         <div style={{ display: contentTab === 'files' ? 'flex' : 'none', height: '100%', flex: 1, flexDirection: 'column' }}>
-                          {getEffectiveTerminals(s).map(t => (
-                            <div key={t.id} style={activeSessionId === s.id && activeTerminalId === t.id ? { display: 'contents' } : { display: 'none' }}>
-                              <FileManager sessionId={t.id} addToast={addToast} isActive={activeSessionId === s.id && activeTerminalId === t.id} />
-                            </div>
-                          ))}
+                          {renderSessionFileManagers(s)}
                         </div>
                       )}
                       {s.status === 'connected' && mountedSessions.has(s.id) && (
@@ -1793,11 +1794,7 @@ export default function App() {
                           minHeight: 100,
                           flexShrink: 0,
                         }}>
-                          {getEffectiveTerminals(s).map(t => (
-                            <div key={t.id} style={activeSessionId === s.id && activeTerminalId === t.id ? { display: 'contents' } : { display: 'none' }}>
-                              <FileManager sessionId={t.id} addToast={addToast} isActive={activeSessionId === s.id && activeTerminalId === t.id} />
-                            </div>
-                          ))}
+                          {renderSessionFileManagers(s)}
                         </div>
                       </>
                     )}

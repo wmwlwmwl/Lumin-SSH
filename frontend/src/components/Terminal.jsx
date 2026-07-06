@@ -157,7 +157,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
 
   // 热路径缓存：避免在按键和消息回调中频繁读取 localStorage
   const shortcutsRef = useRef(null);
-  const localEchoRef = useRef(localStorage.getItem('terminalLocalEcho') !== 'false');
+  const localEchoRef = useRef(localStorage.getItem('terminalLocalEcho') === 'true');
   const smartWriteRef = useRef(null);
 
   // ponytail: getTerminalTheme() 每次渲染调用 30+ 次，缓存为 1 次

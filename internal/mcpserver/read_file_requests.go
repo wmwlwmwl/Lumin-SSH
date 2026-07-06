@@ -160,13 +160,8 @@ func parseOptionalPositiveIntString(value string) (int, bool, error) {
 	if trimmed == "" {
 		return 0, false, nil
 	}
-	requestMap := map[string]any{"value": trimmed}
-	raw, ok := requestMap["value"].(string)
-	if !ok {
-		return 0, false, fmt.Errorf("must be an integer")
-	}
 	number := 0
-	for _, ch := range raw {
+	for _, ch := range trimmed {
 		if ch < '0' || ch > '9' {
 			return 0, false, fmt.Errorf("must be an integer")
 		}

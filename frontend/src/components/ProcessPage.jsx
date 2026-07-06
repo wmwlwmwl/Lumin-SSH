@@ -84,7 +84,7 @@ export default function ProcessPage({ sessionId, addToast, active }) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 
@@ -109,17 +109,28 @@ export default function ProcessPage({ sessionId, addToast, active }) {
 
   useEffect(() => {
     if (!active) return;
-    load();
-    const startInterval = () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    let stopped = false;
+
+    const scheduleNext = () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
       const interval = parseInt(localStorage.getItem('probeInterval') || '3', 10);
-      timerRef.current = setInterval(load, Math.max(interval, 1) * 1000);
+      timerRef.current = setTimeout(async () => {
+        await load();
+        if (!stopped) scheduleNext();
+      }, Math.max(interval, 1) * 1000);
     };
-    startInterval();
-    const onIntervalChange = () => startInterval();
+
+    const run = async () => {
+      await load();
+      if (!stopped) scheduleNext();
+    };
+
+    run();
+    const onIntervalChange = () => scheduleNext();
     window.addEventListener('probeIntervalChanged', onIntervalChange);
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      stopped = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
       window.removeEventListener('probeIntervalChanged', onIntervalChange);
     };
   }, [load, active]);
