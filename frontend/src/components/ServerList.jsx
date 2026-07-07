@@ -102,6 +102,7 @@ export default function ServerList({
   onDelete,
   onMoveGroup,
   addToast,
+  saveFlowHighlights = { serverId: null, rowPulse: null, fields: {} },
 }) {
   const { t } = useTranslation();
   const [menuServer, setMenuServer] = useState(null);
@@ -215,6 +216,19 @@ export default function ServerList({
   const hasSession = (server) =>
     sessions.some((s) => s.serverId === server.id && s.status !== 'closed');
 
+  const getSaveFlowTokens = (server) => {
+    if (saveFlowHighlights?.serverId !== server.id) {
+      return { rowToken: null, nameToken: null, hostToken: null, usernameToken: null };
+    }
+    const fields = saveFlowHighlights.fields || {};
+    return {
+      rowToken: saveFlowHighlights.rowPulse || null,
+      nameToken: fields.name || null,
+      hostToken: fields.host || fields.port || fields.username || null,
+      usernameToken: fields.username || null,
+    };
+  };
+
   // 按分组组织服务器
   const groupedServers = useMemo(() => {
     const groups = {};
@@ -295,11 +309,13 @@ export default function ServerList({
     const sessionForServer = connectedSessionMap.get(server.id);
     const osInfo = getOSInfo(server.name, server.os, sessionForServer?.osInfo || null);
     const isHovered = hoveredId === server.id;
+    const { rowToken, nameToken, hostToken } = getSaveFlowTokens(server);
 
     return (
       <div
-        key={server.id}
-        className={`server-card ${active ? 'active' : ''}`}
+        key={`${server.id}-${rowToken || 'stable'}`}
+        data-server-update-id={server.id}
+        className={`server-card ${active ? 'active' : ''}${rowToken ? ' save-flow-hit' : ''}`}
         onClick={() => onConnect(server)}
         onContextMenu={(e) => handleContextMenu(e, server)}
         onMouseEnter={() => setHoveredId(server.id)}
@@ -317,7 +333,12 @@ export default function ServerList({
         </div>
         <div className="server-info" style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
           <div className="server-name" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>
-            <span data-edit-source-field="name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span
+              key={`name-${nameToken || 'stable'}`}
+              data-edit-source-field="name"
+              className={`save-flow-target${nameToken ? ' save-flow-target-active' : ''}`}
+              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
               {server.name || server.host}
             </span>
             {connected && (
@@ -327,7 +348,12 @@ export default function ServerList({
             )}
           </div>
           <div className="server-host" data-edit-source-field="hostPort" style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {hideSensitive ? mask(`${server.username}@${server.host}`) : `${server.username}@${server.host}:${server.port || 22}`}
+            <span
+              key={`host-${hostToken || 'stable'}`}
+              className={`save-flow-target${hostToken ? ' save-flow-target-active' : ''}`}
+            >
+              {hideSensitive ? mask(`${server.username}@${server.host}`) : `${server.username}@${server.host}:${server.port || 22}`}
+            </span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -452,11 +478,13 @@ export default function ServerList({
               const sessionForServer = connectedSessionMap.get(server.id);
               const osInfo = getOSInfo(server.name, server.os, sessionForServer?.osInfo || null);
               const isHovered = hoveredId === server.id;
+              const { rowToken, nameToken, hostToken, usernameToken } = getSaveFlowTokens(server);
 
               return (
                 <tr
-                  key={server.id}
-                  className={`server-table-row ${active ? 'active' : ''}`}
+                  key={`${server.id}-${rowToken || 'stable'}`}
+                  data-server-update-id={server.id}
+                  className={`server-table-row ${active ? 'active' : ''}${rowToken ? ' save-flow-hit' : ''}`}
                   onClick={() => onConnect(server)}
                   onContextMenu={(e) => handleContextMenu(e, server)}
                   onMouseEnter={() => setHoveredId(server.id)}
@@ -469,13 +497,21 @@ export default function ServerList({
                     </div>
                   </td>
                   <td data-edit-source-field="name" style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-                    {server.name || server.host}
+                    <span key={`name-${nameToken || 'stable'}`} className={`save-flow-target${nameToken ? ' save-flow-target-active' : ''}`}>
+                      {server.name || server.host}
+                    </span>
                     {connected && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--success)', padding: '2px 4px', background: 'var(--success-dim)', borderRadius: 4 }}>{t('已连接')}</span>}
                   </td>
                   <td data-edit-source-field="hostPort" style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-secondary)' }}>
-                    {hideSensitive ? mask(server.host) : `${server.host}:${server.port || 22}`}
+                    <span key={`host-${hostToken || 'stable'}`} className={`save-flow-target${hostToken ? ' save-flow-target-active' : ''}`}>
+                      {hideSensitive ? mask(server.host) : `${server.host}:${server.port || 22}`}
+                    </span>
                   </td>
-                  <td data-edit-source-field="username" style={{ color: 'var(--text-secondary)' }}>{hideSensitive ? mask(server.username) : server.username}</td>
+                  <td data-edit-source-field="username" style={{ color: 'var(--text-secondary)' }}>
+                    <span key={`username-${usernameToken || 'stable'}`} className={`save-flow-target${usernameToken ? ' save-flow-target-active' : ''}`}>
+                      {hideSensitive ? mask(server.username) : server.username}
+                    </span>
+                  </td>
                   <td>
                     {ping?.online && ping?.latency !== undefined && ping?.latency !== null ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

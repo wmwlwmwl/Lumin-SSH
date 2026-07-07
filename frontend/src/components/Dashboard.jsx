@@ -4,7 +4,7 @@ import AddServerModal from './AddServerModal.jsx';
 import ServerList from './ServerList.jsx';
 
 export default function Dashboard({
-  editorServer, editorShiningFields, isEditFlying = false, onSaveServer, onSaveAndConnectServer, onCancelEditor, allGroups,
+  editorServer, editorShiningFields, saveFlowHighlights, isEditFlying = false, onSaveServer, onSaveAndConnectServer, onCancelEditor, allGroups,
   credentials, onOpenCredentials,
   searchQuery, onSearchChange,
   hideSensitive, onHideSensitiveToggle,
@@ -120,6 +120,7 @@ export default function Dashboard({
               pings={pings}
               sessions={sessions}
               activeSessionId={activeSessionId}
+              saveFlowHighlights={saveFlowHighlights}
               viewMode={serverListViewMode}
               hideSensitive={hideSensitive}
               onConnect={onConnect}

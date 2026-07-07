@@ -867,6 +867,9 @@ textarea:focus:not(:focus-visible) {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .server-card.active .server-name { color: var(--text-primary); }
+.server-card.save-flow-hit {
+  animation: saveFlowCardPulse 980ms cubic-bezier(0.22, 0.82, 0.24, 1) both;
+}
 
 .server-avatar {
   width: 36px;
@@ -936,6 +939,19 @@ textarea:focus:not(:focus-visible) {
 .server-table-row { cursor: pointer; transition: var(--transition-fast); }
 .server-table-row:hover { background: var(--surface-hover); }
 .server-table-row.active { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
+.server-table-row.save-flow-hit { animation: saveFlowRowPulse 920ms cubic-bezier(0.2, 0.82, 0.22, 1) both; }
+
+.save-flow-target {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+}
+
+.save-flow-target-active {
+  animation: saveFlowTargetPulse 900ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
+}
 
 /* ── 服务器网格 ── */
 .server-grid {
@@ -1526,6 +1542,123 @@ textarea:focus:not(:focus-visible) {
   }
 }
 
+@keyframes saveFlowCapsule {
+  0% {
+    opacity: 0;
+    transform:
+      translate(var(--save-flow-from-x), var(--save-flow-from-y))
+      translate(-50%, -50%)
+      scale(0.72)
+      rotate(-10deg);
+  }
+  12% {
+    opacity: 0.9;
+  }
+  38% {
+    opacity: 1;
+    transform:
+      translate(calc((var(--save-flow-from-x) * 0.52) + (var(--save-flow-mid-x) * 0.48)), calc((var(--save-flow-from-y) * 0.52) + (var(--save-flow-mid-y) * 0.48)))
+      translate(-50%, -50%)
+      scale(1.08)
+      rotate(8deg);
+  }
+  74% {
+    opacity: 1;
+    transform:
+      translate(calc((var(--save-flow-mid-x) * 0.58) + (var(--save-flow-to-x) * 0.42)), calc((var(--save-flow-mid-y) * 0.58) + (var(--save-flow-to-y) * 0.42)))
+      translate(-50%, -50%)
+      scale(0.92)
+      rotate(-4deg);
+  }
+  100% {
+    opacity: 0;
+    transform:
+      translate(var(--save-flow-to-x), var(--save-flow-to-y))
+      translate(-50%, -50%)
+      scale(0.56)
+      rotate(0deg);
+  }
+}
+
+@keyframes saveFlowTargetPulse {
+  0% {
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+  }
+  26% {
+    background: color-mix(in srgb, var(--success) 18%, transparent);
+    color: var(--text-primary);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--success) 36%, transparent),
+      0 0 16px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  72% {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--text-primary);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent),
+      0 0 12px color-mix(in srgb, var(--success) 12%, transparent);
+  }
+  100% {
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+  }
+}
+
+@keyframes saveFlowCardPulse {
+  0% {
+    transform: scale(1);
+    background: var(--surface-base);
+    box-shadow: none;
+  }
+  28% {
+    transform: translateX(2px) scale(1.015);
+    background: color-mix(in srgb, var(--success) 14%, var(--surface-hover));
+    box-shadow:
+      inset 2px 0 0 color-mix(in srgb, var(--success) 86%, var(--accent)),
+      0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
+      0 0 22px color-mix(in srgb, var(--success) 16%, transparent);
+  }
+  62% {
+    transform: translateX(-1px) scale(1.008);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface-hover));
+    box-shadow:
+      inset 2px 0 0 color-mix(in srgb, var(--accent) 82%, var(--success)),
+      0 0 0 1px color-mix(in srgb, var(--success) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    background: var(--surface-base);
+    box-shadow: none;
+  }
+}
+
+@keyframes saveFlowRowPulse {
+  0% {
+    background: transparent;
+    box-shadow: none;
+  }
+  24% {
+    background: color-mix(in srgb, var(--success) 12%, var(--surface-hover));
+    box-shadow:
+      inset 2px 0 0 color-mix(in srgb, var(--success) 84%, var(--accent)),
+      inset 0 1px 0 color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  68% {
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+    box-shadow:
+      inset 2px 0 0 color-mix(in srgb, var(--accent) 82%, var(--success)),
+      inset 0 1px 0 color-mix(in srgb, var(--success) 10%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
 .spin { animation: spin 1s linear infinite; }
 .btn-icon-spin.spinning svg { animation: spin 1s linear infinite; }
 
@@ -1628,6 +1761,45 @@ body.theme-light .edit-fly-capsule {
     0 10px 24px rgba(54, 44, 34, 0.14),
     0 0 14px color-mix(in srgb, var(--accent) 10%, transparent),
     0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.save-flow-capsule {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(250px, calc(100% - 28px));
+  min-height: 30px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--success) 44%, var(--accent));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--success) 24%, transparent), transparent 42%),
+    linear-gradient(225deg, color-mix(in srgb, var(--accent) 24%, transparent), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent),
+    color-mix(in srgb, var(--surface-overlay) 94%, transparent);
+  color: var(--text-primary);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    0 0 18px color-mix(in srgb, var(--success) 26%, transparent),
+    0 0 30px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: saveFlowCapsule 1160ms cubic-bezier(0.2, 0.78, 0.22, 1) var(--save-flow-delay) both;
+  will-change: transform, opacity;
+}
+
+body.theme-light .save-flow-capsule {
+  border-color: rgba(54, 122, 76, 0.24);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--success) 16%, transparent), transparent 42%),
+    linear-gradient(225deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.58)),
+    color-mix(in srgb, var(--surface-raised) 96%, transparent);
+  box-shadow:
+    0 12px 24px rgba(52, 44, 34, 0.16),
+    0 0 14px color-mix(in srgb, var(--success) 14%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .edit-fly-beam {
@@ -1843,7 +2015,9 @@ body.theme-light .add-supernova-ring {
 }
 
 .edit-fly-capsule::before,
-.edit-fly-capsule::after {
+.edit-fly-capsule::after,
+.save-flow-capsule::before,
+.save-flow-capsule::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -1854,12 +2028,14 @@ body.theme-light .add-supernova-ring {
   opacity: 0.75;
 }
 
-.edit-fly-capsule::before {
+.edit-fly-capsule::before,
+.save-flow-capsule::before {
   left: -5px;
   transform: translateY(-50%) rotate(-18deg);
 }
 
-.edit-fly-capsule::after {
+.edit-fly-capsule::after,
+.save-flow-capsule::after {
   right: -5px;
   transform: translateY(-50%) rotate(18deg) scaleX(-1);
 }

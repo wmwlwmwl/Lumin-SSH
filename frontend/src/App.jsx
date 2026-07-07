@@ -77,6 +77,7 @@ export default function App() {
   const [serverEditor, setServerEditor] = useState(null);
   const [editFlyAnimation, setEditFlyAnimation] = useState(null);
   const [editFlyShiningFields, setEditFlyShiningFields] = useState({});
+  const [saveFlowHighlights, setSaveFlowHighlights] = useState({ serverId: null, rowPulse: null, fields: {} });
   const editFlyTimerRef = useRef(null);
   const editFlyFieldTimerRefs = useRef([]);
   const editFlyShineTimerRefs = useRef([]);
@@ -1839,12 +1840,16 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     try {
       const savedServer = await saveServerConfig(data);
       if (!savedServer) return;
-      addToast(data.id ? t('服务器配置已更新') : t('服务器添加成功'), 'success');
-      setServerEditor(null);
+      if (data.id) {
+        startSaveFlowAnimation(savedServer, data);
+      } else {
+        addToast(t('服务器添加成功'), 'success');
+        setServerEditor(null);
+      }
     } catch (err) {
       addToast(err, 'error');
     }
-  }, [saveServerConfig, addToast, t]);
+  }, [saveServerConfig, addToast, t, startSaveFlowAnimation]);
 
   const handleSaveAndConnectServer = useCallback(async (data) => {
     try {
@@ -2185,6 +2190,122 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     });
   }, [buildFlightMidPoint, getAnimationViewport, rectToLayerPoint, t]);
 
+  function startSaveFlowAnimation(server, data) {
+    const serverId = server?.id || data?.id;
+    if (!serverId) {
+      setServerEditor(null);
+      return;
+    }
+
+    if (editFlyTimerRef.current) {
+      clearTimeout(editFlyTimerRef.current);
+      editFlyTimerRef.current = null;
+    }
+    editFlyFieldTimerRefs.current.forEach(clearTimeout);
+    editFlyFieldTimerRefs.current = [];
+    editFlyShineTimerRefs.current.forEach(clearTimeout);
+    editFlyShineTimerRefs.current = [];
+    setEditFlyShiningFields({});
+    setSaveFlowHighlights({ serverId: null, rowPulse: null, fields: {} });
+
+    const getServerTarget = (field) => {
+      const nodes = Array.from(document.querySelectorAll(`[data-server-update-id="${serverId}"]`));
+      const row = nodes.find((node) => node.offsetParent !== null) || nodes[0];
+      if (!row) {
+        return null;
+      }
+      const targetField = field === 'host' || field === 'port' || field === 'username' ? 'hostPort' : field;
+      const targetEl = row.querySelector(`[data-edit-source-field="${targetField}"]`) || row;
+      return targetEl.getBoundingClientRect?.() || null;
+    };
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const viewport = getAnimationViewport();
+        const fields = ['name', 'host', 'port', 'username', 'terminalInitPath', 'fileManagerInitPath'];
+        const fieldLabels = {
+          name: t('服务器别名（选填）'),
+          host: t('主机地址 *'),
+          port: t('端口'),
+          username: t('用户名'),
+          terminalInitPath: t('终端默认 cd 目录'),
+          fileManagerInitPath: t('文件管理器初始目录'),
+        };
+
+        const items = fields.flatMap((field, index) => {
+          const sourceEl = document.querySelector(`[data-editor-field="${field}"]`);
+          const sourceRect = sourceEl?.getBoundingClientRect?.();
+          const targetRect = getServerTarget(field);
+          if (!sourceRect || !targetRect) {
+            return [];
+          }
+          const from = rectToLayerPoint(sourceRect, viewport);
+          const to = rectToLayerPoint(targetRect, viewport);
+          return [{
+            id: `save-flow-${field}-${Date.now()}-${index}`,
+            type: 'save-flow-capsule',
+            field,
+            label: fieldLabels[field],
+            value: field === 'port' ? String(data.port || server.port || 22) : String(data[field] || server[field] || ''),
+            from,
+            to,
+            mid: buildFlightMidPoint(from, to, viewport, index + 1),
+            delay: index * 90,
+          }];
+        });
+
+        if (items.length === 0) {
+          setServerEditor(null);
+          return;
+        }
+
+        setEditFlyAnimation({ id: Date.now(), items });
+        setEditFlyShiningFields(Object.fromEntries(items.map((item) => [item.field, true])));
+
+        items.forEach((item) => {
+          const highlightTimer = setTimeout(() => {
+            setSaveFlowHighlights((current) => ({
+              serverId,
+              rowPulse: item.id,
+              fields: { ...current.fields, [item.field]: item.id },
+            }));
+          }, item.delay + 660);
+          const shineTimer = setTimeout(() => {
+            setSaveFlowHighlights((current) => {
+              if (current.serverId !== serverId) return current;
+              const nextFields = { ...current.fields };
+              delete nextFields[item.field];
+              return {
+                serverId,
+                rowPulse: current.rowPulse === item.id ? null : current.rowPulse,
+                fields: nextFields,
+              };
+            });
+            setEditFlyShiningFields((current) => {
+              const next = { ...current };
+              delete next[item.field];
+              return next;
+            });
+          }, item.delay + 1420);
+          editFlyFieldTimerRefs.current.push(highlightTimer);
+          editFlyShineTimerRefs.current.push(shineTimer);
+        });
+
+        const closeTimer = setTimeout(() => {
+          setServerEditor(null);
+        }, Math.max(...items.map((item) => item.delay)) + 980);
+        const cleanupTimer = setTimeout(() => {
+          setEditFlyAnimation(null);
+          setSaveFlowHighlights({ serverId: null, rowPulse: null, fields: {} });
+          setEditFlyShiningFields({});
+          editFlyTimerRef.current = null;
+        }, Math.max(...items.map((item) => item.delay)) + 1660);
+        editFlyFieldTimerRefs.current.push(closeTimer);
+        editFlyTimerRef.current = cleanupTimer;
+      });
+    });
+  }
+
   useEffect(() => () => {
     if (editFlyTimerRef.current) {
       clearTimeout(editFlyTimerRef.current);
@@ -2298,6 +2419,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           <Dashboard
             editorServer={serverEditor}
             editorShiningFields={editFlyShiningFields}
+            saveFlowHighlights={saveFlowHighlights}
             isEditFlying={!!editFlyAnimation}
             onSaveServer={handleSaveServer}
             onSaveAndConnectServer={handleSaveAndConnectServer}
@@ -2871,6 +2993,23 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                   '--ring-delay': `${item.delay}ms`,
                 }}
               />
+            ) : item.type === 'save-flow-capsule' ? (
+              <div
+                key={item.id}
+                className={`save-flow-capsule save-flow-capsule-${item.field}`}
+                style={{
+                  '--save-flow-from-x': `${item.from.x}px`,
+                  '--save-flow-from-y': `${item.from.y}px`,
+                  '--save-flow-mid-x': `${item.mid.x}px`,
+                  '--save-flow-mid-y': `${item.mid.y}px`,
+                  '--save-flow-to-x': `${item.to.x}px`,
+                  '--save-flow-to-y': `${item.to.y}px`,
+                  '--save-flow-delay': `${item.delay}ms`,
+                }}
+              >
+                <span className="edit-fly-label">{item.label}</span>
+                {item.value ? <span className="edit-fly-value">{item.value}</span> : null}
+              </div>
             ) : (
               <div
                 key={item.id}

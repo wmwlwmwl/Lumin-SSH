@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Plus, X, Monitor, Key, FolderOpen, SquarePen, KeyRound } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { useTranslation } from '../i18n.js';
@@ -28,6 +28,7 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
   const [selectedCredId, setSelectedCredId] = useState('');
 
   const isEditing = !!server?.id;
+  const suppressSubmitUntilRef = useRef(0);
 
   const resetInlineForm = () => {
     setAuthMode('custom');
@@ -70,13 +71,11 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
   const inputClass = (key) => `input${shiningFields?.[key] ? ' editor-field-shine' : ''}`;
   const inputShellClass = (key) => `editor-field-shell${shiningFields?.[key] ? ' editor-field-shell-shine' : ''}`;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const submitForm = async (submitAction = 'save') => {
+    if (Date.now() < suppressSubmitUntilRef.current) return;
     if (!form.host.trim()) return window.luminDialog?.alert(t('请填写主机地址'));
     if (authMode === 'custom' && !form.username.trim()) return window.luminDialog?.alert(t('请填写用户名'));
     if (authMode === 'credential' && !selectedCredId) return window.luminDialog?.alert(t('请选择凭据'));
-
-    const submitAction = e?.nativeEvent?.submitter?.dataset?.submitAction || 'save';
 
     setSaving(true);
     try {
@@ -87,7 +86,6 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
 
       if (authMode === 'credential') {
         data.credentialId = selectedCredId;
-        // 使用凭据时清除内联认证字段
         delete data.password;
         delete data.privateKey;
         delete data.passphrase;
@@ -95,9 +93,8 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
         delete data.authType;
       } else {
         data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
-        data.credentialId = ''; // 清除凭据引用
+        data.credentialId = '';
         if (server?.id && !data.password) delete data.password;
-        // 克隆时自动拷贝密码
         if (!server?.id && server && !data.password && server.password) data.password = server.password;
         if (server?.id && (!data.privateKey || data.privateKey === '[key configured]')) {
           delete data.privateKey;
@@ -119,6 +116,12 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
     }
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const submitAction = e?.nativeEvent?.submitter?.dataset?.submitAction || 'save';
+    await submitForm(submitAction);
+  };
+
   const handleSelectPrivateKeyFile = async () => {
     try {
       const content = await AppGo.ReadPrivateKeyFile();
@@ -130,9 +133,16 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
     }
   };
 
-  const handleCancel = () => {
+  const handleCancel = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    suppressSubmitUntilRef.current = Date.now() + 300;
     if (inline && !server) {
       resetInlineForm();
+      return;
+    }
+    if (inline && server) {
+      window.setTimeout(() => onClose(), 0);
       return;
     }
     onClose();
@@ -379,16 +389,16 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
               <button type="button" className="btn btn-secondary" onClick={handleCancel}>
                 {t('取消')}
               </button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
+              <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void submitForm('save')}>
                 {saving ? t('保存中...') : t('保存配置')}
               </button>
             </>
           ) : (
             <>
-              <button type="submit" data-submit-action="save" className="btn btn-primary" disabled={saving}>
+              <button type="button" data-submit-action="save" className="btn btn-primary" disabled={saving} onClick={() => void submitForm('save')}>
                 {saving ? t('保存中...') : t('添加')}
               </button>
-              <button type="submit" data-submit-action="connect" className="btn btn-success" disabled={saving}>
+              <button type="button" data-submit-action="connect" className="btn btn-success" disabled={saving} onClick={() => void submitForm('connect')}>
                 {saving ? t('保存中...') : t('添加并链接')}
               </button>
             </>
