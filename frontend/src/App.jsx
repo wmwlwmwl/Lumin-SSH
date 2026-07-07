@@ -2443,13 +2443,12 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             onConnect={connectServer}
             onStartAdd={startAddGuideAnimation}
             onEdit={startEditFlyAnimation}
-            onClone={async (s) => {
+            onClone={async (s, payload) => {
               try {
                 const real = await AppGo.GetConnectionByID(s.id);
-                setServerEditor({ ...real, id: null });
+                startEditFlyAnimation({ ...real, id: null }, payload);
               } catch {
-                // fallback: 用现有数据克隆
-                setServerEditor({ ...s, id: null, name: s.name || s.host });
+                startEditFlyAnimation({ ...s, id: null, name: s.name || s.host }, payload);
               }
             }}
             onDelete={handleDeleteServer}

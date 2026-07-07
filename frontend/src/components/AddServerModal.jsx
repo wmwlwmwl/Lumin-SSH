@@ -395,6 +395,11 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
             </>
           ) : (
             <>
+              {server && (
+                <button type="button" className="btn btn-secondary" onClick={handleCancel}>
+                  {t('取消')}
+                </button>
+              )}
               <button type="button" data-submit-action="save" className="btn btn-primary" disabled={saving} onClick={() => void submitForm('save')}>
                 {saving ? t('保存中...') : t('添加')}
               </button>

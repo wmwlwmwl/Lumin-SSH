@@ -293,8 +293,6 @@ export default function ServerList({
         <div className="empty-state-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Monitor size={48} strokeWidth={1.5} /></div>
         <div className="empty-state-text">
           {t('暂无服务器')}
-          <br />
-          {t('点击右上角「添加」开始')}
         </div>
       </div>
     );
@@ -570,7 +568,7 @@ export default function ServerList({
           </div>
           <div
             className="context-menu-item"
-            onClick={() => { onClone(menuServer); setMenuServer(null); }}
+            onClick={() => { onClone(menuServer, getEditAnimationPayload(menuServer, menuSourceRef.current)); setMenuServer(null); }}
           >
             <Copy size={14} style={{ marginRight: 8 }} /> {t('克隆')}
           </div>
