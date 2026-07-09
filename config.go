@@ -44,7 +44,7 @@ type Connection struct {
 	Passphrase          string `json:"passphrase,omitempty"`
 	Group               string `json:"group,omitempty"` // 服务器分组，空=未分组
 	Os                  string `json:"os,omitempty"`
-	CredentialID        string `json:"credentialId,omitempty"`      // ponytail: 非空时用 Credential 认证，忽略内联字段
+	CredentialID        string `json:"credentialId,omitempty"` // ponytail: 非空时用 Credential 认证，忽略内联字段
 	TerminalInitPath    string `json:"terminalInitPath,omitempty"`
 	FileManagerInitPath string `json:"fileManagerInitPath,omitempty"`
 	ProxyMode           string `json:"proxyMode,omitempty"`
@@ -79,6 +79,10 @@ type FileManagerSettings struct {
 	ChmodDialog ChmodDialogSettings `json:"chmodDialog,omitempty"`
 }
 
+type AppSettings struct {
+	WebviewGpuDisabled bool `json:"webviewGpuDisabled,omitempty"`
+}
+
 type ConfigManager struct {
 	configDir               string
 	connFile                string
@@ -94,6 +98,7 @@ type ConfigManager struct {
 	fileManagerSettingsFile string
 	workspaceStateFile      string
 	workspacePrefsFile      string
+	appSettingsFile         string
 	historyDir              string
 	globalHistFile          string
 	mu                      sync.RWMutex
@@ -131,6 +136,7 @@ func NewConfigManager() *ConfigManager {
 	fileManagerSettingsFile := filepath.Join(dir, "file_manager_settings.json")
 	workspaceStateFile := filepath.Join(dir, "workspace_state.json")
 	workspacePrefsFile := filepath.Join(dir, "workspace_prefs.json")
+	appSettingsFile := filepath.Join(dir, "app_settings.json")
 	historyDir := filepath.Join(dir, "history")
 	if err := os.MkdirAll(historyDir, 0755); err != nil {
 		log.Printf("[NewConfigManager] 无法创建历史目录 %s: %v", historyDir, err)
@@ -174,6 +180,7 @@ func NewConfigManager() *ConfigManager {
 		fileManagerSettingsFile: fileManagerSettingsFile,
 		workspaceStateFile:      workspaceStateFile,
 		workspacePrefsFile:      workspacePrefsFile,
+		appSettingsFile:         appSettingsFile,
 		historyDir:              historyDir,
 		globalHistFile:          filepath.Join(historyDir, "global.json"),
 	}
@@ -1010,6 +1017,41 @@ func (c *ConfigManager) saveFileManagerSettingsLocked(settings FileManagerSettin
 		return fmt.Errorf("marshal file manager settings: %w", err)
 	}
 	return atomicWriteFile(c.fileManagerSettingsFile, data, 0600)
+}
+
+func (c *ConfigManager) getAppSettingsLocked() AppSettings {
+	data, err := os.ReadFile(c.appSettingsFile)
+	if err != nil {
+		return AppSettings{}
+	}
+	var settings AppSettings
+	if err := json.Unmarshal(data, &settings); err != nil {
+		log.Printf("[getAppSettingsLocked] json.Unmarshal failed: %v", err)
+		return AppSettings{}
+	}
+	return settings
+}
+
+func (c *ConfigManager) saveAppSettingsLocked(settings AppSettings) error {
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal app settings: %w", err)
+	}
+	return atomicWriteFile(c.appSettingsFile, data, 0600)
+}
+
+func (c *ConfigManager) GetWebviewGpuDisabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.getAppSettingsLocked().WebviewGpuDisabled
+}
+
+func (c *ConfigManager) SetWebviewGpuDisabled(enabled bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	settings := c.getAppSettingsLocked()
+	settings.WebviewGpuDisabled = enabled
+	return c.saveAppSettingsLocked(settings)
 }
 
 func (c *ConfigManager) GetChmodDialogSettings() map[string]interface{} {

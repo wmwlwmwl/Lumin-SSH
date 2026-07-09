@@ -79,3 +79,20 @@ export async function terminateAIChatTool(requestId) {
   }
   await bridge.TerminateAIChatTool(requestId)
 }
+
+export async function listAIChatCommandTerminalCandidates(requestId) {
+  const bridge = getAppBridge()
+  if (!bridge?.ListAIChatCommandTerminalCandidates) {
+    throw new Error(t('终端候选能力未就绪'))
+  }
+  const result = await bridge.ListAIChatCommandTerminalCandidates(requestId)
+  return Array.isArray(result) ? result : []
+}
+
+export async function assignAIChatToolTerminal(requestId, targetSessionId) {
+  const bridge = getAppBridge()
+  if (!bridge?.AssignAIChatToolTerminal) {
+    throw new Error(t('终端指派能力未就绪'))
+  }
+  await bridge.AssignAIChatToolTerminal(requestId, targetSessionId)
+}

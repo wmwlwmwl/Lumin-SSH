@@ -93,10 +93,16 @@ func (a *App) startup(ctx context.Context) {
 			if origin == "" {
 				return false
 			}
-			// 精确匹配 Wails WebView Origin，防止 DNS rebinding 攻击
-			return origin == "wails://wails" ||
+			if origin == "wails://wails" ||
 				origin == "http://wails.localhost" ||
-				origin == "https://wails.localhost"
+				origin == "https://wails.localhost" ||
+				strings.HasPrefix(origin, "http://wails.localhost:") ||
+				strings.HasPrefix(origin, "https://wails.localhost:") {
+				return true
+			}
+			return strings.HasPrefix(origin, "http://localhost:") ||
+				strings.HasPrefix(origin, "http://127.0.0.1:") ||
+				strings.HasPrefix(origin, "http://[::1]:")
 		},
 		ReadBufferSize:  4096,
 		WriteBufferSize: 32768,
@@ -899,6 +905,24 @@ func (a *App) GetRememberWorkspace() bool {
 
 func (a *App) SetRememberWorkspace(enabled bool) error {
 	return a.configManager.SetRememberWorkspace(enabled)
+}
+
+func (a *App) SupportsWebviewGpuDisable() bool {
+	return goruntime.GOOS == "windows"
+}
+
+func (a *App) GetWebviewGpuDisabled() bool {
+	if !a.SupportsWebviewGpuDisable() || a.configManager == nil {
+		return false
+	}
+	return a.configManager.GetWebviewGpuDisabled()
+}
+
+func (a *App) SetWebviewGpuDisabled(enabled bool) error {
+	if !a.SupportsWebviewGpuDisable() || a.configManager == nil {
+		return fmt.Errorf("current platform does not support disabling webview gpu acceleration")
+	}
+	return a.configManager.SetWebviewGpuDisabled(enabled)
 }
 
 func (a *App) GetWorkspaceState() string {

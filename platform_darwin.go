@@ -39,7 +39,7 @@ func ensureSingleInstance() {
 }
 
 // applyPlatformOptions 设置 macOS 特定窗口选项
-func applyPlatformOptions(opts *options.App) {
+func applyPlatformOptions(opts *options.App, configManager *ConfigManager) {
 	opts.Mac = &mac.Options{
 		TitleBar:             mac.TitleBarHiddenInset(), // 隐藏标题栏但保留红绿灯按钮
 		Appearance:           mac.DefaultAppearance,

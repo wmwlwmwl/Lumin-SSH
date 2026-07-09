@@ -1,4 +1,4 @@
-import { Check, ImagePlus, ListEnd, SendHorizonal, Square, X } from 'lucide-react'
+import { Check, ChevronUp, ChevronsUpDown, ImagePlus, ListEnd, Monitor, SendHorizonal, Square, X } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as AppGo from '../../../wailsjs/go/main/App.js'
 import { ClipboardGetText } from '../../../wailsjs/runtime/runtime.js'
@@ -127,7 +127,8 @@ function ApprovalButton({ icon, label, onClick, primary = false, fullWidth = fal
       onClick={onClick}
       style={{
         height: 34,
-        flex: fullWidth ? 1 : '0 0 auto',
+        width: fullWidth ? '100%' : undefined,
+        flex: fullWidth ? '1 1 0' : '0 0 auto',
         minWidth: 0,
         display: 'inline-flex',
         alignItems: 'center',
@@ -215,6 +216,29 @@ function buildEmptyMentionItems(selectedType) {
   return [{ kind: 'empty', title: translate('未找到结果'), description: translate('尝试其他关键词') }]
 }
 
+function translateTerminalAssignmentError(message, t) {
+  const normalizedMessage = typeof message === 'string' ? message.trim() : ''
+  if (!normalizedMessage) {
+    return t('终端指派失败')
+  }
+  switch (normalizedMessage) {
+    case '终端候选能力未就绪':
+    case '终端指派能力未就绪':
+    case '没有可指派的命令实例':
+    case '当前工具不支持指派终端':
+    case '当前工具缺少目标终端':
+    case '目标终端不能为空':
+    case '当前工具未处于可指派状态':
+    case '目标终端不可用':
+    case '当前工具无法切换目标终端':
+    case 'ssh manager unavailable':
+    case 'session not found':
+      return t(normalizedMessage)
+    default:
+      return normalizedMessage
+  }
+}
+
 export default function AIComposer({
   onSend,
   onCancel,
@@ -228,10 +252,13 @@ export default function AIComposer({
   approvalRequired = false,
   toolRunning = false,
   commandActionRequired = false,
+  terminalAssignmentRequired = false,
   onApproveTools,
   onRejectTools,
   onContinueTool,
   onTerminateTool,
+  onListCommandTerminalCandidates,
+  onAssignToolTerminal,
   approvalButtonOrder = 'reject-approve',
   commandActionButtonOrder = 'terminate-continue',
   inputValue,
@@ -252,7 +279,6 @@ export default function AIComposer({
   const { t } = useTranslation()
   const [localInputValue, setLocalInputValue] = useState('')
   const [isDraggingOver, setIsDraggingOver] = useState(false)
-  const [isTextareaFocused, setIsTextareaFocused] = useState(false)
   const [mentionMenu, setMentionMenu] = useState(createMentionMenuState())
   const [slashCommandMenu, setSlashCommandMenu] = useState(defaultSlashCommandMenuState)
   const [currentCwd, setCurrentCwd] = useState('/')
@@ -262,6 +288,7 @@ export default function AIComposer({
   const mentionMenuListRef = useRef(null)
   const mentionDebounceRef = useRef(null)
   const mentionRequestRef = useRef(0)
+  const terminalAssignmentRef = useRef(null)
   const [cursorPosition, setCursorPosition] = useState(0)
   const [justDeletedSpaceAfterMention, setJustDeletedSpaceAfterMention] = useState(false)
   const [intendedCursorPosition, setIntendedCursorPosition] = useState(null)
@@ -281,7 +308,13 @@ export default function AIComposer({
   }, [normalizedImages, onSelectedImagesChange])
 
   const normalizedSlashCommands = useMemo(() => normalizeAISlashCommands(slashCommands), [slashCommands])
-  const actionLocked = approvalRequired || toolRunning || commandActionRequired
+  const [terminalAssignmentOpen, setTerminalAssignmentOpen] = useState(false)
+  const [terminalAssignmentLoading, setTerminalAssignmentLoading] = useState(false)
+  const [terminalAssignmentSubmitting, setTerminalAssignmentSubmitting] = useState(false)
+  const [terminalAssignmentCandidates, setTerminalAssignmentCandidates] = useState([])
+  const [terminalAssignmentError, setTerminalAssignmentError] = useState('')
+  const [terminalAssignmentSelectedIndex, setTerminalAssignmentSelectedIndex] = useState(0)
+  const actionLocked = approvalRequired || toolRunning || commandActionRequired || terminalAssignmentRequired
   const canSend = Boolean(currentProviderId) && (value.trim() || normalizedImages.length > 0)
   const approvalButtons = approvalButtonOrder === 'approve-reject'
     ? [
@@ -302,6 +335,11 @@ export default function AIComposer({
         { key: 'continue', icon: ListEnd, label: t('强制继续'), onClick: onContinueTool, primary: true },
       ]
   const isQueuedSubmissionBlocked = queueBlocked && typeof queuedSubmissionKind === 'string' && queuedSubmissionKind.trim().length > 0
+  const recommendedTerminalCandidate = terminalAssignmentCandidates.find((candidate) => candidate?.recommended) || terminalAssignmentCandidates[0] || null
+  const secondaryTerminalCandidates = recommendedTerminalCandidate
+    ? terminalAssignmentCandidates.filter((candidate) => candidate?.sessionId !== recommendedTerminalCandidate.sessionId)
+    : terminalAssignmentCandidates
+  const activeTerminalAssignmentCandidate = terminalAssignmentCandidates[terminalAssignmentSelectedIndex] || recommendedTerminalCandidate || null
   const queuedSubmissionVisualLabel = queuedSubmissionKind === 'edit'
     ? t('已排队编辑')
     : queuedSubmissionKind === 'retry_assistant' || queuedSubmissionKind === 'retry_user'
@@ -506,8 +544,62 @@ export default function AIComposer({
   }, [closeInlineMenus, isQueuedSubmissionBlocked])
 
   useEffect(() => {
+    if (!terminalAssignmentRequired) {
+      setTerminalAssignmentOpen(false)
+      setTerminalAssignmentLoading(false)
+      setTerminalAssignmentSubmitting(false)
+      setTerminalAssignmentCandidates([])
+      setTerminalAssignmentError('')
+      setTerminalAssignmentSelectedIndex(0)
+    }
+  }, [terminalAssignmentRequired])
+
+  useEffect(() => {
     closeInlineMenus()
+    setTerminalAssignmentOpen(false)
   }, [closeInlineMenus, dismissSignal])
+
+  useEffect(() => {
+    if (!terminalAssignmentOpen) {
+      return undefined
+    }
+    const handlePointerDown = (event) => {
+      if (terminalAssignmentRef.current && !terminalAssignmentRef.current.contains(event.target)) {
+        setTerminalAssignmentOpen(false)
+      }
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setTerminalAssignmentOpen(false)
+        return
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setTerminalAssignmentSelectedIndex((current) => (
+          terminalAssignmentCandidates.length === 0 ? 0 : (current + 1) % terminalAssignmentCandidates.length
+        ))
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setTerminalAssignmentSelectedIndex((current) => (
+          terminalAssignmentCandidates.length === 0 ? 0 : (current - 1 + terminalAssignmentCandidates.length) % terminalAssignmentCandidates.length
+        ))
+        return
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        activeTerminalAssignmentCandidate?.sessionId && void handleAssignTerminalCandidate(activeTerminalAssignmentCandidate.sessionId)
+      }
+    }
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [activeTerminalAssignmentCandidate, terminalAssignmentCandidates.length, terminalAssignmentOpen])
 
   useEffect(() => () => clearMentionDebounce(), [clearMentionDebounce])
 
@@ -682,16 +774,6 @@ export default function AIComposer({
     closeInlineMenus()
   }, [closeInlineMenus, focusTextAreaAt, isQueuedSubmissionBlocked, readClipboardText, setValue, value])
 
-  const handleHintMouseDown = useCallback((event) => {
-    event.preventDefault()
-    if (isQueuedSubmissionBlocked) {
-      return
-    }
-    const textarea = textareaRef.current
-    const nextCursorPosition = textarea ? (textarea.selectionStart ?? value.length) : value.length
-    focusTextAreaAt(nextCursorPosition)
-  }, [focusTextAreaAt, isQueuedSubmissionBlocked, value])
-
   const handleRemoveImage = useCallback((targetIndex) => {
     setImages((prev) => prev.filter((_, index) => index !== targetIndex))
   }, [setImages])
@@ -783,6 +865,66 @@ export default function AIComposer({
     await appendImageFiles(event.dataTransfer?.files || [])
   }, [appendImageFiles, isQueuedSubmissionBlocked])
 
+  async function loadTerminalAssignmentCandidates() {
+    if (typeof onListCommandTerminalCandidates !== 'function') {
+      setTerminalAssignmentCandidates([])
+      setTerminalAssignmentSelectedIndex(0)
+      setTerminalAssignmentError(t('终端候选能力未就绪'))
+      return
+    }
+    setTerminalAssignmentLoading(true)
+    setTerminalAssignmentError('')
+    try {
+      const candidates = await onListCommandTerminalCandidates()
+      const normalizedCandidates = Array.isArray(candidates)
+        ? candidates
+            .filter((candidate) => candidate && typeof candidate === 'object' && typeof candidate.sessionId === 'string' && candidate.sessionId.trim())
+            .map((candidate) => ({
+              sessionId: candidate.sessionId.trim(),
+              label: typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : candidate.sessionId.trim(),
+              busy: candidate.busy === true,
+              cwd: typeof candidate.cwd === 'string' ? candidate.cwd.trim() : '',
+              current: candidate.current === true,
+              recommended: candidate.recommended === true,
+            }))
+        : []
+      setTerminalAssignmentCandidates(normalizedCandidates)
+      const recommendedIndex = normalizedCandidates.findIndex((candidate) => candidate.recommended)
+      setTerminalAssignmentSelectedIndex(recommendedIndex >= 0 ? recommendedIndex : 0)
+    } catch (error) {
+      setTerminalAssignmentCandidates([])
+      setTerminalAssignmentSelectedIndex(0)
+      setTerminalAssignmentError(translateTerminalAssignmentError(error instanceof Error ? error.message : '', t))
+    } finally {
+      setTerminalAssignmentLoading(false)
+    }
+  }
+
+  async function handleOpenTerminalAssignment() {
+    if (!terminalAssignmentRequired || terminalAssignmentLoading || terminalAssignmentSubmitting) {
+      return
+    }
+    setTerminalAssignmentOpen(true)
+    await loadTerminalAssignmentCandidates()
+  }
+
+  async function handleAssignTerminalCandidate(targetSessionId) {
+    const nextTargetSessionId = typeof targetSessionId === 'string' ? targetSessionId.trim() : ''
+    if (!nextTargetSessionId || typeof onAssignToolTerminal !== 'function' || terminalAssignmentSubmitting) {
+      return
+    }
+    setTerminalAssignmentSubmitting(true)
+    setTerminalAssignmentError('')
+    try {
+      await onAssignToolTerminal(nextTargetSessionId)
+      setTerminalAssignmentOpen(false)
+    } catch (error) {
+      setTerminalAssignmentError(translateTerminalAssignmentError(error instanceof Error ? error.message : '', t))
+    } finally {
+      setTerminalAssignmentSubmitting(false)
+    }
+  }
+
   const handleSubmit = async () => {
     const text = value.trim()
     if (isQueuedSubmissionBlocked || (!text && normalizedImages.length === 0) || !currentProviderId) {
@@ -819,6 +961,38 @@ export default function AIComposer({
   }, [mentionMenu.open, slashCommandMenu.open, syncInlineMenusWithCursor])
 
   const handleKeyDown = async (event) => {
+    if (terminalAssignmentOpen) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setTerminalAssignmentOpen(false)
+        return
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setTerminalAssignmentSelectedIndex((current) => (
+          terminalAssignmentCandidates.length === 0 ? 0 : (current + 1) % terminalAssignmentCandidates.length
+        ))
+        return
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setTerminalAssignmentSelectedIndex((current) => (
+          terminalAssignmentCandidates.length === 0 ? 0 : (current - 1 + terminalAssignmentCandidates.length) % terminalAssignmentCandidates.length
+        ))
+        return
+      }
+
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault()
+        if (activeTerminalAssignmentCandidate?.sessionId) {
+          await handleAssignTerminalCandidate(activeTerminalAssignmentCandidate.sessionId)
+        }
+        return
+      }
+    }
+
     if (slashCommandMenu.open) {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -975,7 +1149,7 @@ export default function AIComposer({
 
   return (
     <div style={{ flexShrink: 0, padding: 0, borderTop: '1px solid var(--border)', background: 'var(--surface-raised)' }}>
-      {(approvalRequired || commandActionRequired || toolRunning) ? (
+      {(approvalRequired || commandActionRequired || toolRunning || terminalAssignmentRequired) ? (
         <div
           style={{
             minHeight: 48,
@@ -996,6 +1170,127 @@ export default function AIComposer({
               fullWidth={true}
             />
           )) : null}
+          {terminalAssignmentRequired ? (
+            <>
+              <div ref={terminalAssignmentRef} style={{ position: 'relative', display: 'flex', flex: 1, minWidth: 0 }}>
+                {terminalAssignmentOpen ? (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      bottom: 'calc(100% + 8px)',
+                      width: 'min(360px, calc(100vw - 40px))',
+                      borderRadius: 10,
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface-overlay)',
+                      boxShadow: 'var(--shadow-xl)',
+                      overflow: 'hidden',
+                      zIndex: 60,
+                    }}>
+                    <div style={{ display: 'grid', gap: 2, padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700 }}>{t('推荐终端')}</div>
+                      {recommendedTerminalCandidate ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleAssignTerminalCandidate(recommendedTerminalCandidate.sessionId)}
+                          disabled={terminalAssignmentSubmitting}
+                          style={{
+                            width: '100%',
+                            display: 'grid',
+                            gap: 4,
+                            padding: '10px 12px',
+                            textAlign: 'left',
+                            borderRadius: 8,
+                            border: '1px solid var(--accent-border)',
+                            background: 'rgba(var(--accent-rgb), 0.10)',
+                            color: 'var(--text-primary)',
+                            cursor: terminalAssignmentSubmitting ? 'wait' : 'pointer',
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 13, fontWeight: 700 }}>
+                              <Monitor size={13} />
+                              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{recommendedTerminalCandidate.label}</span>
+                            </span>
+                            <span style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: recommendedTerminalCandidate.busy ? 'rgba(var(--warning-rgb), 0.10)' : 'rgba(var(--success-rgb), 0.10)', color: recommendedTerminalCandidate.busy ? 'var(--warning)' : 'var(--success)', fontSize: 11, fontWeight: 700 }}>
+                              {recommendedTerminalCandidate.busy ? t('忙碌') : t('空闲')}
+                            </span>
+                          </div>
+                          {recommendedTerminalCandidate.cwd ? (
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {recommendedTerminalCandidate.cwd}
+                            </div>
+                          ) : null}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gap: 0 }}>
+                      {terminalAssignmentLoading ? (
+                        <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-tertiary)' }}>{t('正在加载终端...')}</div>
+                      ) : null}
+                      {!terminalAssignmentLoading && terminalAssignmentError ? (
+                        <div style={{ padding: '12px', fontSize: 12, color: 'var(--danger)' }}>{terminalAssignmentError}</div>
+                      ) : null}
+                      {!terminalAssignmentLoading && !terminalAssignmentError && secondaryTerminalCandidates.length > 0 ? (
+                        <>
+                          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 700 }}>{t('其他终端')}</div>
+                          {secondaryTerminalCandidates.map((candidate) => {
+                            const candidateIndex = terminalAssignmentCandidates.findIndex((item) => item.sessionId === candidate.sessionId)
+                            const isSelected = candidateIndex === terminalAssignmentSelectedIndex
+                            return (
+                              <button
+                                key={candidate.sessionId}
+                                type="button"
+                                onMouseEnter={() => setTerminalAssignmentSelectedIndex(candidateIndex)}
+                                onClick={() => void handleAssignTerminalCandidate(candidate.sessionId)}
+                                disabled={terminalAssignmentSubmitting}
+                                style={{
+                                  width: '100%',
+                                  display: 'grid',
+                                  gap: 4,
+                                  padding: '10px 12px',
+                                  textAlign: 'left',
+                                  border: 'none',
+                                  borderBottom: '1px solid var(--border-subtle)',
+                                  background: isSelected ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
+                                  color: 'var(--text-primary)',
+                                  cursor: terminalAssignmentSubmitting ? 'wait' : 'pointer',
+                                }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0, fontSize: 13, fontWeight: 600 }}>
+                                    <Monitor size={13} />
+                                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{candidate.label}</span>
+                                  </span>
+                                  <span style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: candidate.busy ? 'rgba(var(--warning-rgb), 0.10)' : 'rgba(var(--success-rgb), 0.10)', color: candidate.busy ? 'var(--warning)' : 'var(--success)', fontSize: 11, fontWeight: 700 }}>
+                                    {candidate.busy ? t('忙碌') : t('空闲')}
+                                  </span>
+                                </div>
+                                {candidate.cwd ? (
+                                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {candidate.cwd}
+                                  </div>
+                                ) : null}
+                              </button>
+                            )
+                          })}
+                        </>
+                      ) : null}
+                      {!terminalAssignmentLoading && !terminalAssignmentError && terminalAssignmentCandidates.length === 0 ? (
+                        <div style={{ padding: '12px', fontSize: 12, color: 'var(--text-tertiary)' }}>{t('没有可指派的终端')}</div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                <ApprovalButton
+                  icon={terminalAssignmentOpen ? ChevronUp : ChevronsUpDown}
+                  label={terminalAssignmentSubmitting ? t('正在切换终端...') : t('指派终端')}
+                  onClick={() => void handleOpenTerminalAssignment()}
+                  primary={true}
+                  fullWidth={true}
+                />
+              </div>
+              <ApprovalButton icon={X} label={t('终止工具')} onClick={onTerminateTool} fullWidth={true} />
+            </>
+          ) : null}
           {commandActionRequired ? commandActionButtons.map((button) => (
             <ApprovalButton
               key={button.key}
@@ -1006,7 +1301,7 @@ export default function AIComposer({
               fullWidth={true}
             />
           )) : null}
-          {toolRunning && !commandActionRequired ? (
+          {toolRunning && !commandActionRequired && !terminalAssignmentRequired ? (
             <ApprovalButton icon={X} label={t('终止工具')} onClick={onTerminateTool} fullWidth={true} />
           ) : null}
         </div>
@@ -1238,9 +1533,7 @@ export default function AIComposer({
                 onSelect={updateCursorPosition}
                 onMouseUp={updateCursorPosition}
                 onClick={syncInlineMenusWithCursor}
-                onFocus={() => setIsTextareaFocused(true)}
                 onBlur={() => {
-                  setIsTextareaFocused(false)
                   setTimeout(() => {
                     if (document.activeElement !== textareaRef.current) {
                       closeInlineMenus()
@@ -1249,7 +1542,7 @@ export default function AIComposer({
                 }}
                 onPaste={handlePaste}
                 onScroll={syncHighlightScroll}
-                placeholder={t('在此处输入您的消息...')}
+                placeholder={`@ ${t('支持远端文件,远端文件夹,当前终端输出;右键图片按钮粘贴远端绝对路径;支持粘贴/拖拽本地图片')}`}
                 spellCheck={false}
                 readOnly={isQueuedSubmissionBlocked}
                 style={{
@@ -1321,23 +1614,6 @@ export default function AIComposer({
                     </button>
                   </div>
                 ))}
-              </div>
-            ) : null}
-            {!value && !isTextareaFocused ? (
-              <div
-                onMouseDown={handleHintMouseDown}
-                style={{
-                  marginTop: 'auto',
-                  width: '100%',
-                  padding: '0 14px 10px',
-                  fontSize: 11,
-                  color: 'var(--text-tertiary)',
-                  lineHeight: 1.5,
-                  textAlign: 'left',
-                  cursor: 'text',
-                  userSelect: 'none',
-                }}>
-                {`@ ${t('支持远端文件,远端文件夹,当前终端输出;右键图片按钮粘贴远端绝对路径;支持粘贴/拖拽本地图片')}`}
               </div>
             ) : null}
           </div>

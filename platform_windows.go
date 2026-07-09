@@ -79,7 +79,7 @@ func getScreenSize() (int, int) {
 }
 
 // applyPlatformOptions 设置 Windows 特定的 Wails 选项，并根据屏幕大小自适应窗口尺寸
-func applyPlatformOptions(opts *options.App) {
+func applyPlatformOptions(opts *options.App, configManager *ConfigManager) {
 	// ponytail: 根据屏幕分辨率自适应窗口大小，上限 1440x900，留 10% 边距
 	sw, sh := getScreenSize()
 	targetW := int(float64(sw) * 0.9)
@@ -91,6 +91,11 @@ func applyPlatformOptions(opts *options.App) {
 		opts.Height = targetH
 	}
 
+	webviewGpuDisabled := false
+	if configManager != nil {
+		webviewGpuDisabled = configManager.GetWebviewGpuDisabled()
+	}
+
 	opts.Windows = &windows.Options{
 		WebviewIsTransparent:              true,
 		WindowIsTranslucent:               true,
@@ -98,6 +103,7 @@ func applyPlatformOptions(opts *options.App) {
 		DisableFramelessWindowDecorations: false,
 		WebviewUserDataPath:               "",
 		ZoomFactor:                        1.0,
+		WebviewGpuIsDisabled:              webviewGpuDisabled,
 		Theme:                             windows.Dark,
 	}
 }

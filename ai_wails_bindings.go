@@ -79,6 +79,14 @@ func (b *AIBindings) TerminateAIChatTool(requestID string) error {
 	return b.runtime().TerminateAIChatTool(requestID)
 }
 
+func (b *AIBindings) ListAIChatCommandTerminalCandidates(requestID string) ([]ai.AIChatCommandTerminalCandidate, error) {
+	return b.runtime().ListAIChatCommandTerminalCandidates(requestID)
+}
+
+func (b *AIBindings) AssignAIChatToolTerminal(requestID string, targetSessionID string) error {
+	return b.runtime().AssignAIChatToolTerminal(requestID, targetSessionID)
+}
+
 func (b *AIBindings) ListAIConversations() []ai.AIConversationSummary {
 	return b.runtime().ListAIConversations()
 }
@@ -159,11 +167,18 @@ type aiSSHDelegate struct {
 	manager *SSHManager
 }
 
-func (d aiSSHDelegate) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
+func (d aiSSHDelegate) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
 	if d.manager == nil {
 		return mcpserver.CommandExecutionResult{}, ai.ToolExecutionActionNone, fmt.Errorf("ssh manager unavailable")
 	}
-	return d.manager.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, control, onCommandOutput)
+	return d.manager.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, control, reassign, onCommandQueued, onCommandStarted, onCommandOutput)
+}
+
+func (d aiSSHDelegate) ListSiblingTerminalCandidates(sessionID string) ([]ai.AIChatCommandTerminalCandidate, error) {
+	if d.manager == nil {
+		return nil, fmt.Errorf("ssh manager unavailable")
+	}
+	return d.manager.ListSiblingTerminalCandidates(sessionID)
 }
 
 func (d aiSSHDelegate) ListDirContext(ctx context.Context, sessionID string, remotePath string) ([]map[string]interface{}, error) {

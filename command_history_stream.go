@@ -62,7 +62,9 @@ func (s *commandHistoryStream) Process(chunk []byte) ([]byte, []string, string) 
 					s.lastCommand = command
 				}
 			} else if s.markerKind == markerKindCwd {
-				if nextCwd := decodeCwdMarkerPayload(s.payloadCarry); nextCwd != "" && nextCwd != s.lastCwd {
+				// Re-emit cwd on every prompt so waiting command executions can detect idle
+				// even when the shell returns to the same directory.
+				if nextCwd := decodeCwdMarkerPayload(s.payloadCarry); nextCwd != "" {
 					cwd = nextCwd
 					s.lastCwd = nextCwd
 				}

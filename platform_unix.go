@@ -38,4 +38,4 @@ func ensureSingleInstance() {
 }
 
 // applyPlatformOptions 在 Linux 上无额外选项
-func applyPlatformOptions(opts *options.App) {}
+func applyPlatformOptions(opts *options.App, configManager *ConfigManager) {}

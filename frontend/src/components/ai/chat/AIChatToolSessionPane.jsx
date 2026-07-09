@@ -12,7 +12,7 @@ function renderToolItem(item, options) {
     case 'completion':
       return <AIChatCompletionCard key={item.id} title={item.title} summary={item.summary} result={item.result} status={item.status} />
     case 'command':
-      return <AIChatCommandCard key={item.id} purpose={item.purpose} command={item.command} output={item.output} status={item.status} />
+      return <AIChatCommandCard key={item.id} purpose={item.purpose} command={item.command} output={item.output} status={item.status} extra={item.extra} />
     case 'mcp':
       return <AIChatMCPCard key={item.id} serverName={item.serverName} toolName={item.toolName} args={item.args} response={item.response} isLast={isLastAssistantTurn} hasSubsequentAssistantMessage={hasSubsequentAssistantMessage} />
     case 'followup':

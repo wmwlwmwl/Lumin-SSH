@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"os"
 	"sync"
 	"time"
 
@@ -114,8 +115,12 @@ func main() {
 		},
 	}
 
+	if _, ok := os.LookupEnv("LUMIN_OPEN_DEVTOOLS"); ok {
+		opts.Debug.OpenInspectorOnStartup = true
+	}
+
 	// 应用平台特定选项（平台特定实现）
-	applyPlatformOptions(opts)
+	applyPlatformOptions(opts, app.configManager)
 
 	err := wails.Run(opts)
 

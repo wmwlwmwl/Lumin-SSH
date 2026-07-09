@@ -2995,6 +2995,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 side={probePanelPosition}
                 sessionId={s.id}
                 terminalId={t.id}
+                sessionTerminals={getEffectiveTerminals(s)}
               />
             </div>
           );

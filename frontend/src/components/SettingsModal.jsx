@@ -482,6 +482,8 @@ export default function SettingsModal({
   const [windowCloseAction, setWindowCloseAction] = useState(localStorage.getItem('windowCloseAction') || 'ask');
   const [updateUseProxy, setUpdateUseProxy] = useState(localStorage.getItem('updateUseProxy') === 'true');
   const [rememberWorkspace, setRememberWorkspace] = useState(false);
+  const [supportsWebviewGpuDisable, setSupportsWebviewGpuDisable] = useState(false);
+  const [webviewGpuDisabled, setWebviewGpuDisabled] = useState(false);
   const [programDirectory, setProgramDirectory] = useState('');
   const [fileManagerFollowTerminalCwd, setFileManagerFollowTerminalCwd] = useState(localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   const [fileManagerCompressedTransfer, setFileManagerCompressedTransfer] = useState(localStorage.getItem('fileManagerCompressedTransfer') !== 'false');
@@ -534,6 +536,17 @@ export default function SettingsModal({
     } catch (err) {
       setRememberWorkspace(!next);
       addToast($t('记忆工作区设置保存失败') + `: ${err}`, 'error');
+    }
+  };
+  const handleToggleWebviewGpuDisabled = async () => {
+    const next = !webviewGpuDisabled;
+    setWebviewGpuDisabled(next);
+    try {
+      await window?.go?.main?.App?.SetWebviewGpuDisabled?.(next);
+      addToast($t('设置已保存，重启后生效'), 'success');
+    } catch (err) {
+      setWebviewGpuDisabled(!next);
+      addToast($t('硬件加速设置保存失败') + `: ${err}`, 'error');
     }
   };
   const handleToggleFileManagerFollowTerminalCwd = () => {
@@ -646,6 +659,18 @@ export default function SettingsModal({
     Promise.resolve(window?.go?.main?.App?.GetRememberWorkspace?.())
       .then((enabled) => {
         if (!cancelled && typeof enabled === 'boolean') setRememberWorkspace(enabled);
+      })
+      .catch(() => {});
+
+    Promise.resolve(window?.go?.main?.App?.SupportsWebviewGpuDisable?.())
+      .then((supported) => {
+        if (cancelled || supported !== true) return;
+        setSupportsWebviewGpuDisable(true);
+        Promise.resolve(window?.go?.main?.App?.GetWebviewGpuDisabled?.())
+          .then((enabled) => {
+            if (!cancelled && typeof enabled === 'boolean') setWebviewGpuDisabled(enabled);
+          })
+          .catch(() => {});
       })
       .catch(() => {});
 
@@ -881,6 +906,9 @@ export default function SettingsModal({
                 onToggleUpdateUseProxy={handleToggleUpdateUseProxy}
                 rememberWorkspace={rememberWorkspace}
                 onToggleRememberWorkspace={handleToggleRememberWorkspace}
+                supportsWebviewGpuDisable={supportsWebviewGpuDisable}
+                webviewGpuDisabled={webviewGpuDisabled}
+                onToggleWebviewGpuDisabled={handleToggleWebviewGpuDisabled}
               />
             )}
 

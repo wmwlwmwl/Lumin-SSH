@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -38,16 +39,16 @@ func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, 
 	}
 	startMarker := "[Lumin_START_" + newCommandExecutionToken() + "]"
 	endMarker := "[Lumin_END_" + newCommandExecutionToken() + "]"
-	wrappedCommand, err := buildInteractiveCommandWrapper(command, cwd, shellType, startMarker, endMarker)
-	if err != nil {
-		return result, err
-	}
 	_, outputChannel, cancel := m.registerSessionOutputTap(sessionID)
 	defer cancel()
-	if _, err := m.waitForInteractiveSessionIdle(sessionID, nil, outputChannel); err != nil {
+	if _, _, _, err := m.waitForInteractiveSessionIdle(sessionID, nil, nil, outputChannel, nil); err != nil {
 		return result, err
 	}
 	drainInteractiveOutputChannel(outputChannel)
+	wrappedCommand, err := m.prepareInteractiveCommandWrapper(sessionID, command, cwd, shellType, startMarker, endMarker)
+	if err != nil {
+		return result, err
+	}
 	if !strings.HasSuffix(wrappedCommand, "\n") {
 		wrappedCommand += "\n"
 	}
@@ -84,29 +85,47 @@ func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, 
 	}
 }
 
-func (m *SSHManager) waitForInteractiveSessionIdle(sessionID string, control <-chan ai.ToolExecutionAction, outputChannel <-chan []byte) (ai.ToolExecutionAction, error) {
+func (m *SSHManager) waitForInteractiveSessionIdle(sessionID string, control <-chan ai.ToolExecutionAction, reassign <-chan string, outputChannel <-chan []byte, onWaitStart func()) (ai.ToolExecutionAction, bool, string, error) {
+	waitingNotified := false
+	reassignChannel := reassign
 	for {
 		m.mu.RLock()
 		sessionData, ok := m.sessions[sessionID]
 		shouldWait := ok && sessionData != nil && sessionData.RemoteHistoryActive && !sessionData.PromptReady
 		m.mu.RUnlock()
 		if !ok || sessionData == nil {
-			return ai.ToolExecutionActionNone, fmt.Errorf("session not found")
+			return ai.ToolExecutionActionNone, waitingNotified, "", fmt.Errorf("session not found")
 		}
 		if !shouldWait {
-			return ai.ToolExecutionActionNone, nil
+			return ai.ToolExecutionActionNone, waitingNotified, "", nil
+		}
+		if !waitingNotified {
+			waitingNotified = true
+			if onWaitStart != nil {
+				onWaitStart()
+			}
 		}
 		select {
+		case nextSessionID, ok := <-reassignChannel:
+			if !ok {
+				reassignChannel = nil
+				continue
+			}
+			trimmedSessionID := strings.TrimSpace(nextSessionID)
+			if trimmedSessionID == "" || trimmedSessionID == sessionID {
+				continue
+			}
+			return ai.ToolExecutionActionNone, waitingNotified, trimmedSessionID, nil
 		case action, ok := <-control:
 			if !ok {
 				continue
 			}
 			if action == ai.ToolExecutionActionTerminate {
-				return ai.ToolExecutionActionTerminate, nil
+				return ai.ToolExecutionActionTerminate, waitingNotified, "", nil
 			}
 		case _, ok := <-outputChannel:
 			if !ok {
-				return ai.ToolExecutionActionNone, fmt.Errorf("session output unavailable")
+				return ai.ToolExecutionActionNone, waitingNotified, "", fmt.Errorf("session output unavailable")
 			}
 		case <-time.After(interactiveIdlePollInterval):
 		}
@@ -126,7 +145,7 @@ func drainInteractiveOutputChannel(outputChannel <-chan []byte) {
 	}
 }
 
-func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
+func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
 	result := mcpserver.CommandExecutionResult{
 		SessionID:  sessionID,
 		Command:    command,
@@ -138,32 +157,76 @@ func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, comman
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
 	}
-	m.mu.RLock()
-	sessionData, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
-	if !ok || sessionData == nil || sessionData.Stdin == nil {
-		return result, ai.ToolExecutionActionNone, fmt.Errorf("session not found")
-	}
+
+	currentSessionID := sessionID
 	startMarker := "[Lumin_START_" + newCommandExecutionToken() + "]"
 	endMarker := "[Lumin_END_" + newCommandExecutionToken() + "]"
-	wrappedCommand, err := buildInteractiveCommandWrapper(command, cwd, shellType, startMarker, endMarker)
-	if err != nil {
-		return result, ai.ToolExecutionActionNone, err
+	queuedDuringWait := false
+
+	var outputChannel <-chan []byte
+	var cancel func()
+
+	for {
+		m.mu.RLock()
+		sessionData, ok := m.sessions[currentSessionID]
+		m.mu.RUnlock()
+		if !ok || sessionData == nil || sessionData.Stdin == nil {
+			return result, ai.ToolExecutionActionNone, fmt.Errorf("session not found")
+		}
+
+		result.SessionID = currentSessionID
+		_, nextOutputChannel, nextCancel := m.registerSessionOutputTap(currentSessionID)
+		waitOutcome, waited, reassignedSessionID, err := m.waitForInteractiveSessionIdle(
+			currentSessionID,
+			control,
+			reassign,
+			nextOutputChannel,
+			func() {
+				if queuedDuringWait {
+					return
+				}
+				if onCommandQueued != nil {
+					onCommandQueued()
+				}
+			},
+		)
+		if waited {
+			queuedDuringWait = true
+		}
+		if err != nil {
+			nextCancel()
+			return result, ai.ToolExecutionActionNone, err
+		}
+		if waitOutcome == ai.ToolExecutionActionTerminate {
+			nextCancel()
+			return result, ai.ToolExecutionActionTerminate, nil
+		}
+		if reassignedSessionID != "" && reassignedSessionID != currentSessionID {
+			nextCancel()
+			currentSessionID = reassignedSessionID
+			continue
+		}
+
+		outputChannel = nextOutputChannel
+		cancel = nextCancel
+		break
 	}
-	_, outputChannel, cancel := m.registerSessionOutputTap(sessionID)
-	defer cancel()
-	waitOutcome, err := m.waitForInteractiveSessionIdle(sessionID, control, outputChannel)
-	if err != nil {
-		return result, ai.ToolExecutionActionNone, err
+	if cancel != nil {
+		defer cancel()
 	}
-	if waitOutcome == ai.ToolExecutionActionTerminate {
-		return result, ai.ToolExecutionActionTerminate, nil
-	}
+
 	drainInteractiveOutputChannel(outputChannel)
+	wrappedCommand, err := m.prepareInteractiveCommandWrapper(currentSessionID, command, cwd, shellType, startMarker, endMarker)
+	if err != nil {
+		return result, ai.ToolExecutionActionNone, err
+	}
 	if !strings.HasSuffix(wrappedCommand, "\n") {
 		wrappedCommand += "\n"
 	}
-	m.WriteBytes(sessionID, []byte(wrappedCommand))
+	if queuedDuringWait && onCommandStarted != nil {
+		onCommandStarted()
+	}
+	m.WriteBytes(currentSessionID, []byte(wrappedCommand))
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 
@@ -193,7 +256,7 @@ func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, comman
 				}
 			case ai.ToolExecutionActionTerminate:
 				terminationRequested = true
-				m.WriteBytes(sessionID, []byte{3})
+				m.WriteBytes(currentSessionID, []byte{3})
 				if terminateTimer == nil {
 					terminateTimer = time.NewTimer(3 * time.Second)
 					terminateDeadline = terminateTimer.C
@@ -242,14 +305,24 @@ func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, comman
 	}
 }
 
-func buildInteractiveCommandWrapper(command string, cwd string, shellType string, startMarker string, endMarker string) (string, error) {
+type unixInteractiveCommandPlan struct {
+	scriptPath      string
+	scriptContent   string
+	terminalCommand string
+}
+
+func (m *SSHManager) prepareInteractiveCommandWrapper(sessionID string, command string, cwd string, shellType string, startMarker string, endMarker string) (string, error) {
 	normalizedShellType := strings.TrimSpace(shellType)
 	if normalizedShellType == "" {
 		normalizedShellType = "zsh"
 	}
 	switch normalizedShellType {
 	case "zsh":
-		return buildUnixInteractiveCommandWrapper(command, cwd, startMarker, endMarker), nil
+		plan := buildUnixInteractiveCommandPlan(command, cwd, startMarker, endMarker)
+		if err := m.stageUnixInteractiveCommandScript(sessionID, plan.scriptPath, plan.scriptContent); err != nil {
+			return "", err
+		}
+		return plan.terminalCommand, nil
 	case "powershell":
 		return buildPowerShellInteractiveCommandWrapper(command, cwd, startMarker, endMarker), nil
 	case "cmd":
@@ -259,7 +332,7 @@ func buildInteractiveCommandWrapper(command string, cwd string, shellType string
 	}
 }
 
-func buildUnixInteractiveCommandWrapper(command string, cwd string, startMarker string, endMarker string) string {
+func buildUnixInteractiveCommandPlan(command string, cwd string, startMarker string, endMarker string) unixInteractiveCommandPlan {
 	token := newCommandExecutionToken()
 	scriptPath := "/tmp/lumin_mcp_" + token + ".sh"
 	scriptLines := []string{
@@ -278,13 +351,67 @@ func buildUnixInteractiveCommandWrapper(command string, cwd string, startMarker 
 	}
 	scriptLines = append(scriptLines, "printf '%s\\n' "+quotePOSIX(startMarker))
 	scriptLines = append(scriptLines, command)
-	encodedScript := base64.StdEncoding.EncodeToString([]byte(strings.Join(scriptLines, "\n")))
+	return unixInteractiveCommandPlan{
+		scriptPath:      scriptPath,
+		scriptContent:   strings.Join(scriptLines, "\n"),
+		terminalCommand: "sh " + quotePOSIX(scriptPath),
+	}
+}
+
+func (m *SSHManager) stageUnixInteractiveCommandScript(sessionID string, scriptPath string, scriptContent string) error {
+	sftpErr := m.stageUnixInteractiveCommandScriptViaSFTP(sessionID, scriptPath, scriptContent)
+	if sftpErr == nil {
+		return nil
+	}
+	execErr := m.stageUnixInteractiveCommandScriptViaExec(sessionID, scriptPath, scriptContent)
+	if execErr != nil {
+		return fmt.Errorf("stage via sftp failed: %v; fallback exec failed: %w", sftpErr, execErr)
+	}
+	return nil
+}
+
+func (m *SSHManager) stageUnixInteractiveCommandScriptViaSFTP(sessionID string, scriptPath string, scriptContent string) error {
+	stageCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := m.WriteFileContext(stageCtx, sessionID, scriptPath, scriptContent); err != nil {
+		return err
+	}
+	sftpClient, err := m.getSFTPClient(sessionID)
+	if err != nil {
+		return err
+	}
+	if err := sftpClient.Chmod(scriptPath, 0o700); err != nil {
+		_ = sftpClient.Remove(scriptPath)
+		return err
+	}
+	return nil
+}
+
+func (m *SSHManager) stageUnixInteractiveCommandScriptViaExec(sessionID string, scriptPath string, scriptContent string) error {
+	client, _, err := m.getClientEntry(sessionID)
+	if err != nil {
+		return err
+	}
+	stageCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err = m.executeCmdWithClientContext(stageCtx, client, buildUnixInteractiveCommandStageExecCommand(scriptPath, scriptContent))
+	return err
+}
+
+func buildUnixInteractiveCommandStageExecCommand(scriptPath string, scriptContent string) string {
+	encodedScript := base64.StdEncoding.EncodeToString([]byte(scriptContent))
+	pythonCode := fmt.Sprintf("import base64, os; path = %q; content = base64.b64decode(%q); handle = open(path, 'wb'); handle.write(content); handle.close(); os.chmod(path, 0o700)", scriptPath, encodedScript)
 	return strings.Join([]string{
-		"cat <<'__LUMIN_MCP_B64__' | base64 -d > " + quotePOSIX(scriptPath),
-		encodedScript,
-		"__LUMIN_MCP_B64__",
-		"chmod +x " + quotePOSIX(scriptPath),
-		"sh " + quotePOSIX(scriptPath),
+		"set -e",
+		"rm -f " + quotePOSIX(scriptPath),
+		"if command -v python3 >/dev/null 2>&1; then",
+		"python3 -c " + quotePOSIX(pythonCode),
+		"elif command -v python >/dev/null 2>&1; then",
+		"python -c " + quotePOSIX(pythonCode),
+		"else",
+		"printf '%s' " + quotePOSIX(encodedScript) + " | base64 -d > " + quotePOSIX(scriptPath),
+		"chmod 700 " + quotePOSIX(scriptPath),
+		"fi",
 	}, "\n")
 }
 

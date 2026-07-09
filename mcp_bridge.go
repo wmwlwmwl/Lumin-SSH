@@ -19,8 +19,8 @@ func loadMCPServiceSettings(app *App) mcp.ServiceSettings {
 	}
 	settings := ai.LoadAIGlobalSettings(configDir)
 	return mcp.ServiceSettings{
-		Enabled:            settings.MCPEnabled,
-		AllowBrowserCalls:  settings.MCPAllowBrowserCalls,
+		Enabled:           settings.MCPEnabled,
+		AllowBrowserCalls: settings.MCPAllowBrowserCalls,
 	}
 }
 
@@ -181,7 +181,7 @@ func (h mcpHost) ExecuteCommandInTerminalControlled(sessionID string, command st
 	if h.app == nil || h.app.sshManager == nil {
 		return mcpserver.CommandExecutionResult{}, fmt.Errorf("ssh manager unavailable")
 	}
-	result, _, err := h.app.sshManager.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, nil, nil)
+	result, _, err := h.app.sshManager.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, nil, nil, nil, nil, nil)
 	return result, err
 }
 
