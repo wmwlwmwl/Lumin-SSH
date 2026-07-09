@@ -31,21 +31,32 @@ const (
 type aiToolExecutionAction = ToolExecutionAction
 
 type ToolExecutionState struct {
-	ExecutionID         string
-	RequestID           string
-	AssistantMessageID  string
-	ToolIndex           int
-	ToolMessageID       string
-	Tool                aiParsedToolUse
-	Batch               *aiPendingToolBatch
-	AllowContinue       bool
-	AllowTerminate      bool
-	DecisionCh          chan aiToolExecutionAction
-	ExecutionCtx        context.Context
-	Cancel              context.CancelFunc
-	mu                  sync.Mutex
-	terminated          bool
-	snapshotOutputValue string
+	ExecutionID             string
+	RequestID               string
+	AssistantMessageID      string
+	ToolIndex               int
+	ToolMessageID           string
+	Tool                    aiParsedToolUse
+	Batch                   *aiPendingToolBatch
+	TargetSessionID         string
+	AllowContinue           bool
+	AllowTerminate          bool
+	AllowTerminalAssignment bool
+	DecisionCh              chan aiToolExecutionAction
+	ReassignCh              chan string
+	ExecutionCtx            context.Context
+	Cancel                  context.CancelFunc
+	mu                      sync.Mutex
+	terminated              bool
+	snapshotOutputValue     string
+}
+
+type AIChatCommandTerminalCandidate struct {
+	SessionID   string `json:"sessionId"`
+	Busy        bool   `json:"busy"`
+	Cwd         string `json:"cwd"`
+	Current     bool   `json:"current"`
+	Recommended bool   `json:"recommended"`
 }
 
 type aiToolExecutionState = ToolExecutionState
@@ -134,6 +145,68 @@ func (e *aiToolExecutionState) snapshotOutput() string {
 	return e.snapshotOutputValue
 }
 
+func (e *aiToolExecutionState) setTargetSessionID(value string) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	e.TargetSessionID = strings.TrimSpace(value)
+	e.mu.Unlock()
+}
+
+func (e *aiToolExecutionState) targetSessionID() string {
+	if e == nil {
+		return ""
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return strings.TrimSpace(e.TargetSessionID)
+}
+
+func (e *aiToolExecutionState) setAllowTerminalAssignment(enabled bool) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	e.AllowTerminalAssignment = enabled
+	e.mu.Unlock()
+}
+
+func (e *aiToolExecutionState) allowTerminalAssignment() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.AllowTerminalAssignment
+}
+
+func (e *aiToolExecutionState) requestTerminalAssignment(sessionID string) bool {
+	if e == nil {
+		return false
+	}
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	if trimmedSessionID == "" {
+		return false
+	}
+	e.setTargetSessionID(trimmedSessionID)
+	if e.ReassignCh == nil {
+		return false
+	}
+	for {
+		select {
+		case <-e.ReassignCh:
+		default:
+			select {
+			case e.ReassignCh <- trimmedSessionID:
+				return true
+			default:
+				return false
+			}
+		}
+	}
+}
+
 func (e *aiToolExecutionState) markTerminated() bool {
 	if e == nil {
 		return false
@@ -207,6 +280,92 @@ func (a *App) isAIChatToolExecutionCurrent(requestID string, executionID string)
 	defer a.aiToolExecMu.Unlock()
 	execution := a.aiToolExecutions[strings.TrimSpace(requestID)]
 	return execution != nil && execution.ExecutionID == strings.TrimSpace(executionID)
+}
+
+func (a *App) ListAIChatCommandTerminalCandidates(requestID string) ([]AIChatCommandTerminalCandidate, error) {
+	trimmedRequestID := strings.TrimSpace(requestID)
+	if a == nil || trimmedRequestID == "" {
+		return nil, fmt.Errorf("没有可指派的命令实例")
+	}
+	if a.sshManager == nil {
+		return nil, fmt.Errorf("ssh manager unavailable")
+	}
+	execution := a.getAIChatToolExecution(trimmedRequestID)
+	if execution == nil || execution.Batch == nil {
+		return nil, fmt.Errorf("没有可指派的命令实例")
+	}
+	if strings.TrimSpace(execution.Tool.Name) != "execute_command" {
+		return nil, fmt.Errorf("当前工具不支持指派终端")
+	}
+	targetSessionID := execution.targetSessionID()
+	if targetSessionID == "" {
+		targetSessionID = strings.TrimSpace(execution.Batch.Payload.SessionID)
+	}
+	if targetSessionID == "" {
+		return nil, fmt.Errorf("当前工具缺少目标终端")
+	}
+	return a.sshManager.ListSiblingTerminalCandidates(targetSessionID)
+}
+
+func (a *App) AssignAIChatToolTerminal(requestID string, targetSessionID string) error {
+	trimmedRequestID := strings.TrimSpace(requestID)
+	trimmedTargetSessionID := strings.TrimSpace(targetSessionID)
+	if a == nil || trimmedRequestID == "" {
+		return fmt.Errorf("没有可指派的命令实例")
+	}
+	if trimmedTargetSessionID == "" {
+		return fmt.Errorf("目标终端不能为空")
+	}
+	if a.sshManager == nil {
+		return fmt.Errorf("ssh manager unavailable")
+	}
+	execution := a.getAIChatToolExecution(trimmedRequestID)
+	if execution == nil || execution.Batch == nil {
+		return fmt.Errorf("没有可指派的命令实例")
+	}
+	if strings.TrimSpace(execution.Tool.Name) != "execute_command" {
+		return fmt.Errorf("当前工具不支持指派终端")
+	}
+	if !execution.allowTerminalAssignment() {
+		return fmt.Errorf("当前工具未处于可指派状态")
+	}
+	currentTargetSessionID := execution.targetSessionID()
+	if currentTargetSessionID == "" {
+		currentTargetSessionID = strings.TrimSpace(execution.Batch.Payload.SessionID)
+	}
+	candidates, err := a.sshManager.ListSiblingTerminalCandidates(currentTargetSessionID)
+	if err != nil {
+		return err
+	}
+	targetCwd := ""
+	allowed := false
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate.SessionID) != trimmedTargetSessionID {
+			continue
+		}
+		targetCwd = strings.TrimSpace(candidate.Cwd)
+		allowed = true
+		break
+	}
+	if !allowed {
+		return fmt.Errorf("目标终端不可用")
+	}
+	if !execution.requestTerminalAssignment(trimmedTargetSessionID) {
+		return fmt.Errorf("当前工具无法切换目标终端")
+	}
+	a.emitAIChatToolExecutionTerminalAssignmentRequired(
+		trimmedRequestID,
+		execution,
+		buildAIChatCommandToolMessage(
+			execution,
+			execution.Tool.Params["purpose"],
+			execution.Tool.Params["command"],
+			"",
+			"排队中, 等待终端空闲",
+			buildAIChatCommandMessageExtra(trimmedTargetSessionID, targetCwd),
+		),
+	)
+	return nil
 }
 
 func getAIToolRemainingFileEdits(tool aiParsedToolUse) int {
@@ -622,6 +781,60 @@ func (a *App) emitAIChatToolExecutionPersistRequested(requestID string) {
 	})
 }
 
+func buildAIChatCommandMessageExtra(targetSessionID string, targetCwd string) map[string]interface{} {
+	extra := map[string]interface{}{}
+	if trimmedTargetSessionID := strings.TrimSpace(targetSessionID); trimmedTargetSessionID != "" {
+		extra["targetSessionId"] = trimmedTargetSessionID
+	}
+	if trimmedTargetCwd := strings.TrimSpace(targetCwd); trimmedTargetCwd != "" {
+		extra["targetCwd"] = trimmedTargetCwd
+	}
+	return extra
+}
+
+func buildAIChatCommandToolMessage(execution *aiToolExecutionState, purpose string, command string, output string, status string, extra map[string]interface{}) map[string]interface{} {
+	if execution == nil {
+		return map[string]interface{}{}
+	}
+	message := map[string]interface{}{
+		"id":      execution.ToolMessageID,
+		"turnId":  execution.AssistantMessageID,
+		"kind":    "command",
+		"purpose": purpose,
+		"command": command,
+		"output":  output,
+		"status":  status,
+	}
+	if len(extra) > 0 {
+		message["extra"] = extra
+	}
+	return message
+}
+
+func (a *App) emitAIChatCommandToolMessage(requestID string, execution *aiToolExecutionState, purpose string, command string, output string, status string, extra map[string]interface{}) {
+	if a == nil || execution == nil || strings.TrimSpace(requestID) == "" {
+		return
+	}
+	a.emitAIChatEvent(map[string]interface{}{
+		"kind":      "upsert_message",
+		"requestId": strings.TrimSpace(requestID),
+		"message":   buildAIChatCommandToolMessage(execution, purpose, command, output, status, extra),
+	})
+}
+
+func (a *App) emitAIChatToolExecutionTerminalAssignmentRequired(requestID string, execution *aiToolExecutionState, message map[string]interface{}) {
+	if a == nil || execution == nil || strings.TrimSpace(requestID) == "" {
+		return
+	}
+	a.emitAIChatEvent(map[string]interface{}{
+		"kind":           "tool_execution_terminal_assignment_required",
+		"requestId":      strings.TrimSpace(requestID),
+		"executionId":    execution.ExecutionID,
+		"allowTerminate": execution.AllowTerminate,
+		"message":        message,
+	})
+}
+
 func (a *App) skipCompatibleAIChatAfterResolvedTools(requestID string) {
 	if a == nil || strings.TrimSpace(requestID) == "" {
 		return
@@ -774,24 +987,34 @@ func (a *App) startAIChatToolExecution(requestID string, batch *aiPendingToolBat
 	executionID := fmt.Sprintf("%s-tool-exec-%d-%d", requestID, batch.NextToolIndex, time.Now().UnixNano())
 	executionCtx, cancel := context.WithCancel(context.Background())
 	execution := &aiToolExecutionState{
-		ExecutionID:        executionID,
-		RequestID:          requestID,
-		AssistantMessageID: batch.AssistantMessageID,
-		ToolIndex:          batch.NextToolIndex,
-		ToolMessageID:      buildToolMessageID(batch.AssistantMessageID, batch.NextToolIndex),
-		Tool:               tool,
-		Batch:              batch,
-		AllowContinue:      false,
-		AllowTerminate:     true,
-		DecisionCh:         make(chan aiToolExecutionAction, 1),
-		ExecutionCtx:       executionCtx,
-		Cancel:             cancel,
+		ExecutionID:             executionID,
+		RequestID:               requestID,
+		AssistantMessageID:      batch.AssistantMessageID,
+		ToolIndex:               batch.NextToolIndex,
+		ToolMessageID:           buildToolMessageID(batch.AssistantMessageID, batch.NextToolIndex),
+		Tool:                    tool,
+		Batch:                   batch,
+		TargetSessionID:         strings.TrimSpace(batch.Payload.SessionID),
+		AllowContinue:           false,
+		AllowTerminate:          true,
+		AllowTerminalAssignment: false,
+		DecisionCh:              make(chan aiToolExecutionAction, 1),
+		ReassignCh:              make(chan string, 1),
+		ExecutionCtx:            executionCtx,
+		Cancel:                  cancel,
 	}
 	a.setAIChatToolExecution(requestID, execution)
 	message := buildToolPreviewMessage(batch.AssistantMessageID, tool, batch.NextToolIndex)
 	message["status"] = "执行中"
 	if tool.Name == "execute_command" {
-		message["output"] = ""
+		message = buildAIChatCommandToolMessage(
+			execution,
+			tool.Params["purpose"],
+			tool.Params["command"],
+			"",
+			"执行中",
+			buildAIChatCommandMessageExtra(execution.TargetSessionID, ""),
+		)
 	}
 	a.emitAIChatToolExecutionStarted(requestID, execution, message)
 
@@ -1066,7 +1289,7 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 	}
 
 	result, outcome, execErr := a.sshManager.ExecuteCommandInTerminalControlled(
-		execution.Batch.Payload.SessionID,
+		execution.targetSessionID(),
 		command,
 		purpose,
 		isMutating,
@@ -1074,20 +1297,63 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 		shellType,
 		5*time.Minute,
 		execution.DecisionCh,
+		execution.ReassignCh,
+		func() {
+			execution.setAllowTerminalAssignment(true)
+			if !a.isAIChatToolExecutionCurrent(execution.RequestID, execution.ExecutionID) {
+				return
+			}
+			a.emitAIChatToolExecutionTerminalAssignmentRequired(
+				execution.RequestID,
+				execution,
+				buildAIChatCommandToolMessage(
+					execution,
+					purpose,
+					command,
+					"",
+					"排队中, 等待终端空闲",
+					buildAIChatCommandMessageExtra(execution.targetSessionID(), ""),
+				),
+			)
+		},
+		func() {
+			execution.setAllowTerminalAssignment(false)
+			if !a.isAIChatToolExecutionCurrent(execution.RequestID, execution.ExecutionID) {
+				return
+			}
+			a.emitAIChatToolExecutionStarted(
+				execution.RequestID,
+				execution,
+				buildAIChatCommandToolMessage(
+					execution,
+					purpose,
+					command,
+					"",
+					"执行中",
+					buildAIChatCommandMessageExtra(execution.targetSessionID(), ""),
+				),
+			)
+		},
 		func(snapshot string) {
+			execution.setAllowTerminalAssignment(false)
+			if !a.isAIChatToolExecutionCurrent(execution.RequestID, execution.ExecutionID) {
+				return
+			}
 			safeSnapshot := sanitizeAIToolResultText(snapshot)
 			execution.setSnapshotOutput(safeSnapshot)
 			execution.AllowContinue = true
-			message := map[string]interface{}{
-				"id":      execution.ToolMessageID,
-				"turnId":  execution.AssistantMessageID,
-				"kind":    "command",
-				"purpose": purpose,
-				"command": command,
-				"output":  safeSnapshot,
-				"status":  "等待处理",
-			}
-			a.emitAIChatToolExecutionActionRequired(execution.RequestID, execution, message)
+			a.emitAIChatToolExecutionActionRequired(
+				execution.RequestID,
+				execution,
+				buildAIChatCommandToolMessage(
+					execution,
+					purpose,
+					command,
+					safeSnapshot,
+					"等待处理",
+					buildAIChatCommandMessageExtra(execution.targetSessionID(), ""),
+				),
+			)
 		},
 	)
 
@@ -1127,19 +1393,15 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 		stopAfterThisTool = true
 	}
 
-	a.emitAIChatEvent(map[string]interface{}{
-		"kind":      "upsert_message",
-		"requestId": execution.RequestID,
-		"message": map[string]interface{}{
-			"id":      execution.ToolMessageID,
-			"turnId":  execution.AssistantMessageID,
-			"kind":    "command",
-			"purpose": purpose,
-			"command": command,
-			"output":  uiResultText,
-			"status":  statusText,
-		},
-	})
+	a.emitAIChatCommandToolMessage(
+		execution.RequestID,
+		execution,
+		purpose,
+		command,
+		uiResultText,
+		statusText,
+		buildAIChatCommandMessageExtra(execution.targetSessionID(), ""),
+	)
 
 	if strings.TrimSpace(uiResultText) == "" {
 		switch statusText {

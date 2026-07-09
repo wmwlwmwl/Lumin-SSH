@@ -23,7 +23,8 @@ type SessionProviderDelegate interface {
 }
 
 type SSHDelegate interface {
-	ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan aiToolExecutionAction, onCommandOutput func(string)) (mcpserver.CommandExecutionResult, aiToolExecutionAction, error)
+	ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan aiToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, aiToolExecutionAction, error)
+	ListSiblingTerminalCandidates(sessionID string) ([]AIChatCommandTerminalCandidate, error)
 	ListDirContext(ctx context.Context, sessionID string, remotePath string) ([]map[string]interface{}, error)
 	ReadFileContext(ctx context.Context, sessionID string, remotePath string) (string, error)
 	WriteFileContext(ctx context.Context, sessionID string, remotePath string, content string) error
@@ -147,7 +148,7 @@ func newRuntimeToken() string {
 	return hex.EncodeToString(buffer)
 }
 
-func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan aiToolExecutionAction, onCommandOutput func(string)) (mcpserver.CommandExecutionResult, aiToolExecutionAction, error) {
+func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan aiToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, aiToolExecutionAction, error) {
 	if m == nil || m.delegate == nil {
 		result := mcpserver.CommandExecutionResult{
 			SessionID:  sessionID,
@@ -159,7 +160,14 @@ func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, comman
 		}
 		return result, aiToolExecutionActionNone, fmt.Errorf("ssh manager bridge unavailable")
 	}
-	return m.delegate.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, control, onCommandOutput)
+	return m.delegate.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, control, reassign, onCommandQueued, onCommandStarted, onCommandOutput)
+}
+
+func (m *SSHManager) ListSiblingTerminalCandidates(sessionID string) ([]AIChatCommandTerminalCandidate, error) {
+	if m == nil || m.delegate == nil {
+		return nil, fmt.Errorf("ssh manager bridge unavailable")
+	}
+	return m.delegate.ListSiblingTerminalCandidates(sessionID)
 }
 
 func (m *SSHManager) ListDirContext(ctx context.Context, sessionID string, remotePath string) ([]map[string]interface{}, error) {
@@ -241,7 +249,7 @@ func (p mcpCommandProvider) ExecuteCommandContext(ctx context.Context, sessionID
 	if p.app == nil || p.app.sshManager == nil {
 		return mcpserver.CommandExecutionResult{}, fmt.Errorf("ssh manager unavailable")
 	}
-	result, _, err := p.app.sshManager.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, nil, nil)
+	result, _, err := p.app.sshManager.ExecuteCommandInTerminalControlled(sessionID, command, purpose, isMutating, cwd, shellType, timeout, nil, nil, nil, nil, nil)
 	return result, err
 }
 

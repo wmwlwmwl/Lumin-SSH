@@ -6,7 +6,7 @@ import AIPanelHeader from './ai/AIPanelHeader.jsx'
 import AIConversationBackupSettings from './ai/AIConversationBackupSettings.jsx'
 import AIPanelSettingsOverlay from './ai/AIPanelSettingsOverlay.jsx'
 import AIComposer from './ai/AIComposer.jsx'
-import { approveAIChatTools, cancelAIChat, continueAIChatTool, rejectAIChatTools, rejectAIChatToolsForQueuedSubmission, setAIChatSkipNextAutomaticRequest, startAIChat, terminateAIChatTool } from './ai/aiChatBridge.js'
+import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIChatTool, listAIChatCommandTerminalCandidates, rejectAIChatTools, rejectAIChatToolsForQueuedSubmission, setAIChatSkipNextAutomaticRequest, startAIChat, terminateAIChatTool } from './ai/aiChatBridge.js'
 import { createAIConversation, deleteAIConversation, getAIConversation, listAIConversations, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, saveAIConversation } from './ai/aiConversationBridge.js'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.js'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js'
@@ -243,16 +243,20 @@ function upsertMessageBeforeAssistant(messages, requestId, nextMessage) {
   const existingIndex = list.findIndex((message) => message.id === nextMessage?.id)
   if (existingIndex >= 0) {
     const nextMessages = [...list]
+    const previousMessage = nextMessages[existingIndex]
+    const previousExtra = previousMessage?.extra && typeof previousMessage.extra === 'object' ? previousMessage.extra : null
+    const nextExtra = nextMessage?.extra && typeof nextMessage.extra === 'object' ? nextMessage.extra : null
     nextMessages[existingIndex] = {
-      ...nextMessages[existingIndex],
+      ...previousMessage,
       ...nextMessage,
+      ...(previousExtra || nextExtra ? { extra: { ...(previousExtra || {}), ...(nextExtra || {}) } } : {}),
     }
     return nextMessages
   }
   return insertMessageBeforeAssistant(list, requestId, nextMessage)
 }
 
-export default function AIPanel({ width, side, terminalId = 'global', sessionId = '' }) {
+export default function AIPanel({ width, side, terminalId = 'global', sessionId = '', sessionTerminals = [] }) {
   const { t } = useTranslation()
   const [mcpInfo, setMcpInfo] = useState({ url: '', transport: 'streamable-http', endpoint: '/mcp', instructions: '', logs: '', tools: [] })
   const [showSettingsPanel, setShowSettingsPanel] = useState(false)
@@ -306,13 +310,41 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   }, [])
 
   const panelState = terminalPanels[panelInstanceKey] || createEmptyPanelState()
+  const terminalLabelMap = useMemo(() => {
+    const map = new Map()
+    ;(Array.isArray(sessionTerminals) ? sessionTerminals : []).forEach((terminal) => {
+      const nextTerminalId = typeof terminal?.id === 'string' ? terminal.id.trim() : ''
+      if (!nextTerminalId) {
+        return
+      }
+      const nextLabel = typeof terminal?.label === 'string' && terminal.label.trim() ? terminal.label.trim() : nextTerminalId
+      map.set(nextTerminalId, nextLabel)
+    })
+    return map
+  }, [sessionTerminals])
+  const enrichAIChatCommandMessage = useCallback((message) => {
+    if (!message || typeof message !== 'object' || message.kind !== 'command') {
+      return message
+    }
+    const nextExtra = message.extra && typeof message.extra === 'object' ? { ...message.extra } : {}
+    const targetSessionId = typeof nextExtra.targetSessionId === 'string' && nextExtra.targetSessionId.trim()
+      ? nextExtra.targetSessionId.trim()
+      : ''
+    if (targetSessionId) {
+      nextExtra.targetLabel = terminalLabelMap.get(targetSessionId) || targetSessionId
+    }
+    return Object.keys(nextExtra).length > 0
+      ? { ...message, extra: nextExtra }
+      : message
+  }, [terminalLabelMap])
   const activeConversation = panelState.conversation
   const runtimePhase = normalizeAIRuntimePhase(panelState.runtimePhase)
   const isStreaming = panelState.requestPhase === 'streaming'
   const isAwaitingToolApproval = panelState.requestPhase === 'awaiting_tool_approval'
   const isToolRunning = panelState.requestPhase === 'running_tool'
   const isAwaitingCommandAction = panelState.requestPhase === 'awaiting_command_action'
-  const isQueueBlocked = isAIQueueBlocked(runtimePhase) || isStreaming || isAwaitingToolApproval || isToolRunning || isAwaitingCommandAction
+  const isAwaitingTerminalAssignment = panelState.requestPhase === 'awaiting_terminal_assignment'
+  const isQueueBlocked = isAIQueueBlocked(runtimePhase) || isStreaming || isAwaitingToolApproval || isToolRunning || isAwaitingCommandAction || isAwaitingTerminalAssignment
   const normalizedGlobalAISettings = useMemo(() => normalizeAIGlobalSettings(globalAISettings), [globalAISettings])
   const effectiveAutoApprovalSettings = useMemo(() => {
     if (!activeConversation) {
@@ -666,9 +698,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'upsert_message' && payload.message) {
+        const nextMessage = enrichAIChatCommandMessage(payload.message)
         setPanelState(matchedPanelKey, (current) => ({
           ...current,
-          messages: upsertMessageBeforeAssistant(current.messages, current.activeAssistantMessageId || requestId, payload.message),
+          messages: upsertMessageBeforeAssistant(current.messages, current.activeAssistantMessageId || requestId, nextMessage),
         }))
         return
       }
@@ -759,6 +792,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'tool_execution_started' && payload.message) {
+        const nextMessage = enrichAIChatCommandMessage(payload.message)
         setPanelState(matchedPanelKey, (current) => {
           const anchorAssistantMessageId = current.activeAssistantMessageId || requestId
           return {
@@ -769,14 +803,36 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
               executionId: typeof payload.executionId === 'string' ? payload.executionId.trim() : '',
               allowContinue: false,
               allowTerminate: payload.allowTerminate !== false,
+              allowTerminalAssignment: false,
             },
-            messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, payload.message),
+            messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, nextMessage),
+          }
+        })
+        return
+      }
+
+      if (payload.kind === 'tool_execution_terminal_assignment_required' && payload.message) {
+        const nextMessage = enrichAIChatCommandMessage(payload.message)
+        setPanelState(matchedPanelKey, (current) => {
+          const anchorAssistantMessageId = current.activeAssistantMessageId || requestId
+          return {
+            ...current,
+            requestPhase: 'awaiting_terminal_assignment',
+            toolApprovalMode: '',
+            activeToolExecution: {
+              executionId: typeof payload.executionId === 'string' ? payload.executionId.trim() : '',
+              allowContinue: false,
+              allowTerminate: payload.allowTerminate !== false,
+              allowTerminalAssignment: true,
+            },
+            messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, nextMessage),
           }
         })
         return
       }
 
       if (payload.kind === 'tool_execution_action_required' && payload.message) {
+        const nextMessage = enrichAIChatCommandMessage(payload.message)
         setPanelState(matchedPanelKey, (current) => {
           const anchorAssistantMessageId = current.activeAssistantMessageId || requestId
           return {
@@ -787,8 +843,9 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
               executionId: typeof payload.executionId === 'string' ? payload.executionId.trim() : '',
               allowContinue: payload.allowContinue === true,
               allowTerminate: payload.allowTerminate !== false,
+              allowTerminalAssignment: false,
             },
-            messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, payload.message),
+            messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, nextMessage),
           }
         })
         return
@@ -855,7 +912,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
                 },
               }
             }
-            if ((message.kind === 'tool' || message.kind === 'command') && typeof message.status === 'string' && (message.status === '待批准' || message.status === '执行中' || message.status === '等待处理')) {
+            if ((message.kind === 'tool' || message.kind === 'command') && typeof message.status === 'string' && (message.status === '待批准' || message.status === '执行中' || message.status === '等待处理' || message.status === '排队中, 等待终端空闲')) {
               return {
                 ...message,
                 status: '已拒绝',
@@ -1994,6 +2051,25 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     await terminateAIChatTool(panelState.activeRequestId)
   }, [panelState.activeRequestId])
 
+  const handleListCommandTerminalCandidates = useCallback(async () => {
+    if (!panelState.activeRequestId) {
+      return []
+    }
+    const candidates = await listAIChatCommandTerminalCandidates(panelState.activeRequestId)
+    return candidates.map((candidate) => ({
+      ...candidate,
+      label: terminalLabelMap.get(candidate.sessionId) || candidate.sessionId,
+      current: candidate.current === true || candidate.sessionId === terminalId,
+    }))
+  }, [panelState.activeRequestId, terminalId, terminalLabelMap])
+
+  const handleAssignToolTerminal = useCallback(async (targetSessionId) => {
+    if (!panelState.activeRequestId) {
+      return
+    }
+    await assignAIChatToolTerminal(panelState.activeRequestId, targetSessionId)
+  }, [panelState.activeRequestId])
+
   const handleToggleSkipNextAutomaticRequest = useCallback(async (enabled) => {
     let targetRequestId = ''
     setPanelState(panelInstanceKey, (current) => {
@@ -2220,6 +2296,9 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
           terminalSessionId={terminalId}
           queueBlocked={isQueueBlocked || panelState.isFlushingQueuedSubmission}
           queuedSubmissionKind={panelState.queuedSubmission?.kind || ''}
+          terminalAssignmentRequired={isAwaitingTerminalAssignment}
+          onListCommandTerminalCandidates={handleListCommandTerminalCandidates}
+          onAssignToolTerminal={handleAssignToolTerminal}
           onCancelQueuedSubmission={handleCancelQueuedSubmission}
           skipNextAutomaticRequest={Boolean(panelState.skipNextAutomaticRequest)}
           onToggleSkipNextAutomaticRequest={handleToggleSkipNextAutomaticRequest}

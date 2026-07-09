@@ -127,7 +127,7 @@ function renderCommandWithRiskHighlights(command, matches) {
 
 const runningStatusKey = '运行中'
 
-export default function AIChatCommandCard({ purpose, command, output, status = runningStatusKey }) {
+export default function AIChatCommandCard({ purpose, command, output, status = runningStatusKey, extra = {} }) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const expanded = isExpanded || ((status === '等待处理' || status === '后台继续' || status === '已终止') && Boolean(output))
@@ -137,6 +137,8 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
   const highlightedCommand = useMemo(() => renderCommandWithRiskHighlights(normalizedCommand, riskState.matches), [normalizedCommand, riskState.matches])
   const cardBorder = riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.26)' : '1px solid rgba(var(--warning-rgb), 0.26)'
   const headerBackground = riskState.severity === 'danger' ? 'rgba(var(--danger-rgb), 0.06)' : 'rgba(var(--warning-rgb), 0.06)'
+  const targetLabel = typeof extra?.targetLabel === 'string' ? extra.targetLabel.trim() : ''
+  const targetCwd = typeof extra?.targetCwd === 'string' ? extra.targetCwd.trim() : ''
 
   return (
     <div style={{ display: 'grid', gap: 8 }}>
@@ -186,6 +188,20 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
             <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, wordBreak: 'break-word' }}>
               <AIChatMarkdown text={purpose} />
             </div>
+            {(targetLabel || targetCwd) ? (
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                {targetLabel ? (
+                  <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'rgba(var(--accent-rgb), 0.08)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {targetLabel}
+                  </div>
+                ) : null}
+                {targetCwd ? (
+                  <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 11, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                    {targetCwd}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
         <div style={{ padding: '12px 12px 10px', display: 'grid', gap: 10 }}>

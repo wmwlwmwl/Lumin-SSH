@@ -41,7 +41,7 @@ func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, 
 	endMarker := "[Lumin_END_" + newCommandExecutionToken() + "]"
 	_, outputChannel, cancel := m.registerSessionOutputTap(sessionID)
 	defer cancel()
-	if _, err := m.waitForInteractiveSessionIdle(sessionID, nil, outputChannel); err != nil {
+	if _, _, _, err := m.waitForInteractiveSessionIdle(sessionID, nil, nil, outputChannel, nil); err != nil {
 		return result, err
 	}
 	drainInteractiveOutputChannel(outputChannel)
@@ -85,29 +85,47 @@ func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, 
 	}
 }
 
-func (m *SSHManager) waitForInteractiveSessionIdle(sessionID string, control <-chan ai.ToolExecutionAction, outputChannel <-chan []byte) (ai.ToolExecutionAction, error) {
+func (m *SSHManager) waitForInteractiveSessionIdle(sessionID string, control <-chan ai.ToolExecutionAction, reassign <-chan string, outputChannel <-chan []byte, onWaitStart func()) (ai.ToolExecutionAction, bool, string, error) {
+	waitingNotified := false
+	reassignChannel := reassign
 	for {
 		m.mu.RLock()
 		sessionData, ok := m.sessions[sessionID]
 		shouldWait := ok && sessionData != nil && sessionData.RemoteHistoryActive && !sessionData.PromptReady
 		m.mu.RUnlock()
 		if !ok || sessionData == nil {
-			return ai.ToolExecutionActionNone, fmt.Errorf("session not found")
+			return ai.ToolExecutionActionNone, waitingNotified, "", fmt.Errorf("session not found")
 		}
 		if !shouldWait {
-			return ai.ToolExecutionActionNone, nil
+			return ai.ToolExecutionActionNone, waitingNotified, "", nil
+		}
+		if !waitingNotified {
+			waitingNotified = true
+			if onWaitStart != nil {
+				onWaitStart()
+			}
 		}
 		select {
+		case nextSessionID, ok := <-reassignChannel:
+			if !ok {
+				reassignChannel = nil
+				continue
+			}
+			trimmedSessionID := strings.TrimSpace(nextSessionID)
+			if trimmedSessionID == "" || trimmedSessionID == sessionID {
+				continue
+			}
+			return ai.ToolExecutionActionNone, waitingNotified, trimmedSessionID, nil
 		case action, ok := <-control:
 			if !ok {
 				continue
 			}
 			if action == ai.ToolExecutionActionTerminate {
-				return ai.ToolExecutionActionTerminate, nil
+				return ai.ToolExecutionActionTerminate, waitingNotified, "", nil
 			}
 		case _, ok := <-outputChannel:
 			if !ok {
-				return ai.ToolExecutionActionNone, fmt.Errorf("session output unavailable")
+				return ai.ToolExecutionActionNone, waitingNotified, "", fmt.Errorf("session output unavailable")
 			}
 		case <-time.After(interactiveIdlePollInterval):
 		}
@@ -127,7 +145,7 @@ func drainInteractiveOutputChannel(outputChannel <-chan []byte) {
 	}
 }
 
-func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
+func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {
 	result := mcpserver.CommandExecutionResult{
 		SessionID:  sessionID,
 		Command:    command,
@@ -139,32 +157,76 @@ func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, comman
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
 	}
-	m.mu.RLock()
-	sessionData, ok := m.sessions[sessionID]
-	m.mu.RUnlock()
-	if !ok || sessionData == nil || sessionData.Stdin == nil {
-		return result, ai.ToolExecutionActionNone, fmt.Errorf("session not found")
-	}
+
+	currentSessionID := sessionID
 	startMarker := "[Lumin_START_" + newCommandExecutionToken() + "]"
 	endMarker := "[Lumin_END_" + newCommandExecutionToken() + "]"
-	_, outputChannel, cancel := m.registerSessionOutputTap(sessionID)
-	defer cancel()
-	waitOutcome, err := m.waitForInteractiveSessionIdle(sessionID, control, outputChannel)
-	if err != nil {
-		return result, ai.ToolExecutionActionNone, err
+	queuedDuringWait := false
+
+	var outputChannel <-chan []byte
+	var cancel func()
+
+	for {
+		m.mu.RLock()
+		sessionData, ok := m.sessions[currentSessionID]
+		m.mu.RUnlock()
+		if !ok || sessionData == nil || sessionData.Stdin == nil {
+			return result, ai.ToolExecutionActionNone, fmt.Errorf("session not found")
+		}
+
+		result.SessionID = currentSessionID
+		_, nextOutputChannel, nextCancel := m.registerSessionOutputTap(currentSessionID)
+		waitOutcome, waited, reassignedSessionID, err := m.waitForInteractiveSessionIdle(
+			currentSessionID,
+			control,
+			reassign,
+			nextOutputChannel,
+			func() {
+				if queuedDuringWait {
+					return
+				}
+				if onCommandQueued != nil {
+					onCommandQueued()
+				}
+			},
+		)
+		if waited {
+			queuedDuringWait = true
+		}
+		if err != nil {
+			nextCancel()
+			return result, ai.ToolExecutionActionNone, err
+		}
+		if waitOutcome == ai.ToolExecutionActionTerminate {
+			nextCancel()
+			return result, ai.ToolExecutionActionTerminate, nil
+		}
+		if reassignedSessionID != "" && reassignedSessionID != currentSessionID {
+			nextCancel()
+			currentSessionID = reassignedSessionID
+			continue
+		}
+
+		outputChannel = nextOutputChannel
+		cancel = nextCancel
+		break
 	}
-	if waitOutcome == ai.ToolExecutionActionTerminate {
-		return result, ai.ToolExecutionActionTerminate, nil
+	if cancel != nil {
+		defer cancel()
 	}
+
 	drainInteractiveOutputChannel(outputChannel)
-	wrappedCommand, err := m.prepareInteractiveCommandWrapper(sessionID, command, cwd, shellType, startMarker, endMarker)
+	wrappedCommand, err := m.prepareInteractiveCommandWrapper(currentSessionID, command, cwd, shellType, startMarker, endMarker)
 	if err != nil {
 		return result, ai.ToolExecutionActionNone, err
 	}
 	if !strings.HasSuffix(wrappedCommand, "\n") {
 		wrappedCommand += "\n"
 	}
-	m.WriteBytes(sessionID, []byte(wrappedCommand))
+	if queuedDuringWait && onCommandStarted != nil {
+		onCommandStarted()
+	}
+	m.WriteBytes(currentSessionID, []byte(wrappedCommand))
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 
@@ -194,7 +256,7 @@ func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, comman
 				}
 			case ai.ToolExecutionActionTerminate:
 				terminationRequested = true
-				m.WriteBytes(sessionID, []byte{3})
+				m.WriteBytes(currentSessionID, []byte{3})
 				if terminateTimer == nil {
 					terminateTimer = time.NewTimer(3 * time.Second)
 					terminateDeadline = terminateTimer.C
