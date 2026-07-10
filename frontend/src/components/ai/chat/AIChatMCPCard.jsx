@@ -40,7 +40,7 @@ export default function AIChatMCPCard({ serverName, toolName, args, response, is
           </span>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {response ? (
-              <span style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(var(--success-rgb), 0.35)', background: 'rgba(var(--success-rgb), 0.08)', color: 'var(--success)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+              <span style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--success) 30%, var(--border))', background: 'color-mix(in srgb, var(--success) 8%, var(--surface-overlay))', color: 'var(--success)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
                 {t('completed')}
               </span>
             ) : null}

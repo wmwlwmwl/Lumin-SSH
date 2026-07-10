@@ -867,6 +867,8 @@ export default {
   "最大输出 Token": "最大输出 Token",
   "思考 Token 预算": "思考 Token 预算",
   "思考深度": "思考深度",
+  "旧推理格式": "旧推理格式",
+  "为 Messages 使用旧式 thinking budget 负载，而不是 adaptive effort。": "为 Messages 使用旧式 thinking budget 负载，而不是 adaptive effort。",
   "配置文件": "配置文件",
   "API提供商": "API提供商",
   "供应商": "供应商",

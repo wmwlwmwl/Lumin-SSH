@@ -33,8 +33,8 @@ export default function AIChatCompletionCard({ title = completionTitleKey, summa
           </div>
         ) : null}
       </div>
-      <div style={{ width: '100%', border: '1px solid rgba(var(--success-rgb), 0.26)', borderRadius: 12, background: 'var(--surface-overlay)', overflow: 'hidden' }}>
-        <div style={{ padding: '12px', background: 'rgba(var(--success-rgb), 0.05)', display: 'grid', gap: normalizedSummary ? 8 : 0 }}>
+      <div style={{ width: '100%', border: '1px solid var(--ai-chat-completion-card-border)', borderRadius: 12, background: 'var(--ai-chat-completion-card-bg)', overflow: 'hidden' }}>
+        <div style={{ padding: '12px', background: 'var(--ai-chat-completion-card-header-bg)', display: 'grid', gap: normalizedSummary ? 8 : 0 }}>
           {normalizedSummary ? (
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7, wordBreak: 'break-word' }}>
               <AIChatMarkdown text={normalizedSummary} />

@@ -57,6 +57,38 @@ svg[class*="lucide"] {
   --info-rgb:       184, 138, 255;
   --info-dim:       rgba(184, 138, 255, 0.12);
 
+  --ai-chat-risk-danger-border: rgba(var(--danger-rgb), 0.35);
+  --ai-chat-risk-danger-bg: rgba(var(--danger-rgb), 0.10);
+  --ai-chat-risk-danger-fg: #fecdd3;
+  --ai-chat-risk-danger-stripe-strong: rgba(var(--danger-rgb), 0.26);
+  --ai-chat-risk-danger-stripe-soft: rgba(var(--danger-rgb), 0.10);
+  --ai-chat-risk-warning-border: rgba(var(--warning-rgb), 0.35);
+  --ai-chat-risk-warning-bg: rgba(var(--warning-rgb), 0.10);
+  --ai-chat-risk-warning-fg: #fde68a;
+  --ai-chat-risk-warning-stripe-strong: rgba(var(--warning-rgb), 0.24);
+  --ai-chat-risk-warning-stripe-soft: rgba(var(--warning-rgb), 0.10);
+  --ai-chat-command-read-card-border: rgba(var(--accent-rgb), 0.52);
+  --ai-chat-command-read-card-bg: rgba(var(--accent-rgb), 0.04);
+  --ai-chat-command-read-card-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.14), 0 10px 24px rgba(var(--accent-rgb), 0.08);
+  --ai-chat-command-read-header-bg: rgba(var(--accent-rgb), 0.08);
+  --ai-chat-command-read-badge-border: rgba(var(--accent-rgb), 0.36);
+  --ai-chat-command-read-badge-bg: rgba(var(--accent-rgb), 0.14);
+  --ai-chat-command-read-badge-fg: #bfdbfe;
+  --ai-chat-command-read-panel-border: rgba(var(--accent-rgb), 0.30);
+  --ai-chat-command-read-panel-bg: rgba(var(--accent-rgb), 0.05);
+  --ai-chat-command-write-card-border: rgba(var(--warning-rgb), 0.62);
+  --ai-chat-command-write-card-bg: rgba(var(--warning-rgb), 0.05);
+  --ai-chat-command-write-card-shadow: 0 0 0 1px rgba(var(--warning-rgb), 0.18), 0 12px 28px rgba(var(--warning-rgb), 0.10);
+  --ai-chat-command-write-header-bg: rgba(var(--warning-rgb), 0.10);
+  --ai-chat-command-write-badge-border: rgba(var(--warning-rgb), 0.46);
+  --ai-chat-command-write-badge-bg: rgba(var(--warning-rgb), 0.18);
+  --ai-chat-command-write-badge-fg: #fde68a;
+  --ai-chat-command-write-panel-border: rgba(var(--warning-rgb), 0.36);
+  --ai-chat-command-write-panel-bg: rgba(var(--warning-rgb), 0.07);
+  --ai-chat-completion-card-border: rgba(var(--success-rgb), 0.26);
+  --ai-chat-completion-card-bg: var(--surface-overlay);
+  --ai-chat-completion-card-header-bg: rgba(var(--success-rgb), 0.05);
+
   /* ── 阴影（带冷蓝色调） ── */
   --shadow-xs:  0 1px 2px rgba(0, 5, 20, 0.3);
   --shadow-sm:  0 2px 4px rgba(0, 5, 20, 0.35);
@@ -151,6 +183,38 @@ body.theme-light {
   --info:           #7c3aed;
   --info-rgb:       124, 58, 237;
   --info-dim:       rgba(124, 58, 237, 0.08);
+
+  --ai-chat-risk-danger-border: rgba(var(--danger-rgb), 0.24);
+  --ai-chat-risk-danger-bg: rgba(var(--danger-rgb), 0.08);
+  --ai-chat-risk-danger-fg: var(--danger);
+  --ai-chat-risk-danger-stripe-strong: rgba(var(--danger-rgb), 0.16);
+  --ai-chat-risk-danger-stripe-soft: rgba(var(--danger-rgb), 0.06);
+  --ai-chat-risk-warning-border: rgba(var(--warning-rgb), 0.24);
+  --ai-chat-risk-warning-bg: rgba(var(--warning-rgb), 0.08);
+  --ai-chat-risk-warning-fg: var(--warning);
+  --ai-chat-risk-warning-stripe-strong: rgba(var(--warning-rgb), 0.16);
+  --ai-chat-risk-warning-stripe-soft: rgba(var(--warning-rgb), 0.06);
+  --ai-chat-command-read-card-border: rgba(var(--accent-rgb), 0.24);
+  --ai-chat-command-read-card-bg: rgba(var(--accent-rgb), 0.02);
+  --ai-chat-command-read-card-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.06), 0 10px 22px rgba(52, 44, 34, 0.08);
+  --ai-chat-command-read-header-bg: rgba(var(--accent-rgb), 0.04);
+  --ai-chat-command-read-badge-border: rgba(var(--accent-rgb), 0.18);
+  --ai-chat-command-read-badge-bg: rgba(var(--accent-rgb), 0.10);
+  --ai-chat-command-read-badge-fg: var(--accent);
+  --ai-chat-command-read-panel-border: rgba(var(--accent-rgb), 0.14);
+  --ai-chat-command-read-panel-bg: color-mix(in srgb, var(--surface-raised) 98%, rgba(var(--accent-rgb), 0.03));
+  --ai-chat-command-write-card-border: rgba(var(--warning-rgb), 0.28);
+  --ai-chat-command-write-card-bg: rgba(var(--warning-rgb), 0.02);
+  --ai-chat-command-write-card-shadow: 0 0 0 1px rgba(var(--warning-rgb), 0.08), 0 10px 22px rgba(52, 44, 34, 0.08);
+  --ai-chat-command-write-header-bg: rgba(var(--warning-rgb), 0.05);
+  --ai-chat-command-write-badge-border: rgba(var(--warning-rgb), 0.20);
+  --ai-chat-command-write-badge-bg: rgba(var(--warning-rgb), 0.10);
+  --ai-chat-command-write-badge-fg: var(--warning);
+  --ai-chat-command-write-panel-border: rgba(var(--warning-rgb), 0.16);
+  --ai-chat-command-write-panel-bg: color-mix(in srgb, var(--surface-raised) 98%, rgba(var(--warning-rgb), 0.03));
+  --ai-chat-completion-card-border: rgba(var(--success-rgb), 0.22);
+  --ai-chat-completion-card-bg: var(--surface-overlay);
+  --ai-chat-completion-card-header-bg: rgba(var(--success-rgb), 0.04);
 
   --shadow-xs:  0 1px 2px rgba(28, 25, 23, 0.05);
   --shadow-sm:  0 2px 4px rgba(28, 25, 23, 0.07);

@@ -139,6 +139,33 @@ func (a *App) requestCompatibleAIChatRound(ctx context.Context, requestID string
 	startedAt := time.Now()
 	firstTokenAt := time.Time{}
 	var contentBuilder strings.Builder
+	var contentParser aiReasoningTagStreamParser
+
+	emitReasoningDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "reasoning_delta",
+			"requestId": requestID,
+			"delta":     delta,
+		})
+	}
+
+	emitContentDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		if firstTokenAt.IsZero() && strings.TrimSpace(delta) != "" {
+			firstTokenAt = time.Now()
+		}
+		contentBuilder.WriteString(delta)
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "delta",
+			"requestId": requestID,
+			"delta":     delta,
+		})
+	}
 
 	systemPrompt := BuildChatSystemPromptWithProfile(a.ctx, payload.ConversationID, payload.SessionID, true, profile)
 	modelCapability := aiprovider.ResolveModelCapability(profile.Provider, profile.Model)
@@ -229,27 +256,11 @@ func (a *App) requestCompatibleAIChatRound(ctx context.Context, requestID string
 			if reasoningDelta == "" {
 				reasoningDelta = strings.TrimSpace(choice.Delta.Reasoning)
 			}
-			if reasoningDelta != "" {
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "reasoning_delta",
-					"requestId": requestID,
-					"delta":     reasoningDelta,
-				})
-			}
+			emitReasoningDelta(reasoningDelta)
 
-			delta := choice.Delta.Content
-			if delta == "" {
-				continue
-			}
-			if firstTokenAt.IsZero() {
-				firstTokenAt = time.Now()
-			}
-			contentBuilder.WriteString(delta)
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "delta",
-				"requestId": requestID,
-				"delta":     delta,
-			})
+			bodyDelta, taggedReasoningDelta := contentParser.Feed(choice.Delta.Content)
+			emitReasoningDelta(taggedReasoningDelta)
+			emitContentDelta(bodyDelta)
 		}
 	}
 
@@ -259,6 +270,10 @@ func (a *App) requestCompatibleAIChatRound(ctx context.Context, requestID string
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
+
+	flushedBody, flushedReasoning := contentParser.Flush()
+	emitReasoningDelta(flushedReasoning)
+	emitContentDelta(flushedBody)
 
 	result.Text = strings.TrimSpace(contentBuilder.String())
 	if result.Text == "" {

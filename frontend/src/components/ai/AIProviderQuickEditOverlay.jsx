@@ -27,7 +27,7 @@ const reasoningEffortLabels = {
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384
 const DEFAULT_MAX_THINKING_TOKENS = 8192
-const ROO_ALIGNED_EFFORT_REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh']
+const DEFAULT_EFFORT_REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh']
 
 function getAppBridge() {
   return window?.go?.main?.AIBindings || window?.go?.main?.AIProviderBindings || window?.go?.main?.App
@@ -69,12 +69,12 @@ function getReasoningOptionLabel(value) {
   return translate(reasoningEffortLabels[nextValue] || nextValue || '无')
 }
 
-function supportsRooAlignedEffortReasoning(providerValue) {
-  return providerValue === 'Compatible' || providerValue === 'Responses'
+function supportsUnifiedEffortReasoning(providerValue) {
+  return providerValue === 'Compatible' || providerValue === 'Responses' || providerValue === 'Messages'
 }
 
 function buildDisplayModelCapability(providerValue, capability) {
-  if (!supportsRooAlignedEffortReasoning(providerValue)) {
+  if (!supportsUnifiedEffortReasoning(providerValue)) {
     return capability
   }
   return {
@@ -82,7 +82,7 @@ function buildDisplayModelCapability(providerValue, capability) {
     supportsReasoningBinary: false,
     supportsReasoningBudget: false,
     requiredReasoningBudget: false,
-    supportsReasoningEffort: [...ROO_ALIGNED_EFFORT_REASONING_OPTIONS],
+    supportsReasoningEffort: [...DEFAULT_EFFORT_REASONING_OPTIONS],
     requiredReasoningEffort: false,
     reasoningMode: 'effort',
     reasoningEffort: typeof capability?.reasoningEffort === 'string' && capability.reasoningEffort.trim()
@@ -149,6 +149,7 @@ function buildDraft(provider) {
       || normalizePositiveInteger(provider?.modelMaxThinkingTokens) > 0
       || capability.requiredReasoningBudget === true
       || capability.requiredReasoningEffort === true,
+    openAiLegacyReasoningFormatEnabled: provider?.openAiLegacyReasoningFormatEnabled === true,
     modelMaxTokens: normalizePositiveInteger(provider?.modelMaxTokens, capability.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS),
     modelMaxThinkingTokens: normalizePositiveInteger(provider?.modelMaxThinkingTokens, capability.maxThinkingTokens || DEFAULT_MAX_THINKING_TOKENS),
     pinned: Boolean(provider?.pinned),
@@ -613,6 +614,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
         enableReasoningEffort: Boolean(draft.enableReasoningEffort),
         modelMaxTokens: normalizePositiveInteger(draft.modelMaxTokens),
         modelMaxThinkingTokens: normalizePositiveInteger(draft.modelMaxThinkingTokens),
+        openAiLegacyReasoningFormatEnabled: draft.openAiLegacyReasoningFormatEnabled === true,
       }))
       const passed = result?.success === true
       setWebSearchValidationPassed(passed)
@@ -675,6 +677,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
       webSearchEnabled: draft.dedicatedWebSearchEnabled ? false : draft.webSearchEnabled,
       reasoningEffort,
       enableReasoningEffort,
+      openAiLegacyReasoningFormatEnabled: draft.openAiLegacyReasoningFormatEnabled === true,
       modelMaxTokens,
       modelMaxThinkingTokens,
     })
@@ -821,60 +824,106 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
         return renderBudgetSection()
       case 'effort':
         return (
-          <div style={{ display: 'grid', gap: 3 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('思考深度')}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-              {effortReasoningOptions.map((option) => {
-                const active = currentEffortReasoningSelection === option
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => {
-                      if (option === 'disable') {
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'grid', gap: 3 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('思考深度')}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                {effortReasoningOptions.map((option) => {
+                  const active = currentEffortReasoningSelection === option
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => {
+                        if (option === 'disable') {
+                          setDraft((prev) => ({
+                            ...prev,
+                            reasoningEffort: 'disable',
+                            enableReasoningEffort: false,
+                          }))
+                          return
+                        }
                         setDraft((prev) => ({
                           ...prev,
-                          reasoningEffort: 'disable',
-                          enableReasoningEffort: false,
+                          reasoningEffort: option,
+                          enableReasoningEffort: true,
                         }))
-                        return
-                      }
-                      setDraft((prev) => ({
-                        ...prev,
-                        reasoningEffort: option,
-                        enableReasoningEffort: true,
-                      }))
-                    }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      border: 'none',
-                      background: 'transparent',
-                      color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                      padding: 0,
-                      fontSize: 12,
-                      fontWeight: active ? 700 : 500,
-                    }}>
-                    <span
+                      }}
                       style={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: 999,
-                        boxSizing: 'border-box',
-                        border: `1px solid ${active ? 'rgba(var(--accent-rgb), 0.65)' : 'var(--border)'}`,
-                        background: active ? 'rgba(var(--accent-rgb), 0.18)' : 'transparent',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
+                        gap: 8,
+                        border: 'none',
+                        background: 'transparent',
+                        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        padding: 0,
+                        fontSize: 12,
+                        fontWeight: active ? 700 : 500,
                       }}>
-                      {active ? <span style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--accent)', display: 'block' }} /> : null}
-                    </span>
-                    <span>{getReasoningOptionLabel(option)}</span>
-                  </button>
-                )
-              })}
+                      <span
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: 999,
+                          boxSizing: 'border-box',
+                          border: `1px solid ${active ? 'rgba(var(--accent-rgb), 0.65)' : 'var(--border)'}`,
+                          background: active ? 'rgba(var(--accent-rgb), 0.18)' : 'transparent',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                        {active ? <span style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--accent)', display: 'block' }} /> : null}
+                      </span>
+                      <span>{getReasoningOptionLabel(option)}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
+            {draft.provider === 'Messages' ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '10px 12px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  background: 'var(--surface-overlay)',
+                }}>
+                <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 600 }}>{t('旧推理格式')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>{t('为 Messages 使用旧式 thinking budget 负载，而不是 adaptive effort。')}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDraft((prev) => ({ ...prev, openAiLegacyReasoningFormatEnabled: !prev.openAiLegacyReasoningFormatEnabled }))}
+                  style={{
+                    width: 34,
+                    height: 20,
+                    borderRadius: 999,
+                    border: '1px solid var(--border)',
+                    background: draft.openAiLegacyReasoningFormatEnabled ? 'rgba(var(--accent-rgb), 0.52)' : 'var(--surface-hover)',
+                    padding: 2,
+                    position: 'relative',
+                    transition: 'var(--transition)',
+                    flexShrink: 0,
+                  }}>
+                  <span
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 999,
+                      background: 'var(--surface-raised)',
+                      display: 'block',
+                      transform: draft.openAiLegacyReasoningFormatEnabled ? 'translateX(14px)' : 'translateX(0)',
+                      transition: 'var(--transition)',
+                    }}
+                  />
+                </button>
+              </div>
+            ) : null}
           </div>
         )
       default:

@@ -130,7 +130,34 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 	startedAt := time.Now()
 	firstTokenAt := time.Time{}
 	var contentBuilder strings.Builder
+	var contentParser aiReasoningTagStreamParser
 	var latestCacheObject *AIConversationOpenAIResponsesCacheObject
+
+	emitReasoningDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "reasoning_delta",
+			"requestId": requestID,
+			"delta":     delta,
+		})
+	}
+
+	emitContentDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		if firstTokenAt.IsZero() && strings.TrimSpace(delta) != "" {
+			firstTokenAt = time.Now()
+		}
+		contentBuilder.WriteString(delta)
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "delta",
+			"requestId": requestID,
+			"delta":     delta,
+		})
+	}
 
 	systemPrompt := BuildChatSystemPromptWithProfile(a.ctx, payload.ConversationID, payload.SessionID, true, profile)
 	modelCapability := aiprovider.ResolveModelCapability(profile.Provider, profile.Model)
@@ -235,24 +262,14 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 			if event.Delta == "" {
 				continue
 			}
-			if firstTokenAt.IsZero() && strings.TrimSpace(event.Delta) != "" {
-				firstTokenAt = time.Now()
-			}
-			contentBuilder.WriteString(event.Delta)
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "delta",
-				"requestId": requestID,
-				"delta":     event.Delta,
-			})
+			bodyDelta, taggedReasoningDelta := contentParser.Feed(event.Delta)
+			emitReasoningDelta(taggedReasoningDelta)
+			emitContentDelta(bodyDelta)
 		case "response.reasoning.delta", "response.reasoning_text.delta", "response.reasoning_summary.delta", "response.reasoning_summary_text.delta":
 			if event.Delta == "" {
 				continue
 			}
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "reasoning_delta",
-				"requestId": requestID,
-				"delta":     event.Delta,
-			})
+			emitReasoningDelta(event.Delta)
 		case "response.completed", "response.done":
 			if event.Response != nil {
 				if result.InputTokens == 0 && event.Response.Usage != nil {
@@ -260,15 +277,9 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 					result.OutputTokens = event.Response.Usage.OutputTokens
 				}
 				if contentBuilder.Len() == 0 && event.Response.OutputText != "" {
-					if firstTokenAt.IsZero() && strings.TrimSpace(event.Response.OutputText) != "" {
-						firstTokenAt = time.Now()
-					}
-					contentBuilder.WriteString(event.Response.OutputText)
-					a.emitAIChatEvent(map[string]interface{}{
-						"kind":      "delta",
-						"requestId": requestID,
-						"delta":     event.Response.OutputText,
-					})
+					bodyDelta, taggedReasoningDelta := contentParser.Feed(event.Response.OutputText)
+					emitReasoningDelta(taggedReasoningDelta)
+					emitContentDelta(bodyDelta)
 				}
 				cacheObject := buildAIConversationOpenAIResponsesCacheObject(
 					event.Response.ID,
@@ -300,6 +311,10 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
+
+	flushedBody, flushedReasoning := contentParser.Flush()
+	emitReasoningDelta(flushedReasoning)
+	emitContentDelta(flushedBody)
 
 	result.Text = strings.TrimSpace(contentBuilder.String())
 	if result.Text == "" {
