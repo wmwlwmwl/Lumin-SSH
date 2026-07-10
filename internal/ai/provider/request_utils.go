@@ -12,10 +12,11 @@ type Profile struct {
 	Model                   string
 	BaseURL                 string
 	APIKey                  string
-	CacheStrategy           string
-	ReasoningEffort         string
-	EnableReasoningEffort   bool
-	ModelMaxTokens          int
+	CacheStrategy                   string
+	ReasoningEffort                 string
+	EnableReasoningEffort           bool
+	OpenAILegacyReasoningFormatEnabled bool
+	ModelMaxTokens                  int
 	ModelMaxThinkingTokens  int
 }
 
@@ -140,7 +141,7 @@ func containsAIProviderReasoningEffort(options []string, value string) bool {
 
 func supportsAIProviderFallbackReasoningEffort(provider string) bool {
 	switch normalizeProviderProtocol(provider) {
-	case "Compatible", "Responses":
+	case "Compatible", "Responses", "Messages":
 		return true
 	default:
 		return false

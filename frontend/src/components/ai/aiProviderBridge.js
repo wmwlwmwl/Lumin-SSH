@@ -52,6 +52,7 @@ function normalizeProvider(provider, index) {
       || normalizeReasoningEffort(provider?.reasoningEffort) !== 'disable'
       || normalizePositiveInteger(provider?.modelMaxTokens) > 0
       || normalizePositiveInteger(provider?.modelMaxThinkingTokens) > 0,
+    openAiLegacyReasoningFormatEnabled: provider?.openAiLegacyReasoningFormatEnabled === true,
     modelMaxTokens: normalizePositiveInteger(provider?.modelMaxTokens),
     modelMaxThinkingTokens: normalizePositiveInteger(provider?.modelMaxThinkingTokens),
     pinned: Boolean(provider?.pinned),

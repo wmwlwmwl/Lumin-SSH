@@ -17,7 +17,7 @@ const suggestionMarkdownComponents = {
       style={{
         padding: '2px 6px',
         borderRadius: 6,
-        background: 'rgba(var(--accent-rgb), 0.08)',
+        background: 'color-mix(in srgb, var(--accent) 10%, var(--surface-overlay))',
         color: 'var(--text-primary)',
         fontFamily: 'var(--font-mono)',
         fontSize: 12,
@@ -43,7 +43,7 @@ const suggestionMarkdownComponents = {
       style={{
         display: 'block',
         paddingLeft: 12,
-        borderLeft: '3px solid rgba(var(--accent-rgb), 0.4)',
+        borderLeft: '3px solid color-mix(in srgb, var(--accent) 40%, var(--border))',
         color: 'var(--text-secondary)',
       }}
     >

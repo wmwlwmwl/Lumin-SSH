@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -982,7 +983,7 @@ func parseToolUsesFromXML(xmlContent string, conversationID string) []aiParsedTo
 				if isRawPreserveToolParam(currentTool.Name, currentParamName) {
 					currentTool.Params[currentParamName] = stripOuterToolParamNewlines(paramValue)
 				} else {
-					currentTool.Params[currentParamName] = strings.TrimSpace(paramValue)
+					currentTool.Params[currentParamName] = normalizeAINonRawToolParamValue(paramValue)
 				}
 				currentParamName = ""
 				currentParamClosingTag = ""
@@ -1198,6 +1199,87 @@ func stripAssistantToolXML(content string, conversationID string) string {
 		parts = append(parts, after)
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+func normalizeAINonRawToolParamValue(value string) string {
+	trimmedValue := strings.TrimSpace(value)
+	if trimmedValue == "" {
+		return ""
+	}
+	if !strings.Contains(trimmedValue, "<![CDATA[") {
+		return html.UnescapeString(trimmedValue)
+	}
+	var builder strings.Builder
+	remaining := trimmedValue
+	for len(remaining) > 0 {
+		startIndex := strings.Index(remaining, "<![CDATA[")
+		if startIndex == -1 {
+			builder.WriteString(remaining)
+			break
+		}
+		builder.WriteString(remaining[:startIndex])
+		remaining = remaining[startIndex+len("<![CDATA["):]
+		endIndex := strings.Index(remaining, "]]>")
+		if endIndex == -1 {
+			builder.WriteString(remaining)
+			break
+		}
+		builder.WriteString(remaining[:endIndex])
+		remaining = remaining[endIndex+len("]]>"):]
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func wrapAIXMLCDATA(value string) string {
+	return "<![CDATA[" + strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>") + "]]>"
+}
+
+func buildAIAttemptCompletionWrappedText(resultText string, conversationID string) string {
+	tagSet := getTaskScopedToolXMLTagSet(conversationID)
+	return strings.TrimSpace(fmt.Sprintf("<%s>\n<attempt_completion>\n<result>%s</result>\n</attempt_completion>\n</%s>", tagSet.ExecuteMultipleToolsTagName, wrapAIXMLCDATA(resultText), tagSet.ExecuteMultipleToolsTagName))
+}
+
+func replaceAILatestAssistantMessageContent(messages []AIChatRequestMessage, content string) []AIChatRequestMessage {
+	if len(messages) == 0 {
+		return messages
+	}
+	cloned := append([]AIChatRequestMessage{}, messages...)
+	for index := len(cloned) - 1; index >= 0; index-- {
+		if strings.ToLower(strings.TrimSpace(cloned[index].Role)) != "assistant" {
+			continue
+		}
+		cloned[index].Content = content
+		return cloned
+	}
+	return append(cloned, AIChatRequestMessage{
+		Role:    "assistant",
+		Content: content,
+	})
+}
+
+func normalizeAIAssistantRoundResultForToolProtocol(roundResult aiChatRoundResult, conversationID string) aiChatRoundResult {
+	trimmedText := strings.TrimSpace(roundResult.Text)
+	if trimmedText == "" {
+		return roundResult
+	}
+	if _, _, _, err := validateAssistantToolXMLProtocol(trimmedText, conversationID); err == nil {
+		return roundResult
+	}
+	tagSet := getTaskScopedToolXMLTagSet(conversationID)
+	startTag := fmt.Sprintf("<%s>", tagSet.ExecuteMultipleToolsTagName)
+	endTag := fmt.Sprintf("</%s>", tagSet.ExecuteMultipleToolsTagName)
+	if strings.Contains(trimmedText, startTag) || strings.Contains(trimmedText, endTag) {
+		return roundResult
+	}
+	if len(parseToolUsesFromXML(trimmedText, conversationID)) > 0 {
+		return roundResult
+	}
+	wrappedText := buildAIAttemptCompletionWrappedText(trimmedText, conversationID)
+	roundResult.Text = wrappedText
+	if len(roundResult.NextRequestMessages) > 0 {
+		roundResult.NextRequestMessages = replaceAILatestAssistantMessageContent(roundResult.NextRequestMessages, wrappedText)
+	}
+	return roundResult
 }
 
 func (a *App) getAIProviderProfileByID(providerID string) (AIProviderProfile, error) {
@@ -1890,6 +1972,10 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			})
 			a.finishAIChatRequest(requestID)
 			return
+		}
+
+		if round == 0 {
+			roundResult = normalizeAIAssistantRoundResultForToolProtocol(roundResult, payload.ConversationID)
 		}
 
 		trimmedText := strings.TrimSpace(roundResult.Text)

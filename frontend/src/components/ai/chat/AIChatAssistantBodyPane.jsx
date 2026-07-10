@@ -41,17 +41,17 @@ const streamingCursorKeyframes = `
   0% {
     opacity: 0.28;
     transform: scaleY(0.9);
-    box-shadow: inset 0 0 0 rgba(34, 68, 92, 0.08), 0 0 0 rgba(10, 26, 40, 0.08);
+    box-shadow: inset 0 0 0 color-mix(in srgb, var(--accent) 8%, transparent), 0 0 0 color-mix(in srgb, var(--accent) 8%, transparent);
   }
   50% {
     opacity: 0.72;
     transform: scaleY(1.04);
-    box-shadow: inset 0 0 18px rgba(46, 88, 118, 0.16), 0 0 18px rgba(14, 34, 52, 0.22);
+    box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 16%, transparent), 0 0 18px color-mix(in srgb, var(--accent) 22%, transparent);
   }
   100% {
     opacity: 0.28;
     transform: scaleY(0.9);
-    box-shadow: inset 0 0 0 rgba(34, 68, 92, 0.08), 0 0 0 rgba(10, 26, 40, 0.08);
+    box-shadow: inset 0 0 0 color-mix(in srgb, var(--accent) 8%, transparent), 0 0 0 color-mix(in srgb, var(--accent) 8%, transparent);
   }
 }
 
@@ -254,7 +254,7 @@ function renderStreamingCharacter(char, index, isLatest) {
             inset: 0,
             zIndex: 2,
             pointerEvents: 'none',
-            backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(var(--accent-rgb), 0.18) 36%, rgba(255,255,255,0.92) 50%, rgba(var(--accent-rgb), 0.22) 64%, rgba(255,255,255,0) 100%)',
+            backgroundImage: 'linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 18%, transparent) 36%, color-mix(in srgb, var(--text-primary) 92%, transparent) 50%, color-mix(in srgb, var(--accent) 22%, transparent) 64%, transparent 100%)',
             backgroundSize: '180% 100%',
             backgroundPosition: '120% 0',
             WebkitBackgroundClip: 'text',

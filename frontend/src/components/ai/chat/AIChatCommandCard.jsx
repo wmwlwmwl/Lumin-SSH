@@ -69,16 +69,16 @@ function assessSensitiveCommandRisk(command) {
 function getRiskBadgePalette(severity) {
   if (severity === 'danger') {
     return {
-      border: '1px solid rgba(var(--danger-rgb), 0.35)',
-      background: 'rgba(var(--danger-rgb), 0.10)',
-      color: '#fecdd3',
+      border: '1px solid var(--ai-chat-risk-danger-border)',
+      background: 'var(--ai-chat-risk-danger-bg)',
+      color: 'var(--ai-chat-risk-danger-fg)',
     }
   }
   if (severity === 'warning') {
     return {
-      border: '1px solid rgba(var(--warning-rgb), 0.35)',
-      background: 'rgba(var(--warning-rgb), 0.10)',
-      color: '#fde68a',
+      border: '1px solid var(--ai-chat-risk-warning-border)',
+      background: 'var(--ai-chat-risk-warning-bg)',
+      color: 'var(--ai-chat-risk-warning-fg)',
     }
   }
   return null
@@ -87,17 +87,17 @@ function getRiskBadgePalette(severity) {
 function getRiskHighlightStyle(severity) {
   if (severity === 'danger') {
     return {
-      color: '#fecdd3',
+      color: 'var(--ai-chat-risk-danger-fg)',
       borderRadius: 6,
       padding: '0 2px',
-      backgroundImage: 'repeating-linear-gradient(90deg, rgba(244,63,94,0.26) 0px, rgba(244,63,94,0.26) 10px, rgba(244,63,94,0.10) 10px, rgba(244,63,94,0.10) 20px)',
+      backgroundImage: 'repeating-linear-gradient(90deg, var(--ai-chat-risk-danger-stripe-strong) 0px, var(--ai-chat-risk-danger-stripe-strong) 10px, var(--ai-chat-risk-danger-stripe-soft) 10px, var(--ai-chat-risk-danger-stripe-soft) 20px)',
     }
   }
   return {
-    color: '#fde68a',
+    color: 'var(--ai-chat-risk-warning-fg)',
     borderRadius: 6,
     padding: '0 2px',
-    backgroundImage: 'repeating-linear-gradient(90deg, rgba(245,158,11,0.24) 0px, rgba(245,158,11,0.24) 10px, rgba(245,158,11,0.10) 10px, rgba(245,158,11,0.10) 20px)',
+    backgroundImage: 'repeating-linear-gradient(90deg, var(--ai-chat-risk-warning-stripe-strong) 0px, var(--ai-chat-risk-warning-stripe-strong) 10px, var(--ai-chat-risk-warning-stripe-soft) 10px, var(--ai-chat-risk-warning-stripe-soft) 20px)',
   }
 }
 
@@ -127,27 +127,27 @@ function renderCommandWithRiskHighlights(command, matches) {
 function getCommandMutationPalette(isMutating) {
   if (isMutating) {
     return {
-      cardBorder: '1px solid rgba(var(--warning-rgb), 0.62)',
-      cardBackground: 'rgba(var(--warning-rgb), 0.05)',
-      cardBoxShadow: '0 0 0 1px rgba(var(--warning-rgb), 0.18), 0 12px 28px rgba(var(--warning-rgb), 0.10)',
-      headerBackground: 'rgba(var(--warning-rgb), 0.10)',
-      metaBadgeBorder: '1px solid rgba(var(--warning-rgb), 0.46)',
-      metaBadgeBackground: 'rgba(var(--warning-rgb), 0.18)',
-      metaBadgeColor: '#fde68a',
-      commandBorder: '1px solid rgba(var(--warning-rgb), 0.36)',
-      commandBackground: 'rgba(var(--warning-rgb), 0.07)',
+      cardBorder: '1px solid var(--ai-chat-command-write-card-border)',
+      cardBackground: 'var(--ai-chat-command-write-card-bg)',
+      cardBoxShadow: 'var(--ai-chat-command-write-card-shadow)',
+      headerBackground: 'var(--ai-chat-command-write-header-bg)',
+      metaBadgeBorder: '1px solid var(--ai-chat-command-write-badge-border)',
+      metaBadgeBackground: 'var(--ai-chat-command-write-badge-bg)',
+      metaBadgeColor: 'var(--ai-chat-command-write-badge-fg)',
+      commandBorder: '1px solid var(--ai-chat-command-write-panel-border)',
+      commandBackground: 'var(--ai-chat-command-write-panel-bg)',
     }
   }
   return {
-    cardBorder: '1px solid rgba(var(--accent-rgb), 0.52)',
-    cardBackground: 'rgba(var(--accent-rgb), 0.04)',
-    cardBoxShadow: '0 0 0 1px rgba(var(--accent-rgb), 0.14), 0 10px 24px rgba(var(--accent-rgb), 0.08)',
-    headerBackground: 'rgba(var(--accent-rgb), 0.08)',
-    metaBadgeBorder: '1px solid rgba(var(--accent-rgb), 0.36)',
-    metaBadgeBackground: 'rgba(var(--accent-rgb), 0.14)',
-    metaBadgeColor: '#bfdbfe',
-    commandBorder: '1px solid rgba(var(--accent-rgb), 0.30)',
-    commandBackground: 'rgba(var(--accent-rgb), 0.05)',
+    cardBorder: '1px solid var(--ai-chat-command-read-card-border)',
+    cardBackground: 'var(--ai-chat-command-read-card-bg)',
+    cardBoxShadow: 'var(--ai-chat-command-read-card-shadow)',
+    headerBackground: 'var(--ai-chat-command-read-header-bg)',
+    metaBadgeBorder: '1px solid var(--ai-chat-command-read-badge-border)',
+    metaBadgeBackground: 'var(--ai-chat-command-read-badge-bg)',
+    metaBadgeColor: 'var(--ai-chat-command-read-badge-fg)',
+    commandBorder: '1px solid var(--ai-chat-command-read-panel-border)',
+    commandBackground: 'var(--ai-chat-command-read-panel-bg)',
   }
 }
 

@@ -26,6 +26,7 @@ type AIProviderProfile struct {
 	DedicatedProxyID             string `json:"dedicatedProxyId,omitempty"`
 	ReasoningEffort              string `json:"reasoningEffort"`
 	EnableReasoningEffort        bool   `json:"enableReasoningEffort"`
+	OpenAILegacyReasoningFormatEnabled bool `json:"openAiLegacyReasoningFormatEnabled"`
 	ModelMaxTokens               int    `json:"modelMaxTokens,omitempty"`
 	ModelMaxThinkingTokens       int    `json:"modelMaxThinkingTokens,omitempty"`
 	Pinned                       bool   `json:"pinned"`
@@ -286,10 +287,11 @@ func toAIProviderRuntimeProfile(profile AIProviderProfile) aiprovider.Profile {
 		Model:                  profile.Model,
 		BaseURL:                profile.BaseURL,
 		APIKey:                 profile.APIKey,
-		CacheStrategy:          profile.CacheStrategy,
-		ReasoningEffort:        profile.ReasoningEffort,
-		EnableReasoningEffort:  profile.EnableReasoningEffort,
-		ModelMaxTokens:         profile.ModelMaxTokens,
+		CacheStrategy:                 profile.CacheStrategy,
+		ReasoningEffort:               profile.ReasoningEffort,
+		EnableReasoningEffort:         profile.EnableReasoningEffort,
+		OpenAILegacyReasoningFormatEnabled: profile.OpenAILegacyReasoningFormatEnabled,
+		ModelMaxTokens:                profile.ModelMaxTokens,
 		ModelMaxThinkingTokens: profile.ModelMaxThinkingTokens,
 	}
 }

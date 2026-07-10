@@ -18,8 +18,8 @@ export default function AIChatErrorBlock({ text = '' }) {
         margin: '-10px -12px 0',
         padding: '10px 12px',
         borderRadius: '12px 12px 0 0',
-        border: '1px solid rgba(var(--danger-rgb), 0.26)',
-        background: 'linear-gradient(180deg, rgba(var(--danger-rgb), 0.14), rgba(var(--danger-rgb), 0.08))',
+        border: '1px solid color-mix(in srgb, var(--danger) 26%, var(--border))',
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--danger) 12%, var(--surface-overlay)), color-mix(in srgb, var(--danger) 5%, var(--surface-overlay)))',
         boxSizing: 'border-box',
       }}
     >

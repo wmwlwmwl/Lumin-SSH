@@ -44,11 +44,92 @@ type aiChatMessagesState struct {
 	Usage *aiChatMessagesUsage `json:"usage,omitempty"`
 }
 
+func normalizeAIMessagesAdaptiveReasoningEffort(value string) string {
+	switch normalizeAIProviderReasoningEffort(value) {
+	case "low":
+		return "low"
+	case "medium":
+		return "medium"
+	case "high":
+		return "high"
+	case "minimal":
+		return "low"
+	case "xhigh":
+		return "high"
+	default:
+		return ""
+	}
+}
+
+func buildAIMessagesLegacyReasoning(maxOutputTokens int, reasoningEffort string) map[string]any {
+	switch normalizeAIProviderReasoningEffort(reasoningEffort) {
+	case "", "disable", "none":
+		return nil
+	}
+
+	maxThinkingBudget := int(float64(maxOutputTokens) * 0.8)
+	if maxThinkingBudget < 1024 {
+		return nil
+	}
+
+	effortRatios := map[string]float64{
+		"minimal": 0.25,
+		"low":     0.4,
+		"medium":  0.6,
+		"high":    0.8,
+		"xhigh":   1,
+	}
+	ratio, ok := effortRatios[normalizeAIProviderReasoningEffort(reasoningEffort)]
+	if !ok {
+		return nil
+	}
+
+	budgetTokens := int(float64(maxThinkingBudget) * ratio)
+	if budgetTokens < 1024 {
+		budgetTokens = 1024
+	}
+	if budgetTokens > maxThinkingBudget {
+		budgetTokens = maxThinkingBudget
+	}
+
+	return map[string]any{
+		"type":          "enabled",
+		"budget_tokens": budgetTokens,
+	}
+}
+
 func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, payload AIChatRequestPayload, profile AIProviderProfile, requestMessages []AIChatRequestMessage) (aiChatRoundResult, error) {
 	result := aiChatRoundResult{}
 	startedAt := time.Now()
 	firstTokenAt := time.Time{}
 	var contentBuilder strings.Builder
+	var contentParser aiReasoningTagStreamParser
+
+	emitReasoningDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "reasoning_delta",
+			"requestId": requestID,
+			"delta":     delta,
+		})
+	}
+
+	emitContentDelta := func(delta string) {
+		if delta == "" {
+			return
+		}
+		if firstTokenAt.IsZero() && strings.TrimSpace(delta) != "" {
+			firstTokenAt = time.Now()
+		}
+		contentBuilder.WriteString(delta)
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "delta",
+			"requestId": requestID,
+			"delta":     delta,
+		})
+	}
 
 	systemPrompt := BuildChatSystemPromptWithProfile(a.ctx, payload.ConversationID, payload.SessionID, true, profile)
 	modelCapability := aiprovider.ResolveModelCapability(profile.Provider, profile.Model)
@@ -72,10 +153,18 @@ func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, 
 		"stream":     true,
 	}
 
-	if aiprovider.ShouldUseReasoningBudget(runtimeProfile, modelCapability) {
-		requestBody["thinking"] = map[string]any{
-			"type":          "enabled",
-			"budget_tokens": aiprovider.ResolveMaxThinkingTokens(runtimeProfile, modelCapability, maxOutputTokens),
+	if reasoningEffort := aiprovider.GetEffectiveReasoningEffort(runtimeProfile, modelCapability); reasoningEffort != "" {
+		if profile.OpenAILegacyReasoningFormatEnabled {
+			if legacyReasoning := buildAIMessagesLegacyReasoning(maxOutputTokens, reasoningEffort); legacyReasoning != nil {
+				requestBody["thinking"] = legacyReasoning
+			}
+		} else if adaptiveReasoningEffort := normalizeAIMessagesAdaptiveReasoningEffort(reasoningEffort); adaptiveReasoningEffort != "" {
+			requestBody["thinking"] = map[string]any{
+				"type": "adaptive",
+			}
+			requestBody["output_config"] = map[string]any{
+				"effort": adaptiveReasoningEffort,
+			}
 		}
 	}
 
@@ -167,46 +256,18 @@ func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, 
 			if event.ContentBlock == nil {
 				continue
 			}
-			if event.ContentBlock.Thinking != "" {
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "reasoning_delta",
-					"requestId": requestID,
-					"delta":     event.ContentBlock.Thinking,
-				})
-			}
-			if event.ContentBlock.Text != "" {
-				if firstTokenAt.IsZero() && strings.TrimSpace(event.ContentBlock.Text) != "" {
-					firstTokenAt = time.Now()
-				}
-				contentBuilder.WriteString(event.ContentBlock.Text)
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "delta",
-					"requestId": requestID,
-					"delta":     event.ContentBlock.Text,
-				})
-			}
+			emitReasoningDelta(event.ContentBlock.Thinking)
+			bodyDelta, taggedReasoningDelta := contentParser.Feed(event.ContentBlock.Text)
+			emitReasoningDelta(taggedReasoningDelta)
+			emitContentDelta(bodyDelta)
 		case "content_block_delta":
 			if event.Delta == nil {
 				continue
 			}
-			if event.Delta.Thinking != "" {
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "reasoning_delta",
-					"requestId": requestID,
-					"delta":     event.Delta.Thinking,
-				})
-			}
-			if event.Delta.Text != "" {
-				if firstTokenAt.IsZero() && strings.TrimSpace(event.Delta.Text) != "" {
-					firstTokenAt = time.Now()
-				}
-				contentBuilder.WriteString(event.Delta.Text)
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "delta",
-					"requestId": requestID,
-					"delta":     event.Delta.Text,
-				})
-			}
+			emitReasoningDelta(event.Delta.Thinking)
+			bodyDelta, taggedReasoningDelta := contentParser.Feed(event.Delta.Text)
+			emitReasoningDelta(taggedReasoningDelta)
+			emitContentDelta(bodyDelta)
 		}
 	}
 
@@ -216,6 +277,10 @@ func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, 
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
+
+	flushedBody, flushedReasoning := contentParser.Flush()
+	emitReasoningDelta(flushedReasoning)
+	emitContentDelta(flushedBody)
 
 	result.Text = strings.TrimSpace(contentBuilder.String())
 	if result.Text == "" {
