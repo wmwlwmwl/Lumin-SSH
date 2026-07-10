@@ -101,19 +101,38 @@ func (c *Catalog) callSearchReplace(arguments map[string]any) (any, error) {
 			return result, nil
 		}
 	}
+	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
+	if err != nil {
+		return nil, err
+	}
+	preview, err := BuildSearchReplaceReviewPreview(remotePath, content, operations)
+	if err != nil {
+		return nil, err
+	}
+	for _, resolved := range preview.Operations {
+		result.OperationResults = append(result.OperationResults, SearchReplaceOperationResult{
+			Index:       resolved.Index,
+			Occurrences: 1,
+			Applied:     true,
+		})
+	}
+	if preview.Failure != nil {
+		result.OperationResults = append(result.OperationResults, SearchReplaceOperationResult{
+			Index:       preview.FailureIndex,
+			Occurrences: preview.Failure.Occurrences,
+			Applied:     false,
+			Failure:     preview.Failure,
+		})
+		result.Failure = preview.Failure
+		return result, nil
+	}
 	if c.remoteEditExecutor != nil && capabilities.Python3 {
-		hunks := make([]ApplyPatchHunk, 0, len(operations))
-		for _, operation := range operations {
-			hunks = append(hunks, ApplyPatchHunk{
-				Search:  operation.Search,
-				Replace: operation.Replace,
-			})
-		}
 		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, []ApplyPatchFileOperation{
 			{
-				Action: "update",
-				Path:   remotePath,
-				Hunks:  hunks,
+				Action:          "update",
+				Path:            remotePath,
+				Content:         preview.PreviewContent,
+				ExpectedContent: preview.OriginalContent,
 			},
 		})
 		if remoteErr != nil {
@@ -123,59 +142,16 @@ func (c *Catalog) callSearchReplace(arguments map[string]any) (any, error) {
 		result.Capabilities = remoteResult.Capabilities
 		result.Applied = remoteResult.Applied
 		if remoteResult.Applied {
-			for index := range operations {
-				result.OperationResults = append(result.OperationResults, SearchReplaceOperationResult{
-					Index:       index,
-					Occurrences: 1,
-					Applied:     true,
-				})
-			}
+			result.BytesWritten = len([]byte(preview.PreviewContent))
 			return result, nil
 		}
 		result.Failure = firstPatchFailure(remoteResult)
 		return result, nil
 	}
-	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
-	if err != nil {
-		return nil, err
-	}
-	nextContent := content
-	for index, operation := range operations {
-		occurrences := countOccurrences(nextContent, operation.Search)
-		operationResult := SearchReplaceOperationResult{
-			Index:       index,
-			Occurrences: occurrences,
-		}
-		if operation.Search == "" {
-			operationResult.Failure = &EditMatchFailure{Reason: "search must not be empty"}
-			result.OperationResults = append(result.OperationResults, operationResult)
-			result.Failure = operationResult.Failure
-			return result, nil
-		}
-		if occurrences != 1 {
-			failure := &EditMatchFailure{
-				Occurrences: occurrences,
-			}
-			if occurrences == 0 {
-				failure.Reason = "search not found exactly"
-				failure.BestMatch = extractBestMatchSnippet(nextContent, operation.Search)
-			} else {
-				failure.Reason = "search matched multiple locations"
-			}
-			operationResult.Failure = failure
-			result.OperationResults = append(result.OperationResults, operationResult)
-			result.Failure = failure
-			return result, nil
-		}
-		updatedContent, _ := replaceExactlyOnce(nextContent, operation.Search, operation.Replace)
-		nextContent = updatedContent
-		operationResult.Applied = true
-		result.OperationResults = append(result.OperationResults, operationResult)
-	}
-	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, nextContent); err != nil {
+	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, preview.PreviewContent); err != nil {
 		return nil, err
 	}
 	result.Applied = true
-	result.BytesWritten = len([]byte(nextContent))
+	result.BytesWritten = len([]byte(preview.PreviewContent))
 	return result, nil
 }

@@ -1,6 +1,12 @@
 package mcpserver
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+	"unicode/utf16"
+)
+
+var normalizeEditSearchWhitespacePattern = regexp.MustCompile(`\s+`)
 
 func countOccurrences(content string, search string) int {
 	if search == "" {
@@ -28,38 +34,43 @@ func replaceExactlyOnce(content string, search string, replace string) (string, 
 
 func normalizeEditSearchString(value string) string {
 	replacer := strings.NewReplacer(
-		"\r\n", "\n",
+		"\u201C", "\"",
+		"\u201D", "\"",
 		"\u2018", "'",
 		"\u2019", "'",
-		"\u201c", "\"",
-		"\u201d", "\"",
-		"\u00a0", " ",
+		"\u2026", "...",
+		"\u2014", "-",
+		"\u2013", "-",
+		"\u00A0", " ",
 	)
-	return replacer.Replace(value)
+	normalized := replacer.Replace(value)
+	normalized = normalizeEditSearchWhitespacePattern.ReplaceAllString(normalized, " ")
+	normalized = strings.TrimSpace(normalized)
+	return normalized
 }
 
 func levenshteinDistance(left string, right string) int {
 	if left == right {
 		return 0
 	}
-	leftRunes := []rune(left)
-	rightRunes := []rune(right)
-	if len(leftRunes) == 0 {
-		return len(rightRunes)
+	leftUnits := utf16.Encode([]rune(left))
+	rightUnits := utf16.Encode([]rune(right))
+	if len(leftUnits) == 0 {
+		return len(rightUnits)
 	}
-	if len(rightRunes) == 0 {
-		return len(leftRunes)
+	if len(rightUnits) == 0 {
+		return len(leftUnits)
 	}
-	previous := make([]int, len(rightRunes)+1)
-	current := make([]int, len(rightRunes)+1)
-	for j := 0; j <= len(rightRunes); j++ {
+	previous := make([]int, len(rightUnits)+1)
+	current := make([]int, len(rightUnits)+1)
+	for j := 0; j <= len(rightUnits); j++ {
 		previous[j] = j
 	}
-	for i := 1; i <= len(leftRunes); i++ {
+	for i := 1; i <= len(leftUnits); i++ {
 		current[0] = i
-		for j := 1; j <= len(rightRunes); j++ {
+		for j := 1; j <= len(rightUnits); j++ {
 			cost := 0
-			if leftRunes[i-1] != rightRunes[j-1] {
+			if leftUnits[i-1] != rightUnits[j-1] {
 				cost = 1
 			}
 			deletion := previous[j] + 1
@@ -75,7 +86,7 @@ func levenshteinDistance(left string, right string) int {
 		}
 		copy(previous, current)
 	}
-	return previous[len(rightRunes)]
+	return previous[len(rightUnits)]
 }
 
 func calculateSimilarity(left string, right string) float64 {
@@ -87,8 +98,8 @@ func calculateSimilarity(left string, right string) float64 {
 	if normalizedLeft == normalizedRight {
 		return 1
 	}
-	maxLength := len([]rune(normalizedLeft))
-	if rightLength := len([]rune(normalizedRight)); rightLength > maxLength {
+	maxLength := len(utf16.Encode([]rune(normalizedLeft)))
+	if rightLength := len(utf16.Encode([]rune(normalizedRight))); rightLength > maxLength {
 		maxLength = rightLength
 	}
 	if maxLength == 0 {

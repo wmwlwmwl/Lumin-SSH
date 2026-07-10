@@ -66,7 +66,50 @@ func (c *Catalog) callApplyPatch(arguments map[string]any) (any, error) {
 	}
 	capabilities := getRemoteEditCapabilitiesWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID)
 	if c.remoteEditExecutor != nil && capabilities.Python3 {
-		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, operations)
+		preview, previewErr := BuildApplyPatchReviewPreview(patch, func(remotePath string) (string, error) {
+			return readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
+		})
+		if previewErr != nil {
+			return nil, previewErr
+		}
+		if preview.Failure != nil {
+			result := ApplyPatchResult{
+				SessionID:    session.SessionID,
+				Handler:      EditHandlerPython3AtomicPatch,
+				Capabilities: capabilities,
+				Applied:      false,
+				Changes:      make([]ApplyPatchFileChange, 0, len(preview.Files)),
+				Failure:      preview.Failure,
+			}
+			for _, file := range preview.Files {
+				result.Changes = append(result.Changes, ApplyPatchFileChange{
+					Action:  file.Action,
+					Path:    file.Path,
+					Hunks:   file.Hunks,
+					Applied: false,
+					Failure: file.Failure,
+				})
+			}
+			return result, nil
+		}
+		remoteOperations := make([]ApplyPatchFileOperation, 0, len(preview.Files))
+		for _, file := range preview.Files {
+			operation := ApplyPatchFileOperation{
+				Action: file.Action,
+				Path:   file.Path,
+			}
+			switch file.Action {
+			case "add":
+				operation.Content = file.After
+			case "delete":
+				operation.ExpectedContent = file.Before
+			case "update":
+				operation.Content = file.After
+				operation.ExpectedContent = file.Before
+			}
+			remoteOperations = append(remoteOperations, operation)
+		}
+		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, remoteOperations)
 		if remoteErr == nil {
 			return remoteResult, nil
 		}

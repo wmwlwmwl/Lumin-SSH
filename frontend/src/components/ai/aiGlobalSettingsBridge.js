@@ -9,6 +9,7 @@ const DEFAULT_AI_GLOBAL_SETTINGS = {
   alwaysAllowWriteOutsideWorkspace: false,
   alwaysAllowWriteProtected: false,
   alwaysAllowExecute: false,
+  alwaysAllowExecuteReadOnly: false,
   alwaysAllowExecuteAllCommands: false,
   allowedCommands: [],
   deniedCommands: [],
@@ -21,6 +22,7 @@ const DEFAULT_AI_GLOBAL_SETTINGS = {
   mcpAllowBrowserCalls: false,
   terminalIsolation: true,
   confirmDelete: true,
+  conversationAutoBackupEnabled: true,
   messageActionBarAtBottom: true,
   approvalButtonOrder: 'reject-approve',
   commandActionButtonOrder: 'terminate-continue',
@@ -113,6 +115,7 @@ export function normalizeAIGlobalSettings(settings) {
   const alwaysAllowReadOnly = Boolean(settings?.alwaysAllowReadOnly)
   const alwaysAllowWrite = Boolean(settings?.alwaysAllowWrite)
   const alwaysAllowExecute = Boolean(settings?.alwaysAllowExecute)
+  const alwaysAllowExecuteReadOnly = Boolean(settings?.alwaysAllowExecuteReadOnly)
   const allowedCommands = normalizeStringList(settings?.allowedCommands)
   const deniedCommands = normalizeStringList(settings?.deniedCommands)
   const slashCommands = normalizeAISlashCommands(settings?.slashCommands)
@@ -125,13 +128,14 @@ export function normalizeAIGlobalSettings(settings) {
     ...DEFAULT_AI_GLOBAL_SETTINGS,
     ...settings,
     currentProviderId: typeof settings?.currentProviderId === 'string' ? settings.currentProviderId.trim() : '',
-    autoApprovalEnabled: alwaysAllowReadOnly || alwaysAllowWrite || alwaysAllowExecute,
+    autoApprovalEnabled: alwaysAllowReadOnly || alwaysAllowWrite || alwaysAllowExecute || alwaysAllowExecuteReadOnly,
     alwaysAllowReadOnly,
     alwaysAllowReadOnlyOutsideWorkspace: Boolean(settings?.alwaysAllowReadOnlyOutsideWorkspace),
     alwaysAllowWrite,
     alwaysAllowWriteOutsideWorkspace: Boolean(settings?.alwaysAllowWriteOutsideWorkspace),
     alwaysAllowWriteProtected: Boolean(settings?.alwaysAllowWriteProtected),
     alwaysAllowExecute,
+    alwaysAllowExecuteReadOnly,
     alwaysAllowExecuteAllCommands: allowedCommands.includes('*'),
     allowedCommands,
     deniedCommands,
@@ -144,6 +148,7 @@ export function normalizeAIGlobalSettings(settings) {
     mcpAllowBrowserCalls: Boolean(settings?.mcpAllowBrowserCalls),
     terminalIsolation: settings?.terminalIsolation !== false,
     confirmDelete: settings?.confirmDelete !== false,
+    conversationAutoBackupEnabled: settings?.conversationAutoBackupEnabled !== false,
     messageActionBarAtBottom: Boolean(settings?.messageActionBarAtBottom),
     approvalButtonOrder: normalizeApprovalButtonOrder(settings?.approvalButtonOrder),
     commandActionButtonOrder: normalizeCommandActionButtonOrder(settings?.commandActionButtonOrder),

@@ -32,6 +32,8 @@ function renderGroupedEntry(entry, handlers, entryMeta = {}) {
           onDelete={handlers.onDeleteMessage}
           onRetry={handlers.onRetryAssistantMessage}
           onSendUserMessage={handlers.onSendUserMessage}
+          onPreviewRestore={handlers.onPreviewRestore}
+          onApplyRestore={handlers.onApplyRestore}
           messageActionBarAtBottom={Boolean(handlers.messageActionBarAtBottom)}
         />
       )
@@ -40,7 +42,7 @@ function renderGroupedEntry(entry, handlers, entryMeta = {}) {
     case 'context-condense':
       return <AIChatContextCondenseCard message={entry.message} />
     case 'tool-session':
-      return <AIChatToolSessionPane items={entry.tools} onSendUserMessage={handlers.onSendUserMessage} />
+      return <AIChatToolSessionPane items={entry.tools} onSendUserMessage={handlers.onSendUserMessage} onPreviewRestore={handlers.onPreviewRestore} onApplyRestore={handlers.onApplyRestore} />
     default:
       return null
   }
@@ -80,7 +82,7 @@ function hasSubsequentAssistantTurn(entries, currentIndex) {
   return false
 }
 
-export default function AIChatConversation({ messages = [], onSendUserMessage, onRetryUserMessage, onRetryAssistantMessage, onEditUserMessage, onDeleteMessage, messageActionBarAtBottom = false, scrollToBottomSignal = 0 }) {
+export default function AIChatConversation({ messages = [], sessionId = '', terminalId = '', onSendUserMessage, onRetryUserMessage, onRetryAssistantMessage, onEditUserMessage, onDeleteMessage, onPreviewRestore, onApplyRestore, messageActionBarAtBottom = false, scrollToBottomSignal = 0 }) {
   const { t } = useTranslation()
   const containerRef = useRef(null)
   const virtuosoRef = useRef(null)
@@ -91,6 +93,7 @@ export default function AIChatConversation({ messages = [], onSendUserMessage, o
   const hasHydratedRef = useRef(false)
   const lastContainerHeightRef = useRef(0)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [highlightedEntryKey, setHighlightedEntryKey] = useState('')
   const groupedMessages = useMemo(() => groupConversationMessages(messages), [messages])
   const lastAssistantTurnIndex = useMemo(() => getLastAssistantTurnIndex(groupedMessages), [groupedMessages])
 
@@ -202,6 +205,78 @@ export default function AIChatConversation({ messages = [], onSendUserMessage, o
     }
   }, [])
 
+  useEffect(() => {
+    if (!highlightedEntryKey) {
+      return undefined
+    }
+    const timer = window.setTimeout(() => {
+      setHighlightedEntryKey('')
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [highlightedEntryKey])
+
+  useEffect(() => {
+    const handleLocateConversationDiffItem = (event) => {
+      const targetSessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : ''
+      const targetTerminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : ''
+      const targetMessageId = typeof event?.detail?.messageId === 'string' ? event.detail.messageId.trim() : ''
+      if (!targetMessageId) {
+        return
+      }
+      if (targetSessionId && targetSessionId !== sessionId) {
+        return
+      }
+      if (targetTerminalId && targetTerminalId !== terminalId) {
+        return
+      }
+
+      const targetIndex = groupedMessages.findIndex((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return false
+        }
+        if (entry.type === 'assistant-turn') {
+          if (entry.assistant?.id === targetMessageId || entry.turnId === targetMessageId) {
+            return true
+          }
+          return Array.isArray(entry.tools) && entry.tools.some((tool) => tool?.id === targetMessageId)
+        }
+        if (entry.type === 'user' || entry.type === 'reasoning' || entry.type === 'context-condense') {
+          return entry.message?.id === targetMessageId
+        }
+        if (entry.type === 'tool-session') {
+          return Array.isArray(entry.tools) && entry.tools.some((tool) => tool?.id === targetMessageId)
+        }
+        return false
+      })
+
+      if (targetIndex < 0) {
+        return
+      }
+
+      const targetEntry = groupedMessages[targetIndex]
+      const targetEntryKey = getEntryKey(targetEntry, targetIndex)
+      markProgrammaticScroll()
+      if (typeof virtuosoRef.current?.scrollToIndex === 'function') {
+        virtuosoRef.current.scrollToIndex({
+          index: targetIndex,
+          align: 'center',
+          behavior: 'smooth',
+        })
+      } else {
+        virtuosoRef.current?.scrollTo?.({
+          top: Number.MAX_SAFE_INTEGER,
+          behavior: 'smooth',
+        })
+      }
+      setHighlightedEntryKey(targetEntryKey)
+    }
+
+    window.addEventListener('ai-conversation-diff-locate', handleLocateConversationDiffItem)
+    return () => {
+      window.removeEventListener('ai-conversation-diff-locate', handleLocateConversationDiffItem)
+    }
+  }, [groupedMessages, markProgrammaticScroll, sessionId, terminalId])
+
   const handleScrollToBottom = useCallback(() => {
     followIntentRef.current = true
     setShowScrollToBottom(false)
@@ -220,6 +295,12 @@ export default function AIChatConversation({ messages = [], onSendUserMessage, o
 
   return (
     <div ref={containerRef} style={{ flex: 1, minHeight: 0, height: '100%', background: 'transparent', position: 'relative' }}>
+      <style>{`
+        @keyframes ai-chat-message-flash {
+          0%, 100% { background: rgba(var(--accent-rgb), 0.06); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.12); }
+          50% { background: rgba(var(--accent-rgb), 0.22); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.42), 0 0 24px rgba(var(--accent-rgb), 0.24); }
+        }
+      `}</style>
       <Virtuoso
         ref={virtuosoRef}
         style={{ height: '100%' }}
@@ -238,21 +319,34 @@ export default function AIChatConversation({ messages = [], onSendUserMessage, o
           setShowScrollToBottom(!isAtBottom && !programmaticScrollRef.current)
         }}
         computeItemKey={(index, entry) => getEntryKey(entry, index)}
-        itemContent={(index, entry) => (
-          <div style={{ padding: `0 14px ${index === groupedMessages.length - 1 ? 18 : 14}px` }}>
-            {renderGroupedEntry(entry, {
-              onSendUserMessage,
-              onRetryUserMessage,
-              onRetryAssistantMessage,
-              onEditUserMessage,
-              onDeleteMessage,
-              messageActionBarAtBottom,
-            }, {
-              isLastAssistantTurn: index === lastAssistantTurnIndex,
-              hasSubsequentAssistantMessage: hasSubsequentAssistantTurn(groupedMessages, index),
-            })}
-          </div>
-        )}
+        itemContent={(index, entry) => {
+          const entryKey = getEntryKey(entry, index)
+          const isHighlighted = highlightedEntryKey === entryKey
+          return (
+            <div
+              style={{
+                padding: `0 14px ${index === groupedMessages.length - 1 ? 18 : 14}px`,
+                borderRadius: 14,
+                animation: isHighlighted ? 'ai-chat-message-flash 0.72s ease-in-out 4' : 'none',
+                background: isHighlighted ? 'rgba(var(--accent-rgb), 0.08)' : 'transparent',
+                transition: 'background 180ms ease, box-shadow 180ms ease',
+              }}>
+              {renderGroupedEntry(entry, {
+                onSendUserMessage,
+                onRetryUserMessage,
+                onRetryAssistantMessage,
+                onEditUserMessage,
+                onDeleteMessage,
+                onPreviewRestore,
+                onApplyRestore,
+                messageActionBarAtBottom,
+              }, {
+                isLastAssistantTurn: index === lastAssistantTurnIndex,
+                hasSubsequentAssistantMessage: hasSubsequentAssistantTurn(groupedMessages, index),
+              })}
+            </div>
+          )
+        }}
       />
       {showScrollToBottom ? (
         <div

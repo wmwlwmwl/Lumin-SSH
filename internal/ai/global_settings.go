@@ -34,6 +34,7 @@ type AIGlobalSettings struct {
 	AlwaysAllowWriteOutsideWorkspace    bool             `json:"alwaysAllowWriteOutsideWorkspace"`
 	AlwaysAllowWriteProtected           bool             `json:"alwaysAllowWriteProtected"`
 	AlwaysAllowExecute                  bool             `json:"alwaysAllowExecute"`
+	AlwaysAllowExecuteReadOnly          bool             `json:"alwaysAllowExecuteReadOnly"`
 	AlwaysAllowExecuteAllCommands       bool             `json:"alwaysAllowExecuteAllCommands"`
 	AllowedCommands                     []string         `json:"allowedCommands,omitempty"`
 	DeniedCommands                      []string         `json:"deniedCommands,omitempty"`
@@ -46,6 +47,7 @@ type AIGlobalSettings struct {
 	MCPAllowBrowserCalls                bool             `json:"mcpAllowBrowserCalls"`
 	TerminalIsolation                   bool             `json:"terminalIsolation"`
 	ConfirmDelete                       bool             `json:"confirmDelete"`
+	ConversationAutoBackupEnabled       bool             `json:"conversationAutoBackupEnabled"`
 	MessageActionBarAtBottom            bool             `json:"messageActionBarAtBottom"`
 	ApprovalButtonOrder                 string           `json:"approvalButtonOrder"`
 	CommandActionButtonOrder            string           `json:"commandActionButtonOrder"`
@@ -56,11 +58,12 @@ type AIGlobalSettings struct {
 
 func defaultAIGlobalSettings() AIGlobalSettings {
 	return AIGlobalSettings{
-		MCPEnabled:               true,
-		MCPAllowBrowserCalls:     false,
-		TerminalIsolation:        true,
-		ConfirmDelete:            true,
-		MessageActionBarAtBottom: true,
+		MCPEnabled:                    true,
+		MCPAllowBrowserCalls:          false,
+		TerminalIsolation:             true,
+		ConfirmDelete:                 true,
+		ConversationAutoBackupEnabled: true,
+		MessageActionBarAtBottom:      true,
 		ApprovalButtonOrder:      "reject-approve",
 		CommandActionButtonOrder: "terminate-continue",
 	}
@@ -265,7 +268,7 @@ func normalizeAIGlobalSettings(settings AIGlobalSettings) AIGlobalSettings {
 	settings.AllowedCommands = normalizeAIStringList(settings.AllowedCommands)
 	settings.DeniedCommands = normalizeAIStringList(settings.DeniedCommands)
 	settings.AlwaysAllowExecuteAllCommands = containsAICommandWildcard(settings.AllowedCommands)
-	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute
+	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute || settings.AlwaysAllowExecuteReadOnly
 	settings.ApprovalButtonOrder = normalizeAIApprovalButtonOrder(settings.ApprovalButtonOrder)
 	settings.CommandActionButtonOrder = normalizeAICommandActionButtonOrder(settings.CommandActionButtonOrder)
 	if settings.UpdatedAt <= 0 {

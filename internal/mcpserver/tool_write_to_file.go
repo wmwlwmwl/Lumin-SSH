@@ -11,7 +11,7 @@ type WriteFileResult struct {
 func writeToFileToolDefinition() ToolDefinition {
 	return ToolDefinition{
 		Name: "write_to_file",
-		Description: "Write a complete remote file for the provided session_id. Use this when you already know the full final file content. Always send the entire file body in content. Required arguments: session_id, path, remaining_file_edits, content. Do not send partial fragments such as 'rest unchanged'. Prefer search_replace, search_and_replace, edit_file, apply_diff, or apply_patch when only part of a file needs to change.",
+		Description: "Write a complete remote file for the provided session_id. Use this when you already know the full final file content. Always send the entire file body in content. Required arguments: session_id, path, remaining_file_edits, content. Do not send partial fragments such as 'rest unchanged'. Prefer search_replace, edit_file, or apply_diff when only part of a file needs to change.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

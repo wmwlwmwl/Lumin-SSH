@@ -121,6 +121,8 @@ export default function AIPanelSettingsOverlay({
   conversationUpdatedAt,
   backupRequestInFlight,
   onRestoreConversationBackup,
+  autoBackupEnabled,
+  onToggleAutoBackup,
   terminalOutputLineLimit,
   onTerminalOutputLineLimitChange,
   terminalOutputCharacterLimit,
@@ -518,6 +520,8 @@ export default function AIPanelSettingsOverlay({
                 conversationUpdatedAt={conversationUpdatedAt}
                 requestInFlight={backupRequestInFlight}
                 onRestoreSnapshot={onRestoreConversationBackup}
+                autoBackupEnabled={autoBackupEnabled}
+                onToggleAutoBackup={onToggleAutoBackup}
               />
             ) : null}
           </div>

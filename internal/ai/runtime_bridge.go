@@ -48,6 +48,8 @@ type App struct {
 	aiPendingFollowupBatches  map[string]*PendingToolBatch
 	aiToolExecMu              sync.Mutex
 	aiToolExecutions          map[string]*ToolExecutionState
+	aiToolRestoreMu           sync.Mutex
+	aiToolRestoreStates       map[string]*aiToolRestoreState
 	aiSkipNextAutoReqMu       sync.Mutex
 	aiSkipNextAutomaticReqMap map[string]bool
 }
@@ -71,6 +73,7 @@ func NewRuntimeApp(ctx context.Context, configDir string, sessionProvider Sessio
 		aiPendingToolBatches:      make(map[string]*PendingToolBatch),
 		aiPendingFollowupBatches:  make(map[string]*PendingToolBatch),
 		aiToolExecutions:          make(map[string]*ToolExecutionState),
+		aiToolRestoreStates:       make(map[string]*aiToolRestoreState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
 }
@@ -328,6 +331,7 @@ const remotePatchPythonScript = `#!/usr/bin/env python3
 import json
 import os
 import shutil
+import stat
 import sys
 import tempfile
 
@@ -350,9 +354,32 @@ def release_lock(lock_path):
     except OSError:
         shutil.rmtree(lock_path, ignore_errors=True)
 
+def preserve_metadata(target_path):
+    if not os.path.exists(target_path):
+        return None
+    info = os.stat(target_path)
+    return {
+        "mode": stat.S_IMODE(info.st_mode),
+        "uid": info.st_uid,
+        "gid": info.st_gid,
+    }
+
+def restore_metadata(target_path, metadata):
+    if not metadata:
+        return
+    try:
+        os.chmod(target_path, metadata["mode"])
+    except OSError:
+        pass
+    try:
+        os.chown(target_path, metadata["uid"], metadata["gid"])
+    except OSError:
+        pass
+
 def atomic_write(target_path, content):
     ensure_parent(target_path)
     parent = os.path.dirname(target_path) or "."
+    metadata = preserve_metadata(target_path)
     temp_path = ""
     fd, temp_path = tempfile.mkstemp(prefix=".lumin_patch_", dir=parent, text=True)
     try:
@@ -360,14 +387,37 @@ def atomic_write(target_path, content):
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        if metadata is not None:
+            try:
+                os.chmod(temp_path, metadata["mode"])
+            except OSError:
+                pass
         os.replace(temp_path, target_path)
+        restore_metadata(target_path, metadata)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
-def apply_update(target_path, hunks):
+def read_text(target_path):
     with open(target_path, "r", encoding="utf-8", newline="") as handle:
-        content = handle.read()
+        return handle.read()
+
+def apply_update_by_expected_content(target_path, expected_content, next_content):
+    current_content = read_text(target_path)
+    if current_content != expected_content:
+        return None, {"reason": "remote content mismatch before atomic write"}
+    atomic_write(target_path, next_content)
+    return True, None
+
+def apply_delete_by_expected_content(target_path, expected_content):
+    current_content = read_text(target_path)
+    if current_content != expected_content:
+        return None, {"reason": "remote content mismatch before delete"}
+    os.remove(target_path)
+    return True, None
+
+def apply_update_by_hunks(target_path, hunks):
+    content = read_text(target_path)
     for hunk in hunks:
         search = hunk.get("Search") or hunk.get("search") or ""
         replace = hunk.get("Replace") or hunk.get("replace") or ""
@@ -407,21 +457,56 @@ def main():
                 change["applied"] = True
                 result["files_changed"] += 1
             elif action == "delete":
-                os.remove(target_path)
+                if "ExpectedContent" in operation or "expectedContent" in operation or "expected_content" in operation:
+                    expected_content = operation.get("ExpectedContent")
+                    if expected_content is None:
+                        expected_content = operation.get("expectedContent")
+                    if expected_content is None:
+                        expected_content = operation.get("expected_content")
+                    applied, failure = apply_delete_by_expected_content(target_path, expected_content if expected_content is not None else "")
+                    if not applied:
+                        change["failure"] = failure
+                        result["changes"].append(change)
+                        result["failure"] = failure
+                        print(json.dumps(result, ensure_ascii=False))
+                        return 0
+                else:
+                    os.remove(target_path)
                 change["applied"] = True
                 result["files_changed"] += 1
             elif action == "update":
-                applied, occurrences = apply_update(target_path, hunks)
-                if not applied:
-                    failure = {
-                        "reason": "patch hunk matched zero or multiple locations",
-                        "occurrences": occurrences
-                    }
-                    change["failure"] = failure
-                    result["changes"].append(change)
-                    result["failure"] = failure
-                    print(json.dumps(result, ensure_ascii=False))
-                    return 0
+                if "ExpectedContent" in operation or "expectedContent" in operation or "expected_content" in operation:
+                    expected_content = operation.get("ExpectedContent")
+                    if expected_content is None:
+                        expected_content = operation.get("expectedContent")
+                    if expected_content is None:
+                        expected_content = operation.get("expected_content")
+                    next_content = operation.get("Content")
+                    if next_content is None:
+                        next_content = operation.get("content")
+                    applied, failure = apply_update_by_expected_content(
+                        target_path,
+                        expected_content if expected_content is not None else "",
+                        next_content if next_content is not None else "",
+                    )
+                    if not applied:
+                        change["failure"] = failure
+                        result["changes"].append(change)
+                        result["failure"] = failure
+                        print(json.dumps(result, ensure_ascii=False))
+                        return 0
+                else:
+                    applied, occurrences = apply_update_by_hunks(target_path, hunks)
+                    if not applied:
+                        failure = {
+                            "reason": "patch hunk matched zero or multiple locations",
+                            "occurrences": occurrences
+                        }
+                        change["failure"] = failure
+                        result["changes"].append(change)
+                        result["failure"] = failure
+                        print(json.dumps(result, ensure_ascii=False))
+                        return 0
                 change["applied"] = True
                 result["files_changed"] += 1
             else:

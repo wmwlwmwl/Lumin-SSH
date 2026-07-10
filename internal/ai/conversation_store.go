@@ -21,6 +21,7 @@ type AIConversationTaskSettings struct {
 	AlwaysAllowWriteOutsideWorkspace    bool     `json:"alwaysAllowWriteOutsideWorkspace"`
 	AlwaysAllowWriteProtected           bool     `json:"alwaysAllowWriteProtected"`
 	AlwaysAllowExecute                  bool     `json:"alwaysAllowExecute"`
+	AlwaysAllowExecuteReadOnly          bool     `json:"alwaysAllowExecuteReadOnly"`
 	AlwaysAllowExecuteAllCommands       bool     `json:"alwaysAllowExecuteAllCommands"`
 	AllowedCommands                     []string `json:"allowedCommands,omitempty"`
 	DeniedCommands                      []string `json:"deniedCommands,omitempty"`
@@ -101,6 +102,7 @@ func defaultAIConversationTaskSettings(globalSettings AIGlobalSettings) AIConver
 		AlwaysAllowWriteOutsideWorkspace:    globalSettings.AlwaysAllowWriteOutsideWorkspace,
 		AlwaysAllowWriteProtected:           globalSettings.AlwaysAllowWriteProtected,
 		AlwaysAllowExecute:                  globalSettings.AlwaysAllowExecute,
+		AlwaysAllowExecuteReadOnly:          globalSettings.AlwaysAllowExecuteReadOnly,
 		AlwaysAllowExecuteAllCommands:       globalSettings.AlwaysAllowExecuteAllCommands,
 		AlwaysAllowMcp:                      globalSettings.AlwaysAllowMcp,
 		AlwaysAllowModeSwitch:               globalSettings.AlwaysAllowModeSwitch,
@@ -114,7 +116,7 @@ func normalizeAIConversationTaskSettings(settings AIConversationTaskSettings) AI
 	settings.AllowedCommands = normalizeAIStringList(settings.AllowedCommands)
 	settings.DeniedCommands = normalizeAIStringList(settings.DeniedCommands)
 	settings.AlwaysAllowExecuteAllCommands = containsAICommandWildcard(settings.AllowedCommands)
-	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute
+	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute || settings.AlwaysAllowExecuteReadOnly
 	return settings
 }
 

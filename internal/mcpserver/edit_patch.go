@@ -11,10 +11,11 @@ type ApplyPatchHunk struct {
 }
 
 type ApplyPatchFileOperation struct {
-	Action string
-	Path string
-	Content string
-	Hunks []ApplyPatchHunk
+	Action          string
+	Path            string
+	Content         string
+	ExpectedContent string
+	Hunks           []ApplyPatchHunk
 }
 
 type ApplyPatchFileChange struct {

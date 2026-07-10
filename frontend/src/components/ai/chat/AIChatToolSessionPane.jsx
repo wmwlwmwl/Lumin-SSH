@@ -5,10 +5,10 @@ import AIChatMCPCard from './AIChatMCPCard.jsx'
 import AIChatToolCard from './AIChatToolCard.jsx'
 
 function renderToolItem(item, options) {
-  const { isLastAssistantTurn = false, hasSubsequentAssistantMessage = false, onSendUserMessage } = options || {}
+  const { isLastAssistantTurn = false, hasSubsequentAssistantMessage = false, onSendUserMessage, onPreviewRestore, onApplyRestore } = options || {}
   switch (item.kind) {
     case 'tool':
-      return <AIChatToolCard key={item.id} actionLabel={item.actionLabel} title={item.title} summary={item.summary} code={item.code} result={item.result} status={item.status} remainingFileEdits={item.remainingFileEdits} isLast={isLastAssistantTurn} hasSubsequentAssistantMessage={hasSubsequentAssistantMessage} />
+      return <AIChatToolCard key={item.id} restoreArtifactPath={typeof item?.extra?.restoreArtifactPath === 'string' ? item.extra.restoreArtifactPath : ''} copyContent={typeof item?.extra?.copyContent === 'string' ? item.extra.copyContent : ''} actionLabel={item.actionLabel} title={item.title} summary={item.summary} code={item.code} result={item.result} status={item.status} remainingFileEdits={item.remainingFileEdits} isLast={isLastAssistantTurn} hasSubsequentAssistantMessage={hasSubsequentAssistantMessage} onPreviewRestore={onPreviewRestore} onApplyRestore={onApplyRestore} />
     case 'completion':
       return <AIChatCompletionCard key={item.id} title={item.title} summary={item.summary} result={item.result} status={item.status} />
     case 'command':
@@ -22,14 +22,14 @@ function renderToolItem(item, options) {
   }
 }
 
-export default function AIChatToolSessionPane({ items = [], isLastAssistantTurn = false, hasSubsequentAssistantMessage = false, onSendUserMessage }) {
+export default function AIChatToolSessionPane({ items = [], isLastAssistantTurn = false, hasSubsequentAssistantMessage = false, onSendUserMessage, onPreviewRestore, onApplyRestore }) {
   if (!Array.isArray(items) || items.length === 0) {
     return null
   }
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>
-      {items.map((item) => renderToolItem(item, { isLastAssistantTurn, hasSubsequentAssistantMessage, onSendUserMessage }))}
+      {items.map((item) => renderToolItem(item, { isLastAssistantTurn, hasSubsequentAssistantMessage, onSendUserMessage, onPreviewRestore, onApplyRestore }))}
     </div>
   )
 }

@@ -2346,7 +2346,12 @@ func (m *SSHManager) WriteFileContext(ctx context.Context, sessionId string, pat
 	if err != nil {
 		return err
 	}
-
+	var originalMode os.FileMode
+	hasOriginalMode := false
+	if info, statErr := sftpClient.Stat(path); statErr == nil {
+		originalMode = info.Mode().Perm()
+		hasOriginalMode = true
+	}
 	token := newCommandExecutionToken()
 	tempPath := path + ".lumin_tmp_" + token
 	f, err := sftpClient.Create(tempPath)
@@ -2366,9 +2371,18 @@ func (m *SSHManager) WriteFileContext(ctx context.Context, sessionId string, pat
 		_ = sftpClient.Remove(tempPath)
 		return err
 	}
+	if hasOriginalMode {
+		if chmodErr := sftpClient.Chmod(tempPath, originalMode); chmodErr != nil {
+			_ = sftpClient.Remove(tempPath)
+			return chmodErr
+		}
+	}
 	if err := sftpClient.PosixRename(tempPath, path); err != nil {
 		_ = sftpClient.Remove(tempPath)
 		return fmt.Errorf("replace failed: %w", err)
+	}
+	if hasOriginalMode {
+		_ = sftpClient.Chmod(path, originalMode)
 	}
 	return nil
 }

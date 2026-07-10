@@ -1,9 +1,6 @@
 package mcpserver
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 func editFileToolDefinition() ToolDefinition {
 	return ToolDefinition{
@@ -101,77 +98,67 @@ func (c *Catalog) callEditFile(arguments map[string]any) (any, error) {
 			Failure: &EditMatchFailure{Reason: "old_string must not be empty"},
 		}, nil
 	}
-	if expectedReplacements == 1 && c.remoteEditExecutor != nil && capabilities.Python3 {
+	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
+	if err != nil {
+		return nil, err
+	}
+	preview, err := BuildEditFileReviewPreview(remotePath, content, oldString, newString, expectedReplacements)
+	if err != nil {
+		return nil, err
+	}
+	if preview.Failure != nil {
+		return EditFileResult{
+			SessionID:            session.SessionID,
+			Path:                 remotePath,
+			Handler:              EditHandlerFileProviderFallback,
+			Capabilities:         capabilities,
+			ExpectedReplacements: expectedReplacements,
+			Occurrences:          preview.Occurrences,
+			Applied:              false,
+			Failure:              preview.Failure,
+		}, nil
+	}
+	if c.remoteEditExecutor != nil && capabilities.Python3 {
 		remoteResult, remoteErr := applyPatchAtomicWithContext(c.remoteEditExecutor, c.callCtx, session.SessionID, []ApplyPatchFileOperation{
 			{
-				Action: "update",
-				Path: remotePath,
-				Hunks: []ApplyPatchHunk{
-					{Search: oldString, Replace: newString},
-				},
+				Action:          "update",
+				Path:            remotePath,
+				Content:         preview.PreviewContent,
+				ExpectedContent: preview.OriginalContent,
 			},
 		})
 		if remoteErr != nil {
 			return nil, remoteErr
 		}
 		result := EditFileResult{
-			SessionID: session.SessionID,
-			Path: remotePath,
-			Handler: remoteResult.Handler,
-			Capabilities: remoteResult.Capabilities,
+			SessionID:            session.SessionID,
+			Path:                 remotePath,
+			Handler:              remoteResult.Handler,
+			Capabilities:         remoteResult.Capabilities,
 			ExpectedReplacements: expectedReplacements,
-			Applied: remoteResult.Applied,
+			Occurrences:          preview.Occurrences,
+			Applied:              remoteResult.Applied,
 		}
-		if remoteResult.Applied {
-			result.Occurrences = 1
-		} else {
+		if !remoteResult.Applied {
 			failure := firstPatchFailure(remoteResult)
 			result.Failure = failure
 			result.Occurrences = failure.Occurrences
+		} else {
+			result.BytesWritten = len([]byte(preview.PreviewContent))
 		}
 		return result, nil
 	}
-	content, err := readTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath)
-	if err != nil {
-		return nil, err
-	}
-	occurrences := countOccurrences(content, oldString)
-	if occurrences != expectedReplacements {
-		failure := &EditMatchFailure{
-			Reason: "occurrence count did not match expected_replacements",
-			Occurrences: occurrences,
-		}
-		if occurrences == 0 {
-			failure.BestMatch = extractBestMatchSnippet(content, oldString)
-		}
-		return EditFileResult{
-			SessionID: session.SessionID,
-			Path: remotePath,
-			Handler: EditHandlerFileProviderFallback,
-			Capabilities: capabilities,
-			ExpectedReplacements: expectedReplacements,
-			Occurrences: occurrences,
-			Applied: false,
-			Failure: failure,
-		}, nil
-	}
-	var nextContent string
-	if expectedReplacements == 1 {
-		nextContent, _ = replaceExactlyOnce(content, oldString, newString)
-	} else {
-		nextContent = strings.ReplaceAll(content, oldString, newString)
-	}
-	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, nextContent); err != nil {
+	if err := writeTextFileWithContext(c.fileProvider, c.callCtx, session.SessionID, remotePath, preview.PreviewContent); err != nil {
 		return nil, err
 	}
 	return EditFileResult{
-		SessionID: session.SessionID,
-		Path: remotePath,
-		Handler: EditHandlerFileProviderFallback,
-		Capabilities: capabilities,
+		SessionID:            session.SessionID,
+		Path:                 remotePath,
+		Handler:              EditHandlerFileProviderFallback,
+		Capabilities:         capabilities,
 		ExpectedReplacements: expectedReplacements,
-		Occurrences: occurrences,
-		BytesWritten: len([]byte(nextContent)),
-		Applied: true,
+		Occurrences:          preview.Occurrences,
+		BytesWritten:         len([]byte(preview.PreviewContent)),
+		Applied:              true,
 	}, nil
 }

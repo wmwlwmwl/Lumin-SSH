@@ -7,6 +7,7 @@ import ProbePanel from './components/ProbePanel.jsx';
 import FileManager from './components/FileManager.jsx';
 import AIPanel from './components/AIPanel.jsx';
 import AIChangeReviewWorkbench from './components/ai/AIChangeReviewWorkbench.jsx';
+import AIConversationDiffOverlay from './components/ai/AIConversationDiffOverlay.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import CredentialsModal from './components/CredentialsModal.jsx';
 import Toast from './components/Toast.jsx';
@@ -23,6 +24,7 @@ import ConnectingCard from './components/ConnectingCard.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import Tiptop from './components/Tiptop.jsx';
+import { restoreAIChatTool } from './components/ai/aiChatBridge.js';
 import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket } from 'lucide-react';
 import { Z } from './constants/zIndex';
 
@@ -300,6 +302,38 @@ function normalizeTwoTerminalPaneLayout(rootCells, pane, preferredOrientation = 
   return candidates[0];
 }
 
+function buildAIWorkspaceTerminalPanelKey(sessionId, terminalId) {
+  const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+  const normalizedTerminalId = typeof terminalId === 'string' ? terminalId.trim() : '';
+  if (!normalizedSessionId || !normalizedTerminalId) {
+    return '';
+  }
+  return `${normalizedSessionId}::${normalizedTerminalId}`;
+}
+
+function resolveAIWorkspaceTerminalBindingByTerminalId(sessions, terminalId) {
+  const normalizedTerminalId = typeof terminalId === 'string' ? terminalId.trim() : '';
+  if (!normalizedTerminalId) {
+    return null;
+  }
+  const list = Array.isArray(sessions) ? sessions : [];
+  const exactSession = list.find((session) => session?.id === normalizedTerminalId);
+  if (exactSession) {
+    return {
+      sessionId: exactSession.id,
+      terminalId: normalizedTerminalId,
+    };
+  }
+  const parentSession = list.find((session) => Array.isArray(session?.terminals) && session.terminals.some((terminal) => terminal?.id === normalizedTerminalId));
+  if (parentSession) {
+    return {
+      sessionId: parentSession.id,
+      terminalId: normalizedTerminalId,
+    };
+  }
+  return null;
+}
+
 export default function App() {
   const { t } = useTranslation();
   const [servers, setServers] = useState([]);
@@ -328,6 +362,7 @@ export default function App() {
   const [serversLoaded, setServersLoaded] = useState(false);
   const workspaceRestoreStartedRef = useRef(false);
   const restoringWorkspaceRef = useRef(false);
+  const workspaceRestoreNavigationOverrideRef = useRef(false);
   const [restoringWorkspaceSessionIds, setRestoringWorkspaceSessionIds] = useState(new Set());
   const lastTerminalRef = useRef({}); // 记录每个 session 最后选中的终端
   const [mountedSessions, setMountedSessions] = useState(new Set());
@@ -359,7 +394,9 @@ export default function App() {
   const connectingServersRef = useRef([]);
   useEffect(() => { connectingServersRef.current = connectingServers; }, [connectingServers]);
   const [toasts, setToasts] = useState([]);
-  const [changeReviewQueue, setChangeReviewQueue] = useState([]);
+  const [changeReviewQueues, setChangeReviewQueues] = useState({});
+  const [restorePreviewReviews, setRestorePreviewReviews] = useState({});
+  const [conversationDiffPanels, setConversationDiffPanels] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [monitoringEnabled, setMonitoringEnabled] = useState({}); // { [sessionId]: boolean }
   const [serverListViewMode, setServerListViewMode] = useState(localStorage.getItem('serverListViewMode') || 'grid'); // 'grid' | 'table'
@@ -446,6 +483,11 @@ export default function App() {
     const rect = getTerminalPaneRect(getSessionRootPaneCells(layoutId, layoutSource));
     return !!rect && (rect.width > 1 || rect.height > 1);
   }, [getSessionRootPaneCells, terminalPaneLayouts]);
+  const markWorkspaceRestoreNavigationOverride = useCallback(() => {
+    if (restoringWorkspaceRef.current) {
+      workspaceRestoreNavigationOverrideRef.current = true;
+    }
+  }, []);
 
   const renderSessionFileManagers = (s) => getEffectiveTerminals(s).map(t => {
     const isActive = activeSessionId === s.id && activeTerminalId === t.id;
@@ -1343,17 +1385,41 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setTimeout(() => { if (mountedRef.current) removeToast(id); }, duration);
   }, [removeToast]);
 
-  const activeChangeReview = changeReviewQueue.length > 0 ? changeReviewQueue[0] : null;
+  const activeWorkspaceTerminalKey = useMemo(() => buildAIWorkspaceTerminalPanelKey(activeSessionId, activeTerminalId), [activeSessionId, activeTerminalId]);
+  const activeChangeReviewQueue = useMemo(() => (
+    activeWorkspaceTerminalKey && Array.isArray(changeReviewQueues[activeWorkspaceTerminalKey])
+      ? changeReviewQueues[activeWorkspaceTerminalKey]
+      : []
+  ), [activeWorkspaceTerminalKey, changeReviewQueues]);
+  const activeChangeReview = activeChangeReviewQueue.length > 0 ? activeChangeReviewQueue[0] : null;
+  const activeRestorePreviewReview = activeWorkspaceTerminalKey
+    ? restorePreviewReviews[activeWorkspaceTerminalKey] || null
+    : null;
+  const activeConversationDiffPanel = activeWorkspaceTerminalKey
+    ? conversationDiffPanels[activeWorkspaceTerminalKey] || null
+    : null;
 
   const enqueueChangeReview = useCallback((review) => {
     if (!review || typeof review !== 'object' || !review.reviewId || !review.requestId) {
       return;
     }
-    setChangeReviewQueue((prev) => {
-      if (prev.some((item) => item.reviewId === review.reviewId)) {
+    const binding = resolveAIWorkspaceTerminalBindingByTerminalId(sessionsRef.current, review.sessionId);
+    if (!binding) {
+      return;
+    }
+    const panelKey = buildAIWorkspaceTerminalPanelKey(binding.sessionId, binding.terminalId);
+    if (!panelKey) {
+      return;
+    }
+    setChangeReviewQueues((prev) => {
+      const currentQueue = Array.isArray(prev[panelKey]) ? prev[panelKey] : [];
+      if (currentQueue.some((item) => item.reviewId === review.reviewId)) {
         return prev;
       }
-      return [...prev, review];
+      return {
+        ...prev,
+        [panelKey]: [...currentQueue, review],
+      };
     });
   }, []);
 
@@ -1362,7 +1428,21 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (!normalizedId) {
       return;
     }
-    setChangeReviewQueue((prev) => prev.filter((item) => item.reviewId !== normalizedId));
+    setChangeReviewQueues((prev) => {
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([panelKey, queue]) => {
+        const currentQueue = Array.isArray(queue) ? queue : [];
+        const filteredQueue = currentQueue.filter((item) => item.reviewId !== normalizedId);
+        if (filteredQueue.length !== currentQueue.length) {
+          changed = true;
+        }
+        if (filteredQueue.length > 0) {
+          next[panelKey] = filteredQueue;
+        }
+      });
+      return changed ? next : prev;
+    });
   }, []);
 
   const removeChangeReviewsByRequestId = useCallback((requestId) => {
@@ -1370,15 +1450,60 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (!normalizedRequestId) {
       return;
     }
-    setChangeReviewQueue((prev) => prev.filter((item) => item.requestId !== normalizedRequestId));
+    setChangeReviewQueues((prev) => {
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([panelKey, queue]) => {
+        const currentQueue = Array.isArray(queue) ? queue : [];
+        const filteredQueue = currentQueue.filter((item) => item.requestId !== normalizedRequestId);
+        if (filteredQueue.length !== currentQueue.length) {
+          changed = true;
+        }
+        if (filteredQueue.length > 0) {
+          next[panelKey] = filteredQueue;
+        }
+      });
+      return changed ? next : prev;
+    });
+    setRestorePreviewReviews((prev) => {
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([panelKey, reviewState]) => {
+        if (reviewState?.review?.requestId === normalizedRequestId) {
+          changed = true;
+          return;
+        }
+        next[panelKey] = reviewState;
+      });
+      return changed ? next : prev;
+    });
   }, []);
 
-  const removeChangeReviewsBySessionId = useCallback((sessionId) => {
-    const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
-    if (!normalizedSessionId) {
+  const removeChangeReviewsBySessionId = useCallback((terminalId) => {
+    const binding = resolveAIWorkspaceTerminalBindingByTerminalId(sessionsRef.current, terminalId);
+    if (!binding) {
       return;
     }
-    setChangeReviewQueue((prev) => prev.filter((item) => item.sessionId !== normalizedSessionId));
+    const panelKey = buildAIWorkspaceTerminalPanelKey(binding.sessionId, binding.terminalId);
+    if (!panelKey) {
+      return;
+    }
+    setChangeReviewQueues((prev) => {
+      if (!prev[panelKey]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[panelKey];
+      return next;
+    });
+    setRestorePreviewReviews((prev) => {
+      if (!prev[panelKey]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[panelKey];
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -1393,6 +1518,262 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     window.addEventListener('ai-change-review-clear', handleClearChangeReview);
     return () => window.removeEventListener('ai-change-review-clear', handleClearChangeReview);
   }, [removeChangeReviewsBySessionId]);
+
+  useEffect(() => {
+    const handlePreviewChangeReview = (event) => {
+      const review = event?.detail?.review;
+      const terminalId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      if (!review || typeof review !== 'object') {
+        return;
+      }
+      const binding = resolveAIWorkspaceTerminalBindingByTerminalId(sessionsRef.current, terminalId);
+      if (!binding) {
+        return;
+      }
+      const panelKey = buildAIWorkspaceTerminalPanelKey(binding.sessionId, binding.terminalId);
+      if (!panelKey) {
+        return;
+      }
+      setRestorePreviewReviews((prev) => ({
+        ...prev,
+        [panelKey]: {
+          sessionId: binding.sessionId,
+          terminalId: binding.terminalId,
+          review,
+        },
+      }));
+    };
+
+    const handleClearPreviewChangeReview = (event) => {
+      const reviewId = typeof event?.detail?.reviewId === 'string' ? event.detail.reviewId.trim() : '';
+      const terminalId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      const binding = terminalId ? resolveAIWorkspaceTerminalBindingByTerminalId(sessionsRef.current, terminalId) : null;
+      const panelKey = binding ? buildAIWorkspaceTerminalPanelKey(binding.sessionId, binding.terminalId) : '';
+      setRestorePreviewReviews((prev) => {
+        let changed = false;
+        const next = {};
+        Object.entries(prev).forEach(([currentKey, reviewState]) => {
+          if (panelKey && currentKey !== panelKey) {
+            next[currentKey] = reviewState;
+            return;
+          }
+          if (reviewId && reviewState?.review?.reviewId && reviewState.review.reviewId !== reviewId) {
+            next[currentKey] = reviewState;
+            return;
+          }
+          changed = true;
+        });
+        return changed ? next : prev;
+      });
+    };
+
+    window.addEventListener('ai-change-review-preview', handlePreviewChangeReview);
+    window.addEventListener('ai-change-review-preview-clear', handleClearPreviewChangeReview);
+    return () => {
+      window.removeEventListener('ai-change-review-preview', handlePreviewChangeReview);
+      window.removeEventListener('ai-change-review-preview-clear', handleClearPreviewChangeReview);
+    };
+  }, []);
+
+  const previewConversationDiffArtifact = useCallback(async (artifactPath, targetTerminalId) => {
+    const bridge = window?.go?.main?.AIBindings || window?.go?.main?.App;
+    if (!bridge?.PreviewAIChatToolDiff) {
+      throw new Error(t('差异预览能力未就绪'));
+    }
+    const review = await bridge.PreviewAIChatToolDiff(artifactPath, targetTerminalId);
+    return review && typeof review === 'object' ? review : null;
+  }, []);
+
+  const handleReapplyConversationDiffItem = useCallback(async (artifactPath, targetSessionId, targetTerminalId) => {
+    const bridge = window?.go?.main?.AIBindings || window?.go?.main?.App;
+    const effectiveTerminalId = typeof targetTerminalId === 'string' && targetTerminalId.trim()
+      ? targetTerminalId.trim()
+      : typeof targetSessionId === 'string'
+        ? targetSessionId.trim()
+        : '';
+    if (!bridge?.ReapplyAIChatTool) {
+      addToast(t('ai.reapply.unavailable'), 'error', 3200);
+      return false;
+    }
+    try {
+      await bridge.ReapplyAIChatTool(artifactPath, effectiveTerminalId);
+      return true;
+    } catch (error) {
+      addToast(error instanceof Error ? t(error.message) : t('ai.reapply.unsupported'), 'error', 3200);
+      return false;
+    }
+  }, [addToast, t]);
+
+  const handleApplyConversationDiffRestore = useCallback(async (artifactPath, targetSessionId, targetTerminalId) => {
+    try {
+      await restoreAIChatTool(artifactPath, targetTerminalId);
+      return true;
+    } catch (error) {
+      addToast(error instanceof Error ? t(error.message) : t('当前状态不支持还原'), 'error', 3200);
+      return false;
+    }
+  }, [addToast]);
+
+  const handleSelectConversationDiffItem = useCallback(async (item, options = {}) => {
+    const artifactPath = typeof item?.artifactPath === 'string' ? item.artifactPath.trim() : '';
+    const messageId = typeof item?.messageId === 'string' ? item.messageId.trim() : '';
+    const sessionId = typeof options?.sessionId === 'string' ? options.sessionId.trim() : '';
+    const terminalId = typeof options?.terminalId === 'string' ? options.terminalId.trim() : '';
+    const providedItems = Array.isArray(options?.items) ? options.items : [];
+    const shouldLocate = options?.locate === true;
+    const panelKey = buildAIWorkspaceTerminalPanelKey(sessionId, terminalId);
+    if (!artifactPath || !panelKey) {
+      return;
+    }
+    setConversationDiffPanels((prev) => {
+      const currentPanel = prev[panelKey] || {
+        sessionId,
+        terminalId,
+        openedAt: Date.now(),
+        items: providedItems,
+      };
+      return {
+        ...prev,
+        [panelKey]: {
+          ...currentPanel,
+          items: Array.isArray(currentPanel.items) && currentPanel.items.length > 0 ? currentPanel.items : providedItems,
+          selectedMessageId: messageId,
+          selectedArtifactPath: artifactPath,
+          review: null,
+          loading: true,
+        },
+      };
+    });
+    try {
+      const review = await previewConversationDiffArtifact(artifactPath, terminalId || sessionId);
+      setConversationDiffPanels((prev) => {
+        const currentPanel = prev[panelKey] || {
+          sessionId,
+          terminalId,
+          openedAt: Date.now(),
+          items: providedItems,
+        };
+        return {
+          ...prev,
+          [panelKey]: {
+            ...currentPanel,
+            items: Array.isArray(currentPanel.items) && currentPanel.items.length > 0 ? currentPanel.items : providedItems,
+            selectedMessageId: messageId,
+            selectedArtifactPath: artifactPath,
+            review,
+            loading: false,
+          },
+        };
+      });
+      if (shouldLocate && messageId) {
+        window.dispatchEvent(new CustomEvent('ai-conversation-diff-locate', {
+          detail: {
+            sessionId,
+            terminalId,
+            messageId,
+            token: Date.now(),
+          },
+        }));
+      }
+    } catch (error) {
+      setConversationDiffPanels((prev) => {
+        const currentPanel = prev[panelKey] || {
+          sessionId,
+          terminalId,
+          openedAt: Date.now(),
+          items: providedItems,
+        };
+        return {
+          ...prev,
+          [panelKey]: {
+            ...currentPanel,
+            items: Array.isArray(currentPanel.items) && currentPanel.items.length > 0 ? currentPanel.items : providedItems,
+            selectedMessageId: messageId,
+            selectedArtifactPath: artifactPath,
+            loading: false,
+          },
+        };
+      });
+      addToast(error instanceof Error ? t(error.message) : t('差异预览失败'), 'error', 3200);
+    }
+  }, [addToast, previewConversationDiffArtifact]);
+
+  useEffect(() => {
+    const handleOpenConversationDiffPanel = (event) => {
+      const sessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      const terminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : '';
+      const panelKey = buildAIWorkspaceTerminalPanelKey(sessionId, terminalId);
+      const rawItems = Array.isArray(event?.detail?.items) ? event.detail.items : [];
+      const items = rawItems
+        .filter((item) => item && typeof item === 'object')
+        .map((item, index) => ({
+          id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `conversation-diff-item-${index}`,
+          messageId: typeof item.messageId === 'string' ? item.messageId.trim() : '',
+          artifactPath: typeof item.artifactPath === 'string' ? item.artifactPath.trim() : '',
+          toolName: typeof item.toolName === 'string' ? item.toolName.trim() : '',
+          title: typeof item.title === 'string' ? item.title.trim() : '',
+          summary: typeof item.summary === 'string' ? item.summary.trim() : '',
+          status: typeof item.status === 'string' ? item.status.trim() : '',
+          copyContent: typeof item.copyContent === 'string' ? item.copyContent : '',
+          order: Number.isFinite(Number(item.order)) ? Number(item.order) : index + 1,
+        }))
+        .filter((item) => item.artifactPath);
+      if (!panelKey || items.length === 0) {
+        return;
+      }
+      let firstItem = null;
+      let shouldOpen = false;
+      setConversationDiffPanels((prev) => {
+        if (prev[panelKey]) {
+          const next = { ...prev };
+          delete next[panelKey];
+          return next;
+        }
+        firstItem = items[0];
+        shouldOpen = true;
+        return {
+          ...prev,
+          [panelKey]: {
+            sessionId,
+            terminalId,
+            openedAt: Date.now(),
+            items,
+            selectedMessageId: firstItem?.messageId || '',
+            selectedArtifactPath: firstItem?.artifactPath || '',
+            review: null,
+            loading: true,
+          },
+        };
+      });
+      if (shouldOpen && firstItem) {
+        void handleSelectConversationDiffItem(firstItem, { sessionId, terminalId, locate: false, items });
+      }
+    };
+
+    const handleCloseConversationDiffPanel = (event) => {
+      const sessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      const terminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : '';
+      const panelKey = buildAIWorkspaceTerminalPanelKey(sessionId, terminalId);
+      setConversationDiffPanels((prev) => {
+        if (!panelKey) {
+          return {};
+        }
+        if (!prev[panelKey]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[panelKey];
+        return next;
+      });
+    };
+
+    window.addEventListener('ai-conversation-diff-open', handleOpenConversationDiffPanel);
+    window.addEventListener('ai-conversation-diff-close', handleCloseConversationDiffPanel);
+    return () => {
+      window.removeEventListener('ai-conversation-diff-open', handleOpenConversationDiffPanel);
+      window.removeEventListener('ai-conversation-diff-close', handleCloseConversationDiffPanel);
+    };
+  }, [handleSelectConversationDiffItem]);
 
   // ── 连接错误通用处理 ──────────────────────────────────────
   const handleConnectError = useCallback((sessionId, err) => {
@@ -1541,6 +1922,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   // ponytail: 提取 tab 点击处理，避免每次渲染创建 N 个闭包
   const handleTabClick = useCallback((sessionId) => {
+    markWorkspaceRestoreNavigationOverride();
     setTabContextMenu(null);
     setTerminalTabContextMenu(null);
     setActiveSessionId(sessionId);
@@ -1552,7 +1934,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       activeSessionId: sessionId,
       activeTerminalId: nextTerminalId,
     });
-  }, [resolveSessionRootTerminalId]);
+  }, [markWorkspaceRestoreNavigationOverride, resolveSessionRootTerminalId]);
 
   // ── 重连会话核心逻辑 ────────────────────────────────────────
   const reconnectSession = useCallback(async (session, requestingTerminalId, options = {}) => {
@@ -1617,6 +1999,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       return;
     }
     workspaceRestoreStartedRef.current = true;
+    workspaceRestoreNavigationOverrideRef.current = false;
     if (!rememberWorkspace) {
       setWorkspaceRestoreReady(true);
       return;
@@ -1716,6 +2099,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         }
       }
 
+      if (workspaceRestoreNavigationOverrideRef.current) {
+        return;
+      }
       const finalSession = restoredSessions.find((session) => session.id === initialActiveSessionId) || restoredSessions[0];
       if (!finalSession) {
         return;
@@ -3578,7 +3964,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       {/* ── Topbar ───────────────────────────────────────── */}
       <div className="topbar">
         <div className="topbar-content">
-          <div className="topbar-logo" onClick={() => { setActiveSessionId(null); setActiveTerminalId(null); setShowSettings(false); }}>
+          <div className="topbar-logo" onClick={() => { markWorkspaceRestoreNavigationOverride(); setActiveSessionId(null); setActiveTerminalId(null); setShowSettings(false); }}>
             <img src={logoImg} alt="Lumin SSH" />
             <div className="topbar-title">Lumin</div>
           </div>
@@ -3588,7 +3974,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               <Tiptop text={t('返回主页')} placement="bottom">
                 <button
                   className="btn btn-ghost btn-sm no-drag"
-                  onClick={() => { setActiveSessionId(null); setActiveTerminalId(null); }}
+                  onClick={() => { markWorkspaceRestoreNavigationOverride(); setActiveSessionId(null); setActiveTerminalId(null); }}
                   aria-label={t('返回主页')}
                   style={{ flexShrink: 0 }}
                 >
@@ -3912,6 +4298,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                           }}
                           onClick={() => {
                             if (shouldIgnoreTerminalDockClick()) return;
+                            markWorkspaceRestoreNavigationOverride();
                             setTerminalTabContextMenu(null);
                             setActiveTerminalId(term.id);
                             setContentTab('terminal');
@@ -4362,7 +4749,60 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               {activeChangeReview ? (
                 <AIChangeReviewWorkbench
                   review={activeChangeReview}
-                  queueLength={changeReviewQueue.length}
+                  queueLength={activeChangeReviewQueue.length}
+                />
+              ) : null}
+              {activeRestorePreviewReview?.review ? (
+                <AIChangeReviewWorkbench
+                  review={activeRestorePreviewReview.review}
+                  queueLength={1}
+                  previewOnly={true}
+                  onClose={() => {
+                    if (!activeWorkspaceTerminalKey) {
+                      return;
+                    }
+                    setRestorePreviewReviews((prev) => {
+                      if (!prev[activeWorkspaceTerminalKey]) {
+                        return prev;
+                      }
+                      const next = { ...prev };
+                      delete next[activeWorkspaceTerminalKey];
+                      return next;
+                    });
+                  }}
+                />
+              ) : null}
+              {activeConversationDiffPanel ? (
+                <AIConversationDiffOverlay
+                  sessionLabel={
+                    sessions.find((item) => item.id === activeConversationDiffPanel.sessionId)?.serverName
+                    || sessions.find((item) => item.id === activeConversationDiffPanel.sessionId)?.host
+                    || activeConversationDiffPanel.sessionId
+                  }
+                  items={activeConversationDiffPanel.items || []}
+                  review={activeConversationDiffPanel.review || null}
+                  loading={activeConversationDiffPanel.loading === true}
+                  selectedMessageId={activeConversationDiffPanel.selectedMessageId || ''}
+                  onSelectItem={(item) => void handleSelectConversationDiffItem(item, {
+                    sessionId: activeConversationDiffPanel.sessionId,
+                    terminalId: activeConversationDiffPanel.terminalId,
+                    locate: true,
+                  })}
+                  onPreviewRestore={(artifactPath) => handleReapplyConversationDiffItem(artifactPath, activeConversationDiffPanel.sessionId, activeConversationDiffPanel.terminalId)}
+                  onApplyRestore={(artifactPath) => handleApplyConversationDiffRestore(artifactPath, activeConversationDiffPanel.sessionId, activeConversationDiffPanel.terminalId)}
+                  onClose={() => {
+                    if (!activeWorkspaceTerminalKey) {
+                      return;
+                    }
+                    setConversationDiffPanels((prev) => {
+                      if (!prev[activeWorkspaceTerminalKey]) {
+                        return prev;
+                      }
+                      const next = { ...prev };
+                      delete next[activeWorkspaceTerminalKey];
+                      return next;
+                    });
+                  }}
                 />
               ) : null}
             </div>

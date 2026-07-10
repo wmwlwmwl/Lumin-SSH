@@ -80,6 +80,22 @@ export async function terminateAIChatTool(requestId) {
   await bridge.TerminateAIChatTool(requestId)
 }
 
+export async function previewAIChatToolRestore(reviewId, sessionId) {
+  const bridge = getAppBridge()
+  if (!bridge?.PreviewAIChatToolRestore) {
+    throw new Error(t('还原预览能力未就绪'))
+  }
+  return bridge.PreviewAIChatToolRestore(reviewId, sessionId)
+}
+
+export async function restoreAIChatTool(reviewId, sessionId) {
+  const bridge = getAppBridge()
+  if (!bridge?.RestoreAIChatTool) {
+    throw new Error(t('还原能力未就绪'))
+  }
+  await bridge.RestoreAIChatTool(reviewId, sessionId)
+}
+
 export async function listAIChatCommandTerminalCandidates(requestId) {
   const bridge = getAppBridge()
   if (!bridge?.ListAIChatCommandTerminalCandidates) {

@@ -1,3 +1,4 @@
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import AIChatMarkdown from './AIChatMarkdown.jsx'
 
 const streamingAnimatedTailLength = 12
@@ -139,6 +140,9 @@ const streamingCursorKeyframes = `
 }
 `
 
+const assistantBodyMaxHeight = 420
+const assistantBodyAutoFollowThreshold = 24
+
 function StreamingCursor() {
   return (
     <span
@@ -271,9 +275,85 @@ export default function AIChatAssistantBodyPane({ text }) {
   const content = typeof text === 'string' ? text.trim() : ''
   const isStreaming = content.endsWith('▍')
   const displayContent = isStreaming ? content.slice(0, -1) : content
+  const scrollContainerRef = useRef(null)
+  const contentRef = useRef(null)
+  const shouldAutoFollowRef = useRef(true)
+  const scrollFrameRef = useRef(0)
+  const scrollFollowupFrameRef = useRef(0)
+
+  const cancelScheduledScrollBodyToBottom = () => {
+    if (scrollFrameRef.current) {
+      window.cancelAnimationFrame(scrollFrameRef.current)
+      scrollFrameRef.current = 0
+    }
+    if (scrollFollowupFrameRef.current) {
+      window.cancelAnimationFrame(scrollFollowupFrameRef.current)
+      scrollFollowupFrameRef.current = 0
+    }
+  }
+
+  const scrollBodyToBottom = () => {
+    const container = scrollContainerRef.current
+    if (!container || !shouldAutoFollowRef.current) {
+      return
+    }
+    container.scrollTop = Math.max(container.scrollHeight - container.clientHeight, 0)
+  }
+
+  const scheduleScrollBodyToBottom = () => {
+    if (!shouldAutoFollowRef.current) {
+      return
+    }
+    cancelScheduledScrollBodyToBottom()
+    scrollBodyToBottom()
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollBodyToBottom()
+      scrollFrameRef.current = 0
+      scrollFollowupFrameRef.current = window.requestAnimationFrame(() => {
+        scrollBodyToBottom()
+        scrollFollowupFrameRef.current = 0
+      })
+    })
+  }
+
+  useLayoutEffect(() => {
+    if (!displayContent && !isStreaming) {
+      return undefined
+    }
+    scheduleScrollBodyToBottom()
+    return undefined
+  }, [displayContent, isStreaming])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    const contentElement = contentRef.current
+    if (!container || !contentElement || typeof ResizeObserver === 'undefined') {
+      return undefined
+    }
+    const observer = new ResizeObserver(() => {
+      scheduleScrollBodyToBottom()
+    })
+    observer.observe(contentElement)
+    return () => observer.disconnect()
+  }, [displayContent, isStreaming])
+
+  useEffect(() => {
+    return () => {
+      cancelScheduledScrollBodyToBottom()
+    }
+  }, [])
 
   if (!displayContent && !isStreaming) {
     return null
+  }
+
+  const handleBodyScroll = () => {
+    const container = scrollContainerRef.current
+    if (!container) {
+      return
+    }
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    shouldAutoFollowRef.current = distanceToBottom <= assistantBodyAutoFollowThreshold
   }
 
   if (isStreaming) {
@@ -284,18 +364,32 @@ export default function AIChatAssistantBodyPane({ text }) {
 
     return (
       <div style={{ minWidth: 0, color: 'var(--text-primary)', fontSize: 13, lineHeight: 1.7 }}>
-        <style>{streamingCursorKeyframes}</style>
         <div
+          ref={scrollContainerRef}
+          onScroll={handleBodyScroll}
           style={{
             minWidth: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            minHeight: '1.6em',
+            maxHeight: assistantBodyMaxHeight,
+            overflowY: 'auto',
+            overflowAnchor: 'none',
+            paddingRight: 4,
+            scrollbarGutter: 'stable both-edges',
           }}
         >
-          {stablePrefix}
-          {animatedTail.map((char, index) => renderStreamingCharacter(char, animatedTailStart + index, animatedTailStart + index === streamingCharacters.length - 1))}
-          <StreamingCursor />
+          <style>{streamingCursorKeyframes}</style>
+          <div
+            ref={contentRef}
+            style={{
+              minWidth: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              minHeight: '1.6em',
+            }}
+          >
+            {stablePrefix}
+            {animatedTail.map((char, index) => renderStreamingCharacter(char, animatedTailStart + index, animatedTailStart + index === streamingCharacters.length - 1))}
+            <StreamingCursor />
+          </div>
         </div>
       </div>
     )
@@ -303,7 +397,22 @@ export default function AIChatAssistantBodyPane({ text }) {
 
   return (
     <div style={{ minWidth: 0, color: 'var(--text-primary)', fontSize: 13, lineHeight: 1.7 }}>
-      <AIChatMarkdown text={displayContent} />
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleBodyScroll}
+        style={{
+          minWidth: 0,
+          maxHeight: assistantBodyMaxHeight,
+          overflowY: 'auto',
+          overflowAnchor: 'none',
+          paddingRight: 4,
+          scrollbarGutter: 'stable both-edges',
+        }}
+      >
+        <div ref={contentRef}>
+          <AIChatMarkdown text={displayContent} />
+        </div>
+      </div>
     </div>
   )
 }

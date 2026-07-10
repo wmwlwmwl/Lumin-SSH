@@ -1,4 +1,4 @@
-import { House, Settings } from 'lucide-react'
+import { Columns2, House, Settings } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from '../../i18n.js'
 import Tiptop from '../Tiptop.jsx'
@@ -26,6 +26,8 @@ export default function AIPanelHeader({
   showSettingsPanel,
   onToggleSettings,
   onGoHome,
+  onOpenConversationDiff,
+  showConversationDiffButton = false,
   showContextTokens = false,
   contextTokens = 0,
   isCondensingContext = false,
@@ -77,6 +79,11 @@ export default function AIPanelHeader({
         <IconActionButton title={t('返回主页')} onClick={onGoHome}>
           <House size={16} />
         </IconActionButton>
+        {showConversationDiffButton ? (
+          <IconActionButton title={t('当前对话文件变更')} onClick={onOpenConversationDiff}>
+            <Columns2 size={16} />
+          </IconActionButton>
+        ) : null}
         <IconActionButton title={showSettingsPanel ? t('关闭设置面板') : t('打开设置面板')} active={showSettingsPanel} onClick={onToggleSettings}>
           <Settings size={16} />
         </IconActionButton>

@@ -88,7 +88,48 @@ function ActionButton({ icon: Icon, label, onClick, disabled = false }) {
   )
 }
 
-export default function AIConversationBackupSettings({ active, conversationId, conversationUpdatedAt = 0, requestInFlight = false, onRestoreSnapshot }) {
+function ToggleSwitchControl({ checked, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange?.()}
+      aria-pressed={checked}
+      style={{
+        width: 42,
+        height: 24,
+        borderRadius: 999,
+        border: '1px solid var(--border)',
+        background: checked ? 'var(--success)' : 'var(--surface-hover)',
+        padding: 2,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: checked ? 'flex-end' : 'flex-start',
+        transition: 'var(--transition)',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          background: '#fff',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
+        }}
+      />
+    </button>
+  )
+}
+
+export default function AIConversationBackupSettings({
+  active,
+  conversationId,
+  conversationUpdatedAt = 0,
+  requestInFlight = false,
+  onRestoreSnapshot,
+  autoBackupEnabled = true,
+  onToggleAutoBackup,
+}) {
   const { t, lang } = useTranslation()
   const [backups, setBackups] = useState([])
   const [isLoaded, setIsLoaded] = useState(false)
@@ -193,104 +234,121 @@ export default function AIConversationBackupSettings({ active, conversationId, c
     return null
   }
 
+  const autoBackupControl = (
+    <div style={{ background: 'var(--surface-base)', padding: 14, borderRadius: 12, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{t('自动备份对话')}</div>
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('关闭后不再创建新备份，已有备份仍可查看和恢复。')}</div>
+      </div>
+      <ToggleSwitchControl checked={autoBackupEnabled} onChange={onToggleAutoBackup} />
+    </div>
+  )
+
   if (selectedBackup) {
     const title = `${t('自动备份')} / ${formatBackupIdTime(selectedBackup.id, lang)}`
     return (
       <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
         <div style={{ display: 'grid', gap: 4 }}>
-          <button
-            type="button"
-            onClick={() => setSelectedBackup(null)}
-            style={{
-              width: 'fit-content',
-              height: 30,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '0 10px',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'var(--surface-base)',
-              color: 'var(--text-primary)',
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            <ChevronLeft size={14} />
-            <span>{t('返回')}</span>
-          </button>
-          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{title}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{historyEntries.length} {t('消息')}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{t('自动备份')}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{t('查看和恢复当前对话的自动备份记录。')}</div>
         </div>
+        {autoBackupControl}
         <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
-          {historyLoading ? (
-            <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 13 }}>
-              {t('加载中...')}
-            </div>
-          ) : historyEntries.length === 0 ? (
-            <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 13 }}>
-              {t('暂无消息')}
-            </div>
-          ) : (
-            historyEntries.map((entry, index) => {
-              const role = entry.role === 'user' ? 'user' : 'assistant'
-              const markdown = getHistoryText(entry.content)
-              return (
-                <div
-                  key={`${entry.messageId || index}-${index}`}
-                  style={{
-                    width: '100%',
-                    minWidth: 0,
-                    display: 'grid',
-                    gap: 10,
-                    padding: '14px 16px',
-                    borderRadius: 12,
-                    border: `1px solid ${role === 'user' ? 'rgba(var(--accent-rgb), 0.35)' : 'var(--border)'}`,
-                    background: role === 'user' ? 'rgba(var(--accent-rgb), 0.10)' : 'var(--surface-base)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        minHeight: 22,
-                        padding: '0 8px',
-                        borderRadius: 999,
-                        background: 'var(--surface-raised)',
-                        color: 'var(--text-primary)',
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {role === 'user' ? t('用户') : t('Ai助手')}
-                    </span>
-                    {entry.ts > 0 ? (
-                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
-                        {formatDateTime(entry.ts, lang)}
-                      </span>
-                    ) : null}
-                  </div>
+          <div style={{ display: 'grid', gap: 4 }}>
+            <button
+              type="button"
+              onClick={() => setSelectedBackup(null)}
+              style={{
+                width: 'fit-content',
+                height: 30,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--surface-base)',
+                color: 'var(--text-primary)',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              <ChevronLeft size={14} />
+              <span>{t('返回')}</span>
+            </button>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{title}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{historyEntries.length} {t('消息')}</div>
+          </div>
+          <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
+            {historyLoading ? (
+              <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                {t('加载中...')}
+              </div>
+            ) : historyEntries.length === 0 ? (
+              <div style={{ padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                {t('暂无消息')}
+              </div>
+            ) : (
+              historyEntries.map((entry, index) => {
+                const role = entry.role === 'user' ? 'user' : 'assistant'
+                const markdown = getHistoryText(entry.content)
+                return (
                   <div
+                    key={`${entry.messageId || index}-${index}`}
                     style={{
-                      maxHeight: '20vh',
-                      overflowY: 'auto',
-                      overflowX: 'hidden',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                      lineHeight: 1.6,
+                      width: '100%',
+                      minWidth: 0,
+                      display: 'grid',
+                      gap: 10,
+                      padding: '14px 16px',
+                      borderRadius: 12,
+                      border: `1px solid ${role === 'user' ? 'rgba(var(--accent-rgb), 0.35)' : 'var(--border)'}`,
+                      background: role === 'user' ? 'rgba(var(--accent-rgb), 0.10)' : 'var(--surface-base)',
                     }}
                   >
-                    <AIChatMarkdown text={markdown || t('暂无消息')} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          minHeight: 22,
+                          padding: '0 8px',
+                          borderRadius: 999,
+                          background: 'var(--surface-raised)',
+                          color: 'var(--text-primary)',
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {role === 'user' ? t('用户') : t('Ai助手')}
+                      </span>
+                      {entry.ts > 0 ? (
+                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                          {formatDateTime(entry.ts, lang)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div
+                      style={{
+                        maxHeight: '20vh',
+                        overflowY: 'auto',
+                        overflowX: 'hidden',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        color: 'var(--text-primary)',
+                        fontSize: 13,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <AIChatMarkdown text={markdown || t('暂无消息')} />
+                    </div>
                   </div>
-                </div>
-              )
-            })
-          )}
+                )
+              })
+            )}
+          </div>
         </div>
       </div>
     )
@@ -300,8 +358,9 @@ export default function AIConversationBackupSettings({ active, conversationId, c
     <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
       <div style={{ display: 'grid', gap: 4 }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{t('自动备份')}</div>
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{t('每次在发起新的 AI 请求前，都会自动备份当前对话。')}</div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{t('查看和恢复当前对话的自动备份记录。')}</div>
       </div>
+      {autoBackupControl}
       <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
         {!isLoaded && backups.length === 0 ? (
           <div

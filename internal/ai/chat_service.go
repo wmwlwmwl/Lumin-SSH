@@ -86,9 +86,12 @@ var aiSupportedToolNames = []string{
 	"attempt_completion",
 	"search_replace",
 	"apply_diff",
-	"edit_file",
-	"apply_patch",
 	"live_search",
+}
+
+var aiAlwaysAutoApprovedToolNames = map[string]struct{}{
+	"list_connected_sessions": {},
+	"live_search":             {},
 }
 
 var aiSupportedToolParamNames = []string{
@@ -162,7 +165,7 @@ func getAIAutoApprovalCategoryForTool(toolName string) string {
 	switch strings.TrimSpace(toolName) {
 	case "list_connected_sessions", "list_files", "read_file", "live_search":
 		return "read"
-	case "write_to_file", "search_replace", "apply_diff", "edit_file", "apply_patch":
+	case "write_to_file", "search_replace", "apply_diff", "apply_patch":
 		return "write"
 	case "execute_command":
 		return "execute"
@@ -174,7 +177,8 @@ func getAIAutoApprovalCategoryForTool(toolName string) string {
 func isAIAutoApprovalEffectivelyEnabled(settings AIConversationTaskSettings) bool {
 	return settings.AlwaysAllowReadOnly ||
 		settings.AlwaysAllowWrite ||
-		settings.AlwaysAllowExecute
+		settings.AlwaysAllowExecute ||
+		settings.AlwaysAllowExecuteReadOnly
 }
 
 func aiJSStringLength(value string) int {
@@ -848,17 +852,25 @@ func getAICommandDecision(command string, allowedCommands []string, deniedComman
 	return aiApprovalDecisionAutoApprove
 }
 
-func getAIExecuteCommandDecision(settings AIConversationTaskSettings, command string) aiApprovalDecision {
-	if !isAIAutoApprovalEffectivelyEnabled(settings) || !settings.AlwaysAllowExecute {
+func getAIExecuteCommandDecision(settings AIConversationTaskSettings, command string, rawIsMutating string) aiApprovalDecision {
+	if !isAIAutoApprovalEffectivelyEnabled(settings) {
+		return aiApprovalDecisionAskUser
+	}
+
+	deniedCommands := normalizeAICommandList(settings.DeniedCommands)
+	if strings.TrimSpace(rawIsMutating) != "1" && settings.AlwaysAllowExecuteReadOnly {
+		return getAICommandDecision(command, []string{"*"}, deniedCommands)
+	}
+	if !settings.AlwaysAllowExecute {
 		return aiApprovalDecisionAskUser
 	}
 
 	allowedCommands := normalizeAICommandList(settings.AllowedCommands)
-	return getAICommandDecision(command, allowedCommands, normalizeAICommandList(settings.DeniedCommands))
+	return getAICommandDecision(command, allowedCommands, deniedCommands)
 }
 
 func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiParsedToolUse) aiApprovalDecision {
-	if strings.TrimSpace(tool.Name) == "list_connected_sessions" {
+	if _, ok := aiAlwaysAutoApprovedToolNames[strings.TrimSpace(tool.Name)]; ok {
 		return aiApprovalDecisionAutoApprove
 	}
 	if !isAIAutoApprovalEffectivelyEnabled(settings) {
@@ -874,7 +886,7 @@ func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiPars
 			return aiApprovalDecisionAutoApprove
 		}
 	case "execute":
-		return getAIExecuteCommandDecision(settings, tool.Params["command"])
+		return getAIExecuteCommandDecision(settings, tool.Params["command"], tool.Params["is_mutating"])
 	}
 	return aiApprovalDecisionAskUser
 }
@@ -1071,27 +1083,55 @@ Never batch attempt_completion or ask_followup_question with any other tool. If 
 Otherwise, continue with the next step using an appropriate tool.`, tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName))
 }
 
+func buildParsedToolUseDedupeKey(tool aiParsedToolUse) string {
+	name := strings.TrimSpace(tool.Name)
+	params := tool.Params
+	if params == nil {
+		params = map[string]string{}
+	}
+	switch name {
+	case "read_file":
+		return strings.Join([]string{
+			name,
+			strings.TrimSpace(params["session_id"]),
+			strings.TrimSpace(params["path"]),
+			strings.TrimSpace(params["start_line"]),
+			strings.TrimSpace(params["end_line"]),
+		}, "\n")
+	case "list_files":
+		return strings.Join([]string{
+			name,
+			strings.TrimSpace(params["session_id"]),
+			strings.TrimSpace(params["path"]),
+			strings.ToLower(strings.TrimSpace(params["recursive"])),
+		}, "\n")
+	case "list_connected_sessions":
+		return name
+	case "live_search":
+		return strings.Join([]string{
+			name,
+			strings.TrimSpace(params["query"]),
+		}, "\n")
+	default:
+		paramBytes, _ := json.Marshal(params)
+		return name + "\n" + string(paramBytes)
+	}
+}
+
 func dedupeParsedToolUses(tools []aiParsedToolUse) []aiParsedToolUse {
 	if len(tools) <= 1 {
 		return tools
 	}
-
 	seen := make(map[string]struct{}, len(tools))
 	deduped := make([]aiParsedToolUse, 0, len(tools))
-
 	for _, tool := range tools {
-		key := strings.TrimSpace(tool.Name) + "\n" + strings.TrimSpace(tool.RawXML)
-		if key == "\n" {
-			paramBytes, _ := json.Marshal(tool.Params)
-			key = strings.TrimSpace(tool.Name) + "\n" + string(paramBytes)
-		}
+		key := buildParsedToolUseDedupeKey(tool)
 		if _, exists := seen[key]; exists {
 			continue
 		}
 		seen[key] = struct{}{}
 		deduped = append(deduped, tool)
 	}
-
 	return deduped
 }
 
@@ -1737,7 +1777,10 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 		var err error
 
 		if payload.ConversationID != "" {
-			_, _ = a.CreateAIConversationAutoBackup(payload.ConversationID)
+			globalSettings := a.GetAIGlobalSettings()
+			if globalSettings.ConversationAutoBackupEnabled {
+				_, _ = a.CreateAIConversationAutoBackup(payload.ConversationID)
+			}
 		}
 
 		for attempt := 1; attempt <= aiChatRequestMaxAttempts; attempt++ {

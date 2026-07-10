@@ -40,7 +40,6 @@ func (c *Catalog) List() []ToolDefinition {
 		attemptCompletionToolDefinition(),
 		searchReplaceToolDefinition(),
 		applyDiffToolDefinition(),
-		editFileToolDefinition(),
 		applyPatchToolDefinition(),
 	}
 }

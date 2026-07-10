@@ -1,7 +1,6 @@
 import { ChevronDown, TerminalSquare } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from '../../../i18n.js'
-import AIChatMarkdown from './AIChatMarkdown.jsx'
 
 const buildShellCommandPattern = (commandPattern) => new RegExp(`(^|[\\s|;&()])(${commandPattern})(?=\\s)`, 'gi')
 const DANGEROUS_COMMAND_RULES = [
@@ -125,18 +124,68 @@ function renderCommandWithRiskHighlights(command, matches) {
   return segments
 }
 
-const runningStatusKey = '运行中'
+function getCommandMutationPalette(isMutating) {
+  if (isMutating) {
+    return {
+      cardBorder: '1px solid rgba(var(--warning-rgb), 0.62)',
+      cardBackground: 'rgba(var(--warning-rgb), 0.05)',
+      cardBoxShadow: '0 0 0 1px rgba(var(--warning-rgb), 0.18), 0 12px 28px rgba(var(--warning-rgb), 0.10)',
+      headerBackground: 'rgba(var(--warning-rgb), 0.10)',
+      metaBadgeBorder: '1px solid rgba(var(--warning-rgb), 0.46)',
+      metaBadgeBackground: 'rgba(var(--warning-rgb), 0.18)',
+      metaBadgeColor: '#fde68a',
+      commandBorder: '1px solid rgba(var(--warning-rgb), 0.36)',
+      commandBackground: 'rgba(var(--warning-rgb), 0.07)',
+    }
+  }
+  return {
+    cardBorder: '1px solid rgba(var(--accent-rgb), 0.52)',
+    cardBackground: 'rgba(var(--accent-rgb), 0.04)',
+    cardBoxShadow: '0 0 0 1px rgba(var(--accent-rgb), 0.14), 0 10px 24px rgba(var(--accent-rgb), 0.08)',
+    headerBackground: 'rgba(var(--accent-rgb), 0.08)',
+    metaBadgeBorder: '1px solid rgba(var(--accent-rgb), 0.36)',
+    metaBadgeBackground: 'rgba(var(--accent-rgb), 0.14)',
+    metaBadgeColor: '#bfdbfe',
+    commandBorder: '1px solid rgba(var(--accent-rgb), 0.30)',
+    commandBackground: 'rgba(var(--accent-rgb), 0.05)',
+  }
+}
+
+function normalizeAICommandStatus(value) {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  switch (normalized) {
+    case '运行中':
+    case '执行中':
+      return 'ai.status.running'
+    case '等待处理':
+      return 'ai.status.awaiting_action'
+    case '后台继续':
+      return 'ai.status.background'
+    case '已终止':
+      return 'ai.status.terminated'
+    case '已执行':
+      return 'ai.status.executed'
+    case '错误':
+      return 'ai.status.error'
+    default:
+      return normalized
+  }
+}
+
+const runningStatusKey = 'ai.status.running'
 
 export default function AIChatCommandCard({ purpose, command, output, status = runningStatusKey, extra = {} }) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
-  const expanded = isExpanded || ((status === '等待处理' || status === '后台继续' || status === '已终止') && Boolean(output))
+  const normalizedStatus = useMemo(() => normalizeAICommandStatus(status), [status])
+  const expanded = isExpanded || ((normalizedStatus === 'ai.status.awaiting_action' || normalizedStatus === 'ai.status.background' || normalizedStatus === 'ai.status.terminated') && Boolean(output))
   const normalizedCommand = String(command || '')
   const riskState = useMemo(() => assessSensitiveCommandRisk(normalizedCommand), [normalizedCommand])
   const riskBadgePalette = useMemo(() => getRiskBadgePalette(riskState.severity), [riskState.severity])
   const highlightedCommand = useMemo(() => renderCommandWithRiskHighlights(normalizedCommand, riskState.matches), [normalizedCommand, riskState.matches])
-  const cardBorder = riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.26)' : '1px solid rgba(var(--warning-rgb), 0.26)'
-  const headerBackground = riskState.severity === 'danger' ? 'rgba(var(--danger-rgb), 0.06)' : 'rgba(var(--warning-rgb), 0.06)'
+  const isMutating = extra?.isMutating === true
+  const mutationPalette = useMemo(() => getCommandMutationPalette(isMutating), [isMutating])
+  const commandModeLabel = isMutating ? t('修改') : t('只读')
   const targetLabel = typeof extra?.targetLabel === 'string' ? extra.targetLabel.trim() : ''
   const targetCwd = typeof extra?.targetCwd === 'string' ? extra.targetCwd.trim() : ''
 
@@ -154,7 +203,7 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
             </div>
           ) : null}
           <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(var(--warning-rgb), 0.35)', background: 'rgba(var(--warning-rgb), 0.08)', color: 'var(--warning)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
-            {t(status)}
+            {t(normalizedStatus)}
           </div>
           {output ? (
             <button
@@ -182,32 +231,33 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
           ) : null}
         </div>
       </div>
-      <div style={{ width: '100%', border: cardBorder, borderRadius: 12, background: 'var(--surface-overlay)', overflow: 'hidden' }}>
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)', background: headerBackground }}>
-          <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
-            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, wordBreak: 'break-word' }}>
-              <AIChatMarkdown text={purpose} />
+      <div style={{ width: '100%', border: mutationPalette.cardBorder, borderRadius: 12, background: mutationPalette.cardBackground, boxShadow: mutationPalette.cardBoxShadow, overflow: 'hidden' }}>
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)', background: mutationPalette.headerBackground }}>
+          <div style={{ minWidth: 0, display: 'grid', gap: 6 }}>
+            <div style={{ minWidth: 0, fontSize: 13, color: 'var(--text-primary)', fontWeight: 700, lineHeight: 1.6, wordBreak: 'break-word' }}>
+              <span style={{ display: 'inline-block', marginRight: 8, padding: '2px 8px', borderRadius: 999, border: mutationPalette.metaBadgeBorder, background: mutationPalette.metaBadgeBackground, color: mutationPalette.metaBadgeColor, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', verticalAlign: 'baseline' }}>
+                {commandModeLabel}
+              </span>
+              {targetLabel ? (
+                <span style={{ display: 'inline-block', marginRight: 8, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'rgba(var(--accent-rgb), 0.08)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', verticalAlign: 'baseline' }}>
+                  {targetLabel}
+                </span>
+              ) : null}
+              {purpose}
             </div>
-            {(targetLabel || targetCwd) ? (
+            {targetCwd ? (
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                {targetLabel ? (
-                  <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'rgba(var(--accent-rgb), 0.08)', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {targetLabel}
-                  </div>
-                ) : null}
-                {targetCwd ? (
-                  <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 11, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                    {targetCwd}
-                  </div>
-                ) : null}
+                <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 11, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                  {targetCwd}
+                </div>
               </div>
             ) : null}
           </div>
         </div>
         <div style={{ padding: '12px 12px 10px', display: 'grid', gap: 10 }}>
-          <pre style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.24)' : riskState.severity === 'warning' ? '1px solid rgba(var(--warning-rgb), 0.24)' : '1px solid var(--border)', background: 'var(--surface-base)', color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{highlightedCommand}</pre>
+          <pre style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.24)' : riskState.severity === 'warning' ? '1px solid rgba(var(--warning-rgb), 0.24)' : mutationPalette.commandBorder, background: riskState.severity ? 'var(--surface-base)' : mutationPalette.commandBackground, color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{highlightedCommand}</pre>
           {expanded && output ? (
-            <pre style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{output}</pre>
+            <pre style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{t(output)}</pre>
           ) : null}
         </div>
       </div>
