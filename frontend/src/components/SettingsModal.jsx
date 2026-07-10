@@ -287,7 +287,7 @@ export default function SettingsModal({
   const [sftpTestResult, setSftpTestResult] = useState(null);
 
   // Network/Ping state
-  const [pingProtocol, setPingProtocol] = useState(localStorage.getItem('pingProtocol') || 'ssh');
+  const [pingEnabled, setPingEnabled] = useState(localStorage.getItem('pingEnabled') !== 'false');
   const [probeInterval, setProbeInterval] = useState(parseInt(localStorage.getItem('probeInterval') || '3', 10));
   const [pingInterval, setPingInterval] = useState(parseInt(localStorage.getItem('pingInterval') || '2', 10));
 
@@ -866,7 +866,12 @@ export default function SettingsModal({
   };
 
   // ── Tab prop wrappers ──
-  const handlePingProtocolChange = (id) => { setPingProtocol(id); localStorage.setItem('pingProtocol', id); };
+  const handleTogglePingEnabled = () => {
+    const next = !pingEnabled;
+    setPingEnabled(next);
+    localStorage.setItem('pingEnabled', String(next));
+    window.dispatchEvent(new Event('pingEnabledChanged'));
+  };
   const handleProbeIntervalChange = (s) => { setProbeInterval(s); localStorage.setItem('probeInterval', String(s)); window.dispatchEvent(new Event('probeIntervalChanged')); };
   const handlePingIntervalChange = (s) => { setPingInterval(s); localStorage.setItem('pingInterval', String(s)); window.dispatchEvent(new Event('pingIntervalChanged')); };
   const handleTerminalColorThemeChange = (key) => { setTerminalColorTheme(key); localStorage.setItem('terminalColorTheme', key); window.dispatchEvent(new CustomEvent('terminal-theme-changed', { detail: key })); };
@@ -953,8 +958,8 @@ export default function SettingsModal({
 
             {activeTab === 'network' && (
               <NetworkTab
-                pingProtocol={pingProtocol}
-                onPingProtocolChange={handlePingProtocolChange}
+                pingEnabled={pingEnabled}
+                onTogglePingEnabled={handleTogglePingEnabled}
                 probeInterval={probeInterval}
                 onProbeIntervalChange={handleProbeIntervalChange}
                 pingInterval={pingInterval}

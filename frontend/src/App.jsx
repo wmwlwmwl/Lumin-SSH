@@ -1230,6 +1230,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   // ── 新增主页仪表盘状态 ──────────────────────────────────
   const [isRefreshingPing, setIsRefreshingPing] = useState(false);
   const [pingInterval, setPingInterval] = useState(parseInt(localStorage.getItem('pingInterval') || '2', 10));
+  const [pingEnabled, setPingEnabled] = useState(localStorage.getItem('pingEnabled') !== 'false');
 
   useEffect(() => {
     const handler = () => {
@@ -1237,6 +1238,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     };
     window.addEventListener('pingIntervalChanged', handler);
     return () => window.removeEventListener('pingIntervalChanged', handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      setPingEnabled(localStorage.getItem('pingEnabled') !== 'false');
+    };
+    window.addEventListener('pingEnabledChanged', handler);
+    return () => window.removeEventListener('pingEnabledChanged', handler);
   }, []);
 
   // ── 初始化全局主题 ──────────────────────────────────────
@@ -1369,7 +1378,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   // ── 刷新延迟 ────────────────────────────────────────────
   const handleRefreshPing = async () => {
-    if (isRefreshingPing) return; // 防止重复点击导致并发竞态
+    if (!pingEnabled || isRefreshingPing) return; // 防止重复点击导致并发竞态
     setIsRefreshingPing(true);
     await pingAll();
     setTimeout(() => { if (mountedRef.current) setIsRefreshingPing(false); }, 800);
@@ -1888,11 +1897,15 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   useEffect(() => {
     if (activeSessionId !== null) return; // ponytail: 不在主页时不 ping
+    if (!pingEnabled) {
+      setPings({});
+      return;
+    }
     pingAll();
     // 修改为动态刷新延迟，降低后台消耗或提高实时性
     pingTimerRef.current = setInterval(pingAll, pingInterval * 1000);
     return () => clearInterval(pingTimerRef.current);
-  }, [pingAll, pingInterval, activeSessionId]);
+  }, [pingAll, pingInterval, activeSessionId, pingEnabled]);
 
   // ── 取消连接 ──────────────────────────────────────────────
   const handleCancelConnection = useCallback((sessionId) => {
@@ -4261,6 +4274,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             serverListViewMode={serverListViewMode}
             onViewModeChange={(mode) => { setServerListViewMode(mode); localStorage.setItem('serverListViewMode', mode); }}
             servers={servers}
+            pingEnabled={pingEnabled}
             pingCounts={pingCounts}
             isRefreshingPing={isRefreshingPing}
             onRefreshPing={handleRefreshPing}

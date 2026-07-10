@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { t as $t } from '../../i18n.js';
 import { Lightbulb } from 'lucide-react';
-import { RadioOption } from './SharedComponents';
+import { ToggleSwitch } from './SharedComponents';
 import { getAIGlobalSettings, saveAIGlobalSettings } from '../ai/aiGlobalSettingsBridge.js';
 
 const PROXY_NODES_CHANGED_EVENT = 'lumin:proxy-nodes-changed';
@@ -39,7 +39,7 @@ function getIsMobileLayout() {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_MEDIA_QUERY).matches;
 }
 
-export default function NetworkTab({ pingProtocol, onPingProtocolChange, probeInterval, onProbeIntervalChange, pingInterval, onPingIntervalChange }) {
+export default function NetworkTab({ pingEnabled, onTogglePingEnabled, probeInterval, onProbeIntervalChange, pingInterval, onPingIntervalChange }) {
   const [proxyNodes, setProxyNodes] = useState([]);
   const [proxyForm, setProxyForm] = useState(defaultProxyForm);
   const [editingProxyId, setEditingProxyId] = useState('');
@@ -166,18 +166,16 @@ export default function NetworkTab({ pingProtocol, onPingProtocolChange, probeIn
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
       <div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{$t('延迟检测协议')}</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('选择如何测量服务器网络延迟，不同协议适用于不同的网络环境。')}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[
-            { id: 'ssh', label: <>{$t('SSH Banner RTT')} <span style={{ fontSize: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{$t('推荐')}</span></>, desc: $t('通过读取 SSH 握手包测速，穿透 TUN 代理测出真实网络延迟，推荐') },
-            { id: 'tcp', label: $t('TCP Dial'), desc: $t('通过 TCP 连接建立测速，适用于局域网/私有网络或未开代理的环境') },
-          ].map((opt) => (
-            <RadioOption key={opt.id} selected={pingProtocol === opt.id} label={opt.label} description={opt.desc} onClick={() => onPingProtocolChange(opt.id)} />
-          ))}
-        </div>
-        <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--surface-overlay)', borderRadius: 8, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7, border: '1px solid var(--border-light)' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', marginRight: 4 }}><Lightbulb size={14} /></span> <strong style={{ color: 'var(--text-secondary)' }}>{$t('提示：')}</strong>{$t('如果您使用 TUN 模式代理（Clash/V2Ray），推荐使用 SSH Banner RTT 模式，可以穿透代理测出真实延迟。')}
+        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{$t('延迟检测')}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('开启或关闭对主页所有服务器的网络可用性及延迟自动探测。')}</div>
+        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('启用延迟检测')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('定期向服务器发起轻量级探测，实时了解服务器的在线状态和响应速度')}</div>
+            </div>
+            <ToggleSwitch checked={pingEnabled} onChange={onTogglePingEnabled} />
+          </div>
         </div>
       </div>
       <div>

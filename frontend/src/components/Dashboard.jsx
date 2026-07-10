@@ -10,7 +10,7 @@ export default function Dashboard({
   searchQuery, onSearchChange,
   hideSensitive, onHideSensitiveToggle,
   serverListViewMode, onViewModeChange,
-  servers, pingCounts, isRefreshingPing, onRefreshPing,
+  servers, pingEnabled, pingCounts, isRefreshingPing, onRefreshPing,
   filteredServers, pings, sessions, activeSessionId,
   onConnect, onStartAdd, onEdit, onClone, onDelete, onMoveGroup, addToast,
   onOpenImportExport,
@@ -36,9 +36,11 @@ export default function Dashboard({
           <div className="card-header-icon-title">
             <span className="card-header-icon"><BarChart3 size={18} /></span>
             <span className="card-header-title">{t('系统状态')}</span>
-            <Tiptop text={t('刷新延迟')} placement="bottom">
-              <button className={`btn-icon-spin ${isRefreshingPing ? 'spinning' : ''}`} onClick={onRefreshPing} aria-label={t('刷新延迟')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, display: "flex", alignItems: "center" }}><RefreshCw size={14} /></button>
-            </Tiptop>
+            {pingEnabled && (
+              <Tiptop text={t('刷新延迟')} placement="bottom">
+                <button className={`btn-icon-spin ${isRefreshingPing ? 'spinning' : ''}`} onClick={onRefreshPing} aria-label={t('刷新延迟')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, display: "flex", alignItems: "center" }}><RefreshCw size={14} /></button>
+              </Tiptop>
+            )}
           </div>
           <div className="stats-grid">
             <div className="stat-item">
@@ -46,11 +48,11 @@ export default function Dashboard({
               <div className="stat-lbl">{t('服务器总数')}</div>
             </div>
             <div className="stat-item">
-              <div className="stat-val" style={{ color: 'var(--success)' }}>{pingCounts.online}</div>
+              <div className="stat-val" style={{ color: 'var(--success)' }}>{pingEnabled ? pingCounts.online : '—'}</div>
               <div className="stat-lbl">{t('在线节点')}</div>
             </div>
             <div className="stat-item">
-              <div className="stat-val" style={{ color: 'var(--danger)' }}>{pingCounts.offline}</div>
+              <div className="stat-val" style={{ color: 'var(--danger)' }}>{pingEnabled ? pingCounts.offline : '—'}</div>
               <div className="stat-lbl">{t('离线节点')}</div>
             </div>
           </div>
@@ -128,6 +130,7 @@ export default function Dashboard({
           <div className="hosts-scroll-area">
             <ServerList
               servers={filteredServers}
+              pingEnabled={pingEnabled}
               pings={pings}
               sessions={sessions}
               activeSessionId={activeSessionId}

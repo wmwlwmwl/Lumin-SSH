@@ -92,6 +92,7 @@ const getOSInfo = (name = '', os = '', osInfo = null) => {
 
 export default function ServerList({
   servers,
+  pingEnabled,
   pings,
   sessions,
   activeSessionId,
@@ -301,7 +302,7 @@ export default function ServerList({
 
   // Server card 渲染
   const renderServerCard = (server) => {
-    const ping = pings[server.id];
+    const ping = pingEnabled ? pings[server.id] : undefined;
     const latClass = ping ? LATENCY_CLASS(ping.latency) : 'offline';
     const active = isActive(server);
     const connected = hasSession(server);
@@ -483,7 +484,7 @@ export default function ServerList({
                 );
               }
               const server = item.server;
-              const ping = pings[server.id];
+              const ping = pingEnabled ? pings[server.id] : undefined;
               const latClass = ping ? LATENCY_CLASS(ping.latency) : 'offline';
               const active = isActive(server);
               const connected = hasSession(server);
