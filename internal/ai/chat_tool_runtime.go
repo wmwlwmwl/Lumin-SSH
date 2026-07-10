@@ -418,6 +418,37 @@ func buildToolPreviewMessage(turnID string, tool aiParsedToolUse, index int) map
 			"status":  "ai.completion.pending",
 		}
 	}
+	if isAIMCPClientToolName(tool.Name) {
+		serverName := strings.TrimSpace(tool.Params["server_name"])
+		toolName := strings.TrimSpace(tool.Params["tool_name"])
+		if tool.Name == aiAccessMCPResourceToolName {
+			uri := strings.TrimSpace(tool.Params["uri"])
+			if uri != "" {
+				toolName = "resource:" + uri
+			}
+		}
+		argsText := strings.TrimSpace(tool.Params["arguments"])
+		if argsText == "" {
+			if tool.Name == aiAccessMCPResourceToolName {
+				argsText = marshalMCPAccessResourceArgs(strings.TrimSpace(tool.Params["uri"]))
+			} else {
+				argsText = "{}"
+			}
+		}
+		return map[string]interface{}{
+			"id":         buildToolMessageID(turnID, index),
+			"turnId":     turnID,
+			"kind":       "mcp",
+			"serverName": serverName,
+			"toolName":   toolName,
+			"args":       argsText,
+			"response":   "",
+			"status":     "ai.status.pending_approval",
+			"extra": map[string]interface{}{
+				"source": strings.TrimSpace(tool.Params["source"]),
+			},
+		}
+	}
 	return map[string]interface{}{
 		"id":                 buildToolMessageID(turnID, index),
 		"turnId":             turnID,
@@ -1125,6 +1156,10 @@ func (a *App) startAIChatToolExecution(requestID string, batch *aiPendingToolBat
 	}
 	if tool.Name == "live_search" {
 		go a.runAIChatLiveSearchToolExecution(execution)
+		return
+	}
+	if isAIMCPClientToolName(tool.Name) {
+		go a.runAIChatMCPClientToolExecution(execution)
 		return
 	}
 	go a.runAIChatGenericToolExecution(execution)

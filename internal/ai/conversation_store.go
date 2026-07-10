@@ -61,35 +61,50 @@ type AIConversationMessage struct {
 	Extra              map[string]interface{} `json:"extra,omitempty"`
 }
 
+type AIConversationOpenAIResponsesCacheObject struct {
+	ResponseID string           `json:"responseId,omitempty"`
+	Output     []map[string]any `json:"output,omitempty"`
+	Include    []string         `json:"include,omitempty"`
+	Store      bool             `json:"store,omitempty"`
+	CapturedAt int64            `json:"capturedAt,omitempty"`
+}
+
+type AIConversationProviderCacheObjects struct {
+	OpenAIResponses *AIConversationOpenAIResponsesCacheObject `json:"openaiResponses,omitempty"`
+}
+
 type AIConversationAPIMessage struct {
-	Role         string   `json:"role"`
-	Content      string   `json:"content"`
-	MessageID    string   `json:"messageId,omitempty"`
-	UIMessageIDs []string `json:"uiMessageIds,omitempty"`
-	Images       []string `json:"images,omitempty"`
-	Ts           int64    `json:"ts,omitempty"`
+	Role         string                            `json:"role"`
+	Content      string                            `json:"content"`
+	MessageID    string                            `json:"messageId,omitempty"`
+	UIMessageIDs []string                          `json:"uiMessageIds,omitempty"`
+	Images       []string                          `json:"images,omitempty"`
+	CacheObjects *AIConversationProviderCacheObjects `json:"cacheObjects,omitempty"`
+	Ts           int64                             `json:"ts,omitempty"`
 }
 
 type AIConversationSummary struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	CreatedAt    int64  `json:"createdAt"`
-	UpdatedAt    int64  `json:"updatedAt"`
-	Status       string `json:"status"`
-	ToolProtocol string `json:"toolProtocol"`
-	MessageCount int    `json:"messageCount"`
+	ID                        string `json:"id"`
+	Title                     string `json:"title"`
+	CreatedAt                 int64  `json:"createdAt"`
+	UpdatedAt                 int64  `json:"updatedAt"`
+	Status                    string `json:"status"`
+	ToolProtocol              string `json:"toolProtocol"`
+	MessageCount              int    `json:"messageCount"`
+	PromptCacheBypassTimestamp string `json:"promptCacheBypassTimestamp,omitempty"`
 }
 
 type AIConversationSnapshot struct {
-	ID           string                     `json:"id"`
-	Title        string                     `json:"title"`
-	CreatedAt    int64                      `json:"createdAt"`
-	UpdatedAt    int64                      `json:"updatedAt"`
-	Status       string                     `json:"status"`
-	ToolProtocol string                     `json:"toolProtocol"`
-	Messages     []AIConversationMessage    `json:"messages"`
-	APIMessages  []AIConversationAPIMessage `json:"apiMessages"`
-	Settings     AIConversationTaskSettings `json:"settings"`
+	ID                        string                     `json:"id"`
+	Title                     string                     `json:"title"`
+	CreatedAt                 int64                      `json:"createdAt"`
+	UpdatedAt                 int64                      `json:"updatedAt"`
+	Status                    string                     `json:"status"`
+	ToolProtocol              string                     `json:"toolProtocol"`
+	PromptCacheBypassTimestamp string                     `json:"promptCacheBypassTimestamp,omitempty"`
+	Messages                  []AIConversationMessage    `json:"messages"`
+	APIMessages               []AIConversationAPIMessage `json:"apiMessages"`
+	Settings                  AIConversationTaskSettings `json:"settings"`
 }
 
 func defaultAIConversationTaskSettings(globalSettings AIGlobalSettings) AIConversationTaskSettings {
@@ -172,6 +187,66 @@ func normalizeAIConversationMessages(messages []AIConversationMessage) []AIConve
 	return normalized
 }
 
+func cloneAIConversationOpenAIResponsesOutputItems(items []map[string]any) []map[string]any {
+	if len(items) == 0 {
+		return []map[string]any{}
+	}
+	data, err := json.Marshal(items)
+	if err != nil {
+		cloned := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			copied := make(map[string]any, len(item))
+			for key, value := range item {
+				copied[key] = value
+			}
+			cloned = append(cloned, copied)
+		}
+		return cloned
+	}
+	var cloned []map[string]any
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return []map[string]any{}
+	}
+	if cloned == nil {
+		return []map[string]any{}
+	}
+	return cloned
+}
+
+func normalizeAIConversationOpenAIResponsesCacheObject(cache *AIConversationOpenAIResponsesCacheObject) *AIConversationOpenAIResponsesCacheObject {
+	if cache == nil {
+		return nil
+	}
+	normalizedOutput := cloneAIConversationOpenAIResponsesOutputItems(cache.Output)
+	normalizedInclude := normalizeAIStringList(cache.Include)
+	if strings.TrimSpace(cache.ResponseID) == "" && len(normalizedOutput) == 0 && len(normalizedInclude) == 0 && cache.CapturedAt == 0 && !cache.Store {
+		return nil
+	}
+	return &AIConversationOpenAIResponsesCacheObject{
+		ResponseID: strings.TrimSpace(cache.ResponseID),
+		Output:     normalizedOutput,
+		Include:    normalizedInclude,
+		Store:      cache.Store,
+		CapturedAt: cache.CapturedAt,
+	}
+}
+
+func normalizeAIConversationProviderCacheObjects(cacheObjects *AIConversationProviderCacheObjects) *AIConversationProviderCacheObjects {
+	if cacheObjects == nil {
+		return nil
+	}
+	normalized := &AIConversationProviderCacheObjects{
+		OpenAIResponses: normalizeAIConversationOpenAIResponsesCacheObject(cacheObjects.OpenAIResponses),
+	}
+	if normalized.OpenAIResponses == nil {
+		return nil
+	}
+	return normalized
+}
+
 func normalizeAIConversationAPIMessages(messages []AIConversationAPIMessage) []AIConversationAPIMessage {
 	if messages == nil {
 		return []AIConversationAPIMessage{}
@@ -184,7 +259,8 @@ func normalizeAIConversationAPIMessages(messages []AIConversationAPIMessage) []A
 		}
 		content := strings.TrimSpace(message.Content)
 		images := normalizeAIStringList(message.Images)
-		if content == "" && len(images) == 0 {
+		cacheObjects := normalizeAIConversationProviderCacheObjects(message.CacheObjects)
+		if content == "" && len(images) == 0 && cacheObjects == nil {
 			continue
 		}
 		uiMessageIDs := make([]string, 0, len(message.UIMessageIDs))
@@ -206,10 +282,19 @@ func normalizeAIConversationAPIMessages(messages []AIConversationAPIMessage) []A
 			MessageID:    strings.TrimSpace(message.MessageID),
 			UIMessageIDs: uiMessageIDs,
 			Images:       images,
+			CacheObjects: cacheObjects,
 			Ts:           message.Ts,
 		})
 	}
 	return normalized
+}
+
+func formatAIPromptCacheBypassTimestamp(ts time.Time) string {
+	return ts.Format("2006-01-02 15:04:05")
+}
+
+func normalizeAIPromptCacheBypassTimestamp(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func normalizeAIConversationSummary(summary AIConversationSummary) AIConversationSummary {
@@ -224,6 +309,7 @@ func normalizeAIConversationSummary(summary AIConversationSummary) AIConversatio
 	if summary.ToolProtocol == "" {
 		summary.ToolProtocol = "xml"
 	}
+	summary.PromptCacheBypassTimestamp = normalizeAIPromptCacheBypassTimestamp(summary.PromptCacheBypassTimestamp)
 	return summary
 }
 
@@ -242,6 +328,7 @@ func normalizeAIConversationSnapshot(snapshot AIConversationSnapshot, fallbackSe
 	if snapshot.ToolProtocol == "" {
 		snapshot.ToolProtocol = "xml"
 	}
+	snapshot.PromptCacheBypassTimestamp = normalizeAIPromptCacheBypassTimestamp(snapshot.PromptCacheBypassTimestamp)
 	if snapshot.Messages == nil {
 		snapshot.Messages = []AIConversationMessage{}
 	}
@@ -363,13 +450,14 @@ func (c *ConfigManager) writeAIConversationSnapshot(snapshot AIConversationSnaps
 	}
 
 	summary := normalizeAIConversationSummary(AIConversationSummary{
-		ID:           snapshot.ID,
-		Title:        snapshot.Title,
-		CreatedAt:    snapshot.CreatedAt,
-		UpdatedAt:    snapshot.UpdatedAt,
-		Status:       snapshot.Status,
-		ToolProtocol: snapshot.ToolProtocol,
-		MessageCount: len(snapshot.Messages),
+		ID:                        snapshot.ID,
+		Title:                     snapshot.Title,
+		CreatedAt:                 snapshot.CreatedAt,
+		UpdatedAt:                 snapshot.UpdatedAt,
+		Status:                    snapshot.Status,
+		ToolProtocol:              snapshot.ToolProtocol,
+		MessageCount:              len(snapshot.Messages),
+		PromptCacheBypassTimestamp: snapshot.PromptCacheBypassTimestamp,
 	})
 
 	metadataBytes, err := marshalAIConversationJSON(summary)
@@ -444,15 +532,16 @@ func (c *ConfigManager) CreateAIConversation(title string) (AIConversationSnapsh
 
 	globalSettings := c.GetAIGlobalSettings()
 	snapshot := normalizeAIConversationSnapshot(AIConversationSnapshot{
-		ID:           aiConversationID(),
-		Title:        strings.TrimSpace(title),
-		CreatedAt:    time.Now().UnixMilli(),
-		UpdatedAt:    time.Now().UnixMilli(),
-		Status:       "idle",
-		ToolProtocol: "xml",
-		Messages:     []AIConversationMessage{},
-		APIMessages:  []AIConversationAPIMessage{},
-		Settings:     defaultAIConversationTaskSettings(globalSettings),
+		ID:                        aiConversationID(),
+		Title:                     strings.TrimSpace(title),
+		CreatedAt:                 time.Now().UnixMilli(),
+		UpdatedAt:                 time.Now().UnixMilli(),
+		Status:                    "idle",
+		ToolProtocol:              "xml",
+		PromptCacheBypassTimestamp: formatAIPromptCacheBypassTimestamp(time.Now()),
+		Messages:                  []AIConversationMessage{},
+		APIMessages:               []AIConversationAPIMessage{},
+		Settings:                  defaultAIConversationTaskSettings(globalSettings),
 	}, defaultAIConversationTaskSettings(globalSettings))
 
 	c.mu.Lock()
@@ -483,15 +572,16 @@ func (c *ConfigManager) GetAIConversation(conversationID string) (AIConversation
 	}
 
 	snapshot := AIConversationSnapshot{
-		ID:           summary.ID,
-		Title:        summary.Title,
-		CreatedAt:    summary.CreatedAt,
-		UpdatedAt:    summary.UpdatedAt,
-		Status:       summary.Status,
-		ToolProtocol: summary.ToolProtocol,
-		Messages:     c.readAIConversationMessages(conversationID),
-		APIMessages:  c.readAIConversationAPIMessages(conversationID),
-		Settings:     c.readAIConversationSettings(conversationID, fallbackSettings),
+		ID:                        summary.ID,
+		Title:                     summary.Title,
+		CreatedAt:                 summary.CreatedAt,
+		UpdatedAt:                 summary.UpdatedAt,
+		Status:                    summary.Status,
+		ToolProtocol:              summary.ToolProtocol,
+		PromptCacheBypassTimestamp: summary.PromptCacheBypassTimestamp,
+		Messages:                  c.readAIConversationMessages(conversationID),
+		APIMessages:               c.readAIConversationAPIMessages(conversationID),
+		Settings:                  c.readAIConversationSettings(conversationID, fallbackSettings),
 	}
 
 	return normalizeAIConversationSnapshot(snapshot, fallbackSettings), nil
@@ -502,6 +592,11 @@ func (c *ConfigManager) SaveAIConversation(snapshot AIConversationSnapshot) (AIC
 		return AIConversationSnapshot{}, fmt.Errorf("config manager unavailable")
 	}
 	fallbackSettings := defaultAIConversationTaskSettings(c.GetAIGlobalSettings())
+	if strings.TrimSpace(snapshot.PromptCacheBypassTimestamp) == "" && strings.TrimSpace(snapshot.ID) != "" {
+		if existingSummary, err := c.readAIConversationSummary(strings.TrimSpace(snapshot.ID)); err == nil {
+			snapshot.PromptCacheBypassTimestamp = existingSummary.PromptCacheBypassTimestamp
+		}
+	}
 	normalized := normalizeAIConversationSnapshot(snapshot, fallbackSettings)
 
 	c.mu.Lock()

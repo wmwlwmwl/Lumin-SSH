@@ -2,6 +2,7 @@ import { ArrowRightLeft, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '../../i18n.js'
 import MCPAccessView from './MCPAccessView.jsx'
+import MCPServersView from './MCPServersView.jsx'
 import AISlashCommandsSettings from './AISlashCommandsSettings.jsx'
 import AIConversationBackupSettings from './AIConversationBackupSettings.jsx'
 import Tiptop from '../Tiptop.jsx'
@@ -127,6 +128,16 @@ export default function AIPanelSettingsOverlay({
   onTerminalOutputLineLimitChange,
   terminalOutputCharacterLimit,
   onTerminalOutputCharacterLimitChange,
+  mcpClientServers = [],
+  mcpClientGlobalConfigPath = '',
+  mcpClientGlobalConfigText = '',
+  onSaveMCPGlobalServer,
+  onReloadMCPGlobalServers,
+  onDeleteMCPGlobalServer,
+  onRestartMCPClientServer,
+  onToggleMCPClientServer,
+  onToggleMCPClientServerDisabledForPrompts,
+  onUpdateMCPClientServerTimeout,
 }) {
   const { t } = useTranslation()
   const overlayRef = useRef(null)
@@ -279,6 +290,30 @@ export default function AIPanelSettingsOverlay({
             </button>
             <button
               type="button"
+              onClick={() => onChangeTab('mcp-servers')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                minHeight: 52,
+                padding: '0 10px',
+                textAlign: 'left',
+                fontSize: 13,
+                fontWeight: activeTab === 'mcp-servers' ? 600 : 500,
+                color: activeTab === 'mcp-servers' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                background: activeTab === 'mcp-servers' ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
+                border: 'none',
+                borderLeft: `2px solid ${activeTab === 'mcp-servers' ? 'var(--accent)' : 'transparent'}`,
+                borderRadius: 0,
+                transition: 'var(--transition)',
+                whiteSpace: 'nowrap',
+                width: '100%',
+              }}
+            >
+              <span>{t('MCP服务器')}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => onChangeTab('slash-commands')}
               style={{
                 display: 'flex',
@@ -367,6 +402,20 @@ export default function AIPanelSettingsOverlay({
                 onToggleMcpAllowBrowserCalls={() => onSaveGlobalAISettings?.({ mcpAllowBrowserCalls: !mcpAllowBrowserCalls })}
               />
             )}
+            {activeTab === 'mcp-servers' ? (
+              <MCPServersView
+                servers={mcpClientServers}
+                globalConfigPath={mcpClientGlobalConfigPath}
+                globalConfigText={mcpClientGlobalConfigText}
+                onSaveServer={onSaveMCPGlobalServer}
+                onReloadServers={onReloadMCPGlobalServers}
+                onDeleteServer={onDeleteMCPGlobalServer}
+                onRestartServer={onRestartMCPClientServer}
+                onToggleServer={onToggleMCPClientServer}
+                onToggleServerDisabledForPrompts={onToggleMCPClientServerDisabledForPrompts}
+                onUpdateServerTimeout={onUpdateMCPClientServerTimeout}
+              />
+            ) : null}
             {activeTab === 'ai' ? (
               <>
                 <div style={{ display: 'grid', gap: 4 }}>

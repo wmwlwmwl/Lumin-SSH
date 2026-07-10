@@ -11,6 +11,7 @@ import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIC
 import { createAIConversation, deleteAIConversation, getAIConversation, listAIConversations, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, saveAIConversation } from './ai/aiConversationBridge.js'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.js'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js'
+import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, updateMCPClientServerTimeout } from './ai/mcpClientBridge.js'
 import { processRemoteFileMentions } from './ai/aiMentions.js'
 import { expandFirstSlashCommandForPrompt } from './ai/aiSlashCommands.js'
 import AIChatConversation from './ai/chat/AIChatConversation.jsx'
@@ -116,6 +117,31 @@ function normalizeAIContextTokensValue(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 0
 }
 
+function cloneAIConversationCacheObjects(cacheObjects) {
+  if (!cacheObjects || typeof cacheObjects !== 'object') {
+    return null
+  }
+  const openaiResponses = cacheObjects?.openaiResponses && typeof cacheObjects.openaiResponses === 'object'
+    ? {
+        responseId: typeof cacheObjects.openaiResponses.responseId === 'string' ? cacheObjects.openaiResponses.responseId.trim() : '',
+        output: Array.isArray(cacheObjects.openaiResponses.output)
+          ? cacheObjects.openaiResponses.output.filter((item) => item && typeof item === 'object').map((item) => JSON.parse(JSON.stringify(item)))
+          : [],
+        include: Array.isArray(cacheObjects.openaiResponses.include)
+          ? cacheObjects.openaiResponses.include.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+          : [],
+        store: cacheObjects.openaiResponses.store === true,
+        capturedAt: typeof cacheObjects.openaiResponses.capturedAt === 'number' ? cacheObjects.openaiResponses.capturedAt : 0,
+      }
+    : null
+  if (!openaiResponses || (!openaiResponses.responseId && openaiResponses.output.length === 0 && openaiResponses.include.length === 0 && !openaiResponses.store && openaiResponses.capturedAt === 0)) {
+    return null
+  }
+  return {
+    openaiResponses,
+  }
+}
+
 function buildRequestMessages(apiMessages) {
   return Array.isArray(apiMessages)
     ? apiMessages
@@ -124,18 +150,20 @@ function buildRequestMessages(apiMessages) {
           role: message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user',
           content: typeof message.content === 'string' ? message.content.trim() : '',
           images: normalizeMessageImages(message.images),
+          cacheObjects: cloneAIConversationCacheObjects(message.cacheObjects),
         }))
-        .filter((message) => message.content || message.images.length > 0)
+        .filter((message) => message.content || message.images.length > 0 || message.cacheObjects?.openaiResponses?.output?.length > 0)
     : []
 }
 
-function createAPIHistoryMessage({ role, content, messageId = '', uiMessageIds = [], images = [], ts = Date.now() }) {
+function createAPIHistoryMessage({ role, content, messageId = '', uiMessageIds = [], images = [], cacheObjects = null, ts = Date.now() }) {
   return {
     role,
     content,
     messageId,
     uiMessageIds,
     images: normalizeMessageImages(images),
+    cacheObjects: cloneAIConversationCacheObjects(cacheObjects),
     ts,
   }
 }
@@ -184,6 +212,7 @@ function upsertAPIHistoryMessage(apiMessages, rawMessage, currentMessages = []) 
     messageId: typeof rawMessage?.messageId === 'string' ? rawMessage.messageId.trim() : '',
     uiMessageIds,
     images,
+    cacheObjects: rawMessage?.cacheObjects,
     ts: typeof rawMessage?.ts === 'number' ? rawMessage.ts : Date.now(),
   })
 
@@ -310,6 +339,9 @@ function extractAIConversationDiffPrimaryPath(copyContent, fallbackSummary) {
 export default function AIPanel({ width, side, terminalId = 'global', sessionId = '', sessionTerminals = [] }) {
   const { t } = useTranslation()
   const [mcpInfo, setMcpInfo] = useState({ url: '', transport: 'streamable-http', endpoint: '/mcp', instructions: '', logs: '', tools: [] })
+  const [mcpClientServers, setMCPClientServers] = useState([])
+  const [mcpClientGlobalConfigPath, setMCPClientGlobalConfigPath] = useState('')
+  const [mcpClientGlobalConfigText, setMCPClientGlobalConfigText] = useState('{\n  "mcpServers": {}\n}')
   const [showSettingsPanel, setShowSettingsPanel] = useState(false)
   const [popupDismissVersion, setPopupDismissVersion] = useState(0)
   const [activeSettingsTab, setActiveSettingsTab] = useState('mcp')
@@ -339,15 +371,24 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       tools: Array.isArray(info.tools) ? info.tools : [],
     })
   }, [])
+  const applyMCPSettingsState = useCallback((state) => {
+    if (!panelMountedRef.current || !state) {
+      return
+    }
+    applyMCPInfo(state.service || {})
+    setMCPClientServers(Array.isArray(state.client?.servers) ? state.client.servers : [])
+    setMCPClientGlobalConfigPath(typeof state.client?.globalConfigPath === 'string' ? state.client.globalConfigPath : '')
+    setMCPClientGlobalConfigText(typeof state.client?.globalConfigText === 'string' && state.client.globalConfigText.trim() ? state.client.globalConfigText : '{\n  "mcpServers": {}\n}')
+  }, [applyMCPInfo])
   const refreshMCPServerInfo = useCallback(async () => {
     try {
-      const info = await AppGo.GetMCPServerInfo()
-      applyMCPInfo(info)
-      return info
+      const state = await getMCPSettingsState()
+      applyMCPSettingsState(state)
+      return state
     } catch {
       return null
     }
-  }, [applyMCPInfo])
+  }, [applyMCPSettingsState])
 
   const showAlert = useCallback(async (message) => {
     const finalMessage = typeof message === 'string' && message.trim() ? translate(message.trim()) : translate('ai.restore.unsupported')
@@ -687,29 +728,53 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'assistant_replace') {
+        let snapshotBeforeAssistantMessagePersist = null
         setPanelState(matchedPanelKey, (current) => {
           const assistantMessageId = current.activeAssistantMessageId || requestId
+          const nextMessages = current.messages.map((message) => {
+            if (message.id !== assistantMessageId || message.kind !== 'assistant') {
+              return message
+            }
+            return {
+              ...message,
+              text: typeof payload.text === 'string' ? payload.text : '',
+              metrics: buildMetrics(payload),
+              streaming: Boolean(payload.streaming),
+              extra: {
+                ...(message.extra || {}),
+                requestStatusLive: false,
+                finishedAtMs: Date.now(),
+                errorText: '',
+              },
+            }
+          })
+          if (current.conversation) {
+            snapshotBeforeAssistantMessagePersist = {
+              ...current.conversation,
+              updatedAt: Date.now(),
+              status: current.conversation.status,
+              messages: Array.isArray(current.messages)
+                ? current.messages.filter((message) => {
+                    if (!message || typeof message !== 'object') {
+                      return false
+                    }
+                    if (message.id === assistantMessageId && (message.kind === 'assistant' || message.kind === 'reasoning')) {
+                      return false
+                    }
+                    return true
+                  })
+                : [],
+              apiMessages: Array.isArray(current.apiMessages) ? [...current.apiMessages] : [],
+            }
+          }
           return {
             ...current,
-            messages: current.messages.map((message) => {
-              if (message.id !== assistantMessageId || message.kind !== 'assistant') {
-                return message
-              }
-              return {
-                ...message,
-                text: typeof payload.text === 'string' ? payload.text : '',
-                metrics: buildMetrics(payload),
-                streaming: Boolean(payload.streaming),
-                extra: {
-                  ...(message.extra || {}),
-                  requestStatusLive: false,
-                  finishedAtMs: Date.now(),
-                  errorText: '',
-                },
-              }
-            }),
+            messages: nextMessages,
           }
         })
+        if (snapshotBeforeAssistantMessagePersist) {
+          void saveConversationSnapshot(snapshotBeforeAssistantMessagePersist, matchedPanelKey, { hydrate: false })
+        }
         return
       }
 
@@ -1586,6 +1651,34 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     await refreshMCPServerInfo()
     return nextSettings
   }, [normalizedGlobalAISettings, refreshMCPServerInfo])
+  const handleSaveMCPGlobalServer = useCallback(async (name, configText) => {
+    await saveMCPGlobalServer(name, configText)
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
+  const handleReloadMCPGlobalServers = useCallback(async () => {
+    await reloadMCPGlobalServers()
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
+  const handleDeleteMCPGlobalServer = useCallback(async (name) => {
+    await deleteMCPGlobalServer(name)
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
+  const handleRestartMCPClientServer = useCallback(async (name, source) => {
+    await restartMCPClientServer(name, source)
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
+  const handleToggleMCPClientServer = useCallback(async (name, source, disabled) => {
+    await toggleMCPClientServer(name, source, disabled)
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
+  const handleToggleMCPClientServerDisabledForPrompts = useCallback(async (name, source, disabledForPrompts) => {
+    await toggleMCPClientServerDisabledForPrompts(name, source, disabledForPrompts)
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
+  const handleUpdateMCPClientServerTimeout = useCallback(async (name, source, timeout) => {
+    await updateMCPClientServerTimeout(name, source, timeout)
+    await refreshMCPServerInfo()
+  }, [refreshMCPServerInfo])
 
   const saveMCPOutputCompressionSettings = useCallback(async (lineLimit, characterLimit) => {
     const nextLineLimit = Math.max(10, Math.min(5000, lineLimit || 0))
@@ -1749,18 +1842,22 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         requestStatusLive: true,
       },
     }
-    const nextConversation = {
+    const persistedConversation = {
       ...baseConversation,
       title: baseConversation.title && baseConversation.title !== translate('ai.conversation.new') ? baseConversation.title : truncateConversationTitle(nextText),
       updatedAt: Date.now(),
       status: 'streaming',
-      messages: [...(baseConversation.messages || []), userMessage, assistantMessage],
+      messages: [...(baseConversation.messages || []), userMessage],
       apiMessages: nextApiMessages,
+    }
+    const nextConversation = {
+      ...persistedConversation,
+      messages: [...persistedConversation.messages, assistantMessage],
     }
 
     resetComposerEditState()
     requestConversationSmoothScrollToBottom()
-    setConversationList((prev) => upsertConversationSummary(prev, nextConversation))
+    setConversationList((prev) => upsertConversationSummary(prev, persistedConversation))
     setPanelState(panelInstanceKey, {
       activeConversationId: targetConversation.id,
       conversation: nextConversation,
@@ -1773,7 +1870,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       runtimePhase: 'api_request',
     })
 
-    await saveConversationSnapshot(nextConversation, panelInstanceKey)
+    await saveConversationSnapshot(persistedConversation, panelInstanceKey, { hydrate: false })
 
     try {
       await startAIChat(requestId, {
@@ -1910,17 +2007,21 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         requestStatusLive: true,
       },
     }
-    const nextConversation = {
+    const persistedConversation = {
       ...baseConversation,
       updatedAt: Date.now(),
       status: 'streaming',
-      messages: [...(baseConversation.messages || []), assistantMessage],
+      messages: [...(baseConversation.messages || [])],
       apiMessages: requestApiMessages,
+    }
+    const nextConversation = {
+      ...persistedConversation,
+      messages: [...persistedConversation.messages, assistantMessage],
     }
 
     resetComposerEditState()
     requestConversationSmoothScrollToBottom()
-    setConversationList((prev) => upsertConversationSummary(prev, nextConversation))
+    setConversationList((prev) => upsertConversationSummary(prev, persistedConversation))
     setPanelState(panelInstanceKey, {
       activeConversationId: activeConversation.id,
       conversation: nextConversation,
@@ -1933,7 +2034,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       runtimePhase: 'api_request',
     })
 
-    await saveConversationSnapshot(nextConversation, panelInstanceKey)
+    await saveConversationSnapshot(persistedConversation, panelInstanceKey, { hydrate: false })
 
     try {
       await startAIChat(requestId, {
@@ -2115,7 +2216,6 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       resumeAfterCancelRequestId: '',
     })
 
-    await saveConversationSnapshot(nextConversation, targetPanelKey)
 
     try {
       await startAIChat(requestId, {
@@ -2597,6 +2697,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         onTerminalOutputLineLimitChange={handleTerminalOutputLineLimitChange}
         terminalOutputCharacterLimit={terminalOutputCharacterLimit}
         onTerminalOutputCharacterLimitChange={handleTerminalOutputCharacterLimitChange}
+        mcpClientServers={mcpClientServers}
+        mcpClientGlobalConfigPath={mcpClientGlobalConfigPath}
+        mcpClientGlobalConfigText={mcpClientGlobalConfigText}
+        onSaveMCPGlobalServer={handleSaveMCPGlobalServer}
+        onReloadMCPGlobalServers={handleReloadMCPGlobalServers}
+        onDeleteMCPGlobalServer={handleDeleteMCPGlobalServer}
+        onRestartMCPClientServer={handleRestartMCPClientServer}
+        onToggleMCPClientServer={handleToggleMCPClientServer}
+        onToggleMCPClientServerDisabledForPrompts={handleToggleMCPClientServerDisabledForPrompts}
+        onUpdateMCPClientServerTimeout={handleUpdateMCPClientServerTimeout}
       />
     </div>
   )

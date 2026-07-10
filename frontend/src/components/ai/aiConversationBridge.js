@@ -21,6 +21,10 @@ const DEFAULT_TASK_SETTINGS = {
   alwaysAllowFollowupQuestions: false,
 }
 
+function normalizeAIPromptCacheBypassTimestamp(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
 export function normalizeAIConversationSummary(summary) {
   return {
     id: typeof summary?.id === 'string' ? summary.id.trim() : '',
@@ -30,6 +34,7 @@ export function normalizeAIConversationSummary(summary) {
     status: typeof summary?.status === 'string' && summary.status.trim() ? summary.status.trim() : 'idle',
     toolProtocol: typeof summary?.toolProtocol === 'string' && summary.toolProtocol.trim() ? summary.toolProtocol.trim() : 'xml',
     messageCount: typeof summary?.messageCount === 'number' ? summary.messageCount : 0,
+    promptCacheBypassTimestamp: normalizeAIPromptCacheBypassTimestamp(summary?.promptCacheBypassTimestamp),
   }
 }
 
@@ -89,6 +94,44 @@ export function normalizeAIConversationMessage(message) {
   }
 }
 
+function normalizeAIConversationOpenAIResponsesCacheObject(cacheObject) {
+  if (!cacheObject || typeof cacheObject !== 'object') {
+    return null
+  }
+  const responseId = typeof cacheObject?.responseId === 'string' ? cacheObject.responseId.trim() : ''
+  const output = Array.isArray(cacheObject?.output)
+    ? cacheObject.output.filter((item) => item && typeof item === 'object').map((item) => JSON.parse(JSON.stringify(item)))
+    : []
+  const include = Array.isArray(cacheObject?.include)
+    ? cacheObject.include.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+    : []
+  const store = cacheObject?.store === true
+  const capturedAt = typeof cacheObject?.capturedAt === 'number' ? cacheObject.capturedAt : 0
+  if (!responseId && output.length === 0 && include.length === 0 && !store && capturedAt === 0) {
+    return null
+  }
+  return {
+    responseId,
+    output,
+    include,
+    store,
+    capturedAt,
+  }
+}
+
+function normalizeAIConversationProviderCacheObjects(cacheObjects) {
+  if (!cacheObjects || typeof cacheObjects !== 'object') {
+    return null
+  }
+  const openaiResponses = normalizeAIConversationOpenAIResponsesCacheObject(cacheObjects?.openaiResponses)
+  if (!openaiResponses) {
+    return null
+  }
+  return {
+    openaiResponses,
+  }
+}
+
 export function normalizeAIConversationAPIMessage(message) {
   return {
     role: typeof message?.role === 'string' ? message.role : 'user',
@@ -96,6 +139,7 @@ export function normalizeAIConversationAPIMessage(message) {
     messageId: typeof message?.messageId === 'string' ? message.messageId : '',
     uiMessageIds: Array.isArray(message?.uiMessageIds) ? message.uiMessageIds.filter((item) => typeof item === 'string') : [],
     images: Array.isArray(message?.images) ? message.images.filter((item) => typeof item === 'string' && item.trim()) : [],
+    cacheObjects: normalizeAIConversationProviderCacheObjects(message?.cacheObjects),
     ts: typeof message?.ts === 'number' ? message.ts : Date.now(),
   }
 }
@@ -108,6 +152,7 @@ export function normalizeAIConversationSnapshot(snapshot) {
     updatedAt: typeof snapshot?.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
     status: typeof snapshot?.status === 'string' && snapshot.status.trim() ? snapshot.status.trim() : 'idle',
     toolProtocol: typeof snapshot?.toolProtocol === 'string' && snapshot.toolProtocol.trim() ? snapshot.toolProtocol.trim() : 'xml',
+    promptCacheBypassTimestamp: normalizeAIPromptCacheBypassTimestamp(snapshot?.promptCacheBypassTimestamp),
     messages: Array.isArray(snapshot?.messages) ? snapshot.messages.map(normalizeAIConversationMessage) : [],
     apiMessages: Array.isArray(snapshot?.apiMessages) ? snapshot.apiMessages.map(normalizeAIConversationAPIMessage) : [],
     settings: normalizeAIConversationTaskSettings(snapshot?.settings),
@@ -146,7 +191,8 @@ export async function saveAIConversation(snapshot) {
   if (!bridge?.SaveAIConversation) {
     return normalizeAIConversationSnapshot(snapshot)
   }
-  const saved = await bridge.SaveAIConversation(JSON.stringify(snapshot))
+  const outgoingSnapshot = normalizeAIConversationSnapshot(snapshot)
+  const saved = await bridge.SaveAIConversation(JSON.stringify(outgoingSnapshot))
   return normalizeAIConversationSnapshot(saved)
 }
 

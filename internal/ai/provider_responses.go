@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,15 +21,108 @@ type aiChatResponsesUsage struct {
 }
 
 type aiChatResponsesEvent struct {
-	Type     string                `json:"type"`
-	Delta    string                `json:"delta,omitempty"`
-	Response *aiChatResponsesState `json:"response,omitempty"`
-	Usage    *aiChatResponsesUsage `json:"usage,omitempty"`
+	Type        string                `json:"type"`
+	Delta       string                `json:"delta,omitempty"`
+	Response    *aiChatResponsesState `json:"response,omitempty"`
+	Usage       *aiChatResponsesUsage `json:"usage,omitempty"`
+	OutputIndex int                   `json:"output_index,omitempty"`
+	Item        map[string]any        `json:"item,omitempty"`
 }
 
 type aiChatResponsesState struct {
-	OutputText string                `json:"output_text,omitempty"`
-	Usage      *aiChatResponsesUsage `json:"usage,omitempty"`
+	ID         string                  `json:"id,omitempty"`
+	OutputText string                  `json:"output_text,omitempty"`
+	Output     []map[string]any        `json:"output,omitempty"`
+	Usage      *aiChatResponsesUsage   `json:"usage,omitempty"`
+}
+
+func buildAIConversationOpenAIResponsesCacheObject(responseID string, output []map[string]any, includeValues []string, store bool, capturedAt int64) *AIConversationOpenAIResponsesCacheObject {
+	trimmedResponseID := strings.TrimSpace(responseID)
+	clonedOutput := aiprovider.CloneOpenAIResponsesOutputItems(output)
+	normalizedInclude := normalizeAIStringList(includeValues)
+	if trimmedResponseID == "" && len(clonedOutput) == 0 && len(normalizedInclude) == 0 && capturedAt == 0 && !store {
+		return nil
+	}
+	return &AIConversationOpenAIResponsesCacheObject{
+		ResponseID: trimmedResponseID,
+		Output:     clonedOutput,
+		Include:    normalizedInclude,
+		Store:      store,
+		CapturedAt: capturedAt,
+	}
+}
+
+func cloneAIConversationProviderCacheObjects(cacheObjects *AIConversationProviderCacheObjects) *AIConversationProviderCacheObjects {
+	if cacheObjects == nil || cacheObjects.OpenAIResponses == nil {
+		return nil
+	}
+	normalized := buildAIConversationOpenAIResponsesCacheObject(
+		cacheObjects.OpenAIResponses.ResponseID,
+		cacheObjects.OpenAIResponses.Output,
+		cacheObjects.OpenAIResponses.Include,
+		cacheObjects.OpenAIResponses.Store,
+		cacheObjects.OpenAIResponses.CapturedAt,
+	)
+	if normalized == nil {
+		return nil
+	}
+	return &AIConversationProviderCacheObjects{
+		OpenAIResponses: normalized,
+	}
+}
+
+func captureAIResponsesOutputItem(items map[int]map[string]any, outputIndex int, item map[string]any) {
+	if items == nil || outputIndex < 0 || item == nil {
+		return
+	}
+	clonedItems := aiprovider.CloneOpenAIResponsesOutputItems([]map[string]any{item})
+	if len(clonedItems) == 0 {
+		return
+	}
+	items[outputIndex] = clonedItems[0]
+}
+
+func collectAIResponsesOutputItems(items map[int]map[string]any) []map[string]any {
+	if len(items) == 0 {
+		return nil
+	}
+	indexes := make([]int, 0, len(items))
+	for index := range items {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	collected := make([]map[string]any, 0, len(indexes))
+	for _, index := range indexes {
+		item := items[index]
+		if item == nil {
+			continue
+		}
+		clonedItems := aiprovider.CloneOpenAIResponsesOutputItems([]map[string]any{item})
+		if len(clonedItems) == 0 {
+			continue
+		}
+		collected = append(collected, clonedItems[0])
+	}
+	if len(collected) == 0 {
+		return nil
+	}
+	return collected
+}
+
+func buildAIResponsesAssistantMessageWithCache(content string, cacheObject *AIConversationOpenAIResponsesCacheObject) AIChatRequestMessage {
+	return AIChatRequestMessage{
+		Role:    "assistant",
+		Content: content,
+		CacheObjects: &AIConversationProviderCacheObjects{
+			OpenAIResponses: buildAIConversationOpenAIResponsesCacheObject(
+				cacheObject.ResponseID,
+				cacheObject.Output,
+				cacheObject.Include,
+				cacheObject.Store,
+				cacheObject.CapturedAt,
+			),
+		},
+	}
 }
 
 func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string, payload AIChatRequestPayload, profile AIProviderProfile, requestMessages []AIChatRequestMessage) (aiChatRoundResult, error) {
@@ -36,11 +130,17 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 	startedAt := time.Now()
 	firstTokenAt := time.Time{}
 	var contentBuilder strings.Builder
+	var latestCacheObject *AIConversationOpenAIResponsesCacheObject
 
 	systemPrompt := BuildChatSystemPromptWithProfile(a.ctx, payload.ConversationID, payload.SessionID, true, profile)
 	modelCapability := aiprovider.ResolveModelCapability(profile.Provider, profile.Model)
 	runtimeProfile := toAIProviderRuntimeProfile(profile)
-	promptCacheStrategy := aiprovider.ResolvePromptCacheStrategy(runtimeProfile, modelCapability)
+	promptCacheBypassTimestamp := ""
+	if a != nil && a.configManager != nil && strings.TrimSpace(payload.ConversationID) != "" {
+		if snapshot, err := a.configManager.GetAIConversation(payload.ConversationID); err == nil {
+			promptCacheBypassTimestamp = snapshot.PromptCacheBypassTimestamp
+		}
+	}
 
 	requestBody := map[string]any{
 		"model":        profile.Model,
@@ -49,10 +149,8 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 		"stream":       true,
 		"store":        false,
 	}
-	if promptCacheStrategy != "off" {
-		if promptCacheKey := aiprovider.BuildResponsesPromptCacheKey(payload.ConversationID, payload.SessionID); promptCacheKey != "" {
-			requestBody["prompt_cache_key"] = promptCacheKey
-		}
+	if promptCacheKey := aiprovider.BuildResponsesPromptCacheKey(payload.ConversationID, promptCacheBypassTimestamp); promptCacheKey != "" {
+		requestBody["prompt_cache_key"] = promptCacheKey
 	}
 
 	if reasoningEffort := aiprovider.GetEffectiveReasoningEffort(runtimeProfile, modelCapability); reasoningEffort != "" {
@@ -104,6 +202,11 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	trackedOutputItems := make(map[int]map[string]any)
+	includeValues := []string{}
+	if requestBodyInclude, ok := requestBody["include"].([]string); ok {
+		includeValues = append([]string{}, requestBodyInclude...)
+	}
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
@@ -126,11 +229,13 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 		}
 
 		switch event.Type {
+		case "response.output_item.added", "response.output_item.done":
+			captureAIResponsesOutputItem(trackedOutputItems, event.OutputIndex, event.Item)
 		case "response.output_text.delta", "response.text.delta":
-			if strings.TrimSpace(event.Delta) == "" {
+			if event.Delta == "" {
 				continue
 			}
-			if firstTokenAt.IsZero() {
+			if firstTokenAt.IsZero() && strings.TrimSpace(event.Delta) != "" {
 				firstTokenAt = time.Now()
 			}
 			contentBuilder.WriteString(event.Delta)
@@ -140,7 +245,7 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 				"delta":     event.Delta,
 			})
 		case "response.reasoning.delta", "response.reasoning_text.delta", "response.reasoning_summary.delta", "response.reasoning_summary_text.delta":
-			if strings.TrimSpace(event.Delta) == "" {
+			if event.Delta == "" {
 				continue
 			}
 			a.emitAIChatEvent(map[string]interface{}{
@@ -154,8 +259,8 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 					result.InputTokens = event.Response.Usage.InputTokens
 					result.OutputTokens = event.Response.Usage.OutputTokens
 				}
-				if contentBuilder.Len() == 0 && strings.TrimSpace(event.Response.OutputText) != "" {
-					if firstTokenAt.IsZero() {
+				if contentBuilder.Len() == 0 && event.Response.OutputText != "" {
+					if firstTokenAt.IsZero() && strings.TrimSpace(event.Response.OutputText) != "" {
 						firstTokenAt = time.Now()
 					}
 					contentBuilder.WriteString(event.Response.OutputText)
@@ -164,6 +269,22 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 						"requestId": requestID,
 						"delta":     event.Response.OutputText,
 					})
+				}
+				cacheObject := buildAIConversationOpenAIResponsesCacheObject(
+					event.Response.ID,
+					func() []map[string]any {
+						trackedOutput := collectAIResponsesOutputItems(trackedOutputItems)
+						if len(trackedOutput) > 0 {
+							return trackedOutput
+						}
+						return event.Response.Output
+					}(),
+					includeValues,
+					requestBody["store"] == true,
+					time.Now().UnixMilli(),
+				)
+				if cacheObject != nil {
+					latestCacheObject = cacheObject
 				}
 			}
 			if event.Usage != nil {
@@ -190,6 +311,13 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 	result.ElapsedMs = time.Since(startedAt).Milliseconds()
 	if result.OutputTokens > 0 && result.ElapsedMs > 0 {
 		result.TokensPerSecond = float64(result.OutputTokens) / (float64(result.ElapsedMs) / 1000)
+	}
+	if latestCacheObject != nil {
+		result.NextRequestMessages = append([]AIChatRequestMessage{}, requestMessages...)
+		result.NextRequestMessages = append(result.NextRequestMessages, buildAIResponsesAssistantMessageWithCache(result.Text, latestCacheObject))
+	}
+	if len(result.NextRequestMessages) == 0 {
+		result.NextRequestMessages = append([]AIChatRequestMessage{}, requestMessages...)
 	}
 
 	return result, nil

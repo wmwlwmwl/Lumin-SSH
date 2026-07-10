@@ -183,6 +183,7 @@ func (a *App) startup(ctx context.Context) {
 	a.configManager.CleanupOrphanedHistory()
 	go a.configManager.AutoSync()
 	applyMCPOutputCompressionSettings(a.configManager.GetMCPOutputCompressionSettings())
+	initializeMCPClientHub(a)
 	startMCPServer(a)
 }
 

@@ -17,9 +17,10 @@ import (
 )
 
 type AIChatRequestMessage struct {
-	Role    string   `json:"role"`
-	Content string   `json:"content"`
-	Images  []string `json:"images,omitempty"`
+	Role         string                            `json:"role"`
+	Content      string                            `json:"content"`
+	Images       []string                          `json:"images,omitempty"`
+	CacheObjects *AIConversationProviderCacheObjects `json:"cacheObjects,omitempty"`
 }
 
 type AIChatRequestPayload struct {
@@ -87,6 +88,8 @@ var aiSupportedToolNames = []string{
 	"search_replace",
 	"apply_diff",
 	"live_search",
+	"use_mcp_tool",
+	"access_mcp_resource",
 }
 
 var aiAlwaysAutoApprovedToolNames = map[string]struct{}{
@@ -120,6 +123,11 @@ var aiSupportedToolParamNames = []string{
 	"question",
 	"follow_up",
 	"result",
+	"server_name",
+	"tool_name",
+	"arguments",
+	"source",
+	"uri",
 }
 
 var (
@@ -153,9 +161,10 @@ func normalizeAIChatRequestMessages(messages []AIChatRequestMessage) []AIChatReq
 			continue
 		}
 		normalized = append(normalized, AIChatRequestMessage{
-			Role:    role,
-			Content: content,
-			Images:  images,
+			Role:         role,
+			Content:      content,
+			Images:       images,
+			CacheObjects: cloneAIConversationProviderCacheObjects(message.CacheObjects),
 		})
 	}
 	return normalized
@@ -873,6 +882,9 @@ func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiPars
 	if _, ok := aiAlwaysAutoApprovedToolNames[strings.TrimSpace(tool.Name)]; ok {
 		return aiApprovalDecisionAutoApprove
 	}
+	if isAIMCPClientToolAlwaysAllowed(tool) {
+		return aiApprovalDecisionAutoApprove
+	}
 	if !isAIAutoApprovalEffectivelyEnabled(settings) {
 		return aiApprovalDecisionAskUser
 	}
@@ -1039,13 +1051,35 @@ func extractAssistantToolXMLSegment(content string, conversationID string) (stri
 	return strings.TrimSpace(trimmedContent[:startIndex]), innerXML, strings.TrimSpace(trimmedContent[innerEndIndex+len(endTag):]), true
 }
 
-func parseAssistantToolUses(content string, conversationID string) []aiParsedToolUse {
-	_, innerXML, _, ok := extractAssistantToolXMLSegment(content, conversationID)
+func validateAssistantToolXMLProtocol(content string, conversationID string) (string, string, string, error) {
+	tagSet := getTaskScopedToolXMLTagSet(conversationID)
+	startTag := fmt.Sprintf("<%s>", tagSet.ExecuteMultipleToolsTagName)
+	endTag := fmt.Sprintf("</%s>", tagSet.ExecuteMultipleToolsTagName)
+	trimmedContent := strings.TrimSpace(content)
+	before, innerXML, after, ok := extractAssistantToolXMLSegment(content, conversationID)
 	if !ok {
-		return nil
+		return before, innerXML, after, fmt.Errorf("assistant response must contain exactly one top-level %s...%s block", startTag, endTag)
+	}
+	if strings.Count(trimmedContent, startTag) != 1 || strings.Count(trimmedContent, endTag) != 1 {
+		return before, innerXML, after, fmt.Errorf("assistant response must contain exactly one top-level %s...%s block", startTag, endTag)
+	}
+	return before, innerXML, after, nil
+}
+
+func parseAssistantToolUses(content string, conversationID string) ([]aiParsedToolUse, error) {
+	_, innerXML, _, err := validateAssistantToolXMLProtocol(content, conversationID)
+	if err != nil {
+		return nil, err
 	}
 	parsedTools := dedupeParsedToolUses(parseToolUsesFromXML(innerXML, conversationID))
-	return filterAIStandaloneOnlyBatchTools(parsedTools)
+	if len(parsedTools) == 0 {
+		tagSet := getTaskScopedToolXMLTagSet(conversationID)
+		return nil, fmt.Errorf("top-level <%s> block did not contain any recognized tool calls", tagSet.ExecuteMultipleToolsTagName)
+	}
+	if err := validateAIStandaloneOnlyBatchTools(parsedTools, conversationID); err != nil {
+		return nil, err
+	}
+	return parsedTools, nil
 }
 
 func isAIStandaloneOnlyBatchTool(name string) bool {
@@ -1057,18 +1091,18 @@ func isAIStandaloneOnlyBatchTool(name string) bool {
 	}
 }
 
-func filterAIStandaloneOnlyBatchTools(tools []aiParsedToolUse) []aiParsedToolUse {
+func validateAIStandaloneOnlyBatchTools(tools []aiParsedToolUse, conversationID string) error {
 	if len(tools) <= 1 {
-		return tools
+		return nil
 	}
-	filtered := make([]aiParsedToolUse, 0, len(tools))
+	tagSet := getTaskScopedToolXMLTagSet(conversationID)
 	for _, tool := range tools {
-		if isAIStandaloneOnlyBatchTool(tool.Name) {
+		if !isAIStandaloneOnlyBatchTool(tool.Name) {
 			continue
 		}
-		filtered = append(filtered, tool)
+		return fmt.Errorf("%s must be the only child tool inside <%s>...</%s>", strings.TrimSpace(tool.Name), tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName)
 	}
-	return filtered
+	return nil
 }
 
 func buildNoToolRetryMessage(conversationID string) string {
@@ -1081,6 +1115,22 @@ If you have completed the task, use the attempt_completion tool as the only tool
 If you need additional information from the user, use the ask_followup_question tool as the only tool call in the response.
 Never batch attempt_completion or ask_followup_question with any other tool. If they appear alongside other tools, they will be ignored.
 Otherwise, continue with the next step using an appropriate tool.`, tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName))
+}
+
+func buildInvalidToolProtocolRetryMessage(conversationID string, detail string) string {
+	tagSet := getTaskScopedToolXMLTagSet(conversationID)
+	trimmedDetail := strings.TrimSpace(detail)
+	if trimmedDetail == "" {
+		trimmedDetail = "assistant response violated the XML tool protocol"
+	}
+	return strings.TrimSpace(fmt.Sprintf(`[ERROR] Invalid tool protocol in your previous response: %s
+
+Every assistant response must contain exactly one top-level <%s>...</%s> block with at least one recognized tool call inside it.
+Never emit more than one top-level wrapper in a single response.
+If you use attempt_completion, it must be the only child tool inside the top-level wrapper.
+If you use ask_followup_question, it must be the only child tool inside the top-level wrapper.
+When calling other tools, keep all tool calls inside the same single top-level wrapper and do not append a second wrapper later in the same response.
+Otherwise, continue with the next step using an appropriate tool.`, trimmedDetail, tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName))
 }
 
 func buildParsedToolUseDedupeKey(tool aiParsedToolUse) string {
@@ -1607,6 +1657,28 @@ func buildToolMessageID(turnID string, index int) string {
 	return fmt.Sprintf("%s-tool-%d", turnID, index)
 }
 
+func buildAINextRequestMessagesWithAssistant(requestMessages []AIChatRequestMessage, roundResult aiChatRoundResult) []AIChatRequestMessage {
+	if len(roundResult.NextRequestMessages) > 0 {
+		return append([]AIChatRequestMessage{}, roundResult.NextRequestMessages...)
+	}
+	nextMessages := append([]AIChatRequestMessage{}, requestMessages...)
+	nextMessages = append(nextMessages, AIChatRequestMessage{
+		Role:    "assistant",
+		Content: roundResult.Text,
+	})
+	return nextMessages
+}
+
+func extractAILatestAssistantCacheObjects(messages []AIChatRequestMessage) *AIConversationProviderCacheObjects {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if strings.ToLower(strings.TrimSpace(messages[index].Role)) != "assistant" {
+			continue
+		}
+		return cloneAIConversationProviderCacheObjects(messages[index].CacheObjects)
+	}
+	return nil
+}
+
 func buildToolPreviewMessages(turnID string, tools []aiParsedToolUse) []map[string]interface{} {
 	messages := make([]map[string]interface{}, 0, len(tools))
 	for index, tool := range tools {
@@ -1854,21 +1926,25 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			continue
 		}
 
-		parsedTools := parseAssistantToolUses(roundResult.Text, payload.ConversationID)
-		if len(parsedTools) == 0 {
+		parsedTools, parseErr := parseAssistantToolUses(roundResult.Text, payload.ConversationID)
+		if parseErr != nil {
 			consecutiveNoToolCount++
 			consecutiveNoAssistantCount = 0
-			visibleText := stripAssistantToolXML(roundResult.Text, payload.ConversationID)
+			visibleText := strings.TrimSpace(roundResult.Text)
+			protocolRetryPrompt := buildInvalidToolProtocolRetryMessage(payload.ConversationID, parseErr.Error())
 			if consecutiveNoToolCount == 1 {
+				nextRequestMessages := buildAINextRequestMessagesWithAssistant(requestMessages, roundResult)
+				assistantCacheObjects := extractAILatestAssistantCacheObjects(nextRequestMessages)
 				a.emitAIChatEvent(map[string]interface{}{
 					"kind":      "api_message_append",
 					"requestId": requestID,
 					"message": map[string]interface{}{
-						"messageId": fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
-						"turnId":    assistantMessageID,
-						"role":      "assistant",
-						"content":   roundResult.Text,
-						"ts":        time.Now().UnixMilli(),
+						"messageId":    fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
+						"turnId":       assistantMessageID,
+						"role":         "assistant",
+						"content":      roundResult.Text,
+						"cacheObjects": assistantCacheObjects,
+						"ts":           time.Now().UnixMilli(),
 					},
 				})
 				a.emitAIChatEvent(map[string]interface{}{
@@ -1882,14 +1958,14 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					"outputTokens":    roundResult.OutputTokens,
 					"tokensPerSecond": roundResult.TokensPerSecond,
 				})
-				requestMessages = append(requestMessages,
-					AIChatRequestMessage{
-						Role:    "assistant",
-						Content: roundResult.Text,
-					},
+				if a.consumeAIChatSkipNextAutomaticRequest(requestID) {
+					a.skipCompatibleAIChatAfterResolvedTools(requestID)
+					return
+				}
+				requestMessages = append(nextRequestMessages,
 					AIChatRequestMessage{
 						Role:    "user",
-						Content: buildNoToolRetryMessage(payload.ConversationID),
+						Content: protocolRetryPrompt,
 					},
 				)
 				a.emitAIChatEvent(map[string]interface{}{
@@ -1898,7 +1974,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					"message": map[string]interface{}{
 						"messageId": fmt.Sprintf("api-user-notool-%d", time.Now().UnixNano()),
 						"role":      "user",
-						"content":   buildNoToolRetryMessage(payload.ConversationID),
+						"content":   protocolRetryPrompt,
 						"ts":        time.Now().UnixMilli(),
 					},
 				})
@@ -1911,16 +1987,19 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 				assistantMessageID = nextAssistantMessageID
 				continue
 			}
-			errorText := "AI 连续两次回复未包含必需工具，请检查响应格式"
+			errorText := "AI 回复未满足工具协议要求"
+			nextRequestMessages := buildAINextRequestMessagesWithAssistant(requestMessages, roundResult)
+			assistantCacheObjects := extractAILatestAssistantCacheObjects(nextRequestMessages)
 			a.emitAIChatEvent(map[string]interface{}{
 				"kind":      "api_message_append",
 				"requestId": requestID,
 				"message": map[string]interface{}{
-					"messageId": fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
-					"turnId":    assistantMessageID,
-					"role":      "assistant",
-					"content":   roundResult.Text,
-					"ts":        time.Now().UnixMilli(),
+					"messageId":    fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
+					"turnId":       assistantMessageID,
+					"role":         "assistant",
+					"content":      roundResult.Text,
+					"cacheObjects": assistantCacheObjects,
+					"ts":           time.Now().UnixMilli(),
 				},
 			})
 			a.emitAIChatEvent(map[string]interface{}{
@@ -1937,15 +2016,15 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					"errorText": errorText,
 				},
 			})
+			if a.consumeAIChatSkipNextAutomaticRequest(requestID) {
+				a.skipCompatibleAIChatAfterResolvedTools(requestID)
+				return
+			}
 			if round < 5 {
-				requestMessages = append(requestMessages,
-					AIChatRequestMessage{
-						Role:    "assistant",
-						Content: roundResult.Text,
-					},
+				requestMessages = append(nextRequestMessages,
 					AIChatRequestMessage{
 						Role:    "user",
-						Content: buildNoToolRetryMessage(payload.ConversationID),
+						Content: protocolRetryPrompt,
 					},
 				)
 				a.emitAIChatEvent(map[string]interface{}{
@@ -1954,7 +2033,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					"message": map[string]interface{}{
 						"messageId": fmt.Sprintf("api-user-notool-%d", time.Now().UnixNano()),
 						"role":      "user",
-						"content":   buildNoToolRetryMessage(payload.ConversationID),
+						"content":   protocolRetryPrompt,
 						"ts":        time.Now().UnixMilli(),
 					},
 				})
@@ -1971,7 +2050,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			a.emitAIChatEvent(map[string]interface{}{
 				"kind":      "error",
 				"requestId": requestID,
-				"error":     "AI 回复未包含必需工具，重试后仍未满足协议要求",
+				"error":     "AI 回复未满足工具协议，重试后仍未满足协议要求",
 			})
 			a.finishAIChatRequest(requestID)
 			return
@@ -1981,15 +2060,17 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 		consecutiveNoAssistantCount = 0
 
 		visibleText := stripAssistantToolXML(roundResult.Text, payload.ConversationID)
+		assistantCacheObjects := extractAILatestAssistantCacheObjects(roundResult.NextRequestMessages)
 		a.emitAIChatEvent(map[string]interface{}{
 			"kind":      "api_message_append",
 			"requestId": requestID,
 			"message": map[string]interface{}{
-				"messageId": fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
-				"turnId":    assistantMessageID,
-				"role":      "assistant",
-				"content":   roundResult.Text,
-				"ts":        time.Now().UnixMilli(),
+				"messageId":    fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
+				"turnId":       assistantMessageID,
+				"role":         "assistant",
+				"content":      roundResult.Text,
+				"cacheObjects": assistantCacheObjects,
+				"ts":           time.Now().UnixMilli(),
 			},
 		})
 		a.emitAIChatEvent(map[string]interface{}{
@@ -2004,10 +2085,15 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			"tokensPerSecond": roundResult.TokensPerSecond,
 		})
 
-		requestMessages = append(requestMessages, AIChatRequestMessage{
-			Role:    "assistant",
-			Content: roundResult.Text,
-		})
+		nextRequestMessages := roundResult.NextRequestMessages
+		if len(nextRequestMessages) == 0 {
+			nextRequestMessages = append([]AIChatRequestMessage{}, requestMessages...)
+			nextRequestMessages = append(nextRequestMessages, AIChatRequestMessage{
+				Role:    "assistant",
+				Content: roundResult.Text,
+			})
+		}
+		requestMessages = nextRequestMessages
 
 		batch := &aiPendingToolBatch{
 			RequestID:            requestID,

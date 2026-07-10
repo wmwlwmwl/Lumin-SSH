@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/mcp"
 	"luminssh-go/internal/mcpserver"
 
 	"github.com/pkg/sftp"
@@ -175,6 +176,7 @@ func (b *AIBindings) SaveAIGlobalSettings(jsonStr string) error {
 		applyMCPServiceState(b.app)
 	}
 	if b != nil && b.app != nil && b.app.configManager != nil {
+		mcp.InitializeClientHub(b.app.configManager.configDir)
 		b.app.configManager.bumpSnapshotTime()
 		go b.app.configManager.AutoSync()
 	}

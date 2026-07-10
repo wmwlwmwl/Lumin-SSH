@@ -167,15 +167,15 @@ func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, 
 			if event.ContentBlock == nil {
 				continue
 			}
-			if strings.TrimSpace(event.ContentBlock.Thinking) != "" {
+			if event.ContentBlock.Thinking != "" {
 				a.emitAIChatEvent(map[string]interface{}{
 					"kind":      "reasoning_delta",
 					"requestId": requestID,
 					"delta":     event.ContentBlock.Thinking,
 				})
 			}
-			if strings.TrimSpace(event.ContentBlock.Text) != "" {
-				if firstTokenAt.IsZero() {
+			if event.ContentBlock.Text != "" {
+				if firstTokenAt.IsZero() && strings.TrimSpace(event.ContentBlock.Text) != "" {
 					firstTokenAt = time.Now()
 				}
 				contentBuilder.WriteString(event.ContentBlock.Text)
@@ -189,15 +189,15 @@ func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, 
 			if event.Delta == nil {
 				continue
 			}
-			if strings.TrimSpace(event.Delta.Thinking) != "" {
+			if event.Delta.Thinking != "" {
 				a.emitAIChatEvent(map[string]interface{}{
 					"kind":      "reasoning_delta",
 					"requestId": requestID,
 					"delta":     event.Delta.Thinking,
 				})
 			}
-			if strings.TrimSpace(event.Delta.Text) != "" {
-				if firstTokenAt.IsZero() {
+			if event.Delta.Text != "" {
+				if firstTokenAt.IsZero() && strings.TrimSpace(event.Delta.Text) != "" {
 					firstTokenAt = time.Now()
 				}
 				contentBuilder.WriteString(event.Delta.Text)

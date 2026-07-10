@@ -27,6 +27,7 @@ const reasoningEffortLabels = {
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384
 const DEFAULT_MAX_THINKING_TOKENS = 8192
+const ROO_ALIGNED_EFFORT_REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh']
 
 function getAppBridge() {
   return window?.go?.main?.AIBindings || window?.go?.main?.AIProviderBindings || window?.go?.main?.App
@@ -66,6 +67,30 @@ function buildReasoningOptionsForCapability(capability) {
 function getReasoningOptionLabel(value) {
   const nextValue = typeof value === 'string' ? value.trim().toLowerCase() : ''
   return translate(reasoningEffortLabels[nextValue] || nextValue || '无')
+}
+
+function supportsRooAlignedEffortReasoning(providerValue) {
+  return providerValue === 'Compatible' || providerValue === 'Responses'
+}
+
+function buildDisplayModelCapability(providerValue, capability) {
+  if (!supportsRooAlignedEffortReasoning(providerValue)) {
+    return capability
+  }
+  return {
+    ...capability,
+    supportsReasoningBinary: false,
+    supportsReasoningBudget: false,
+    requiredReasoningBudget: false,
+    supportsReasoningEffort: [...ROO_ALIGNED_EFFORT_REASONING_OPTIONS],
+    requiredReasoningEffort: false,
+    reasoningMode: 'effort',
+    reasoningEffort: typeof capability?.reasoningEffort === 'string' && capability.reasoningEffort.trim()
+      ? capability.reasoningEffort.trim().toLowerCase()
+      : 'medium',
+    maxTokens: 0,
+    maxThinkingTokens: 0,
+  }
 }
 
 function resolveEffortReasoningSelection(draft, capability) {
@@ -233,10 +258,10 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     [draft.provider],
   )
 
-  const modelCapability = useMemo(
-    () => providerDefinition.getModelCapability(draft.model || providerDefinition.defaultModel),
-    [providerDefinition, draft.model],
-  )
+  const modelCapability = useMemo(() => {
+    const baseCapability = providerDefinition.getModelCapability(draft.model || providerDefinition.defaultModel)
+    return buildDisplayModelCapability(draft.provider, baseCapability)
+  }, [draft.provider, providerDefinition, draft.model])
 
   const effortReasoningOptions = useMemo(
     () => buildReasoningOptionsForCapability(modelCapability),
@@ -516,6 +541,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
       }
     })
     setModelOptions(buildInitialModelOptions(nextProviderDefinition, draft.model || nextProviderDefinition.defaultModel))
+    setModelQuery('')
     setProviderMenuOpen(false)
   }
 
@@ -1480,7 +1506,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
             <input
               value={modelQuery}
               onChange={(event) => setModelQuery(event.target.value)}
-              placeholder={t('筛选模型')}
+              placeholder={t('筛选模型或输入以指定模型')}
               style={{
                 height: 34,
                 width: '100%',
@@ -1501,22 +1527,62 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
             ) : null}
 
             <div style={{ minHeight: 200, border: '1px solid var(--border)', background: 'var(--surface-base)', display: 'flex', flexDirection: 'column' }}>
-              {filteredModels.length > 0 ? (
-                filteredModels.map((item) => {
-                  const active = draft.model === item
-                  return (
+              {filteredModels.length > 0 || modelQuery.trim() ? (
+                <>
+                  {filteredModels.map((item) => {
+                    const active = draft.model === item
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => {
+                          const capability = buildDisplayModelCapability(draft.provider, providerDefinition.getModelCapability(item))
+                          setDraft((prev) => ({
+                            ...prev,
+                            model: item,
+                            reasoningEffort: prev.reasoningEffort || capability.reasoningEffort || 'disable',
+                            modelMaxTokens: prev.modelMaxTokens || capability.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
+                            modelMaxThinkingTokens: prev.modelMaxThinkingTokens || capability.maxThinkingTokens || DEFAULT_MAX_THINKING_TOKENS,
+                          }))
+                          setModelQuery('')
+                        }}
+                        style={{
+                          minHeight: 32,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          padding: '0 10px',
+                          border: 'none',
+                          borderBottom: '1px solid var(--border-subtle)',
+                          background: active ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
+                          color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          textAlign: 'left',
+                        }}>
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item}</span>
+                        {active ? <span style={{ color: 'var(--accent)', fontSize: 12 }}>✓</span> : null}
+                      </button>
+                    )
+                  })}
+                  {modelQuery.trim() ? (
                     <button
-                      key={item}
                       type="button"
                       onClick={() => {
-                        const capability = providerDefinition.getModelCapability(item)
+                        const customModel = modelQuery.trim()
+                        const capability = buildDisplayModelCapability(draft.provider, providerDefinition.getModelCapability(customModel))
                         setDraft((prev) => ({
                           ...prev,
-                          model: item,
+                          model: customModel,
                           reasoningEffort: prev.reasoningEffort || capability.reasoningEffort || 'disable',
                           modelMaxTokens: prev.modelMaxTokens || capability.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
                           modelMaxThinkingTokens: prev.modelMaxThinkingTokens || capability.maxThinkingTokens || DEFAULT_MAX_THINKING_TOKENS,
                         }))
+                        setModelOptions((prev) => (
+                          prev.includes(customModel)
+                            ? prev
+                            : [customModel, ...prev]
+                        ))
+                        setModelQuery('')
                       }}
                       style={{
                         minHeight: 32,
@@ -1526,16 +1592,16 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
                         gap: 12,
                         padding: '0 10px',
                         border: 'none',
-                        borderBottom: '1px solid var(--border-subtle)',
-                        background: active ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
-                        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        background: 'transparent',
+                        color: 'var(--text-primary)',
                         textAlign: 'left',
                       }}>
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item}</span>
-                      {active ? <span style={{ color: 'var(--accent)', fontSize: 12 }}>✓</span> : null}
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {t('使用自定义模型').replace('{value}', modelQuery.trim())}
+                      </span>
                     </button>
-                  )
-                })
+                  ) : null}
+                </>
               ) : (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontSize: 14 }}>
                   {t('暂无可用模型')}

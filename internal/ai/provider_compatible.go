@@ -32,12 +32,13 @@ type aiChatCompatibleChunk struct {
 }
 
 type aiChatRoundResult struct {
-	Text            string
-	FirstTokenMs    int64
-	ElapsedMs       int64
-	InputTokens     int
-	OutputTokens    int
-	TokensPerSecond float64
+	Text                string
+	FirstTokenMs        int64
+	ElapsedMs           int64
+	InputTokens         int
+	OutputTokens        int
+	TokensPerSecond     float64
+	NextRequestMessages []AIChatRequestMessage
 }
 
 type aiProviderModelsResponse struct {

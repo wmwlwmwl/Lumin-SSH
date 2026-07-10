@@ -294,13 +294,29 @@ func toAIProviderRuntimeProfile(profile AIProviderProfile) aiprovider.Profile {
 	}
 }
 
+func toAIProviderRuntimeCacheObjects(cacheObjects *AIConversationProviderCacheObjects) *aiprovider.ProviderCacheObjects {
+	if cacheObjects == nil || cacheObjects.OpenAIResponses == nil {
+		return nil
+	}
+	return &aiprovider.ProviderCacheObjects{
+		OpenAIResponses: &aiprovider.OpenAIResponsesCacheObject{
+			ResponseID: strings.TrimSpace(cacheObjects.OpenAIResponses.ResponseID),
+			Output:     aiprovider.CloneOpenAIResponsesOutputItems(cacheObjects.OpenAIResponses.Output),
+			Include:    normalizeAIStringList(cacheObjects.OpenAIResponses.Include),
+			Store:      cacheObjects.OpenAIResponses.Store,
+			CapturedAt: cacheObjects.OpenAIResponses.CapturedAt,
+		},
+	}
+}
+
 func toAIProviderRuntimeMessages(messages []AIChatRequestMessage) []aiprovider.ChatMessage {
 	converted := make([]aiprovider.ChatMessage, 0, len(messages))
 	for _, message := range messages {
 		converted = append(converted, aiprovider.ChatMessage{
-			Role:    message.Role,
-			Content: message.Content,
-			Images:  normalizeAIStringList(message.Images),
+			Role:         message.Role,
+			Content:      message.Content,
+			Images:       normalizeAIStringList(message.Images),
+			CacheObjects: toAIProviderRuntimeCacheObjects(message.CacheObjects),
 		})
 	}
 	return converted

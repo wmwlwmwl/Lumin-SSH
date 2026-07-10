@@ -3,6 +3,7 @@ package provider
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 )
 
@@ -18,10 +19,23 @@ type Profile struct {
 	ModelMaxThinkingTokens  int
 }
 
+type OpenAIResponsesCacheObject struct {
+	ResponseID string
+	Output     []map[string]any
+	Include    []string
+	Store      bool
+	CapturedAt int64
+}
+
+type ProviderCacheObjects struct {
+	OpenAIResponses *OpenAIResponsesCacheObject
+}
+
 type ChatMessage struct {
-	Role    string
-	Content string
-	Images  []string
+	Role         string
+	Content      string
+	Images       []string
+	CacheObjects *ProviderCacheObjects
 }
 
 func normalizeStringList(values []string) []string {
@@ -42,6 +56,53 @@ func normalizeStringList(values []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+func CloneOpenAIResponsesOutputItems(items []map[string]any) []map[string]any {
+	if len(items) == 0 {
+		return []map[string]any{}
+	}
+	data, err := json.Marshal(items)
+	if err != nil {
+		cloned := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			copied := make(map[string]any, len(item))
+			for key, value := range item {
+				copied[key] = value
+			}
+			cloned = append(cloned, copied)
+		}
+		return cloned
+	}
+	var cloned []map[string]any
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return []map[string]any{}
+	}
+	if cloned == nil {
+		return []map[string]any{}
+	}
+	return cloned
+}
+
+func cloneAIProviderCacheObjects(cacheObjects *ProviderCacheObjects) *ProviderCacheObjects {
+	if cacheObjects == nil {
+		return nil
+	}
+	if cacheObjects.OpenAIResponses == nil {
+		return nil
+	}
+	return &ProviderCacheObjects{
+		OpenAIResponses: &OpenAIResponsesCacheObject{
+			ResponseID: strings.TrimSpace(cacheObjects.OpenAIResponses.ResponseID),
+			Output:     CloneOpenAIResponsesOutputItems(cacheObjects.OpenAIResponses.Output),
+			Include:    normalizeStringList(cacheObjects.OpenAIResponses.Include),
+			Store:      cacheObjects.OpenAIResponses.Store,
+			CapturedAt: cacheObjects.OpenAIResponses.CapturedAt,
+		},
+	}
 }
 
 func normalizeCacheStrategy(value string) string {
@@ -77,6 +138,15 @@ func containsAIProviderReasoningEffort(options []string, value string) bool {
 	return false
 }
 
+func supportsAIProviderFallbackReasoningEffort(provider string) bool {
+	switch normalizeProviderProtocol(provider) {
+	case "Compatible", "Responses":
+		return true
+	default:
+		return false
+	}
+}
+
 func ResolvePromptCacheStrategy(profile Profile, capability AIProviderModelCapability) string {
 	if !providerSupportsAIQuickEditPromptCache(profile.Provider) {
 		return "off"
@@ -96,15 +166,22 @@ func ResolvePromptCacheStrategy(profile Profile, capability AIProviderModelCapab
 	}
 }
 
-func BuildResponsesPromptCacheKey(conversationID string, sessionID string) string {
+func BuildResponsesPromptCacheKey(conversationID string, promptCacheBypassTimestamp string) string {
 	trimmedConversationID := strings.TrimSpace(conversationID)
-	trimmedSessionID := strings.TrimSpace(sessionID)
-	if trimmedConversationID == "" && trimmedSessionID == "" {
+	if trimmedConversationID == "" {
 		return ""
 	}
-	keySource := "conversation:" + trimmedConversationID + "\nsession:" + trimmedSessionID
-	checksum := sha256.Sum256([]byte(keySource))
-	return "LuminSSH:resp:v1:" + hex.EncodeToString(checksum[:])[:32]
+	bypassSource := strings.TrimSpace(promptCacheBypassTimestamp)
+	if bypassSource == "" {
+		bypassSource = "stable"
+	}
+	checksum := sha256.Sum256([]byte(bypassSource))
+	bypassHash := hex.EncodeToString(checksum[:])[:12]
+	cacheKey := "LuminSSH:resp:v1:" + trimmedConversationID + ":" + bypassHash
+	if len(cacheKey) > 64 {
+		return cacheKey[len(cacheKey)-64:]
+	}
+	return cacheKey
 }
 
 func getAIProviderOpenAIPromptCacheControl(strategy string) map[string]any {
@@ -266,6 +343,11 @@ func BuildResponsesInputMessages(requestMessages []ChatMessage) []map[string]any
 		role := strings.ToLower(strings.TrimSpace(message.Role))
 		switch role {
 		case "assistant":
+			cacheObjects := cloneAIProviderCacheObjects(message.CacheObjects)
+			if cacheObjects != nil && cacheObjects.OpenAIResponses != nil && len(cacheObjects.OpenAIResponses.Output) > 0 {
+				input = append(input, cacheObjects.OpenAIResponses.Output...)
+				continue
+			}
 			input = append(input, map[string]any{
 				"role": "assistant",
 				"content": []map[string]any{
@@ -409,13 +491,23 @@ func BuildAnthropicMessages(requestMessages []ChatMessage, promptCacheStrategy s
 }
 
 func GetEffectiveReasoningEffort(profile Profile, capability AIProviderModelCapability) string {
+	defaultEffort := normalizeReasoningEffort(capability.ReasoningEffort)
+	requestedEffort := normalizeReasoningEffort(profile.ReasoningEffort)
+
 	if capability.ReasoningMode != AIProviderReasoningModeEffort {
-		return ""
+		if !supportsAIProviderFallbackReasoningEffort(profile.Provider) || !profile.EnableReasoningEffort {
+			return ""
+		}
+		if requestedEffort == "" {
+			requestedEffort = defaultEffort
+		}
+		if requestedEffort == "" || requestedEffort == "disable" {
+			return ""
+		}
+		return requestedEffort
 	}
 
 	supportedEfforts := normalizeAIProviderModelReasoningEffortOptions(capability.SupportsReasoningEffort)
-	defaultEffort := normalizeReasoningEffort(capability.ReasoningEffort)
-	requestedEffort := normalizeReasoningEffort(profile.ReasoningEffort)
 
 	if capability.RequiredReasoningEffort {
 		if requestedEffort != "" && requestedEffort != "disable" && (len(supportedEfforts) == 0 || containsAIProviderReasoningEffort(supportedEfforts, requestedEffort)) {

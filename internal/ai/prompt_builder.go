@@ -45,6 +45,10 @@ func BuildChatSystemPromptWithProfile(appCtx context.Context, conversationID str
 	builder.WriteString("If you use ask_followup_question, the top-level wrapper must contain exactly one child tool call, and it must be ask_followup_question.\n")
 	builder.WriteString("If you use attempt_completion, the top-level wrapper must contain exactly one child tool call, and it must be attempt_completion.\n")
 	builder.WriteString("Never batch ask_followup_question or attempt_completion with any other tool, and never include both of them in the same response.\n")
+	builder.WriteString("Never emit one top-level wrapper in a planning or commentary portion and a second top-level wrapper later in the same response. Across the entire assistant response there must be exactly one top-level wrapper total.\n")
+	builder.WriteString("After emitting any non-standalone tool call or tool batch, end the response immediately. Do not append attempt_completion, ask_followup_question, extra commentary, or a second top-level wrapper later in the same assistant response.\n")
+	builder.WriteString("This rule is especially strict for use_mcp_tool and access_mcp_resource: after calling either of them, the response must end with that single top-level wrapper, and any decision about attempt_completion must wait for a later response after the tool result arrives.\n")
+	builder.WriteString("If you are unsure whether a tool result is already available, assume it is not available yet and stop after the current tool batch.\n")
 	builder.WriteString("Tool uses are formatted using XML-style tags. The tool name itself becomes the XML tag name. Each parameter is enclosed within its own set of tags.\n")
 	builder.WriteString("Structure for the single top-level wrapper:\n")
 	builder.WriteString(fmt.Sprintf("<%s>\n", tagSet.ExecuteMultipleToolsTagName))
@@ -81,6 +85,9 @@ func BuildChatSystemPromptWithProfile(appCtx context.Context, conversationID str
 	builder.WriteString("In user-facing markdown explanatory text outside tool XML, always render every file path reference as a clickable markdown link using the file path as both the label and the link target, for example [internal/ai/prompt_builder.go](internal/ai/prompt_builder.go).\n")
 	builder.WriteString("In user-facing markdown explanatory text outside tool XML, when referencing a language construct such as a function, method, type, class, interface, or field, prefer a clickable markdown link with a line anchor when the exact location is known, for example [BuildChatSystemPromptWithProfile()](internal/ai/prompt_builder.go:34).\n")
 	builder.WriteString("Apply the clickable-reference rule only to user-facing markdown explanatory text. Do not force this formatting inside tool XML, JSON payloads, shell commands, code fences, raw source text, or file content bodies unless the user explicitly asks for it there.\n")
+	builder.WriteString("When you output any fenced code block in user-facing markdown, the opening fence must contain only the fence plus an optional language identifier, and the code content must begin on the next line. The closing fence must also appear on its own line.\n")
+	builder.WriteString("Never append structured content, punctuation, brackets, braces, XML, JSON, Markdown, or any other snippet characters on the same line as a code fence. Do not write forms such as a language identifier immediately followed by snippet content on the same fence line.\n")
+	builder.WriteString("For every structured snippet or example, preserve all required delimiters exactly as content. Do not merge the language label with the first character of the snippet, and do not drop, absorb, or relocate the first or last structural character of the snippet.\n")
 	builder.WriteString(fmt.Sprintf("When editing an existing file, prefer %s over %s. Use %s only when you already know the complete final file content, when creating a new file, when intentionally replacing the entire file, or when %s cannot express the change reliably.\n", tagSet.ApplyDiffTagName, tagSet.WriteToFileTagName, tagSet.WriteToFileTagName, tagSet.ApplyDiffTagName))
 	builder.WriteString(fmt.Sprintf("Do not re-read a file with line numbers before every %s call if the conversation already contains authoritative and sufficiently recent file content and you still retain exact pre-edit context. In that case, derive the SEARCH block and :start_line: from the remembered content.\n", tagSet.ApplyDiffTagName))
 	builder.WriteString(fmt.Sprintf("Re-read the file only when the available content may be stale, truncated, ambiguous, externally changed, or when you no longer have enough precision to perform a safe %s edit.\n", tagSet.ApplyDiffTagName))
@@ -177,9 +184,13 @@ This project is an SSH tool with an integrated AI assistant, so ambiguity may in
 Before asking the user to decide, ensure they can see that you have already formed an initial judgment based on relevant implementation and runtime context rather than asking from a zero-context state.
 
 `)
-	builder.WriteString(buildAIChatToolPromptSection(sessionID, profile))
-	systemPrompt := strings.TrimSpace(builder.String())
-	return systemPrompt
+if mcpClientPromptContext := getAIMCPClientPromptContext(); strings.TrimSpace(mcpClientPromptContext) != "" {
+	builder.WriteString(mcpClientPromptContext)
+	builder.WriteString("\n")
+}
+builder.WriteString(buildAIChatToolPromptSection(sessionID, profile))
+systemPrompt := strings.TrimSpace(builder.String())
+return systemPrompt
 }
 
 func liveSearchAIChatToolDefinition() mcpserver.ToolDefinition {
@@ -214,6 +225,7 @@ func buildAIChatToolPromptSection(sessionID string, profile AIProviderProfile) s
 	if shouldExposeAILiveSearchTool(profile) {
 		toolDefinitions = append([]mcpserver.ToolDefinition{liveSearchAIChatToolDefinition()}, toolDefinitions...)
 	}
+	toolDefinitions = buildAIMCPPromptSections(toolDefinitions)
 	sections := make([]string, 0, len(toolDefinitions))
 	for _, definition := range toolDefinitions {
 		if isAIChatHiddenToolName(definition.Name) {

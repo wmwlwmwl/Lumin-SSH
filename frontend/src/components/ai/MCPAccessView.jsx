@@ -120,9 +120,9 @@ export default function MCPAccessView({
       </div>
       {showTools && (
         <div style={{ padding: 12, borderRadius: 10, background: 'var(--surface-overlay)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>{t('所有工具和用途')}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>{t('本机MCP工具和用途')}</div>
           <div style={{ display: 'grid', gap: 8 }}>
-            {mcpInfo.tools.length > 0 ? mcpInfo.tools.map((tool) => (
+            {Array.isArray(mcpInfo.tools) && mcpInfo.tools.length > 0 ? mcpInfo.tools.map((tool) => (
               <div key={tool.name} style={{ padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface-base)' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4, fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>{tool.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7, wordBreak: 'break-word' }}>{getToolDescription(tool)}</div>
