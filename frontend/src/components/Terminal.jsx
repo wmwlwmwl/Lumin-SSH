@@ -285,7 +285,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
 
     const term = new XTerm({
       theme:            T.xterm,
-      fontFamily:       "'JetBrains Mono', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', 'Fira Code', monospace",
+      fontFamily:       "'MapleMono NF', 'JetBrains Mono', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', 'Fira Code', monospace",
       fontSize:         fontSize,
       fontWeight:       500,
       fontWeightBold:   700,
@@ -1218,7 +1218,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           style={{
             flex: 1,
             fontSize: 12,
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "'MapleMono NF', 'JetBrains Mono', monospace",
             padding: '7px 10px',
             minHeight: 32,
             background: 'var(--term-input-bg)',
@@ -1287,7 +1287,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             maxHeight: 280,
             display: 'flex', flexDirection: 'column',
             zIndex: Z.POPUP,
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "'MapleMono NF', 'JetBrains Mono', monospace",
             fontSize: 12,
           }}>
             {/* 弹窗头部（标题 + 操作按钮） */}
