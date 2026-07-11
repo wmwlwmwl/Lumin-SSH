@@ -602,6 +602,7 @@ export default function App() {
   const terminalDockClickSuppressUntilRef = useRef(0);
   const [terminalDockDragPreview, setTerminalDockDragPreview] = useState(null);
   const [termBgImage, setTermBgImage] = useState(localStorage.getItem('termBgImage') || '');
+  const [termBgOpacity, setTermBgOpacity] = useState(() => parseFloat(localStorage.getItem('termBgOpacity') || '0.15'));
   const [applyBgGlobally, setApplyBgGlobally] = useState(localStorage.getItem('applyBgGlobally') === 'true');
   const fileManagerDockTabAnchorRef = useRef(null);
   const resizerClickSuppressUntilRef = useRef(0);
@@ -3474,8 +3475,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     const syncBg = () => {
       const img = localStorage.getItem('termBgImage') || '';
       const global = localStorage.getItem('applyBgGlobally') === 'true';
+      const opacity = parseFloat(localStorage.getItem('termBgOpacity') || '0.15');
       setTermBgImage(img);
       setApplyBgGlobally(global);
+      setTermBgOpacity(opacity);
     };
     window.addEventListener('terminal-bg-changed', syncBg);
     return () => window.removeEventListener('terminal-bg-changed', syncBg);
@@ -4094,18 +4097,26 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   const getAppLayoutStyle = () => {
     if (applyBgGlobally && termBgImage) {
-      return {
-        backgroundImage: `url(${termBgImage})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      };
+      return { position: 'relative' };
     }
     return {};
   };
 
+  const getBgOverlayStyle = () => ({
+    position: 'absolute',
+    inset: 0,
+    backgroundImage: `url(${termBgImage})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    opacity: termBgOpacity,
+    zIndex: 0,
+    pointerEvents: 'none',
+  });
+
   return (
     <div className="app-layout" style={getAppLayoutStyle()}>
+      {applyBgGlobally && termBgImage && <div style={getBgOverlayStyle()} />}
       {/* ── Topbar ───────────────────────────────────────── */}
       <div className="topbar">
         <div className="topbar-content">
