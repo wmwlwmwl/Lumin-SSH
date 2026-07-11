@@ -625,6 +625,8 @@ export default {
   "为每个终端创建独立的 AI 面板与运行期会话。修改后将在下次启动应用时生效。": "Buat panel AI independen dan sesi runtime untuk setiap terminal. Modifikasi akan berlaku saat aplikasi diluncurkan berikutnya.",
   "删除前需要二次确认": "Konfirmasi sekunder diperlukan sebelum penghapusan",
   "删除 AI 对话或消息前先弹出确认提示": "Prompt konfirmasi muncul sebelum menghapus percakapan atau pesan AI",
+  "拒绝工具后自动继续": "Lanjutkan secara otomatis setelah menolak alat",
+  "关闭后，点击“拒绝”会停止本次请求并等待下一条消息。": "Setelah ditutup, mengklik \"Tolak\" akan menghentikan permintaan ini dan menunggu pesan berikutnya.",
   "确定删除供应商": "Konfirmasikan untuk menghapus pemasok",
   "终端输出行数上限": "Jumlah maksimum jalur keluaran terminal",
   "控制 MCP 终端输出保留的最大行数": "Mengontrol jumlah maksimum saluran yang dipertahankan dalam keluaran terminal MCP",

@@ -625,6 +625,8 @@ export default {
   "为每个终端创建独立的 AI 面板与运行期会话。修改后将在下次启动应用时生效。": "Creați panouri AI independente și sesiuni de rulare pentru fiecare terminal. Modificarea va intra în vigoare la următoarea lansare a aplicației.",
   "删除前需要二次确认": "Este necesară o confirmare secundară înainte de ștergere",
   "删除 AI 对话或消息前先弹出确认提示": "Apare un mesaj de confirmare înainte de a șterge o conversație sau un mesaj AI",
+  "拒绝工具后自动继续": "Continuați automat după respingerea instrumentului",
+  "关闭后，点击“拒绝”会停止本次请求并等待下一条消息。": "După închidere, făcând clic pe „Refuză” va opri această solicitare și va aștepta următorul mesaj.",
   "确定删除供应商": "Confirmați pentru a șterge furnizorul",
   "终端输出行数上限": "Numărul maxim de linii de ieșire terminale",
   "控制 MCP 终端输出保留的最大行数": "Controlează numărul maxim de linii reținute în ieșirea terminalului MCP",

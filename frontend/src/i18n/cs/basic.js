@@ -625,6 +625,8 @@ export default {
   "为每个终端创建独立的 AI 面板与运行期会话。修改后将在下次启动应用时生效。": "Vytvořte nezávislé panely AI a běhové relace pro každý terminál. Změna se projeví při příštím spuštění aplikace.",
   "删除前需要二次确认": "Před smazáním je vyžadováno sekundární potvrzení",
   "删除 AI 对话或消息前先弹出确认提示": "Před smazáním konverzace nebo zprávy AI se zobrazí výzva k potvrzení",
+  "拒绝工具后自动继续": "Automaticky pokračovat po odmítnutí nástroje",
+  "关闭后，点击“拒绝”会停止本次请求并等待下一条消息。": "Po zavření kliknutím na „Odmítnout“ tento požadavek zastavíte a počkáte na další zprávu.",
   "确定删除供应商": "Potvrďte smazání dodavatele",
   "终端输出行数上限": "Maximální počet výstupních linek terminálu",
   "控制 MCP 终端输出保留的最大行数": "Řídí maximální počet řádků uchovaných na výstupu terminálu MCP",

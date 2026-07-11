@@ -1,5 +1,5 @@
 import { ArrowRightLeft, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from '../../i18n.js'
 import MCPAccessView from './MCPAccessView.jsx'
 import MCPServersView from './MCPServersView.jsx'
@@ -141,7 +141,20 @@ export default function AIPanelSettingsOverlay({
 }) {
   const { t } = useTranslation()
   const overlayRef = useRef(null)
+  const tabListRef = useRef(null)
   const [overlayBounds, setOverlayBounds] = useState(null)
+
+  useLayoutEffect(() => {
+    if (!show) {
+      return undefined
+    }
+
+    const firstTabKey = tabListRef.current?.querySelector('[data-ai-settings-tab-key]')?.dataset?.aiSettingsTabKey || ''
+    if (firstTabKey && activeTab !== firstTabKey) {
+      onChangeTab(firstTabKey)
+    }
+    return undefined
+  }, [activeConversationId, activeTab, onChangeTab, show])
 
   useEffect(() => {
     if (!show) {
@@ -202,6 +215,7 @@ export default function AIPanelSettingsOverlay({
   const messageActionBarAtBottom = Boolean(globalAISettings?.messageActionBarAtBottom)
   const mcpEnabled = globalAISettings?.mcpEnabled !== false
   const mcpAllowBrowserCalls = Boolean(globalAISettings?.mcpAllowBrowserCalls)
+  const continueAfterToolRejection = globalAISettings?.continueAfterToolRejection !== false
   const proxyNodes = Array.isArray(globalAISettings?.proxyNodes) ? globalAISettings.proxyNodes : []
   const aiRequestProxyId = typeof globalAISettings?.aiRequestProxyId === 'string' ? globalAISettings.aiRequestProxyId : ''
 
@@ -239,9 +253,10 @@ export default function AIPanelSettingsOverlay({
           </Tiptop>
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-          <div style={{ width: 'fit-content', borderRight: '1px solid var(--border)', background: 'var(--surface-base)', padding: 0, display: 'flex', flexDirection: 'column', gap: 0, flex: '0 0 auto' }}>
+          <div ref={tabListRef} style={{ width: 'fit-content', borderRight: '1px solid var(--border)', background: 'var(--surface-base)', padding: 0, display: 'flex', flexDirection: 'column', gap: 0, flex: '0 0 auto' }}>
             <button
               type="button"
+              data-ai-settings-tab-key="ai"
               onClick={() => onChangeTab('ai')}
               style={{
                 display: 'flex',
@@ -266,6 +281,7 @@ export default function AIPanelSettingsOverlay({
             </button>
             <button
               type="button"
+              data-ai-settings-tab-key="mcp"
               onClick={() => onChangeTab('mcp')}
               style={{
                 display: 'flex',
@@ -290,6 +306,7 @@ export default function AIPanelSettingsOverlay({
             </button>
             <button
               type="button"
+              data-ai-settings-tab-key="mcp-servers"
               onClick={() => onChangeTab('mcp-servers')}
               style={{
                 display: 'flex',
@@ -314,6 +331,7 @@ export default function AIPanelSettingsOverlay({
             </button>
             <button
               type="button"
+              data-ai-settings-tab-key="slash-commands"
               onClick={() => onChangeTab('slash-commands')}
               style={{
                 display: 'flex',
@@ -338,6 +356,7 @@ export default function AIPanelSettingsOverlay({
             </button>
             <button
               type="button"
+              data-ai-settings-tab-key="appearance"
               onClick={() => onChangeTab('appearance')}
               style={{
                 display: 'flex',
@@ -436,6 +455,17 @@ export default function AIPanelSettingsOverlay({
                       <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('删除 AI 对话或消息前先弹出确认提示')}</div>
                     </div>
                     <ToggleSwitchControl checked={confirmDelete} onChange={onToggleConfirmDelete} />
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{t('拒绝工具后自动继续')}</div>
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('关闭后，点击“拒绝”会停止本次请求并等待下一条消息。')}</div>
+                    </div>
+                    <ToggleSwitchControl
+                      checked={continueAfterToolRejection}
+                      onChange={() => onSaveGlobalAISettings?.({ continueAfterToolRejection: !continueAfterToolRejection })}
+                    />
                   </div>
                   <div style={{ borderTop: '1px solid var(--border)' }} />
                   <div style={{ display: 'grid', gap: 8 }}>

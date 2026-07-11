@@ -344,7 +344,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const [mcpClientGlobalConfigText, setMCPClientGlobalConfigText] = useState('{\n  "mcpServers": {}\n}')
   const [showSettingsPanel, setShowSettingsPanel] = useState(false)
   const [popupDismissVersion, setPopupDismissVersion] = useState(0)
-  const [activeSettingsTab, setActiveSettingsTab] = useState('mcp')
+  const [activeSettingsTab, setActiveSettingsTab] = useState('')
   const [conversationList, setConversationList] = useState([])
   const [globalAISettings, setGlobalAISettings] = useState(null)
   const [terminalOutputLineLimit, setTerminalOutputLineLimit] = useState(500)
@@ -479,7 +479,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
 
   useEffect(() => {
     if (!activeConversation && activeSettingsTab === 'backup') {
-      setActiveSettingsTab('ai')
+      setActiveSettingsTab('')
     }
   }, [activeConversation, activeSettingsTab])
 
@@ -1712,6 +1712,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     })
   }, [handleSaveAIPanelGlobalSettings, normalizedGlobalAISettings.confirmDelete])
 
+  const handleToggleSettingsPanel = useCallback(() => {
+    setShowSettingsPanel((previous) => {
+      const next = !previous
+      if (next) {
+        setActiveSettingsTab('')
+      }
+      return next
+    })
+  }, [])
+
   const handleTerminalOutputLineLimitChange = useCallback((event) => {
     const value = parseInt(event.target.value, 10) || 0
     saveMCPOutputCompressionSettings(value, terminalOutputCharacterLimit).catch(() => {})
@@ -2309,8 +2319,12 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     if (!panelState.activeRequestId) {
       return
     }
-    await rejectAIChatTools(panelState.activeRequestId)
-  }, [panelState.activeRequestId])
+    if (normalizedGlobalAISettings.continueAfterToolRejection !== false) {
+      await rejectAIChatTools(panelState.activeRequestId)
+      return
+    }
+    await rejectAIChatToolsForQueuedSubmission(panelState.activeRequestId)
+  }, [normalizedGlobalAISettings.continueAfterToolRejection, panelState.activeRequestId])
 
   const handleContinueTool = useCallback(async () => {
     if (!panelState.activeRequestId) {
@@ -2604,7 +2618,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     >
       <AIPanelHeader
         showSettingsPanel={showSettingsPanel}
-        onToggleSettings={() => setShowSettingsPanel((prev) => !prev)}
+        onToggleSettings={handleToggleSettingsPanel}
         onGoHome={handleGoHome}
         onOpenConversationDiff={handleOpenConversationDiff}
         showConversationDiffButton={Boolean(activeConversation)}

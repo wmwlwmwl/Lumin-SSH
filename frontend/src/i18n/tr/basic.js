@@ -625,6 +625,8 @@ export default {
   "为每个终端创建独立的 AI 面板与运行期会话。修改后将在下次启动应用时生效。": "Her terminal için bağımsız yapay zeka panelleri ve çalışma zamanı oturumları oluşturun. Değişiklik, uygulamanın bir sonraki başlatılışında geçerli olacaktır.",
   "删除前需要二次确认": "Silmeden önce ikincil onay gereklidir",
   "删除 AI 对话或消息前先弹出确认提示": "Bir AI görüşmesini veya mesajını silmeden önce bir onay istemi açılır",
+  "拒绝工具后自动继续": "Aracı reddettikten sonra otomatik olarak devam et",
+  "关闭后，点击“拒绝”会停止本次请求并等待下一条消息。": "Kapattıktan sonra \"Reddet\" seçeneğine tıklamak bu isteği durduracak ve bir sonraki mesajı bekleyecektir.",
   "确定删除供应商": "Tedarikçiyi silmeyi onaylayın",
   "终端输出行数上限": "Maksimum terminal çıkış hattı sayısı",
   "控制 MCP 终端输出保留的最大行数": "MCP terminal çıkışında tutulan maksimum hat sayısını kontrol eder",
