@@ -381,5 +381,11 @@ func (c *ConfigManager) SyncFromSFTP() (map[string]interface{}, error) {
 }
 
 func (c *ConfigManager) RestoreFromSFTPFile(filename string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newSFTPStorage, filename)
+	return c.restoreFrom(c.newSFTPStorage, filename, c.getRecoveryPasswordKey())
+}
+
+// RestoreFromSFTPFileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
+func (c *ConfigManager) RestoreFromSFTPFileWithPassword(filename string, password string) (map[string]interface{}, error) {
+	key := sha256Key(password)
+	return c.restoreFrom(c.newSFTPStorage, filename, key)
 }

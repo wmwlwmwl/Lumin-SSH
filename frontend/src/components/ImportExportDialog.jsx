@@ -13,13 +13,13 @@ import { Z } from '../constants/zIndex';
  *   onExport(opts)   导出回调，opts = { useEncryption: bool, password: string }
  *   onImport()       导出回调（内部会处理密码重试）
  *   onDownloadTemplate()  下载模板回调
- *   hasCloudProvider bool  本机是否配置了云同步（决定密文默认密钥来源提示）
+ *   hasRecoveryPassword bool  本机是否设置了恢复密码（决定是否允许复用恢复密码）
  *   busy             bool  操作进行中（禁用按钮）
  */
-export default function ImportExportDialog({ onClose, onExport, onImport, onDownloadTemplate, hasCloudProvider, busy }) {
+export default function ImportExportDialog({ onClose, onExport, onImport, onDownloadTemplate, hasRecoveryPassword, busy }) {
   const { t } = useTranslation();
   const [format, setFormat] = useState('plain');        // 'plain' | 'encrypted'
-  const [keyMode, setKeyMode] = useState('cloud');      // 'cloud' | 'password'（仅密文时）
+  const [keyMode, setKeyMode] = useState('recovery');   // 'recovery' | 'password'（仅密文时）
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -33,17 +33,17 @@ export default function ImportExportDialog({ onClose, onExport, onImport, onDown
   // 切到明文时重置密码相关状态
   useEffect(() => {
     if (format === 'plain') {
-      setKeyMode('cloud');
+      setKeyMode('recovery');
       setPassword('');
     }
   }, [format]);
 
-  // 未配置云同步时，密文默认走自定义密码
+  // 未设置恢复密码时，密文默认走自定义密码
   useEffect(() => {
-    if (format === 'encrypted' && !hasCloudProvider) {
+    if (format === 'encrypted' && !hasRecoveryPassword) {
       setKeyMode('password');
     }
-  }, [format, hasCloudProvider]);
+  }, [format, hasRecoveryPassword]);
 
   const canExport = () => {
     if (busy) return false;
@@ -123,11 +123,14 @@ export default function ImportExportDialog({ onClose, onExport, onImport, onDown
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('加密方式')}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label style={{ ...rowStyle, cursor: hasCloudProvider ? 'pointer' : 'not-allowed', opacity: hasCloudProvider ? 1 : 0.5, padding: '8px 12px' }}
-                    onClick={() => hasCloudProvider && setKeyMode('cloud')}>
-                    {radioDot(keyMode === 'cloud')}
-                    <span style={{ fontSize: 13 }}>{t('复用云端密钥')}</span>
-                    {!hasCloudProvider && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{t('未配置')}</span>}
+                  <label style={{ ...rowStyle, cursor: hasRecoveryPassword ? 'pointer' : 'not-allowed', opacity: hasRecoveryPassword ? 1 : 0.5, padding: '8px 12px' }}
+                    onClick={() => hasRecoveryPassword && setKeyMode('recovery')}>
+                    {radioDot(keyMode === 'recovery')}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13 }}>{t('复用恢复密码')}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{t('与同步加密使用同一个恢复密码')}</span>
+                    </div>
+                    {!hasRecoveryPassword && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>{t('未设置')}</span>}
                   </label>
                   <label style={{ ...(keyMode === 'password' ? activeRowStyle : rowStyle), padding: '8px 12px' }} onClick={() => setKeyMode('password')}>
                     {radioDot(keyMode === 'password')}
@@ -156,9 +159,9 @@ export default function ImportExportDialog({ onClose, onExport, onImport, onDown
                     </button>
                   </div>
                 )}
-                {keyMode === 'cloud' && !hasCloudProvider && (
+                {keyMode === 'recovery' && !hasRecoveryPassword && (
                   <div style={{ fontSize: 11, color: 'var(--warning)', padding: '0 2px' }}>
-                    {t('未配置云同步请输入密码或先配置')}
+                    {t('未设置恢复密码，请输入自定义密码或先在同步设置中设置')}
                   </div>
                 )}
               </div>
@@ -178,7 +181,7 @@ export default function ImportExportDialog({ onClose, onExport, onImport, onDown
               <Upload size={14} /> {t('从文件导入')}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-              {t('支持明文 JSON 与密文 .enc；密文会自动尝试本机云同步密钥，失败时提示输入密码')}
+              {t('支持明文 JSON 与密文 .enc；密文会优先尝试恢复密码，兼容旧版云同步密钥，失败时提示输入密码')}
             </div>
             <button className="btn btn-secondary" onClick={onImport} disabled={busy} style={{ height: 34, fontSize: 13 }}>
               <Upload size={14} style={{ marginRight: 6 }} />{t('选择文件并导入')}

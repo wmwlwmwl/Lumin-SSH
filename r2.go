@@ -272,5 +272,11 @@ func (c *ConfigManager) SyncFromR2() (map[string]interface{}, error) {
 }
 
 func (c *ConfigManager) RestoreFromR2File(objectKey string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newR2Storage, objectKey)
+	return c.restoreFrom(c.newR2Storage, objectKey, c.getRecoveryPasswordKey())
+}
+
+// RestoreFromR2FileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
+func (c *ConfigManager) RestoreFromR2FileWithPassword(objectKey string, password string) (map[string]interface{}, error) {
+	key := sha256Key(password)
+	return c.restoreFrom(c.newR2Storage, objectKey, key)
 }

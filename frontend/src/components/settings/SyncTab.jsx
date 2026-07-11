@@ -100,7 +100,8 @@ export default function SyncTab({
   r2Form, setR2Field, r2Configured, r2Editing, setR2Editing, r2Loading, r2Testing, r2TestResult, onR2Test, onR2Save,
   ftpForm, setFTPField, ftpConfigured, ftpEditing, setFtpEditing, ftpLoading, ftpTesting, ftpTestResult, onTestFTP, onSaveFTP,
   sftpForm, setSFTPField, sftpConfigured, sftpEditing, setSftpEditing, sftpLoading, sftpTesting, sftpTestResult, onTestSFTP, onSaveSFTP, setSftpForm,
-  lastBackup, syncing, onSync, loadingBackups, restoring, onRestore, isAnyConfigured, addToast
+  lastBackup, syncing, onSync, loadingBackups, restoring, onRestore, isAnyConfigured, addToast,
+  recoveryPassword, recoveryPasswordEditing, setRecoveryPasswordEditing, recoveryPasswordInput, setRecoveryPasswordInput, onSaveRecoveryPassword, onClearRecoveryPassword
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -130,6 +131,78 @@ export default function SyncTab({
               {opt.label}
             </button>
           ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginRight: 4 }}>{$t('同步加密')}</span>
+          {recoveryPassword ? (
+            <>
+              <button className="btn btn-primary" disabled>
+                <Lock size={14} /> {$t('已加密')}
+              </button>
+              <button className="btn btn-secondary" onClick={() => { setRecoveryPasswordEditing(true); setRecoveryPasswordInput(''); }}>
+                {$t('修改密码')}
+              </button>
+              <button className="btn btn-ghost" onClick={onClearRecoveryPassword} style={{ color: 'var(--danger)' }}>
+                {$t('关闭加密')}
+              </button>
+            </>
+          ) : recoveryPasswordEditing ? (
+            <>
+              <input
+                className="input"
+                type="password"
+                placeholder={$t('请输入恢复密码')}
+                value={recoveryPasswordInput}
+                onChange={(e) => setRecoveryPasswordInput(e.target.value)}
+                autoFocus
+                style={{ width: 200, height: 34, fontSize: 13 }}
+              />
+              <button className="btn btn-primary" onClick={onSaveRecoveryPassword} disabled={!recoveryPasswordInput.trim()}>
+                {$t('开启加密')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => { setRecoveryPasswordEditing(false); setRecoveryPasswordInput(''); }}>
+                {$t('取消')}
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-secondary" disabled>
+                {$t('明文')}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setRecoveryPasswordEditing(true)}>
+                <Lock size={14} /> {$t('加密同步')}
+              </button>
+            </>
+          )}
+        </div>
+        {recoveryPassword && recoveryPasswordEditing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="input"
+              type="password"
+              placeholder={$t('请输入新恢复密码')}
+              value={recoveryPasswordInput}
+              onChange={(e) => setRecoveryPasswordInput(e.target.value)}
+              autoFocus
+              style={{ width: 200, height: 34, fontSize: 13 }}
+            />
+            <button className="btn btn-primary" onClick={onSaveRecoveryPassword} disabled={!recoveryPasswordInput.trim()}>
+              {$t('保存')}
+            </button>
+            <button className="btn btn-ghost" onClick={() => { setRecoveryPasswordEditing(false); setRecoveryPasswordInput(''); }}>
+              {$t('取消')}
+            </button>
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          {$t('默认明文同步，选择加密后需设置恢复密码。系统重装或云端凭据变更后，用恢复密码即可恢复备份。')}
+          <div style={{ marginTop: 4, color: 'var(--warning)' }}>{$t('注意：多设备同步时，所有设备需使用相同的加密密码，否则其他设备无法解密同步数据。')}</div>
+          {!recoveryPassword && (
+            <div style={{ marginTop: 4, color: 'var(--warning)' }}>{$t('未开启加密同步时会以明文保存到云端；如需保护云端备份，请选择加密并设置恢复密码。')}</div>
+          )}
+          <div style={{ marginTop: 4, color: 'var(--text-tertiary)', opacity: 0.7 }}>
+            {$t('旧版用云端凭据派生密钥加密的备份仍可解密（兼容），但将在 v1.2.0+ 移除。')}
+          </div>
         </div>
       </div>
 

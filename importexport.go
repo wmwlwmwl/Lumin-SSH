@@ -410,10 +410,15 @@ func (c *ConfigManager) GetActiveSyncKey() ([]byte, string) {
 	return nil, ""
 }
 
-// CandidateSyncKeys 返回本机所有已配置后端的密钥列表（当前后端优先），用于导入时自动尝试解密云端 .enc。
+// CandidateSyncKeys 返回本机所有可用的解密密钥列表（恢复密码优先，旧版后端派生密钥兼容），用于导入时自动尝试解密 .enc。
 func (c *ConfigManager) CandidateSyncKeys() [][]byte {
-	mode := c.GetSyncMode()
 	var keys [][]byte
+	// 恢复密码优先（新方式）
+	if rpKey := c.getRecoveryPasswordKey(); rpKey != nil {
+		keys = append(keys, rpKey)
+	}
+	// TODO(deprecated, 预计 v1.2.0+ 移除): 旧版后端派生密钥兼容回退。
+	mode := c.GetSyncMode()
 	for _, p := range providerOrder(mode) {
 		if key, _ := c.providerKeyIfConfigured(p); key != nil {
 			keys = append(keys, key)
@@ -427,9 +432,9 @@ func (c *ConfigManager) CandidateSyncKeys() [][]byte {
 // 解析优先级：
 //  1. 明文 connectionsExport（format 字段匹配）
 //  2. 明文 SyncSnapshot（兼容云端解密后的结构，忽略 quick_commands 等无关字段）
-//  3. hex 密文：依次用 passwordKey 和 candidateKeys 解密，解密成功后再按 1/2 解析
+//  3. hex 密文：先用 candidateKeys（恢复密码/旧版云同步密钥）解密，失败后再用用户输入的 passwordKey 解密
 //
-// passwordKey 为空表示用户未提供密码；candidateKeys 为本机各已配置后端密钥。
+// passwordKey 为空表示用户未提供密码；candidateKeys 为恢复密码优先、旧版后端派生密钥兼容。
 // 所有密钥都解密失败时返回 errNeedPassword。
 func (c *ConfigManager) parseImportData(data []byte, candidateKeys [][]byte, passwordKey []byte) (*SyncSnapshot, error) {
 	// 先尝试明文 JSON：优先 connectionsExport 格式
@@ -443,12 +448,12 @@ func (c *ConfigManager) parseImportData(data []byte, candidateKeys [][]byte, pas
 
 	// 否则当 hex 密文处理。decryptWithKey 对非法 hex/非密文会返回空串。
 	raw := strings.TrimSpace(string(data))
-	// 构造尝试顺序：用户密码优先，再本机云凭据
+	// 构造尝试顺序：恢复密码 → 旧版云同步密钥 → 用户输入的自定义密码
 	var keysToTry [][]byte
+	keysToTry = append(keysToTry, candidateKeys...)
 	if len(passwordKey) > 0 {
 		keysToTry = append(keysToTry, passwordKey)
 	}
-	keysToTry = append(keysToTry, candidateKeys...)
 
 	for _, key := range keysToTry {
 		decrypted := c.decryptWithKey(raw, key)

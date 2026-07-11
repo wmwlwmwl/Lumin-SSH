@@ -310,7 +310,7 @@ func (a *App) DeleteConnection(id string) bool {
 
 // ExportConnections 导出全部节点到用户选择的文件。
 // useEncryption=false 导出明文 .json（含真实密码/私钥）；true 导出密文 .enc。
-// password 非空时用 sha256(password) 当密钥；空则用本机已配置的云端密钥（GetActiveSyncKey）。
+// password 非空时用 sha256(password) 当密钥；空则用本机恢复密码（与云端同步加密口径一致）。
 // 弹出保存对话框；用户取消时返回 ("", nil)。返回写入的文件路径。
 func (a *App) ExportConnections(useEncryption bool, password string) (string, error) {
 	// 选定密钥
@@ -321,12 +321,13 @@ func (a *App) ExportConnections(useEncryption bool, password string) (string, er
 			key = sha256Key(password)
 			keySource = "password"
 		} else {
-			k, name := a.configManager.GetActiveSyncKey()
-			if k == nil {
-				return "", fmt.Errorf("未配置任何云同步后端，请输入密码或先在设置中配置云同步")
+			// ponytail: 复用恢复密码，与云端同步加密口径一致
+			rpKey := a.configManager.getRecoveryPasswordKey()
+			if rpKey == nil {
+				return "", fmt.Errorf("未设置恢复密码，请输入自定义密码或先在同步设置中设置恢复密码")
 			}
-			key = k
-			keySource = name
+			key = rpKey
+			keySource = "recovery"
 		}
 	}
 
@@ -336,7 +337,8 @@ func (a *App) ExportConnections(useEncryption bool, password string) (string, er
 	if useEncryption {
 		ext = ".enc"
 	}
-	defaultName := fmt.Sprintf("lumin-ssh-connections-%s%s", time.Now().Format("20060102"), ext)
+	timestamp := time.Now().Format("20060102_150405.000_-0700")
+	defaultName := fmt.Sprintf("lumin-ssh-connections-%s%s", timestamp, ext)
 	filters := []runtime.FileFilter{
 		{DisplayName: fmt.Sprintf("Lumin-SSH (*%s)", ext), Pattern: "*" + ext},
 	}
@@ -398,11 +400,11 @@ func (a *App) SelectImportFile() (string, error) {
 }
 
 // ImportConnections 从指定文件导入节点（合并，跳过重复）。
-// filePath 由前端通过 SelectImportFile 获取；password 为用户输入的解密密码（可空）。
-// 智能识别明文 JSON / 密码密文 / 云端 .enc：
+// filePath 由前端通过 SelectImportFile 获取；password 为弹窗输入的自定义解密密码（可空）。
+// 智能识别明文 JSON / 恢复密码密文 / 旧版云端 .enc / 自定义密码密文：
 //   - 明文直接解析
-//   - 密文先用 password 派生密钥解密，再尝试本机各已配置后端密钥
-//   - 都失败返回 errNeedPassword（前端据此弹密码框重试）
+//   - 密文自动先试恢复密码和旧版云同步密钥
+//   - 自动解密失败返回 errNeedPassword，前端弹窗输入自定义密码后再试
 func (a *App) ImportConnections(filePath string, password string) (ImportResult, error) {
 	if filePath == "" {
 		return ImportResult{}, nil
@@ -467,9 +469,15 @@ func (a *App) DownloadImportTemplate(lang string) (string, error) {
 }
 
 // HasCloudSyncConfigured 返回本机是否配置了任意云同步后端（供前端 UI 决定是否提示输入密码）。
+// TODO(deprecated, 预计 v1.2.0+ 移除): 旧版逻辑，新版用 HasRecoveryPassword 判断。
 func (a *App) HasCloudSyncConfigured() bool {
 	key, _ := a.configManager.GetActiveSyncKey()
 	return key != nil
+}
+
+// HasRecoveryPassword 返回是否设置了恢复密码（供前端导出 UI 决定是否允许"复用恢复密码"）。
+func (a *App) HasRecoveryPassword() bool {
+	return a.configManager.GetRecoveryPassword() != ""
 }
 
 // SetConnectionGroup 仅更新服务器分组
@@ -910,6 +918,10 @@ func (a *App) RestoreFromWebdavFile(filename string) (map[string]interface{}, er
 	return a.configManager.RestoreFromWebdavFile(filename)
 }
 
+func (a *App) RestoreFromWebdavFileWithPassword(filename string, password string) (map[string]interface{}, error) {
+	return a.configManager.RestoreFromWebdavFileWithPassword(filename, password)
+}
+
 func (a *App) SyncFromWebdav() (map[string]interface{}, error) {
 	return a.configManager.SyncFromWebdav()
 }
@@ -951,6 +963,10 @@ func (a *App) RestoreFromR2File(objectKey string) (map[string]interface{}, error
 	return a.configManager.RestoreFromR2File(objectKey)
 }
 
+func (a *App) RestoreFromR2FileWithPassword(objectKey string, password string) (map[string]interface{}, error) {
+	return a.configManager.RestoreFromR2FileWithPassword(objectKey, password)
+}
+
 func (a *App) SyncFromR2() (map[string]interface{}, error) {
 	return a.configManager.SyncFromR2()
 }
@@ -970,6 +986,15 @@ func (a *App) GetAutoSyncEnabled() bool {
 
 func (a *App) SetAutoSyncEnabled(enabled bool) error {
 	return a.configManager.SetAutoSyncEnabled(enabled)
+}
+
+// RecoveryPassword methods
+func (a *App) GetRecoveryPassword() string {
+	return a.configManager.GetRecoveryPassword()
+}
+
+func (a *App) SetRecoveryPassword(password string) error {
+	return a.configManager.SetRecoveryPassword(password)
 }
 
 func (a *App) GetProxyNodes() []ai.AIProxyNode {
@@ -1037,6 +1062,10 @@ func (a *App) RestoreFromFTPFile(filename string) (map[string]interface{}, error
 	return a.configManager.RestoreFromFTPFile(filename)
 }
 
+func (a *App) RestoreFromFTPFileWithPassword(filename string, password string) (map[string]interface{}, error) {
+	return a.configManager.RestoreFromFTPFileWithPassword(filename, password)
+}
+
 func (a *App) SyncFromFTP() (map[string]interface{}, error) {
 	return a.configManager.SyncFromFTP()
 }
@@ -1077,6 +1106,10 @@ func (a *App) ListSFTPBackups() ([]map[string]interface{}, error) {
 
 func (a *App) RestoreFromSFTPFile(filename string) (map[string]interface{}, error) {
 	return a.configManager.RestoreFromSFTPFile(filename)
+}
+
+func (a *App) RestoreFromSFTPFileWithPassword(filename string, password string) (map[string]interface{}, error) {
+	return a.configManager.RestoreFromSFTPFileWithPassword(filename, password)
 }
 
 func (a *App) SyncFromSFTP() (map[string]interface{}, error) {

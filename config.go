@@ -96,6 +96,7 @@ type ConfigManager struct {
 	autoSyncEnabledFile     string
 	syncTimeFile            string // 本地快照时间戳文件
 	lastSyncFile            string // 上次同步时间戳文件（仅在同步完成时更新）
+	recoveryPasswordFile    string // 恢复密码（加密存储）
 	quickCmdFile            string
 	paramHistFile           string
 	fileManagerSettingsFile string
@@ -179,6 +180,7 @@ func NewConfigManager() *ConfigManager {
 		autoSyncEnabledFile:     filepath.Join(dir, "auto_sync_enabled.json"),
 		syncTimeFile:            filepath.Join(dir, "snapshot_time"),
 		lastSyncFile:            filepath.Join(dir, "last_sync_time"),
+		recoveryPasswordFile:    filepath.Join(dir, "recovery_password"),
 		quickCmdFile:            quickCmdFile,
 		paramHistFile:           paramHistFile,
 		fileManagerSettingsFile: fileManagerSettingsFile,
@@ -1025,7 +1027,13 @@ func (c *ConfigManager) SyncFromWebdav() (map[string]interface{}, error) {
 }
 
 func (c *ConfigManager) RestoreFromWebdavFile(filename string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newWebdavStorage, filename)
+	return c.restoreFrom(c.newWebdavStorage, filename, c.getRecoveryPasswordKey())
+}
+
+// RestoreFromWebdavFileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
+func (c *ConfigManager) RestoreFromWebdavFileWithPassword(filename string, password string) (map[string]interface{}, error) {
+	key := sha256Key(password)
+	return c.restoreFrom(c.newWebdavStorage, filename, key)
 }
 
 // ─── 同步模式配置 ─────────────────────────────────────────
@@ -1072,6 +1080,45 @@ func (c *ConfigManager) SetAutoSyncEnabled(enabled bool) error {
 	defer c.mu.Unlock()
 	data, _ := json.Marshal(enabled)
 	return atomicWriteFile(c.autoSyncEnabledFile, data, 0600)
+}
+
+// ─── 恢复密码 ─────────────────────────────────────────────
+
+// GetRecoveryPassword 获取恢复密码（明文，供前端回显"已设置"状态）；未设置返回空串。
+func (c *ConfigManager) GetRecoveryPassword() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	data, err := os.ReadFile(c.recoveryPasswordFile)
+	if err != nil {
+		return ""
+	}
+	return c.decrypt(string(data))
+}
+
+// SetRecoveryPassword 设置恢复密码；空串则清除。
+// 密码用主密钥加密后原子写入。
+func (c *ConfigManager) SetRecoveryPassword(password string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if strings.TrimSpace(password) == "" {
+		_ = os.Remove(c.recoveryPasswordFile)
+		return nil
+	}
+	enc, err := c.encrypt(password)
+	if err != nil {
+		return fmt.Errorf("加密恢复密码失败: %w", err)
+	}
+	return atomicWriteFile(c.recoveryPasswordFile, []byte(enc), 0600)
+}
+
+// getRecoveryPasswordKey 返回恢复密码的 SHA-256 派生密钥；未设置返回 nil。
+func (c *ConfigManager) getRecoveryPasswordKey() []byte {
+	pw := c.GetRecoveryPassword()
+	if pw == "" {
+		return nil
+	}
+	h := sha256.Sum256([]byte(pw))
+	return h[:]
 }
 
 func sanitizeChmodDialogMode(mode string) string {

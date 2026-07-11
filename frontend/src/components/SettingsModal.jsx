@@ -84,6 +84,7 @@ const PROVIDERS = {
     backup: () => AppGo.BackupToWebdav(),
     list: () => AppGo.ListWebdavBackups(),
     restore: (name) => AppGo.RestoreFromWebdavFile(name),
+    restoreWithPassword: (name, pw) => AppGo.RestoreFromWebdavFileWithPassword(name, pw),
     getConfig: () => AppGo.GetWebdavConfig(),
     isConfigured: (f) => !!f.username,
     applyConfig: (data) => ({ url: data.url || '', username: data.username || '', password: data.password || '', remotePath: data.remotePath || '/Lumin/', maxBackups: data.maxBackups || '' }),
@@ -108,6 +109,7 @@ const PROVIDERS = {
     backup: () => AppGo.BackupToR2(),
     list: () => AppGo.ListR2Backups(),
     restore: (name) => AppGo.RestoreFromR2File(name),
+    restoreWithPassword: (name, pw) => AppGo.RestoreFromR2FileWithPassword(name, pw),
     getConfig: () => AppGo.GetR2Config(),
     isConfigured: (f) => !!(f.bucket && f.endpoint),
     applyConfig: (data) => ({ accessKeyId: data.accessKeyId || '', secretAccessKey: data.secretAccessKey || '', bucket: data.bucket || '', endpoint: data.endpoint || '', region: data.region || 'auto', prefix: data.prefix || 'Lumin/', maxBackups: data.maxBackups || '' }),
@@ -132,6 +134,7 @@ const PROVIDERS = {
     backup: () => AppGo.BackupToFTP(),
     list: () => AppGo.ListFTPBackups(),
     restore: (name) => AppGo.RestoreFromFTPFile(name),
+    restoreWithPassword: (name, pw) => AppGo.RestoreFromFTPFileWithPassword(name, pw),
     getConfig: () => AppGo.GetFTPConfig(),
     isConfigured: (f) => !!f.host,
     applyConfig: (data) => ({ host: data.host || '', port: data.port || 21, username: data.username || '', password: data.password || '', remoteDir: data.remoteDir || '/Lumin/', maxBackups: data.maxBackups || '' }),
@@ -157,6 +160,7 @@ const PROVIDERS = {
     backup: () => AppGo.BackupToSFTP(),
     list: () => AppGo.ListSFTPBackups(),
     restore: (name) => AppGo.RestoreFromSFTPFile(name),
+    restoreWithPassword: (name, pw) => AppGo.RestoreFromSFTPFileWithPassword(name, pw),
     getConfig: () => AppGo.GetSFTPConfig(),
     isConfigured: (f) => !!f.host,
     applyConfig: (data) => ({ host: data.host || '', port: data.port || 22, username: data.username || '', password: data.password || '', authMethod: data.authMethod || 'password', privateKey: data.privateKey || '', remoteDir: data.remoteDir || '/Lumin/', maxBackups: data.maxBackups || '' }),
@@ -254,6 +258,14 @@ export default function SettingsModal({
   const [loadingBackups, setLoadingBackups] = useState(false);
   const [testResult, setTestResult] = useState(null); // null | 'ok' | 'fail'
   const [lastBackup, setLastBackup] = useState(null);
+
+  // Recovery password (for cloud backup restore fallback)
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryPasswordEditing, setRecoveryPasswordEditing] = useState(false);
+  const [recoveryPasswordInput, setRecoveryPasswordInput] = useState('');
+  // 恢复失败时的密码兜底
+  const [restoreWithPassword, setRestoreWithPassword] = useState(false);
+  const [restorePasswordInput, setRestorePasswordInput] = useState('');
 
   // Sync provider selection
   const [syncProvider, setSyncProvider] = useState('webdav');
@@ -667,6 +679,11 @@ export default function SettingsModal({
       })
       .catch(() => {});
 
+    // Load recovery password status
+    AppGo.GetRecoveryPassword()
+      .then((pw) => { if (!cancelled && pw) setRecoveryPassword(pw); })
+      .catch(() => {});
+
     Promise.resolve(window?.go?.main?.App?.GetProgramDirectory?.())
       .then((dir) => {
         if (!cancelled && dir) setProgramDirectory(dir);
@@ -821,12 +838,16 @@ export default function SettingsModal({
     }
   };
 
-  const doRestore = async () => {
+  const doRestore = async (password) => {
     if (!selectedBackup || !restoreProvider) return;
     setRestoring(true);
     try {
       const p = PROVIDERS[restoreProvider];
-      await p.restore(selectedBackup);
+      if (password && p.restoreWithPassword) {
+        await p.restoreWithPassword(selectedBackup, password);
+      } else {
+        await p.restore(selectedBackup);
+      }
       if (syncMode === 'all') {
         await AppGo.SyncAllProviders();
       } else {
@@ -835,14 +856,28 @@ export default function SettingsModal({
       addToast($t('恢复成功'), 'success');
       onRestored?.();
       setConfirmRestore(false);
+      setRestoreWithPassword(false);
+      setRestorePasswordInput('');
     } catch (err) {
       setFailedRestoreProviders(prev => [...new Set([...prev, restoreProvider])]);
-      addToast($t('恢复失败') + `: ${err}，` + $t('请重新选择'), 'error');
-      setConfirmRestore(false);
-      if (syncMode === 'all') setConfirmRestoreProvider(true);
+      const errStr = String(err);
+      if (errStr.includes('解密失败') && !password) {
+        // 解密失败 → 弹密码输入框兜底
+        setConfirmRestore(false);
+        setRestoreWithPassword(true);
+      } else {
+        addToast($t('恢复失败') + `: ${err}，` + $t('请重新选择'), 'error');
+        setConfirmRestore(false);
+        setRestoreWithPassword(false);
+        if (syncMode === 'all') setConfirmRestoreProvider(true);
+      }
     } finally {
       setRestoring(false);
     }
+  };
+
+  const doRestoreWithPassword = async () => {
+    await doRestore(restorePasswordInput);
   };
 
   const handleSync = async () => {
@@ -877,6 +912,29 @@ export default function SettingsModal({
   const handleTerminalColorThemeChange = (key) => { setTerminalColorTheme(key); localStorage.setItem('terminalColorTheme', key); window.dispatchEvent(new CustomEvent('terminal-theme-changed', { detail: key })); };
   const handleSyncModeChange = async (mode) => { setSyncMode(mode); try { await AppGo.SetSyncMode(mode); } catch (_) {} };
   const handleAutoSyncEnabledChange = async (enabled) => { setAutoSyncEnabled(enabled); try { await AppGo.SetAutoSyncEnabled(enabled); } catch (_) {} };
+
+  const handleSaveRecoveryPassword = async () => {
+    try {
+      await AppGo.SetRecoveryPassword(recoveryPasswordInput);
+      setRecoveryPassword(recoveryPasswordInput);
+      setRecoveryPasswordEditing(false);
+      setRecoveryPasswordInput('');
+      addToast($t('恢复密码已保存'), 'success');
+    } catch (e) {
+      addToast($t('保存恢复密码失败') + ': ' + e, 'error');
+    }
+  };
+  const handleClearRecoveryPassword = async () => {
+    try {
+      await AppGo.SetRecoveryPassword('');
+      setRecoveryPassword('');
+      setRecoveryPasswordEditing(false);
+      setRecoveryPasswordInput('');
+      addToast($t('恢复密码已清除'), 'success');
+    } catch (e) {
+      addToast($t('清除恢复密码失败') + ': ' + e, 'error');
+    }
+  };
 
   const isAnyConfigured = isConfigured || r2Configured || ftpConfigured || sftpConfigured;
 
@@ -1088,6 +1146,13 @@ export default function SettingsModal({
                 onRestore={handleRestore}
                 isAnyConfigured={isConfigured || r2Configured || ftpConfigured || sftpConfigured}
                 addToast={addToast}
+                recoveryPassword={recoveryPassword}
+                recoveryPasswordEditing={recoveryPasswordEditing}
+                setRecoveryPasswordEditing={setRecoveryPasswordEditing}
+                recoveryPasswordInput={recoveryPasswordInput}
+                setRecoveryPasswordInput={setRecoveryPasswordInput}
+                onSaveRecoveryPassword={handleSaveRecoveryPassword}
+                onClearRecoveryPassword={handleClearRecoveryPassword}
               />
             )}
 
@@ -1158,8 +1223,35 @@ export default function SettingsModal({
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" style={{ padding: '0 20px' }} onClick={() => setConfirmRestore(false)}>{$t('取消')}</button>
-              <button className="btn" style={{ backgroundColor: 'var(--danger)', color: '#fff', border: 'none', padding: '0 20px' }} onClick={doRestore} disabled={!selectedBackup || restoring}>
+              <button className="btn" style={{ backgroundColor: 'var(--danger)', color: '#fff', border: 'none', padding: '0 20px' }} onClick={() => doRestore()} disabled={!selectedBackup || restoring}>
                 {restoring ? $t('恢复中...') : $t('确定恢复')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 恢复失败 → 输入密码重试 */}
+      {restoreWithPassword && (
+        <div className="modal-overlay" style={{ zIndex: Z.MODAL }}>
+          <div className="glass-card" style={{ width: 420, padding: 24, animation: 'scaleIn 0.18s ease' }}>
+            <div style={{ fontSize: 18, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 'bold' }}>{$t('输入恢复密码')}</div>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
+              {$t('常规密钥解密失败。如果此备份是用恢复密码加密的，请输入恢复密码重试：')}
+            </div>
+            <input
+              className="input"
+              type="password"
+              placeholder={$t('恢复密码')}
+              value={restorePasswordInput}
+              onChange={(e) => setRestorePasswordInput(e.target.value)}
+              autoFocus
+              style={{ width: '100%', marginBottom: 16 }}
+            />
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => { setRestoreWithPassword(false); setRestorePasswordInput(''); }}>{$t('取消')}</button>
+              <button className="btn btn-primary" onClick={doRestoreWithPassword} disabled={!restorePasswordInput.trim() || restoring}>
+                {restoring ? $t('恢复中...') : $t('用密码恢复')}
               </button>
             </div>
           </div>

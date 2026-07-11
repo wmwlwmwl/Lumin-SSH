@@ -3559,13 +3559,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   // ── 节点导入/导出（数据管理） ───────────────────────────────
   const [showImportExportDialog, setShowImportExportDialog] = useState(false);
   const [ieBusy, setIeBusy] = useState(false);
-  const [hasCloudProvider, setHasCloudProvider] = useState(false);
+  const [hasRecoveryPassword, setHasRecoveryPassword] = useState(false);
 
   const handleOpenImportExport = useCallback(async () => {
     try {
-      const configured = await AppGo.HasCloudSyncConfigured();
-      setHasCloudProvider(!!configured);
-    } catch { setHasCloudProvider(false); }
+      const configured = await AppGo.HasRecoveryPassword();
+      setHasRecoveryPassword(!!configured);
+    } catch { setHasRecoveryPassword(false); }
     setShowImportExportDialog(true);
   }, []);
 
@@ -3598,7 +3598,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       }
       if (!filePath) { return; } // 用户取消文件选择，静默
 
-      // 尝试导入（无密码）；失败若是 needPassword 则弹密码框重试
+      // 尝试导入：先不传自定义密码，让后端自动尝试明文、恢复密码、旧版云同步密钥；失败才弹窗输入自定义密码
       const doImport = async (pwd) => {
         const result = await AppGo.ImportConnections(filePath, pwd);
         // 后端取消时返回空 ImportResult（全 0），静默
@@ -3615,7 +3615,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         void loadServers();
       };
 
-      // 2. 首次尝试（无密码）
+      // 2. 首次自动尝试（不传自定义密码）
       try {
         const outcome = await doImport('');
         if (outcome.silent) { return; }
@@ -5019,7 +5019,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           onExport={handleExport}
           onImport={handleImport}
           onDownloadTemplate={handleDownloadTemplate}
-          hasCloudProvider={hasCloudProvider}
+          hasRecoveryPassword={hasRecoveryPassword}
           busy={ieBusy}
         />
       )}

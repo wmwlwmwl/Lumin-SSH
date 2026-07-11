@@ -64,22 +64,36 @@ type SyncSnapshot struct {
 
 // ─── 共享解密/解析 ─────────────────────────────────────────
 
-// decryptAndParseSnapshot 解密并解析为完整快照（优先新格式，回退旧格式）
-func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte) (*SyncSnapshot, error) {
-	decrypted := c.decryptWithKey(data, key)
+// decryptAndParseSnapshot 解析同步备份：先试明文 JSON，失败后按 extraKey（恢复密码）→ key（旧版后端派生密钥）解密。
+// extraKey 通常为恢复密码派生密钥，可为 nil；key 仅用于旧版云端 .enc 兼容。
+func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte, extraKey []byte) (*SyncSnapshot, error) {
+	// ponytail: 先试明文（新默认），不行再按密文解密
+	var snap SyncSnapshot
+	if err := json.Unmarshal([]byte(data), &snap); err == nil && snap.Connections != nil {
+		return &snap, nil
+	}
+	var conns []Connection
+	if err := json.Unmarshal([]byte(data), &conns); err == nil && len(conns) > 0 {
+		return &SyncSnapshot{Connections: conns}, nil
+	}
+	// 密文路径：extraKey（恢复密码）→ key（旧版后端派生密钥兼容）
+	decrypted := ""
+	if extraKey != nil {
+		decrypted = c.decryptWithKey(data, extraKey)
+	}
+	// TODO(deprecated, 预计 v1.2.0+ 移除): 以下为旧版后端派生密钥兼容回退。
+	// 新版不再产生用后端派生密钥加密的云端备份；等用户充分升级后删除此分支。
+	if decrypted == "" && key != nil {
+		decrypted = c.decryptWithKey(data, key)
+	}
 	if decrypted == "" {
-		decrypted = c.decryptWithKey(data, c.key)
-		if decrypted == "" {
-			return nil, fmt.Errorf("解密失败：如果这是旧版本产生的备份，且您之前卸载清理了本地缓存(lumin.key)，则受 AES-256 高强加密保护，资料已永久无法恢复。")
-		}
+		return nil, fmt.Errorf("解密失败：如果这是旧版本产生的备份，且云端凭据已变更，则受 AES-256 高强加密保护，资料已永久无法恢复。")
 	}
 	// 尝试新格式（快照）
-	var snap SyncSnapshot
 	if err := json.Unmarshal([]byte(decrypted), &snap); err == nil && snap.Connections != nil {
 		return &snap, nil
 	}
 	// 回退旧格式（纯连接列表）
-	var conns []Connection
 	if err := json.Unmarshal([]byte(decrypted), &conns); err != nil {
 		return nil, fmt.Errorf("解析备份文件出错：%w", err)
 	}
@@ -367,7 +381,7 @@ func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error
 			log.Printf("fetchLatestBackup: read %s: %v (skipping)", name, err)
 			continue
 		}
-		parsed, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey())
+		parsed, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), c.getRecoveryPasswordKey()) // key 仅为旧版 .enc 兼容；新版走明文或恢复密码
 		if err != nil {
 			log.Printf("fetchLatestBackup: decrypt %s: %v (skipping)", name, err)
 			continue
@@ -394,7 +408,11 @@ func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error
 	return snap, nil
 }
 
-// backupConnections 加密本地所有可同步数据并上传到远端，同时清理超出 maxBackups 的旧备份
+// backupConnections 上传本地所有可同步数据到远端，同时清理超出 maxBackups 的旧备份。
+// 加密策略（与导出一致）：设置了恢复密码则用 sha256(password) 加密上传 .enc；否则明文 JSON 上传 .json。
+//
+// 历史兼容：旧版用后端派生密钥 (s.EncryptKey()) 加密上传 .enc，新版不再产生此类备份，
+// 但 decryptAndParseSnapshot 仍保留解密兼容（见其 TODO 注释）。
 func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[string]interface{}, error) {
 	aiGlobalSettings := c.GetAIGlobalSettings()
 	aiGlobalSettings.ProxyNodes = nil
@@ -411,15 +429,23 @@ func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[
 	if err != nil {
 		return nil, fmt.Errorf("marshal snapshot: %w", err)
 	}
-	encrypted, err := c.encryptWithKey(string(data), s.EncryptKey())
-	if err != nil {
-		return nil, fmt.Errorf("encrypt snapshot: %w", err)
-	}
 
-	// 文件名精度到毫秒 + 时区，避免服务器 ModTime 时区不同导致显示错误
 	timestamp := time.Now().Format("20060102_150405.000_-0700")
-	fileName := fmt.Sprintf("connections_backup_%s.enc", timestamp)
-	if err := s.WriteFile(fileName, []byte(encrypted)); err != nil {
+	// ponytail: 有恢复密码才加密，默认明文；与导出入口径一致
+	var payload []byte
+	var fileName string
+	if rpKey := c.getRecoveryPasswordKey(); rpKey != nil {
+		encrypted, err := c.encryptWithKey(string(data), rpKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt snapshot: %w", err)
+		}
+		payload = []byte(encrypted)
+		fileName = fmt.Sprintf("connections_backup_%s.enc", timestamp)
+	} else {
+		payload = data
+		fileName = fmt.Sprintf("connections_backup_%s.json", timestamp)
+	}
+	if err := s.WriteFile(fileName, payload); err != nil {
 		return nil, err
 	}
 
@@ -473,11 +499,12 @@ func (c *ConfigManager) listBackupFiles(s RemoteStorage) ([]map[string]interface
 	var backups []map[string]interface{}
 	for _, f := range files {
 		if !f.IsDir && strings.HasPrefix(f.Name, "connections_backup_") {
-			// 从文件名解析时间：优先新格式（带时区），fallback 旧格式（无时区用本地时间）
+			// 从文件名解析时间：优先新格式（带时区），fallback 旧格式（无时区用本地时间），支持 .enc/.json
 			timeStr := ""
-			if t, err := time.Parse("connections_backup_20060102_150405.000_-0700.enc", f.Name); err == nil {
+			base := strings.TrimSuffix(strings.TrimSuffix(f.Name, ".enc"), ".json")
+			if t, err := time.Parse("connections_backup_20060102_150405.000_-0700", base); err == nil {
 				timeStr = t.Local().Format("2006-01-02 15:04:05 -0700")
-			} else if t, err := time.ParseInLocation("connections_backup_20060102_150405.000.enc", f.Name, time.Local); err == nil {
+			} else if t, err := time.ParseInLocation("connections_backup_20060102_150405.000", base, time.Local); err == nil {
 				timeStr = t.Format("2006-01-02 15:04:05 -0700")
 			} else {
 				timeStr = f.ModTime.In(time.Local).Format("2006-01-02 15:04:05 -0700")
@@ -512,7 +539,8 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage) (map[string]interface{
 	// 加锁保存并失效缓存（saveConnectionsFile 要求调用方持有 c.mu）
 	c.mu.Lock()
 	if err := c.saveConnectionsFile(deduped); err != nil {
-		log.Printf("[syncFromProvider] failed to save connections: %v", err)
+		c.mu.Unlock()
+		return nil, fmt.Errorf("保存连接失败: %w", err)
 	}
 	c.connCacheDirty = true
 
@@ -522,7 +550,8 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage) (map[string]interface{
 		localCreds := c.getCredentialsLocked()
 		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime)
 		if err := c.saveCredentialsFile(mergedCreds); err != nil {
-			log.Printf("[syncFromProvider] failed to save credentials: %v", err)
+			c.mu.Unlock()
+			return nil, fmt.Errorf("保存凭据失败: %w", err)
 		}
 		c.credCacheDirty = true
 	}
@@ -635,16 +664,25 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry) (map[string]in
 		mergedProxyNodes = c.mergeAIProxyNodes(mergedProxyNodes, remoteSnap.ProxyNodes, lastSyncTime)
 	}
 
+	if downloaded == 0 && len(errs) > 0 {
+		return nil, errors.New(strings.Join(errs, "; "))
+	}
+
 	c.mu.Lock()
 	if err := c.saveConnectionsFile(mergedConns); err != nil {
-		log.Printf("[syncAllProviders] save connections: %v", err)
+		c.mu.Unlock()
+		return nil, fmt.Errorf("保存连接失败: %w", err)
 	}
 	c.connCacheDirty = true
 	if err := c.saveCredentialsFile(mergedCreds); err != nil {
-		log.Printf("[syncAllProviders] save credentials: %v", err)
+		c.mu.Unlock()
+		return nil, fmt.Errorf("保存凭据失败: %w", err)
 	}
 	c.credCacheDirty = true
-	atomicWriteFile(c.quickCmdFile, []byte(mergedQuickCmds), 0600)
+	if err := atomicWriteFile(c.quickCmdFile, []byte(mergedQuickCmds), 0600); err != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("保存快捷命令失败: %w", err)
+	}
 	c.mu.Unlock()
 	if err := c.SaveAIProviderRegistry(ai.AIProviderRegistry{Providers: mergedAIProviders}); err != nil {
 		log.Printf("[syncAllProviders] save AI providers: %v", err)
@@ -873,7 +911,8 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 		}
 	}
 
-	// host:port+username 去重（按 LastModified 保留最新的）
+	// host:port+username 去重（按 LastModified 保留最新的）。
+	// 业务上同一账号同一入口视为同一节点，避免多端新增产生重复节点。
 	type hpKey struct {
 		host string
 		port int
@@ -1462,13 +1501,14 @@ func (c *ConfigManager) restoreSnapshotToLocal(snap *SyncSnapshot) {
 // restoreFromProvider 是 RestoreFromXxxFile 的共享实现：
 // 读取远端文件 → 解密解析快照 → 写回本地。
 // 统一用 filepath.Base 防止路径穿越。
-func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, maxBackups int) error {
+// extraKey 通常为恢复密码派生密钥，可为 nil。
+func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, maxBackups int, extraKey []byte) error {
 	filename = filepath.Base(filename) // 防止路径穿越
 	data, err := s.ReadFile(filename)
 	if err != nil {
 		return err
 	}
-	snap, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey())
+	snap, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), extraKey) // s.EncryptKey() 仅为旧版 .enc 兼容
 	if err != nil {
 		return err
 	}
@@ -1534,7 +1574,8 @@ func (c *ConfigManager) syncFrom(storageFn func() (RemoteStorage, int, error)) (
 }
 
 // restoreFrom 创建存储、恢复、关闭连接
-func (c *ConfigManager) restoreFrom(storageFn func() (RemoteStorage, int, error), filename string) (map[string]interface{}, error) {
+// extraKey 通常为恢复密码派生密钥，可为 nil。
+func (c *ConfigManager) restoreFrom(storageFn func() (RemoteStorage, int, error), filename string, extraKey []byte) (map[string]interface{}, error) {
 	s, max, err := storageFn()
 	if err != nil {
 		return nil, err
@@ -1542,5 +1583,5 @@ func (c *ConfigManager) restoreFrom(storageFn func() (RemoteStorage, int, error)
 	if cl, ok := s.(storageCloser); ok {
 		defer cl.Close()
 	}
-	return restoreResult(c.restoreFromProvider(s, filename, max))
+	return restoreResult(c.restoreFromProvider(s, filename, max, extraKey))
 }

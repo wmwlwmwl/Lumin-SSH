@@ -1,4 +1,4 @@
-import { BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, RefreshCw, ArrowUpDown } from 'lucide-react';
+import { BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, RefreshCw, Database } from 'lucide-react';
 import { useTranslation } from '../i18n.js';
 import AddServerModal from './AddServerModal.jsx';
 import ServerList from './ServerList.jsx';
@@ -117,11 +117,13 @@ export default function Dashboard({
               {/* 数据管理（导入/导出） */}
               <Tiptop text={t('数据管理')} placement="bottom">
                 <button
-                  className="btn btn-ghost btn-icon"
+                  className="btn btn-ghost"
                   onClick={onOpenImportExport}
                   aria-label={t('数据管理')}
+                  style={{ height: 30, padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--border)' }}
                 >
-                  <ArrowUpDown size={14} />
+                  <Database size={14} />
+                  <span style={{ fontSize: 12 }}>{t('数据管理')}</span>
                 </button>
               </Tiptop>
             </div>
