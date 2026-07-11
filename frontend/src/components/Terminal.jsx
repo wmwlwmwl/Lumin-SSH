@@ -1,10 +1,20 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Copy, Clipboard, Trash2, CheckSquare, Play, Clock, X, Zap } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
+import { EventsOn } from '../../wailsjs/runtime/runtime.js';
 import { getModKey, formatShortcut } from '../utils/platform.js';
 import { clampMenuPosition } from '../utils/menuPosition.js';
+import {
+  buildPathAutocompleteContext,
+  buildStaticAutocompleteItems,
+  createCommandAutocompleteState,
+  loadPathAutocompleteItems,
+  normalizeHistoryCommands,
+  normalizeQuickCommandItems,
+  normalizeRemoteAbsolutePath,
+} from '../utils/terminalCommandAutocomplete.js';
 import QuickCommands from './QuickCommands.jsx';
 import Tiptop from './Tiptop.jsx';
 import '@xterm/xterm/css/xterm.css';
@@ -133,6 +143,22 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const historyPopupRef                       = useRef(null);
   const pendingCmdRef                         = useRef('');
   const awaitingPasswordRef                   = useRef(false); // 检测到密码提示后，下一行输入不记入命令历史
+  const [terminalCwd, setTerminalCwd]         = useState('/');
+  const [commandAutocomplete, setCommandAutocomplete] = useState(createCommandAutocompleteState());
+  const commandAutocompleteRequestRef         = useRef(0);
+  const commandAutocompleteFocusedRef         = useRef(false);
+  const commandAutocompleteDebounceRef        = useRef(null);
+  const commandAutocompleteBlurTimerRef       = useRef(null);
+  const commandAutocompleteDataRef            = useRef({
+    historyServerId: '',
+    serverHistory: [],
+    globalHistory: [],
+    quickCommands: [],
+    serverLoaded: false,
+    globalLoaded: false,
+    quickLoaded: false,
+  });
+  const commandAutocompleteListRef            = useRef(null);
 
   // ── 点击快捷命令弹窗外关闭（document 级 mousedown，不阻塞 click） ──
   useEffect(() => {
@@ -1118,6 +1144,274 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     }
   };
 
+  const clearCommandAutocompleteDebounce = useCallback(() => {
+    if (commandAutocompleteDebounceRef.current) {
+      clearTimeout(commandAutocompleteDebounceRef.current);
+      commandAutocompleteDebounceRef.current = null;
+    }
+  }, []);
+
+  const clearCommandAutocompleteBlurTimer = useCallback(() => {
+    if (commandAutocompleteBlurTimerRef.current) {
+      clearTimeout(commandAutocompleteBlurTimerRef.current);
+      commandAutocompleteBlurTimerRef.current = null;
+    }
+  }, []);
+
+  const closeCommandAutocomplete = useCallback(() => {
+    commandAutocompleteRequestRef.current += 1;
+    clearCommandAutocompleteDebounce();
+    clearCommandAutocompleteBlurTimer();
+    setCommandAutocomplete(createCommandAutocompleteState());
+  }, [clearCommandAutocompleteBlurTimer, clearCommandAutocompleteDebounce]);
+
+  const ensureCommandAutocompleteData = useCallback(async () => {
+    const cache = commandAutocompleteDataRef.current;
+    const normalizedHistoryId = String(historyServerId || '').trim();
+
+    if (cache.historyServerId !== normalizedHistoryId) {
+      cache.historyServerId = normalizedHistoryId;
+      cache.serverHistory = [];
+      cache.serverLoaded = false;
+    }
+
+    if (!normalizedHistoryId) {
+      cache.serverHistory = [];
+      cache.serverLoaded = true;
+    }
+
+    const tasks = [];
+
+    if (!cache.quickLoaded) {
+      tasks.push(
+        AppGo.GetQuickCommands()
+          .then((raw) => {
+            cache.quickCommands = normalizeQuickCommandItems(raw);
+            cache.quickLoaded = true;
+          })
+          .catch(() => {
+            cache.quickCommands = [];
+            cache.quickLoaded = true;
+          }),
+      );
+    }
+
+    if (!cache.globalLoaded) {
+      tasks.push(
+        AppGo.GetGlobalCommandHistory()
+          .then((raw) => {
+            cache.globalHistory = normalizeHistoryCommands(raw);
+            cache.globalLoaded = true;
+          })
+          .catch(() => {
+            cache.globalHistory = [];
+            cache.globalLoaded = true;
+          }),
+      );
+    }
+
+    if (normalizedHistoryId && !cache.serverLoaded) {
+      tasks.push(
+        AppGo.GetCommandHistory(normalizedHistoryId)
+          .then((raw) => {
+            cache.serverHistory = normalizeHistoryCommands(raw);
+            cache.serverLoaded = true;
+          })
+          .catch(() => {
+            cache.serverHistory = [];
+            cache.serverLoaded = true;
+          }),
+      );
+    }
+
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
+    }
+
+    return cache;
+  }, [historyServerId]);
+
+  const loadCommandAutocompleteSuggestions = useCallback(async (nextValue) => {
+    if (!commandAutocompleteFocusedRef.current || showHistory || showCommands) {
+      closeCommandAutocomplete();
+      return [];
+    }
+
+    const normalizedValue = String(nextValue || '');
+    if (!normalizedValue.trim()) {
+      closeCommandAutocomplete();
+      return [];
+    }
+
+    const cursorPosition = cmdInputRef.current ? (cmdInputRef.current.selectionStart ?? normalizedValue.length) : normalizedValue.length
+    const requestId = commandAutocompleteRequestRef.current + 1;
+    commandAutocompleteRequestRef.current = requestId;
+
+    const cache = await ensureCommandAutocompleteData();
+    if (commandAutocompleteRequestRef.current !== requestId) {
+      return [];
+    }
+
+    const staticItems = buildStaticAutocompleteItems(normalizedValue, cache, {
+      cursorPosition,
+      currentCwd: terminalCwd,
+    })
+    const shouldLoadPathItems = Boolean(buildPathAutocompleteContext(normalizedValue, terminalCwd, { cursorPosition }))
+
+    if (!shouldLoadPathItems) {
+      setCommandAutocomplete(createCommandAutocompleteState({
+        open: staticItems.length > 0,
+        items: staticItems,
+        selectedIndex: staticItems.length > 0 ? 0 : -1,
+      }));
+      return staticItems;
+    }
+
+    setCommandAutocomplete(createCommandAutocompleteState({
+      open: true,
+      loading: true,
+      items: staticItems,
+      selectedIndex: staticItems.length > 0 ? 0 : -1,
+    }));
+
+    const pathItems = await loadPathAutocompleteItems({
+      sessionId,
+      inputValue: normalizedValue,
+      currentCwd: terminalCwd,
+      cursorPosition,
+      listDir: (activeSessionId, remotePath) => AppGo.ListDir(activeSessionId, remotePath),
+    })
+    if (commandAutocompleteRequestRef.current !== requestId) {
+      return [];
+    }
+
+    const resolvedItems = [...pathItems, ...staticItems].slice(0, 10)
+    setCommandAutocomplete(createCommandAutocompleteState({
+      open: resolvedItems.length > 0,
+      items: resolvedItems,
+      loading: false,
+      selectedIndex: resolvedItems.length > 0 ? 0 : -1,
+    }));
+    return resolvedItems;
+  }, [closeCommandAutocomplete, ensureCommandAutocompleteData, sessionId, showCommands, showHistory, terminalCwd]);
+
+  const scheduleCommandAutocompleteSuggestions = useCallback((nextValue) => {
+    clearCommandAutocompleteDebounce();
+    commandAutocompleteDebounceRef.current = setTimeout(() => {
+      void loadCommandAutocompleteSuggestions(nextValue);
+    }, 140);
+  }, [clearCommandAutocompleteDebounce, loadCommandAutocompleteSuggestions]);
+
+  const applyCommandAutocompleteItem = useCallback((item) => {
+    if (!item || !item.value) {
+      return;
+    }
+    const nextValue = String(item.value);
+    setCmdInput(nextValue);
+    closeCommandAutocomplete();
+    requestAnimationFrame(() => {
+      if (!cmdInputRef.current) {
+        return;
+      }
+      cmdInputRef.current.focus();
+      cmdInputRef.current.setSelectionRange(nextValue.length, nextValue.length);
+      commandAutocompleteFocusedRef.current = true;
+      void loadCommandAutocompleteSuggestions(nextValue);
+    });
+  }, [closeCommandAutocomplete, loadCommandAutocompleteSuggestions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTerminalCwd('/');
+
+    if (!sessionId) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (typeof AppGo.GetTerminalCwd === 'function') {
+      AppGo.GetTerminalCwd(sessionId)
+        .then((cwd) => {
+          if (!cancelled) {
+            setTerminalCwd(normalizeRemoteAbsolutePath(cwd) || '/');
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setTerminalCwd('/');
+          }
+        });
+    }
+
+    const off = EventsOn(`ssh-terminal-cwd-${sessionId}`, (cwd) => {
+      if (cancelled) {
+        return;
+      }
+      const normalizedCwd = normalizeRemoteAbsolutePath(cwd);
+      if (normalizedCwd) {
+        setTerminalCwd(normalizedCwd);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      off?.();
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    const invalidate = () => {
+      const cache = commandAutocompleteDataRef.current;
+      cache.serverLoaded = false;
+      cache.globalLoaded = false;
+    };
+
+    window.addEventListener('ssh-command-history', invalidate);
+    window.addEventListener('ssh-history-cleared', invalidate);
+    return () => {
+      window.removeEventListener('ssh-command-history', invalidate);
+      window.removeEventListener('ssh-history-cleared', invalidate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showCommands) {
+      commandAutocompleteDataRef.current.quickLoaded = false;
+    }
+  }, [showCommands]);
+
+  useEffect(() => {
+    if (showHistory || showCommands) {
+      closeCommandAutocomplete();
+    }
+  }, [closeCommandAutocomplete, showCommands, showHistory]);
+
+  useEffect(() => {
+    if (!cmdInput.trim()) {
+      closeCommandAutocomplete();
+    }
+  }, [closeCommandAutocomplete, cmdInput]);
+
+  useEffect(() => () => {
+    clearCommandAutocompleteDebounce();
+    clearCommandAutocompleteBlurTimer();
+  }, [clearCommandAutocompleteBlurTimer, clearCommandAutocompleteDebounce]);
+
+  useLayoutEffect(() => {
+    if (!commandAutocomplete.open || !commandAutocompleteListRef.current || commandAutocomplete.selectedIndex < 0) {
+      return;
+    }
+    const selectedNode = commandAutocompleteListRef.current.querySelector('[data-command-autocomplete-selected="true"]');
+    if (!selectedNode || typeof selectedNode.scrollIntoView !== 'function') {
+      return;
+    }
+    selectedNode.scrollIntoView({
+      block: 'center',
+      inline: 'nearest',
+    });
+  }, [commandAutocomplete.open, commandAutocomplete.selectedIndex, commandAutocomplete.items.length]);
+
   return (
     <div
       ref={wrapperRef}
@@ -1209,10 +1503,87 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           ref={cmdInputRef}
           className="input"
           value={cmdInput}
-          onChange={e => setCmdInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) executeCommand();
-            if (e.key === 'Escape') setShowHistory(false);
+          autoComplete="off"
+          onChange={e => {
+            const nextValue = e.target.value;
+            setCmdInput(nextValue);
+            if (commandAutocompleteFocusedRef.current) {
+              scheduleCommandAutocompleteSuggestions(nextValue);
+            }
+          }}
+          onFocus={() => {
+            commandAutocompleteFocusedRef.current = true;
+            clearCommandAutocompleteBlurTimer();
+            if (cmdInput.trim()) {
+              scheduleCommandAutocompleteSuggestions(cmdInput);
+            }
+          }}
+          onBlur={() => {
+            commandAutocompleteFocusedRef.current = false;
+            clearCommandAutocompleteBlurTimer();
+            commandAutocompleteBlurTimerRef.current = setTimeout(() => {
+              closeCommandAutocomplete();
+            }, 120);
+          }}
+          onKeyDown={async (e) => {
+            if (commandAutocomplete.open && e.key === 'ArrowDown') {
+              e.preventDefault();
+              if (commandAutocomplete.items.length === 0) {
+                return;
+              }
+              setCommandAutocomplete((previous) => ({
+                ...previous,
+                selectedIndex: previous.selectedIndex < 0
+                  ? 0
+                  : (previous.selectedIndex + 1) % previous.items.length,
+              }));
+              return;
+            }
+
+            if (commandAutocomplete.open && e.key === 'ArrowUp') {
+              e.preventDefault();
+              if (commandAutocomplete.items.length === 0) {
+                return;
+              }
+              setCommandAutocomplete((previous) => ({
+                ...previous,
+                selectedIndex: previous.selectedIndex < 0
+                  ? previous.items.length - 1
+                  : (previous.selectedIndex - 1 + previous.items.length) % previous.items.length,
+              }));
+              return;
+            }
+
+            if ((e.key === 'Tab' || (e.key === 'Enter' && commandAutocomplete.open)) && cmdInput.trim()) {
+              e.preventDefault();
+              let items = commandAutocomplete.items;
+              if (items.length === 0) {
+                items = await loadCommandAutocompleteSuggestions(cmdInput);
+              }
+              const selectedIndex = commandAutocomplete.selectedIndex >= 0 ? commandAutocomplete.selectedIndex : 0;
+              const selectedItem = items[selectedIndex] || items[0];
+              if (selectedItem) {
+                applyCommandAutocompleteItem(selectedItem);
+                return;
+              }
+              if (e.key === 'Tab') {
+                return;
+              }
+            }
+
+            if (e.key === 'Escape') {
+              if (commandAutocomplete.open) {
+                e.preventDefault();
+                closeCommandAutocomplete();
+                return;
+              }
+              setShowHistory(false);
+            }
+
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              closeCommandAutocomplete();
+              executeCommand();
+            }
           }}
           placeholder={t('输入命令')}
           style={{
@@ -1277,6 +1648,122 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         </Tiptop>
       </div>
       </div>
+
+      {(commandAutocomplete.open || commandAutocomplete.loading) && !showHistory && !showCommands && (
+        <div
+          className="term-popup"
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 42,
+            width: 'min(760px, calc(100% - 16px))',
+            maxHeight: 260,
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: Z.POPUP,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '7px 10px',
+            borderBottom: '1px solid var(--term-separator)',
+            fontSize: 11,
+            color: 'var(--term-status-color)',
+          }}>
+            <span>{t('命令')}</span>
+            <span style={{ color: 'var(--term-muted)', fontFamily: 'var(--font-mono)' }}>Tab</span>
+          </div>
+          <div ref={commandAutocompleteListRef} style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {commandAutocomplete.loading && commandAutocomplete.items.length === 0 ? (
+              <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--term-muted)' }}>
+                {t('正在搜索...')}
+              </div>
+            ) : commandAutocomplete.items.map((item, index) => {
+              const isSelected = index === commandAutocomplete.selectedIndex;
+              return (
+                <button
+                  key={`${item.source}-${item.value}-${index}`}
+                  data-command-autocomplete-selected={isSelected ? 'true' : 'false'}
+                  type="button"
+                  onMouseEnter={() => {
+                    setCommandAutocomplete((previous) => ({
+                      ...previous,
+                      selectedIndex: index,
+                    }));
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    applyCommandAutocompleteItem(item);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'grid',
+                    gap: 4,
+                    padding: '9px 12px',
+                    textAlign: 'left',
+                    border: 'none',
+                    borderBottom: index === commandAutocomplete.items.length - 1 && !commandAutocomplete.loading ? 'none' : '1px solid var(--term-separator)',
+                    background: isSelected ? 'rgba(59,130,246,0.12)' : 'transparent',
+                    color: 'var(--term-input-color)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 12,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {item.label}
+                    </span>
+                    <span style={{
+                      flexShrink: 0,
+                      padding: '2px 6px',
+                      borderRadius: 999,
+                      border: '1px solid var(--term-btn-border)',
+                      color: 'var(--term-status-color)',
+                      fontSize: 10,
+                      lineHeight: 1.2,
+                    }}>
+                      {item.badge}
+                    </span>
+                  </div>
+                  {item.description ? (
+                    <span style={{
+                      fontSize: 11,
+                      color: 'var(--term-muted)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {item.description}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+            {commandAutocomplete.loading && commandAutocomplete.items.length > 0 ? (
+              <div style={{
+                padding: '8px 12px',
+                fontSize: 11,
+                color: 'var(--term-muted)',
+                borderTop: '1px solid var(--term-separator)',
+              }}>
+                {t('正在刷新结果...')}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {/* ── 历史指令弹窗（fixed 定位，不受 overflow:hidden 裁剪） ── */}
       {showHistory && historyPopupPos && (
