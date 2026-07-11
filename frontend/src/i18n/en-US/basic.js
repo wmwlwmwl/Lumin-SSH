@@ -265,6 +265,8 @@ export default {
   "图片过大，无法保存，请使用较小的图片": "Image too large, please use a smaller image",
   "读取图片失败": "Failed to read image",
   "已恢复默认壁纸": "Default wallpaper restored",
+  "应用到全局背景": "Apply to global background",
+  "将终端壁纸同时应用到主窗口背景": "Also apply terminal wallpaper to main window background",
   "窗口大小已恢复默认": "Window size reset to default",
   "终端快捷键已修改为": "Shortcut changed to: ",
   "连接测试成功 ✓": "Connection test successful ✓",

@@ -601,6 +601,8 @@ export default function App() {
   const terminalDockPointerCleanupRef = useRef(null);
   const terminalDockClickSuppressUntilRef = useRef(0);
   const [terminalDockDragPreview, setTerminalDockDragPreview] = useState(null);
+  const [termBgImage, setTermBgImage] = useState(localStorage.getItem('termBgImage') || '');
+  const [applyBgGlobally, setApplyBgGlobally] = useState(localStorage.getItem('applyBgGlobally') === 'true');
   const fileManagerDockTabAnchorRef = useRef(null);
   const resizerClickSuppressUntilRef = useRef(0);
   const [collapseDragIntent, setCollapseDragIntent] = useState(null);
@@ -3428,9 +3430,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (!searchQuery.trim()) return;
 
     // Check if it matches an existing server name or host
-    const existing = servers.find(s => 
-      s.name.toLowerCase() === searchQuery.toLowerCase() || 
-      s.host === searchQuery
+    const existing = servers.find(s =>
+      s.name.toLowerCase() === searchQuery.toLowerCase() ||
+      s.host.toLowerCase() === searchQuery.toLowerCase()
     );
 
     if (existing) {
@@ -3466,6 +3468,18 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setSearchQuery('');
 
   }, [searchQuery, servers, connectServer]);
+
+  // 监听终端背景变化，同步到全局状态
+  useEffect(() => {
+    const syncBg = () => {
+      const img = localStorage.getItem('termBgImage') || '';
+      const global = localStorage.getItem('applyBgGlobally') === 'true';
+      setTermBgImage(img);
+      setApplyBgGlobally(global);
+    };
+    window.addEventListener('terminal-bg-changed', syncBg);
+    return () => window.removeEventListener('terminal-bg-changed', syncBg);
+  }, []);
 
   // ── Server CRUD ────────────────────────────────────────────
   const saveServerConfig = useCallback(async (data) => {
@@ -4078,8 +4092,20 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   }, []);
 
 
+  const getAppLayoutStyle = () => {
+    if (applyBgGlobally && termBgImage) {
+      return {
+        backgroundImage: `url(${termBgImage})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      };
+    }
+    return {};
+  };
+
   return (
-    <div className="app-layout">
+    <div className="app-layout" style={getAppLayoutStyle()}>
       {/* ── Topbar ───────────────────────────────────────── */}
       <div className="topbar">
         <div className="topbar-content">

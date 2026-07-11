@@ -299,6 +299,7 @@ export default function SettingsModal({
   const [terminalFontSize, setTerminalFontSize] = useState(parseInt(localStorage.getItem('terminalFontSize') || '13', 10));
   const [termBgImage, setTermBgImage] = useState(localStorage.getItem('termBgImage') || '');
   const [termBgOpacity, setTermBgOpacity] = useState(parseFloat(localStorage.getItem('termBgOpacity') || '0.15'));
+  const [applyBgGlobally, setApplyBgGlobally] = useState(localStorage.getItem('applyBgGlobally') === 'true');
   const [terminalColorTheme, setTerminalColorTheme] = useState(localStorage.getItem('terminalColorTheme') || 'lumin');
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
@@ -468,6 +469,13 @@ export default function SettingsModal({
     const val = parseFloat(e.target.value);
     setTermBgOpacity(val);
     localStorage.setItem('termBgOpacity', String(val));
+    window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+  };
+
+  const handleToggleApplyBgGlobally = () => {
+    const nextVal = !applyBgGlobally;
+    setApplyBgGlobally(nextVal);
+    localStorage.setItem('applyBgGlobally', String(nextVal));
     window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
   };
 
@@ -1019,6 +1027,8 @@ export default function SettingsModal({
                 onTermBgReset={handleTermBgReset}
                 termBgOpacity={termBgOpacity}
                 onTermBgOpacityChange={handleTermBgOpacityChange}
+                applyBgGlobally={applyBgGlobally}
+                onToggleApplyBgGlobally={handleToggleApplyBgGlobally}
                 rememberWindowSize={rememberWindowSize}
                 onToggleRememberWindowSize={handleToggleRememberWindowSize}
                 onResetWindowSize={handleResetWindowSize}

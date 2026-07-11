@@ -14,6 +14,7 @@ export default function AppearanceTab({
   useCustomAccent, onToggleAccent,
   termBgImage, onTermBgUpload, onTermBgReset,
   termBgOpacity, onTermBgOpacityChange,
+  applyBgGlobally, onToggleApplyBgGlobally,
   rememberWindowSize, onToggleRememberWindowSize, onResetWindowSize,
 }) {
   return (
@@ -173,6 +174,14 @@ export default function AppearanceTab({
               />
               <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{Math.round(termBgOpacity * 100)}%</span>
             </div>
+          </div>
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('应用到全局背景')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('将终端壁纸同时应用到主窗口背景')}</div>
+            </div>
+            <ToggleSwitch checked={applyBgGlobally} onChange={onToggleApplyBgGlobally} />
           </div>
         </div>
       </div>
