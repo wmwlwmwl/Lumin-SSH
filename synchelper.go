@@ -1125,11 +1125,14 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	}
 	localAIGlobalSettings := c.localAIGlobalSettingsForSync()
 	var mergedAIGlobalSettings ai.AIGlobalSettings
+	var mergedAIGlobalSettingsPtr *ai.AIGlobalSettings
 	if localAIGlobalSettings != nil {
 		mergedAIGlobalSettings = *localAIGlobalSettings
+		mergedAIGlobalSettingsPtr = &mergedAIGlobalSettings
 	}
-	if remoteSnap.HasAIGlobalSettings {
+	if remoteSnap.HasAIGlobalSettings && (localAIGlobalSettings != nil || remoteSnap.AIGlobalSettings != nil) {
 		mergedAIGlobalSettings = mergeAIGlobalSettings(mergedAIGlobalSettings, remoteSnap.AIGlobalSettings)
+		mergedAIGlobalSettingsPtr = &mergedAIGlobalSettings
 	}
 	localProxyNodes := c.GetAIProxyNodes()
 	mergedProxyNodes := localProxyNodes
@@ -1141,7 +1144,7 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	quickChanged := remoteSnap.HasQuickCommands && !quickCmdsEqual(mergedQuickCmds, localQuickCmds)
 	credsChanged := remoteSnap.HasCredentials && !credsEqual(mergedCreds, localCreds)
 	aiProvidersChanged := remoteSnap.HasAIProviders && !aiProvidersEqual(mergedAIProviders, localAIProviders)
-	aiGlobalSettingsChanged := remoteSnap.HasAIGlobalSettings && (localAIGlobalSettings == nil || !aiGlobalSettingsEqual(&mergedAIGlobalSettings, localAIGlobalSettings))
+	aiGlobalSettingsChanged := remoteSnap.HasAIGlobalSettings && !aiGlobalSettingsEqual(mergedAIGlobalSettingsPtr, localAIGlobalSettings)
 	proxyNodesChanged := remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, localProxyNodes)
 	localChanged := !connsEqual(merged, localConns) || quickChanged || credsChanged || aiProvidersChanged || aiGlobalSettingsChanged || proxyNodesChanged
 
@@ -1149,9 +1152,9 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	cloudQuickChanged := remoteSnap.HasQuickCommands && !quickCmdsEqual(mergedQuickCmds, remoteSnap.QuickCommands)
 	cloudCredsChanged := remoteSnap.HasCredentials && !credsEqual(mergedCreds, remoteSnap.Credentials)
 	cloudAIProvidersChanged := remoteSnap.HasAIProviders && !aiProvidersEqual(mergedAIProviders, remoteSnap.AIProviders)
-	cloudAIGlobalSettingsChanged := remoteSnap.HasAIGlobalSettings && !aiGlobalSettingsEqual(&mergedAIGlobalSettings, remoteSnap.AIGlobalSettings)
+	cloudAIGlobalSettingsChanged := remoteSnap.HasAIGlobalSettings && !aiGlobalSettingsEqual(mergedAIGlobalSettingsPtr, remoteSnap.AIGlobalSettings)
 	if cloudAIGlobalSettingsChanged {
-		log.Printf("[autoSyncProvider] aiGlobal diff %s", aiGlobalSettingsDiffSummary(&mergedAIGlobalSettings, remoteSnap.AIGlobalSettings))
+		log.Printf("[autoSyncProvider] aiGlobal diff %s", aiGlobalSettingsDiffSummary(mergedAIGlobalSettingsPtr, remoteSnap.AIGlobalSettings))
 	}
 	cloudProxyNodesChanged := remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, remoteSnap.ProxyNodes)
 	cloudConnsChanged := !connsEqual(merged, remoteSnap.Connections)
