@@ -1278,13 +1278,13 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 	// 旧实现只在 Get() 阶段切换 URL，io.Copy 阶段超时直接放弃（"failed to save update file"），
 	// 不会重试代理 URL。大文件 + 慢网络下直连极易在 body 读取阶段超时。
 	client := &http.Client{Timeout: 10 * time.Minute}
-	ghProxies := []string{"https://ghfast.top/", "https://proxy.gitwarp.top/"}
+	ghProxies := []string{"https://ghproxy.net/", "https://gh-proxy.com/", "https://proxy.gitwarp.top/"}
 	var tryUrls []string
 	if strings.Contains(downloadUrl, "github.com") {
 		if proxyFirst {
-			tryUrls = []string{ghProxies[0] + downloadUrl, ghProxies[1] + downloadUrl, downloadUrl}
+			tryUrls = []string{ghProxies[0] + downloadUrl, ghProxies[1] + downloadUrl, ghProxies[2] + downloadUrl, downloadUrl}
 		} else {
-			tryUrls = []string{downloadUrl, ghProxies[0] + downloadUrl, ghProxies[1] + downloadUrl}
+			tryUrls = []string{downloadUrl, ghProxies[0] + downloadUrl, ghProxies[1] + downloadUrl, ghProxies[2] + downloadUrl}
 		}
 	} else {
 		tryUrls = []string{downloadUrl}
