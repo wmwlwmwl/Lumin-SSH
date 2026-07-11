@@ -51,18 +51,13 @@ func buildAIMCPClientToolDefinitions() []mcpserver.ToolDefinition {
 	if len(promptTools) > 0 {
 		definitions = append(definitions, mcpserver.ToolDefinition{
 			Name: aiUseMCPToolName,
-			Description: "Call a configured MCP client tool from the integrated MCP client hub. Consult the MCP SERVERS section below for the exact server instructions, available tools, and each tool's input schema. Required arguments: server_name, tool_name, arguments. Optional argument: source. Available server/tool pairs: " + strings.Join(toolRefs, ", "),
+			Description: "Call a configured MCP client tool from the integrated MCP client hub. Consult the MCP SERVERS section below for the exact server instructions, available tools, and each tool's input schema. Required arguments: server_name, tool_name, arguments. Available server/tool pairs: " + strings.Join(toolRefs, ", "),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"server_name": map[string]any{
 						"type":        "string",
 						"description": "Target MCP server name. Available: " + strings.Join(serverNames, ", "),
-					},
-					"source": map[string]any{
-						"type":        "string",
-						"description": "Optional MCP server source. Must be embedded or global.",
-						"enum":        []string{"embedded", "global"},
 					},
 					"tool_name": map[string]any{
 						"type":        "string",
@@ -81,18 +76,13 @@ func buildAIMCPClientToolDefinitions() []mcpserver.ToolDefinition {
 	if len(resourceRefs) > 0 {
 		definitions = append(definitions, mcpserver.ToolDefinition{
 			Name: aiAccessMCPResourceToolName,
-			Description: "Read a configured MCP resource from the integrated MCP client hub. Consult the MCP SERVERS section below for server instructions, available resource templates, and direct resources. Required arguments: server_name, uri. Optional argument: source. Available server/resource pairs: " + strings.Join(resourceRefs, ", "),
+			Description: "Read a configured MCP resource from the integrated MCP client hub. Consult the MCP SERVERS section below for server instructions, available resource templates, and direct resources. Required arguments: server_name, uri. Available server/resource pairs: " + strings.Join(resourceRefs, ", "),
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"server_name": map[string]any{
 						"type":        "string",
 						"description": "Target MCP server name. Available: " + strings.Join(serverNames, ", "),
-					},
-					"source": map[string]any{
-						"type":        "string",
-						"description": "Optional MCP server source. Must be embedded or global.",
-						"enum":        []string{"embedded", "global"},
 					},
 					"uri": map[string]any{
 						"type":        "string",
@@ -116,6 +106,74 @@ func parseAIMCPServerSource(value string) mcp.ServerSource {
 	}
 }
 
+func resolveAIMCPServerSourceByName(serverName string, rawSource string) mcp.ServerSource {
+	if strings.TrimSpace(rawSource) != "" {
+		return parseAIMCPServerSource(rawSource)
+	}
+	hub := mcp.ClientHubInstance()
+	if hub == nil {
+		return mcp.ServerSourceGlobal
+	}
+	trimmedServerName := strings.TrimSpace(serverName)
+	for _, server := range getAIPromptEnabledConnectedServers(hub.GetServers()) {
+		if strings.TrimSpace(server.Name) != trimmedServerName {
+			continue
+		}
+		return server.Source
+	}
+	return mcp.ServerSourceGlobal
+}
+
+func resolveAIMCPToolSource(serverName string, toolName string, rawSource string) mcp.ServerSource {
+	if strings.TrimSpace(rawSource) != "" {
+		return parseAIMCPServerSource(rawSource)
+	}
+	hub := mcp.ClientHubInstance()
+	if hub == nil {
+		return mcp.ServerSourceGlobal
+	}
+	trimmedServerName := strings.TrimSpace(serverName)
+	trimmedToolName := strings.TrimSpace(toolName)
+	for _, promptTool := range hub.ListPromptTools() {
+		if strings.TrimSpace(promptTool.ServerName) != trimmedServerName {
+			continue
+		}
+		if strings.TrimSpace(promptTool.ToolName) != trimmedToolName {
+			continue
+		}
+		return promptTool.ServerSource
+	}
+	return resolveAIMCPServerSourceByName(serverName, rawSource)
+}
+
+func resolveAIMCPResourceSource(serverName string, uri string, rawSource string) mcp.ServerSource {
+	if strings.TrimSpace(rawSource) != "" {
+		return parseAIMCPServerSource(rawSource)
+	}
+	hub := mcp.ClientHubInstance()
+	if hub == nil {
+		return mcp.ServerSourceGlobal
+	}
+	trimmedServerName := strings.TrimSpace(serverName)
+	trimmedURI := strings.TrimSpace(uri)
+	for _, server := range getAIPromptEnabledConnectedServers(hub.GetServers()) {
+		if strings.TrimSpace(server.Name) != trimmedServerName {
+			continue
+		}
+		for _, resource := range server.Resources {
+			if strings.TrimSpace(resource.URI) == trimmedURI {
+				return server.Source
+			}
+		}
+		for _, template := range server.ResourceTemplates {
+			if strings.TrimSpace(template.URITemplate) == trimmedURI {
+				return server.Source
+			}
+		}
+	}
+	return resolveAIMCPServerSourceByName(serverName, rawSource)
+}
+
 func isAIMCPClientToolAlwaysAllowed(tool aiParsedToolUse) bool {
 	if strings.TrimSpace(tool.Name) != aiUseMCPToolName {
 		return false
@@ -129,7 +187,7 @@ func isAIMCPClientToolAlwaysAllowed(tool aiParsedToolUse) bool {
 	if serverName == "" || toolName == "" {
 		return false
 	}
-	source := parseAIMCPServerSource(tool.Params["source"])
+	source := resolveAIMCPToolSource(serverName, toolName, tool.Params["source"])
 	for _, promptTool := range hub.ListPromptTools() {
 		if strings.TrimSpace(promptTool.ServerName) != serverName {
 			continue
@@ -187,7 +245,7 @@ func (a *App) runAIChatMCPClientToolExecution(execution *aiToolExecutionState) {
 		a.failAIChatToolPreview(execution.RequestID, execution.Batch, execution.Tool, "missing required argument: server_name")
 		return
 	}
-	source := parseAIMCPServerSource(execution.Tool.Params["source"])
+	source := resolveAIMCPServerSourceByName(serverName, execution.Tool.Params["source"])
 	statusText := "ai.status.executed"
 	uiResultText := ""
 	rawResultText := ""
@@ -204,6 +262,7 @@ func (a *App) runAIChatMCPClientToolExecution(execution *aiToolExecutionState) {
 			a.failAIChatToolPreview(execution.RequestID, execution.Batch, execution.Tool, err.Error())
 			return
 		}
+		source = resolveAIMCPToolSource(serverName, toolLabel, execution.Tool.Params["source"])
 		callResult, err := hub.CallTool(serverName, source, toolLabel, parsedArguments)
 		if err != nil {
 			statusText = "ai.status.error"
@@ -225,6 +284,7 @@ func (a *App) runAIChatMCPClientToolExecution(execution *aiToolExecutionState) {
 			return
 		}
 		toolLabel = "resource:" + uri
+		source = resolveAIMCPResourceSource(serverName, uri, execution.Tool.Params["source"])
 		readResult, err := hub.ReadResource(serverName, source, uri)
 		if err != nil {
 			statusText = "ai.status.error"

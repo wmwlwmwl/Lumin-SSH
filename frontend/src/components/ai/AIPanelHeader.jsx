@@ -39,7 +39,7 @@ export default function AIPanelHeader({
 
   return (
     <div style={{ height: 54, padding: '0 14px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--border)', background: 'var(--surface-raised)', flexShrink: 0 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: 0.2 }}>{t('AI 助手')}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: 0.2 }}>{t('助手')}</div>
       {showContextTokens ? (
         <Tiptop text={isCondensingContext ? t('正在智能压缩上下文') : t('当前对话上下文 Token,点击智能压缩')} placement="bottom" style={{ justifySelf: 'center' }}>
           <button

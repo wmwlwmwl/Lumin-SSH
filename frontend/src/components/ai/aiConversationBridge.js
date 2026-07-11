@@ -211,3 +211,19 @@ export async function openAIConversationFolder(conversationId) {
   }
   await bridge.OpenAIConversationFolder(conversationId)
 }
+
+export async function preprocessAIConversationLongText(conversationId, text) {
+  const bridge = getAppBridge()
+  if (!bridge?.PreprocessAIConversationLongText) {
+    return typeof text === 'string' ? text : ''
+  }
+  return bridge.PreprocessAIConversationLongText(conversationId, typeof text === 'string' ? text : '')
+}
+
+export async function readAIConversationWrappedFile(conversationId, localPath) {
+  const bridge = getAppBridge()
+  if (!bridge?.ReadAIConversationWrappedFile) {
+    throw new Error(t('读取长文本包装文件能力未就绪'))
+  }
+  return bridge.ReadAIConversationWrappedFile(conversationId, localPath)
+}

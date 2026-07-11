@@ -144,6 +144,9 @@ var (
 	aiSimpleVariablePattern                        = regexp.MustCompile(`\$[a-zA-Z_][a-zA-Z0-9_]*`)
 	aiSpecialVariablePattern                       = regexp.MustCompile(`\$[?!#$@*\-0-9]`)
 	aiSubshellPlaceholderPattern                   = regexp.MustCompile(`^__SUBSH_(\d+)__$`)
+	aiUserMessageBlockPattern                      = regexp.MustCompile(`(?s)<user_message>.*?</user_message>`)
+	aiRequestEnvironmentDetailsPattern             = regexp.MustCompile(`(?s)<environment_details>(.*?)</environment_details>`)
+	aiRequestConsiderationsPattern                 = regexp.MustCompile(`(?s)<considerations>\s*(.*?)\s*</considerations>`)
 )
 
 func normalizeAIChatRequestMessages(messages []AIChatRequestMessage) []AIChatRequestMessage {
@@ -169,6 +172,231 @@ func normalizeAIChatRequestMessages(messages []AIChatRequestMessage) []AIChatReq
 		})
 	}
 	return normalized
+}
+
+func isAIExplicitUserPromptMessage(message AIChatRequestMessage) bool {
+	if !strings.EqualFold(strings.TrimSpace(message.Role), "user") {
+		return false
+	}
+	trimmedContent := strings.TrimSpace(message.Content)
+	return aiUserMessageBlockPattern.MatchString(trimmedContent)
+}
+
+func isAIExplicitUserPromptAPIMessage(message AIConversationAPIMessage) bool {
+	if !strings.EqualFold(strings.TrimSpace(message.Role), "user") {
+		return false
+	}
+	trimmedContent := strings.TrimSpace(message.Content)
+	return aiUserMessageBlockPattern.MatchString(trimmedContent)
+}
+
+func findLatestAIExplicitUserPromptMessage(messages []AIChatRequestMessage) (int, AIChatRequestMessage, bool) {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if isAIExplicitUserPromptMessage(messages[index]) {
+			return index, messages[index], true
+		}
+	}
+	return -1, AIChatRequestMessage{}, false
+}
+
+func findLatestAIReliableConsiderationsMessageBefore(messages []AIChatRequestMessage, beforeIndex int) (int, AIChatRequestMessage, bool) {
+	if beforeIndex > len(messages) {
+		beforeIndex = len(messages)
+	}
+	for index := beforeIndex - 1; index >= 0; index-- {
+		if !isAIExplicitUserPromptMessage(messages[index]) {
+			continue
+		}
+		if hasReliableAIConsiderationsBlock(messages[index].Content) {
+			return index, messages[index], true
+		}
+	}
+	return -1, AIChatRequestMessage{}, false
+}
+
+func findLatestAIExplicitUserPromptAPIMessage(messages []AIConversationAPIMessage) int {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if isAIExplicitUserPromptAPIMessage(messages[index]) {
+			return index
+		}
+	}
+	return -1
+}
+
+func countAIExplicitUserPromptMessages(messages []AIChatRequestMessage) int {
+	count := 0
+	for _, message := range messages {
+		if isAIExplicitUserPromptMessage(message) {
+			count++
+		}
+	}
+	return count
+}
+
+func hasReliableAIConsiderationsBlock(text string) bool {
+	matches := aiRequestEnvironmentDetailsPattern.FindAllStringSubmatch(text, -1)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		considerationMatches := aiRequestConsiderationsPattern.FindAllStringSubmatch(match[1], -1)
+		for _, considerationMatch := range considerationMatches {
+			if len(considerationMatch) < 2 {
+				continue
+			}
+			if strings.TrimSpace(considerationMatch[1]) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type aiUserCompensationSignal struct {
+	Index                    int
+	HasReliableConsideration bool
+	Reason                   string
+}
+
+type aiUserNodeCompensationResult struct {
+	Messages []AIChatRequestMessage
+	Applied  bool
+	Reason   string
+}
+
+func getLatestAIUserCompensationSignal(messages []AIChatRequestMessage) aiUserCompensationSignal {
+	latestIndex, latestMessage, ok := findLatestAIExplicitUserPromptMessage(messages)
+	if !ok {
+		return aiUserCompensationSignal{Index: -1}
+	}
+	if hasReliableAIConsiderationsBlock(latestMessage.Content) {
+		return aiUserCompensationSignal{
+			Index:                    latestIndex,
+			HasReliableConsideration: true,
+			Reason:                   "existing_considerations",
+		}
+	}
+	if _, _, ok := findLatestAIReliableConsiderationsMessageBefore(messages, latestIndex); ok {
+		return aiUserCompensationSignal{
+			Index:                    latestIndex,
+			HasReliableConsideration: true,
+			Reason:                   "history_considerations_present",
+		}
+	}
+	reason := "considerations_missing"
+	if countAIExplicitUserPromptMessages(messages) <= 1 {
+		reason = "first_request"
+	}
+	return aiUserCompensationSignal{
+		Index:                    latestIndex,
+		HasReliableConsideration: false,
+		Reason:                   reason,
+	}
+}
+
+func appendAIConsiderationsToEnvironmentDetails(content string, considerationsText string) string {
+	trimmedContent := strings.TrimSpace(content)
+	trimmedConsiderationsText := strings.TrimSpace(considerationsText)
+	if trimmedConsiderationsText == "" {
+		return trimmedContent
+	}
+	considerationsBlock := "<considerations>\n" + trimmedConsiderationsText + "\n</considerations>"
+	matches := aiRequestEnvironmentDetailsPattern.FindStringSubmatchIndex(trimmedContent)
+	if len(matches) >= 4 {
+		innerStart := matches[2]
+		innerEnd := matches[3]
+		innerContent := strings.TrimSpace(trimmedContent[innerStart:innerEnd])
+		if innerContent != "" {
+			innerContent += "\n\n" + considerationsBlock
+		} else {
+			innerContent = considerationsBlock
+		}
+		return strings.TrimSpace(trimmedContent[:innerStart] + "\n" + innerContent + "\n" + trimmedContent[innerEnd:])
+	}
+	if trimmedContent == "" {
+		return "<environment_details>\n" + considerationsBlock + "\n</environment_details>"
+	}
+	return trimmedContent + "\n\n<environment_details>\n" + considerationsBlock + "\n</environment_details>"
+}
+
+func applyAIUserNodeCompensation(messages []AIChatRequestMessage) aiUserNodeCompensationResult {
+	signal := getLatestAIUserCompensationSignal(messages)
+	if signal.Index < 0 || signal.HasReliableConsideration {
+		return aiUserNodeCompensationResult{
+			Messages: messages,
+			Applied:  false,
+			Reason:   signal.Reason,
+		}
+	}
+	compensationText := BuildAIUserCompensation()
+	if strings.TrimSpace(compensationText) == "" {
+		return aiUserNodeCompensationResult{
+			Messages: messages,
+			Applied:  false,
+			Reason:   signal.Reason,
+		}
+	}
+	cloned := append([]AIChatRequestMessage{}, messages...)
+	targetMessage := cloned[signal.Index]
+	targetMessage.Content = appendAIConsiderationsToEnvironmentDetails(targetMessage.Content, compensationText)
+	cloned[signal.Index] = targetMessage
+	return aiUserNodeCompensationResult{
+		Messages: cloned,
+		Applied:  true,
+		Reason:   signal.Reason,
+	}
+}
+
+func (a *App) persistAIUserNodeCompensation(requestID string, conversationID string, requestMessages []AIChatRequestMessage) {
+	if a == nil || a.configManager == nil || strings.TrimSpace(conversationID) == "" {
+		return
+	}
+	_, latestRequestMessage, ok := findLatestAIExplicitUserPromptMessage(requestMessages)
+	if !ok {
+		return
+	}
+	snapshot, err := a.configManager.GetAIConversation(strings.TrimSpace(conversationID))
+	if err != nil {
+		return
+	}
+	apiMessageIndex := findLatestAIExplicitUserPromptAPIMessage(snapshot.APIMessages)
+	if apiMessageIndex < 0 {
+		return
+	}
+	apiMessage := snapshot.APIMessages[apiMessageIndex]
+	updatedContent := strings.TrimSpace(latestRequestMessage.Content)
+	updatedImages := normalizeAIStringList(latestRequestMessage.Images)
+	updatedCacheObjects := cloneAIConversationProviderCacheObjects(latestRequestMessage.CacheObjects)
+	if apiMessage.Content == updatedContent &&
+		reflect.DeepEqual(normalizeAIStringList(apiMessage.Images), updatedImages) &&
+		reflect.DeepEqual(apiMessage.CacheObjects, updatedCacheObjects) {
+		return
+	}
+	snapshot.APIMessages[apiMessageIndex].Content = updatedContent
+	snapshot.APIMessages[apiMessageIndex].Images = updatedImages
+	snapshot.APIMessages[apiMessageIndex].CacheObjects = updatedCacheObjects
+	snapshot.UpdatedAt = time.Now().UnixMilli()
+	savedSnapshot, saveErr := a.configManager.SaveAIConversation(snapshot)
+	if saveErr != nil {
+		return
+	}
+	if apiMessageIndex < 0 || apiMessageIndex >= len(savedSnapshot.APIMessages) {
+		return
+	}
+	updatedMessage := savedSnapshot.APIMessages[apiMessageIndex]
+	a.emitAIChatEvent(map[string]interface{}{
+		"kind":      "api_message_append",
+		"requestId": requestID,
+		"message": map[string]interface{}{
+			"messageId":    updatedMessage.MessageID,
+			"role":         updatedMessage.Role,
+			"content":      updatedMessage.Content,
+			"uiMessageIds": updatedMessage.UIMessageIDs,
+			"images":       updatedMessage.Images,
+			"cacheObjects": updatedMessage.CacheObjects,
+			"ts":           updatedMessage.Ts,
+		},
+	})
 }
 
 func getAIAutoApprovalCategoryForTool(toolName string) string {
@@ -1937,6 +2165,11 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			}
 		}
 
+		compensationResult := applyAIUserNodeCompensation(requestMessages)
+		requestMessages = compensationResult.Messages
+		if compensationResult.Applied {
+			a.persistAIUserNodeCompensation(requestID, payload.ConversationID, requestMessages)
+		}
 		for attempt := 1; attempt <= aiChatRequestMaxAttempts; attempt++ {
 			roundResult, err = a.requestAIProviderChatRound(ctx, requestID, payload, profile, requestMessages)
 			if err == nil {

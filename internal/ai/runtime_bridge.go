@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"os"
 	pathpkg "path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"luminssh-go/internal/mcpserver"
 
@@ -143,12 +146,150 @@ func quotePOSIX(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
+const aiLongTextSegmentThreshold = 10000
+const aiLongTextWrapperExtension = ".long_text_wrap"
+
+var aiLongTextSplitPattern = regexp.MustCompile(`((?:\r?\n){2,})`)
+
 func newRuntimeToken() string {
 	buffer := make([]byte, 8)
 	if _, err := rand.Read(buffer); err != nil {
 		return hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
 	}
 	return hex.EncodeToString(buffer)
+}
+
+func normalizeAILocalMentionPath(filePath string) string {
+	return "/" + strings.ReplaceAll(filepath.ToSlash(filePath), " ", "\\ ")
+}
+
+func normalizeAILongTextWrapperLocalPath(value string) string {
+	normalized := strings.TrimSpace(value)
+	normalized = strings.Trim(normalized, `"'`)
+	if strings.HasPrefix(normalized, "@") {
+		normalized = normalized[1:]
+	}
+	normalized = strings.ReplaceAll(normalized, "\\ ", " ")
+	if len(normalized) >= 4 && normalized[0] == '/' && ((normalized[1] >= 'A' && normalized[1] <= 'Z') || (normalized[1] >= 'a' && normalized[1] <= 'z')) && normalized[2] == ':' && normalized[3] == '/' {
+		normalized = normalized[1:]
+	}
+	return filepath.Clean(filepath.FromSlash(normalized))
+}
+
+func splitAILongTextSegmentsPreserveSeparators(text string) []string {
+	matches := aiLongTextSplitPattern.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return []string{text}
+	}
+	parts := make([]string, 0, len(matches)*2+1)
+	lastIndex := 0
+	for _, match := range matches {
+		parts = append(parts, text[lastIndex:match[0]])
+		parts = append(parts, text[match[0]:match[1]])
+		lastIndex = match[1]
+	}
+	parts = append(parts, text[lastIndex:])
+	return parts
+}
+
+func shouldExternalizeAILongTextSegment(segment string) bool {
+	trimmed := strings.TrimSpace(segment)
+	return utf8.RuneCountInString(trimmed) >= aiLongTextSegmentThreshold && !strings.HasPrefix(trimmed, "@/")
+}
+
+func isAIPathWithinBase(basePath string, targetPath string) bool {
+	relativePath, err := filepath.Rel(basePath, targetPath)
+	if err != nil {
+		return false
+	}
+	return relativePath == "." || (relativePath != ".." && !strings.HasPrefix(relativePath, ".."+string(filepath.Separator)))
+}
+
+func (c *ConfigManager) aiConversationTempDir(conversationID string) string {
+	return filepath.Join(c.configDir, "tasks", conversationID, "temp")
+}
+
+func (c *ConfigManager) PreprocessAIConversationLongText(conversationID string, text string) (string, error) {
+	if c == nil || strings.TrimSpace(c.configDir) == "" || strings.TrimSpace(text) == "" {
+		return text, nil
+	}
+	trimmedConversationID := strings.TrimSpace(conversationID)
+	if trimmedConversationID == "" {
+		return text, fmt.Errorf("conversation id is required")
+	}
+	parts := splitAILongTextSegmentsPreserveSeparators(text)
+	externalizeFlags := make([]bool, len(parts))
+	hasLargeTextSegment := false
+	for index, part := range parts {
+		if index%2 == 0 && shouldExternalizeAILongTextSegment(part) {
+			externalizeFlags[index] = true
+			hasLargeTextSegment = true
+		}
+	}
+	if !hasLargeTextSegment {
+		return text, nil
+	}
+	tempDir := c.aiConversationTempDir(trimmedConversationID)
+	if err := os.MkdirAll(tempDir, 0700); err != nil {
+		return text, err
+	}
+	rewritten := make([]string, len(parts))
+	for index, part := range parts {
+		if !externalizeFlags[index] {
+			rewritten[index] = part
+			continue
+		}
+		filePath := filepath.Join(tempDir, newRuntimeToken()+aiLongTextWrapperExtension)
+		if err := os.WriteFile(filePath, []byte(part), 0600); err != nil {
+			return text, err
+		}
+		rewritten[index] = "@" + normalizeAILocalMentionPath(filePath)
+	}
+	return strings.Join(rewritten, ""), nil
+}
+
+func (c *ConfigManager) ReadAIConversationWrappedFile(conversationID string, localPath string) (string, error) {
+	if c == nil || strings.TrimSpace(c.configDir) == "" {
+		return "", fmt.Errorf("config manager unavailable")
+	}
+	trimmedConversationID := strings.TrimSpace(conversationID)
+	if trimmedConversationID == "" {
+		return "", fmt.Errorf("conversation id is required")
+	}
+	tempDir := filepath.Clean(c.aiConversationTempDir(trimmedConversationID))
+	normalizedPath := normalizeAILongTextWrapperLocalPath(localPath)
+	if normalizedPath == "" {
+		return "", fmt.Errorf("wrapped file path is required")
+	}
+	if !strings.EqualFold(filepath.Ext(normalizedPath), aiLongTextWrapperExtension) {
+		return "", fmt.Errorf("unsupported wrapped file extension")
+	}
+	if !filepath.IsAbs(normalizedPath) {
+		normalizedPath = filepath.Join(tempDir, normalizedPath)
+	}
+	normalizedPath = filepath.Clean(normalizedPath)
+	if !isAIPathWithinBase(tempDir, normalizedPath) {
+		return "", fmt.Errorf("wrapped file path is outside conversation temp directory")
+	}
+	data, err := os.ReadFile(normalizedPath)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (a *App) PreprocessAIConversationLongText(conversationID string, text string) (string, error) {
+	if a == nil || a.configManager == nil {
+		return "", fmt.Errorf("config manager unavailable")
+	}
+	return a.configManager.PreprocessAIConversationLongText(conversationID, text)
+}
+
+func (a *App) ReadAIConversationWrappedFile(conversationID string, localPath string) (string, error) {
+	if a == nil || a.configManager == nil {
+		return "", fmt.Errorf("config manager unavailable")
+	}
+	return a.configManager.ReadAIConversationWrappedFile(conversationID, localPath)
 }
 
 func (m *SSHManager) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan aiToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, aiToolExecutionAction, error) {

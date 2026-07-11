@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation, t as translate } from '../../i18n.js'
 import { getAIGlobalSettings } from './aiGlobalSettingsBridge.js'
 import {
-  availableAIProviderOptions,
+  availableAIProviders,
   canUseDedicatedWebSearchCandidate,
   getAIProviderDefinition,
 } from './providers/index.js'
@@ -28,6 +28,21 @@ const reasoningEffortLabels = {
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384
 const DEFAULT_MAX_THINKING_TOKENS = 8192
 const DEFAULT_EFFORT_REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh']
+const providerHighlightLabelKeys = {
+  Compatible: '高兼容',
+  Responses: '高缓存',
+}
+
+function getProviderDisplayLabel(provider, t) {
+  if (!provider || typeof provider !== 'object') {
+    return ''
+  }
+  const highlightLabelKey = providerHighlightLabelKeys[provider.value]
+  if (!highlightLabelKey) {
+    return provider.label
+  }
+  return `(${t(highlightLabelKey)})${provider.label}`
+}
 
 function getAppBridge() {
   return window?.go?.main?.AIBindings || window?.go?.main?.AIProviderBindings || window?.go?.main?.App
@@ -156,7 +171,7 @@ function buildDraft(provider) {
   }
 }
 
-function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWidth = '100%' }) {
+function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWidth = '100%', showSelectedIcon = true }) {
   const currentOption = options.find((option) => option.value === value) || options[0]
 
   return (
@@ -223,7 +238,7 @@ function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWid
                   transition: 'var(--transition)',
                 }}>
                 <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option.label}</span>
-                {active ? <Check size={13} color="var(--accent)" /> : null}
+                {active && showSelectedIcon ? <Check size={13} color="var(--accent)" /> : null}
               </button>
             )
           })}
@@ -257,6 +272,14 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   const providerDefinition = useMemo(
     () => getAIProviderDefinition(draft.provider),
     [draft.provider],
+  )
+
+  const providerOptions = useMemo(
+    () => availableAIProviders.map((provider) => ({
+      value: provider.value,
+      label: getProviderDisplayLabel(provider, t),
+    })),
+    [t],
   )
 
   const modelCapability = useMemo(() => {
@@ -324,8 +347,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
       value: node.id,
       label: [
         node.name || t('未命名节点'),
-        node.type === 'http' ? t('HTTP 代理') : t('SOCKS5 代理'),
-        `${node.host}:${node.port}`,
+        `${node.type === 'http' ? 'http' : 'socks5'}://${node.host}:${node.port}`,
       ].join(' · '),
     })),
   ]), [proxyNodes, t])
@@ -1060,11 +1082,12 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('API提供商')}</label>
               <SelectMenu
                 value={draft.provider}
-                options={availableAIProviderOptions}
+                options={providerOptions}
                 open={providerMenuOpen}
                 onToggle={() => setProviderMenuOpen((prev) => !prev)}
                 onSelect={handleProviderSelect}
                 menuRef={providerFieldRef}
+                showSelectedIcon={false}
               />
             </div>
           </div>

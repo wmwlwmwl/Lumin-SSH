@@ -5,7 +5,7 @@ import AIChatReasoningBlock from './AIChatReasoningBlock.jsx'
 import AIChatRequestStatusRow from './AIChatRequestStatusRow.jsx'
 import AIChatToolSessionPane from './AIChatToolSessionPane.jsx'
 
-const assistantTitleKey = 'Ai助手'
+const assistantTitleKey = '助手'
 
 export default function AIChatAssistantTurn({ assistant, reasoning = [], tools = [], isLastAssistantTurn = false, hasSubsequentAssistantMessage = false, onDelete, onRetry, onSendUserMessage, onPreviewRestore, onApplyRestore, messageActionBarAtBottom = false }) {
   const title = assistant?.title || assistantTitleKey

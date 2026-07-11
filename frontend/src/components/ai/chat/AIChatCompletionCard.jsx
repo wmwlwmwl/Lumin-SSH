@@ -3,13 +3,23 @@ import { useTranslation } from '../../../i18n.js'
 import AIChatMarkdown from './AIChatMarkdown.jsx'
 
 const completionTitleKey = '任务完成'
-const completionStatusKey = 'completed'
+const completionStatusKey = '已完成'
+
+function normalizeAICompletionStatus(value) {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  switch (normalized) {
+    case 'completed':
+      return '已完成'
+    default:
+      return normalized
+  }
+}
 
 export default function AIChatCompletionCard({ title = completionTitleKey, summary = '', result = '', status = completionStatusKey }) {
   const { t } = useTranslation()
   const normalizedSummary = typeof summary === 'string' ? summary.trim() : ''
   const normalizedResult = typeof result === 'string' ? result.trim() : ''
-  const normalizedStatus = typeof status === 'string' ? status.trim() : ''
+  const normalizedStatus = normalizeAICompletionStatus(status)
   return (
     <div style={{ display: 'grid', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>

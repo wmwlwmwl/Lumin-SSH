@@ -138,6 +138,14 @@ func (b *AIBindings) OpenAIConversationFolder(conversationID string) error {
 	return openLocalPathInExplorer(filepath.Join(b.app.configManager.configDir, "tasks", trimmedConversationID), true)
 }
 
+func (b *AIBindings) PreprocessAIConversationLongText(conversationID string, text string) (string, error) {
+	return b.runtime().PreprocessAIConversationLongText(conversationID, text)
+}
+
+func (b *AIBindings) ReadAIConversationWrappedFile(conversationID string, localPath string) (string, error) {
+	return b.runtime().ReadAIConversationWrappedFile(conversationID, localPath)
+}
+
 func (b *AIBindings) ListAIConversationBackups(conversationID string) []ai.AIConversationBackup {
 	return b.runtime().ListAIConversationBackups(conversationID)
 }

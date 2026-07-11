@@ -40,6 +40,17 @@ func buildAIConversationContextTokenBlocksWithProfile(conversationID string, ses
 		},
 	}
 	for _, message := range normalizeAIConversationAPIMessages(messages) {
+		if strings.EqualFold(strings.TrimSpace(profile.Provider), "Responses") &&
+			strings.EqualFold(strings.TrimSpace(message.Role), "assistant") &&
+			message.CacheObjects != nil &&
+			message.CacheObjects.OpenAIResponses != nil &&
+			len(message.CacheObjects.OpenAIResponses.Output) > 0 {
+			responseBlocks := buildAIResponsesOutputTokenCountBlocks(message.CacheObjects.OpenAIResponses.Output)
+			if len(responseBlocks) > 0 {
+				blocks = append(blocks, responseBlocks...)
+				continue
+			}
+		}
 		if message.Content != "" {
 			blocks = append(blocks, TokenCountBlock{
 				Type: "text",

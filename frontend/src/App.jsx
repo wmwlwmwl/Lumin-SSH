@@ -1223,6 +1223,41 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     localStorage.setItem('showAIPanel', showAIPanel);
   }, [showAIPanel]);
 
+  useEffect(() => {
+    const handleSendTerminalSelectionToAI = (event) => {
+      const selectedText = typeof event?.detail?.text === 'string' ? event.detail.text.trim() : '';
+      const targetSessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      const sourceTerminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : '';
+      if (!selectedText || !targetSessionId) {
+        return;
+      }
+      const session = sessionsRef.current.find((item) => item.id === targetSessionId);
+      if (!session) {
+        return;
+      }
+      const nextTerminalId = activeSessionIdRef.current === targetSessionId && activeTerminalIdRef.current
+        ? activeTerminalIdRef.current
+        : resolveSessionRootTerminalId(session, sourceTerminalId || lastTerminalRef.current[targetSessionId]);
+      if (!nextTerminalId) {
+        return;
+      }
+      markWorkspaceRestoreNavigationOverride();
+      setAIPanelVisibility(true);
+      setActiveSessionId(targetSessionId);
+      setActiveTerminalId(nextTerminalId);
+      setContentTab('terminal');
+      window.dispatchEvent(new CustomEvent('ai-composer-append', {
+        detail: {
+          sessionId: targetSessionId,
+          terminalId: nextTerminalId,
+          text: selectedText,
+        },
+      }));
+    };
+    window.addEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
+    return () => window.removeEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
+  }, [markWorkspaceRestoreNavigationOverride, resolveSessionRootTerminalId, setAIPanelVisibility]);
+
   const pingTimerRef = useRef(null);
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
@@ -1650,14 +1685,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         ? targetSessionId.trim()
         : '';
     if (!bridge?.ReapplyAIChatTool) {
-      addToast(t('ai.reapply.unavailable'), 'error', 3200);
+      addToast(t('重新应用能力未就绪'), 'error', 3200);
       return false;
     }
     try {
       await bridge.ReapplyAIChatTool(artifactPath, effectiveTerminalId);
       return true;
     } catch (error) {
-      addToast(error instanceof Error ? t(error.message) : t('ai.reapply.unsupported'), 'error', 3200);
+      addToast(error instanceof Error ? t(error.message) : t('当前状态不支持重新应用'), 'error', 3200);
       return false;
     }
   }, [addToast, t]);
