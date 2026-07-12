@@ -197,7 +197,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 	cm := newTestConfigManager(t)
-	parsed, err := cm.parseImportData(data, [][]byte{}, nil)
+	parsed, err := cm.parseImportData(data, [][]byte{}, "")
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -234,6 +234,26 @@ func TestFilterImportCredentialsForConnections(t *testing.T) {
 
 // ── 密文导入/导出测试 ──────────────────────────────────────────
 
+const lumin2TestVector = "LUMIN2:AgADNFAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobuSS2sCUnXOM1UV1g4ZCENiXBLVh7tzhcV8HkJjqqVdjqjtgc92HbU3EU7+BTIH/QY2lRWwWuHVNiSGCjeIWbJ6o/J5CiWGel3ziScbUDW+RH8VGAgEcPQoj2WgSwzsG2ablk02o/U5EJDWs3NJcrLRpFNoaAwNh3OeGLct1sA/w="
+
+func TestLUMIN2FixedVector(t *testing.T) {
+	password := "跨端-password-🔐"
+	payload := `{"connections":[{"id":"vector","host":"example.com","port":22,"username":"root"}],"snapshot_time":1700000000000}`
+	salt := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+	nonce := []byte{16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27}
+	got, err := encryptLUMIN2WithSaltNonce(payload, password, salt, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != lumin2TestVector {
+		t.Fatalf("vector mismatch:\n%s", got)
+	}
+	decrypted, err := decryptLUMIN2(got, password)
+	if err != nil || decrypted != payload {
+		t.Fatalf("decrypt mismatch: %v", err)
+	}
+}
+
 // newTestConfigManager 创建一个临时 ConfigManager 用于加解密测试（会生成临时配置目录）。
 func newTestConfigManager(t *testing.T) *ConfigManager {
 	t.Helper()
@@ -247,22 +267,20 @@ func TestEncryptedRoundTrip_PasswordKey(t *testing.T) {
 		{ID: "c1", Host: "h1", Port: 22, Username: "root", Password: "secret", AuthMethod: "password"},
 	}, []Credential{})
 	password := "myPassword123"
-	key := sha256Key(password)
 
-	encrypted, err := cm.encryptExportData(exp, key)
+	encrypted, err := cm.encryptExportData(exp, password)
 	if err != nil {
 		t.Fatalf("encrypt failed: %v", err)
 	}
 
 	// 用错误密码解密应返回 errNeedPassword
-	wrongKey := sha256Key("wrong")
-	_, err = cm.parseImportData([]byte(encrypted), [][]byte{}, wrongKey)
+	_, err = cm.parseImportData([]byte(encrypted), [][]byte{}, "wrong")
 	if !errors.Is(err, errNeedPassword) {
 		t.Fatalf("expected errNeedPassword with wrong key, got %v", err)
 	}
 
 	// 用正确密码解密
-	parsed, err := cm.parseImportData([]byte(encrypted), [][]byte{}, key)
+	parsed, err := cm.parseImportData([]byte(encrypted), [][]byte{}, password)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -279,7 +297,7 @@ func TestParseImportData_Plaintext(t *testing.T) {
 	}, []Credential{})
 	data, _ := json.Marshal(plainExp)
 
-	parsed, err := cm.parseImportData(data, [][]byte{}, nil)
+	parsed, err := cm.parseImportData(data, [][]byte{}, "")
 	if err != nil {
 		t.Fatalf("plaintext parse failed: %v", err)
 	}
@@ -296,7 +314,7 @@ func TestParseImportData_SyncSnapshotFormat(t *testing.T) {
 	}
 	data, _ := json.Marshal(snap)
 	// SyncSnapshot 没有 format 字段，tryParseExportJSON 会失败，应回退到 tryParseSnapshotJSON
-	parsed, err := cm.parseImportData(data, [][]byte{}, nil)
+	parsed, err := cm.parseImportData(data, [][]byte{}, "")
 	if err != nil {
 		t.Fatalf("snapshot parse failed: %v", err)
 	}
@@ -312,7 +330,7 @@ func TestParseImportData_SyncSnapshotKeepsProxyNodes(t *testing.T) {
 		ProxyNodes:  []ai.AIProxyNode{{ID: "proxy-1", Name: "Proxy", Type: "socks5", Host: "127.0.0.1", Port: 1080}},
 	}
 	data, _ := json.Marshal(snap)
-	parsed, err := cm.parseImportData(data, [][]byte{}, nil)
+	parsed, err := cm.parseImportData(data, [][]byte{}, "")
 	if err != nil {
 		t.Fatalf("snapshot parse failed: %v", err)
 	}
@@ -346,7 +364,7 @@ func TestParseImportData_EncryptedSnapshot(t *testing.T) {
 	}
 
 	// 用云端密钥作为候选密钥，应能解密并识别为 SyncSnapshot
-	parsed, err := cm.parseImportData([]byte(encrypted), [][]byte{cloudKey}, nil)
+	parsed, err := cm.parseImportData([]byte(encrypted), [][]byte{cloudKey}, "")
 	if err != nil {
 		t.Fatalf("encrypted snapshot parse failed: %v", err)
 	}
@@ -359,11 +377,10 @@ func TestParseImportData_EncryptedSnapshot(t *testing.T) {
 func TestParseImportData_NeedPassword(t *testing.T) {
 	cm := newTestConfigManager(t)
 	exp := buildConnectionsExport([]Connection{{Host: "h1"}}, []Credential{})
-	realKey := sha256Key("correct")
-	encrypted, _ := cm.encryptExportData(exp, realKey)
+	encrypted, _ := cm.encryptExportData(exp, "correct")
 
 	// 没有提供任何正确密钥
-	_, err := cm.parseImportData([]byte(encrypted), [][]byte{sha256Key("wrong1"), sha256Key("wrong2")}, nil)
+	_, err := cm.parseImportData([]byte(encrypted), [][]byte{sha256Key("wrong1"), sha256Key("wrong2")}, "")
 	if !errors.Is(err, errNeedPassword) {
 		t.Fatalf("expected errNeedPassword, got %v", err)
 	}
@@ -373,11 +390,12 @@ func TestParseImportData_NeedPassword(t *testing.T) {
 func TestParseImportData_PasswordKeyPriority(t *testing.T) {
 	cm := newTestConfigManager(t)
 	exp := buildConnectionsExport([]Connection{{Host: "h1", Password: "pw"}}, []Credential{})
-	passwordKey := sha256Key("user-password")
-	encrypted, _ := cm.encryptExportData(exp, passwordKey)
+	password := "user-password"
+	data, _ := json.Marshal(exp)
+	encrypted, _ := cm.encryptWithKey(string(data), sha256Key(password))
 
-	// passwordKey 正确，candidateKeys 全错，应优先用 passwordKey 成功
-	parsed, err := cm.parseImportData([]byte(encrypted), [][]byte{sha256Key("wrong")}, passwordKey)
+	// 旧 hex 中用户密码应先于候选云密钥尝试。
+	parsed, err := cm.parseImportData([]byte(encrypted), [][]byte{sha256Key("wrong")}, password)
 	if err != nil {
 		t.Fatalf("expected success with passwordKey priority, got %v", err)
 	}

@@ -90,7 +90,7 @@ func (s *SyncSnapshot) UnmarshalJSON(data []byte) error {
 
 // decryptAndParseSnapshot 解析同步备份：先试明文 JSON，失败后按 extraKey（恢复密码）→ key（旧版后端派生密钥）解密。
 // extraKey 通常为恢复密码派生密钥，可为 nil；key 仅用于旧版云端 .enc 兼容。
-func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte, extraKey []byte) (*SyncSnapshot, error) {
+func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte, password string) (*SyncSnapshot, error) {
 	// ponytail: 先试明文（新默认），不行再按密文解密
 	var snap SyncSnapshot
 	if err := json.Unmarshal([]byte(data), &snap); err == nil && snap.Connections != nil {
@@ -100,15 +100,24 @@ func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte, extraKe
 	if err := json.Unmarshal([]byte(data), &conns); err == nil && len(conns) > 0 {
 		return &SyncSnapshot{Connections: conns}, nil
 	}
-	// 密文路径：extraKey（恢复密码）→ key（旧版后端派生密钥兼容）
 	decrypted := ""
-	if extraKey != nil {
-		decrypted = c.decryptWithKey(data, extraKey)
-	}
-	// TODO(deprecated, 预计 v1.2.0+ 移除): 以下为旧版后端派生密钥兼容回退。
-	// 新版不再产生用后端派生密钥加密的云端备份；等用户充分升级后删除此分支。
-	if decrypted == "" && key != nil {
-		decrypted = c.decryptWithKey(data, key)
+	if strings.HasPrefix(strings.TrimSpace(data), lumin2Prefix) {
+		if password == "" {
+			return nil, fmt.Errorf("LUMIN2 备份需要恢复密码")
+		}
+		var err error
+		decrypted, err = decryptLUMIN2(strings.TrimSpace(data), password)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// 1.2.0+ 删除旧 hex 兼容：以下分支仅读取旧 .enc/hex。
+		if password != "" {
+			decrypted = c.decryptWithKey(data, sha256Key(password))
+		}
+		if decrypted == "" && key != nil {
+			decrypted = c.decryptWithKey(data, key)
+		}
 	}
 	if decrypted == "" {
 		return nil, fmt.Errorf("解密失败：如果这是旧版本产生的备份，且云端凭据已变更，则受 AES-256 高强加密保护，资料已永久无法恢复。")
@@ -431,7 +440,8 @@ func normalizeSyncAIProxyNodes(nodes []ai.AIProxyNode) []ai.AIProxyNode {
 // ─── 共享远端操作 ─────────────────────────────────────────
 
 func isBackupName(name string) bool {
-	return strings.HasPrefix(name, "connections_backup_") && (strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".enc"))
+	// 1.2.0+ 删除旧 hex 兼容：.enc 仅用于读取/清理旧备份，新写入使用 .lumin2。
+	return strings.HasPrefix(name, "connections_backup_") && (strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".lumin2") || strings.HasSuffix(name, ".enc"))
 }
 
 func isNoBackupError(err error) bool {
@@ -477,7 +487,7 @@ func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error
 			log.Printf("fetchLatestBackup: read %s: %v (skipping)", name, err)
 			continue
 		}
-		parsed, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), c.getRecoveryPasswordKey()) // key 仅为旧版 .enc 兼容；新版走明文或恢复密码
+		parsed, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), c.GetRecoveryPassword()) // key 仅为旧版 .enc 兼容；新版走明文或恢复密码
 		if err != nil {
 			log.Printf("fetchLatestBackup: decrypt %s: %v (skipping)", name, err)
 			continue
@@ -514,10 +524,10 @@ func (c *ConfigManager) localAIGlobalSettingsForSync() *ai.AIGlobalSettings {
 }
 
 // backupConnections 上传本地所有可同步数据到远端，同时清理超出 maxBackups 的旧备份。
-// 加密策略（与导出一致）：设置了恢复密码则用 sha256(password) 加密上传 .enc；否则明文 JSON 上传 .json。
+// 加密策略（与导出一致）：设置了恢复密码则上传 LUMIN2 .lumin2；否则明文 JSON 上传 .json。
 //
-// 历史兼容：旧版用后端派生密钥 (s.EncryptKey()) 加密上传 .enc，新版不再产生此类备份，
-// 但 decryptAndParseSnapshot 仍保留解密兼容（见其 TODO 注释）。
+// 1.2.0+ 删除旧 hex 兼容：旧版用后端派生密钥加密上传 .enc，新版不再产生此类备份，
+// 但 decryptAndParseSnapshot 仍保留读取兼容。
 func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[string]interface{}, error) {
 	snap := SyncSnapshot{
 		Connections:         c.GetConnections(),
@@ -542,13 +552,13 @@ func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[
 	// ponytail: 有恢复密码才加密，默认明文；与导出入口径一致
 	var payload []byte
 	var fileName string
-	if rpKey := c.getRecoveryPasswordKey(); rpKey != nil {
-		encrypted, err := c.encryptWithKey(string(data), rpKey)
+	if password := c.GetRecoveryPassword(); password != "" {
+		encrypted, err := encryptLUMIN2(string(data), password)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt snapshot: %w", err)
 		}
 		payload = []byte(encrypted)
-		fileName = fmt.Sprintf("connections_backup_%s.enc", timestamp)
+		fileName = fmt.Sprintf("connections_backup_%s.lumin2", timestamp)
 	} else {
 		payload = data
 		fileName = fmt.Sprintf("connections_backup_%s.json", timestamp)
@@ -606,9 +616,9 @@ func (c *ConfigManager) listBackupFiles(s RemoteStorage) ([]map[string]interface
 	var backups []map[string]interface{}
 	for _, f := range files {
 		if !f.IsDir && isBackupName(f.Name) {
-			// 从文件名解析时间：优先新格式（带时区），fallback 旧格式（无时区用本地时间），支持 .enc/.json
+			// 从文件名解析时间：优先新格式（带时区），fallback 旧格式（无时区用本地时间），支持 .lumin2/.enc/.json
 			timeStr := ""
-			base := strings.TrimSuffix(strings.TrimSuffix(f.Name, ".enc"), ".json")
+			base := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(f.Name, ".lumin2"), ".enc"), ".json")
 			if t, err := time.Parse("connections_backup_20060102_150405.000_-0700", base); err == nil {
 				timeStr = t.Local().Format("2006-01-02 15:04:05 -0700")
 			} else if t, err := time.ParseInLocation("connections_backup_20060102_150405.000", base, time.Local); err == nil {
@@ -1886,13 +1896,13 @@ func (c *ConfigManager) restoreSnapshotToLocal(snap *SyncSnapshot) {
 // 读取远端文件 → 解密解析快照 → 写回本地。
 // 统一用 filepath.Base 防止路径穿越。
 // extraKey 通常为恢复密码派生密钥，可为 nil。
-func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, maxBackups int, extraKey []byte) error {
+func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, maxBackups int, password string) error {
 	filename = filepath.Base(filename) // 防止路径穿越
 	data, err := s.ReadFile(filename)
 	if err != nil {
 		return err
 	}
-	snap, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), extraKey) // s.EncryptKey() 仅为旧版 .enc 兼容
+	snap, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), password) // s.EncryptKey() 仅为旧版 .enc 兼容
 	if err != nil {
 		return err
 	}
@@ -1967,5 +1977,5 @@ func (c *ConfigManager) restoreFrom(storageFn func() (RemoteStorage, int, error)
 	if cl, ok := s.(storageCloser); ok {
 		defer cl.Close()
 	}
-	return restoreResult(c.restoreFromProvider(s, filename, max, extraKey))
+	return restoreResult(c.restoreFromProvider(s, filename, max, c.GetRecoveryPassword()))
 }

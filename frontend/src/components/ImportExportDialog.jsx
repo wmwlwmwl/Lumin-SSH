@@ -113,7 +113,7 @@ export default function ImportExportDialog({ onClose, onExport, onImport, onDown
                 {radioDot(format === 'encrypted')}
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{t('密文')}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>.enc</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>.lumin2</div>
                 </div>
               </div>
             </div>
@@ -181,7 +181,7 @@ export default function ImportExportDialog({ onClose, onExport, onImport, onDown
               <Upload size={14} /> {t('从文件导入')}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-              {t('支持明文 JSON 与密文 .enc；密文会优先尝试恢复密码，兼容旧版云同步密钥，失败时提示输入密码')}
+              {t('支持明文 JSON、密文 .lumin2 与旧 .enc；密文会优先尝试恢复密码，兼容旧版云同步密钥，失败时提示输入密码')}
             </div>
             <button className="btn btn-secondary" onClick={onImport} disabled={busy} style={{ height: 34, fontSize: 13 }}>
               <Upload size={14} style={{ marginRight: 6 }} />{t('选择文件并导入')}

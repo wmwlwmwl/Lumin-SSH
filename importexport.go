@@ -335,14 +335,13 @@ func sha256Key(password string) []byte {
 	return h[:]
 }
 
-// encryptExportData 把导出对象序列化为 JSON 并用指定密钥加密，返回 hex 密文字符串。
-// 产出格式与云端备份 .enc 一致（encryptWithKey 的输出），只是密钥来源不同。
-func (c *ConfigManager) encryptExportData(exp SyncSnapshot, key []byte) (string, error) {
+// encryptExportData 把导出对象序列化为 JSON 并用指定密码加密，返回 LUMIN2 字符串。
+func (c *ConfigManager) encryptExportData(exp SyncSnapshot, password string) (string, error) {
 	data, err := json.MarshalIndent(exp, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal export: %w", err)
 	}
-	enc, err := c.encryptWithKey(string(data), key)
+	enc, err := encryptLUMIN2(string(data), password)
 	if err != nil {
 		return "", fmt.Errorf("encrypt export: %w", err)
 	}
@@ -410,7 +409,7 @@ func (c *ConfigManager) GetActiveSyncKey() ([]byte, string) {
 	return nil, ""
 }
 
-// CandidateSyncKeys 返回本机所有可用的解密密钥列表（恢复密码优先，旧版后端派生密钥兼容），用于导入时自动尝试解密 .enc。
+// CandidateSyncKeys 返回本机所有可用的旧 hex 解密密钥列表（恢复密码优先，旧版后端派生密钥兼容），用于导入时自动尝试解密 .enc。
 func (c *ConfigManager) CandidateSyncKeys() [][]byte {
 	var keys [][]byte
 	// 恢复密码优先（新方式）
@@ -436,7 +435,7 @@ func (c *ConfigManager) CandidateSyncKeys() [][]byte {
 //
 // passwordKey 为空表示用户未提供密码；candidateKeys 为恢复密码优先、旧版后端派生密钥兼容。
 // 所有密钥都解密失败时返回 errNeedPassword。
-func (c *ConfigManager) parseImportData(data []byte, candidateKeys [][]byte, passwordKey []byte) (*SyncSnapshot, error) {
+func (c *ConfigManager) parseImportData(data []byte, candidateKeys [][]byte, password string) (*SyncSnapshot, error) {
 	// 先尝试明文 JSON：优先 connectionsExport 格式
 	if exp, ok := tryParseExportJSON(data); ok {
 		return exp, nil
@@ -446,15 +445,30 @@ func (c *ConfigManager) parseImportData(data []byte, candidateKeys [][]byte, pas
 		return exp, nil
 	}
 
-	// 否则当 hex 密文处理。decryptWithKey 对非法 hex/非密文会返回空串。
 	raw := strings.TrimSpace(string(data))
-	// 构造尝试顺序：恢复密码 → 旧版云同步密钥 → 用户输入的自定义密码
-	var keysToTry [][]byte
-	keysToTry = append(keysToTry, candidateKeys...)
-	if len(passwordKey) > 0 {
-		keysToTry = append(keysToTry, passwordKey)
+	if strings.HasPrefix(raw, lumin2Prefix) {
+		if password == "" {
+			return nil, errNeedPassword
+		}
+		decrypted, err := decryptLUMIN2(raw, password)
+		if err != nil {
+			return nil, errNeedPassword
+		}
+		if exp, ok := tryParseSnapshotJSON([]byte(decrypted)); ok {
+			return exp, nil
+		}
+		if exp, ok := tryParseExportJSON([]byte(decrypted)); ok {
+			return exp, nil
+		}
+		return nil, fmt.Errorf("LUMIN2 解密成功但内容不是有效 SyncSnapshot")
 	}
 
+	// 1.2.0+ 删除旧 hex 兼容：以下分支仅读取旧 .enc/hex。
+	var keysToTry [][]byte
+	if password != "" {
+		keysToTry = append(keysToTry, sha256Key(password))
+	}
+	keysToTry = append(keysToTry, candidateKeys...)
 	for _, key := range keysToTry {
 		decrypted := c.decryptWithKey(raw, key)
 		if decrypted == "" {

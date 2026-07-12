@@ -45,9 +45,9 @@ type App struct {
 	mainLivenessLockRelease   func()
 	builtinProcessMu          sync.Mutex
 	builtinProcesses          map[string]*exec.Cmd
-	quitting                  atomic.Bool         // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
-	closeAck                  atomic.Bool         // 前端已响应关闭弹窗（tray/cancel），取消 5s 兜底强制退出
-	onBeforeQuit              func()              // 退出前回调，由 main 设置用于清理托盘等
+	quitting                  atomic.Bool // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
+	closeAck                  atomic.Bool // 前端已响应关闭弹窗（tray/cancel），取消 5s 兜底强制退出
+	onBeforeQuit              func()      // 退出前回调，由 main 设置用于清理托盘等
 	aiChatReqMu               sync.Mutex
 	aiChatReqCancel           map[string]context.CancelFunc
 	aiPendingToolMu           sync.Mutex
@@ -328,25 +328,14 @@ func (a *App) DeleteConnection(id string) bool {
 }
 
 // ExportConnections 导出全部节点到用户选择的文件。
-// useEncryption=false 导出明文 .json（含真实密码/私钥）；true 导出密文 .enc。
-// password 非空时用 sha256(password) 当密钥；空则用本机恢复密码（与云端同步加密口径一致）。
+// useEncryption=false 导出明文 .json（含真实密码/私钥）；true 导出密文 .lumin2。
+// password 非空时用于 LUMIN2 PBKDF2 派生；空则用本机恢复密码（与云端同步加密口径一致）。
 // 弹出保存对话框；用户取消时返回 ("", nil)。返回写入的文件路径。
 func (a *App) ExportConnections(useEncryption bool, password string) (string, error) {
-	// 选定密钥
-	var key []byte
-	var keySource string
-	if useEncryption {
-		if strings.TrimSpace(password) != "" {
-			key = sha256Key(password)
-			keySource = "password"
-		} else {
-			// ponytail: 复用恢复密码，与云端同步加密口径一致
-			rpKey := a.configManager.getRecoveryPasswordKey()
-			if rpKey == nil {
-				return "", fmt.Errorf("未设置恢复密码，请输入自定义密码或先在同步设置中设置恢复密码")
-			}
-			key = rpKey
-			keySource = "recovery"
+	if useEncryption && strings.TrimSpace(password) == "" {
+		password = a.configManager.GetRecoveryPassword()
+		if password == "" {
+			return "", fmt.Errorf("未设置恢复密码，请输入自定义密码或先在同步设置中设置恢复密码")
 		}
 	}
 
@@ -354,7 +343,7 @@ func (a *App) ExportConnections(useEncryption bool, password string) (string, er
 	ext := ".json"
 	title := "导出节点"
 	if useEncryption {
-		ext = ".enc"
+		ext = ".lumin2"
 	}
 	timestamp := time.Now().Format("20060102_150405.000_-0700")
 	defaultName := fmt.Sprintf("lumin-ssh-connections-%s%s", timestamp, ext)
@@ -391,15 +380,14 @@ func (a *App) ExportConnections(useEncryption bool, password string) (string, er
 		return path, nil
 	}
 
-	// 密文：序列化 → 加密 → 写 hex
-	encrypted, err := a.configManager.encryptExportData(exp, key)
+	// 密文：序列化 → LUMIN2 加密
+	encrypted, err := a.configManager.encryptExportData(exp, password)
 	if err != nil {
 		return "", fmt.Errorf("导出失败: %w", err)
 	}
 	if err := atomicWriteFile(path, []byte(encrypted), 0600); err != nil {
 		return "", fmt.Errorf("导出失败: %w", err)
 	}
-	_ = keySource // 密钥来源（可用于日志/提示，当前不返回给前端）
 	return path, nil
 }
 
@@ -409,7 +397,7 @@ func (a *App) SelectImportFile() (string, error) {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "导入节点",
 		Filters: []runtime.FileFilter{
-			{DisplayName: "Lumin-SSH (*.json;*.enc)", Pattern: "*.json;*.enc"},
+			{DisplayName: "Lumin-SSH (*.json;*.lumin2;*.enc)", Pattern: "*.json;*.lumin2;*.enc"},
 		},
 	})
 	if err != nil {
@@ -433,13 +421,12 @@ func (a *App) ImportConnections(filePath string, password string) (ImportResult,
 		return ImportResult{}, fmt.Errorf("导入失败: %w", err)
 	}
 
-	var passwordKey []byte
-	if strings.TrimSpace(password) != "" {
-		passwordKey = sha256Key(password)
+	if strings.TrimSpace(password) == "" {
+		password = a.configManager.GetRecoveryPassword()
 	}
 	candidateKeys := a.configManager.CandidateSyncKeys()
 
-	exp, err := a.configManager.parseImportData(data, candidateKeys, passwordKey)
+	exp, err := a.configManager.parseImportData(data, candidateKeys, password)
 	if err != nil {
 		if errors.Is(err, errNeedPassword) {
 			// 原样返回，前端识别此 sentinel 并弹密码框

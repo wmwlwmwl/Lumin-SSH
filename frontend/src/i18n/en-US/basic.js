@@ -1051,7 +1051,7 @@ export default {
   "密码错误或文件不兼容": "Wrong password or incompatible file",
   "导出全部节点": "Export all connections",
   "从文件导入": "Import from file",
-  "支持明文 JSON 与密文 .enc；密文会优先尝试恢复密码，兼容旧版云同步密钥，失败时提示输入密码": "Supports plaintext JSON and encrypted .enc; encrypted files try the recovery password first, then legacy cloud sync keys for compatibility, and prompt for a password if all attempts fail",
+  "支持明文 JSON、密文 .lumin2 与旧 .enc；密文会优先尝试恢复密码，兼容旧版云同步密钥，失败时提示输入密码": "Supports plaintext JSON, encrypted .lumin2, and legacy .enc imports; encrypted files try the recovery password first, then legacy cloud sync keys for compatibility, and prompt for a password if all attempts fail",
   "支持明文 JSON 与密文 .enc；密文会自动尝试本机云同步密钥，失败时提示输入密码": "Supports plaintext JSON and encrypted .enc; encrypted files auto-try cloud sync keys, prompting for password on failure",
   "选择文件并导入": "Select file and import",
   "项": "",

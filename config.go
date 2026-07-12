@@ -6,6 +6,8 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"time"
 
 	"github.com/studio-b12/gowebdav"
+	"golang.org/x/crypto/pbkdf2"
 
 	ai "luminssh-go/internal/ai"
 	runtimeenv "luminssh-go/module/runtimeenv"
@@ -226,7 +229,81 @@ func (c *ConfigManager) decrypt(hexText string) string {
 	return string(plaintext)
 }
 
-// encryptWithKey 使用指定密钥加密（用于云端备份等场景）
+const (
+	lumin2Prefix     = "LUMIN2:"
+	lumin2Iterations = 210000
+	lumin2HeaderSize = 1 + 4 + 16 + 12
+)
+
+func encryptLUMIN2(text, password string) (string, error) {
+	salt, nonce := make([]byte, 16), make([]byte, 12)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return "", fmt.Errorf("generate salt: %w", err)
+	}
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+	return encryptLUMIN2WithSaltNonce(text, password, salt, nonce)
+}
+
+func encryptLUMIN2WithSaltNonce(text, password string, salt, nonce []byte) (string, error) {
+	if len(salt) != 16 || len(nonce) != 12 {
+		return "", fmt.Errorf("LUMIN2 salt/nonce 长度无效")
+	}
+	key := pbkdf2.Key([]byte(password), salt, lumin2Iterations, 32, sha256.New)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("aes.NewCipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("cipher.NewGCM: %w", err)
+	}
+	payload := make([]byte, lumin2HeaderSize)
+	payload[0] = 2
+	binary.BigEndian.PutUint32(payload[1:5], lumin2Iterations)
+	copy(payload[5:21], salt)
+	copy(payload[21:33], nonce)
+	payload = gcm.Seal(payload, nonce, []byte(text), nil)
+	return lumin2Prefix + base64.StdEncoding.EncodeToString(payload), nil
+}
+
+func decryptLUMIN2(text, password string) (string, error) {
+	if !strings.HasPrefix(text, lumin2Prefix) {
+		return "", fmt.Errorf("缺少 LUMIN2 前缀")
+	}
+	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(text, lumin2Prefix))
+	if err != nil {
+		return "", fmt.Errorf("LUMIN2 Base64 无效: %w", err)
+	}
+	if len(payload) < lumin2HeaderSize+16 {
+		return "", fmt.Errorf("LUMIN2 数据长度不足")
+	}
+	if payload[0] != 2 {
+		return "", fmt.Errorf("不支持的 LUMIN2 版本: %d", payload[0])
+	}
+	iterations := binary.BigEndian.Uint32(payload[1:5])
+	if iterations < 100000 || iterations > 2000000 {
+		return "", fmt.Errorf("LUMIN2 迭代次数无效: %d", iterations)
+	}
+	key := pbkdf2.Key([]byte(password), payload[5:21], int(iterations), 32, sha256.New)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("LUMIN2 密钥无效: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("LUMIN2 GCM 初始化失败: %w", err)
+	}
+	plaintext, err := gcm.Open(nil, payload[21:33], payload[33:], nil)
+	if err != nil {
+		return "", fmt.Errorf("LUMIN2 解密失败，请确认密码是否正确")
+	}
+	return string(plaintext), nil
+}
+
+// encryptWithKey 使用指定密钥加密旧版纯 hex 格式，仅用于兼容读取测试。
+// 1.2.0+ 删除旧 hex 兼容。
 func (c *ConfigManager) encryptWithKey(text string, key []byte) (string, error) {
 	if text == "" {
 		return "", nil
