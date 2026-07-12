@@ -4,8 +4,11 @@ import (
 	"context"
 	"embed"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	runtimebundle "luminssh-go/module/runtimebundle"
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
@@ -16,6 +19,9 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed all:module
+var embeddedModuleFS embed.FS
 
 // forceShowWindow 唤醒隐藏到托盘的窗口，带 recover 防止 panic 导致托盘 goroutine 挂死
 func forceShowWindow(ctx context.Context) {
@@ -84,6 +90,12 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 8, G: 12, B: 20, A: 255}, // #080c14
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
+			go func() {
+				targetRoot := filepath.Join(getProgramDirectory(), "modules", "kimiapi")
+				if err := runtimebundle.ReleaseEmbeddedDirectory(embeddedModuleFS, "module/kimiapi", targetRoot); err != nil {
+					println("release kimiapi bundle failed:", err.Error())
+				}
+			}()
 			startSystray(app)
 		},
 		OnShutdown: func(ctx context.Context) {

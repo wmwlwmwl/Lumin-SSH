@@ -2,7 +2,7 @@ import { MessageSquare, User } from 'lucide-react'
 import { useTranslation } from '../../../i18n.js'
 import AIChatMessageActions from './AIChatMessageActions.jsx'
 
-const assistantTitleKey = 'ai.assistant.title'
+const assistantTitleKey = '助手'
 
 function UserMessageActionBar({ t, title, time, actions }) {
   return (

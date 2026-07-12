@@ -376,6 +376,7 @@ export default function App() {
   const editFlyFieldTimerRefs = useRef([]);
   const editFlyShineTimerRefs = useRef([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState('general');
   const [showCredentials, setShowCredentials] = useState(false);
   const [tabContextMenu, setTabContextMenu] = useState(null);
   const [terminalTabContextMenu, setTerminalTabContextMenu] = useState(null);
@@ -1223,6 +1224,41 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     localStorage.setItem('showAIPanel', showAIPanel);
   }, [showAIPanel]);
 
+  useEffect(() => {
+    const handleSendTerminalSelectionToAI = (event) => {
+      const selectedText = typeof event?.detail?.text === 'string' ? event.detail.text.trim() : '';
+      const targetSessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : '';
+      const sourceTerminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : '';
+      if (!selectedText || !targetSessionId) {
+        return;
+      }
+      const session = sessionsRef.current.find((item) => item.id === targetSessionId);
+      if (!session) {
+        return;
+      }
+      const nextTerminalId = activeSessionIdRef.current === targetSessionId && activeTerminalIdRef.current
+        ? activeTerminalIdRef.current
+        : resolveSessionRootTerminalId(session, sourceTerminalId || lastTerminalRef.current[targetSessionId]);
+      if (!nextTerminalId) {
+        return;
+      }
+      markWorkspaceRestoreNavigationOverride();
+      setAIPanelVisibility(true);
+      setActiveSessionId(targetSessionId);
+      setActiveTerminalId(nextTerminalId);
+      setContentTab('terminal');
+      window.dispatchEvent(new CustomEvent('ai-composer-append', {
+        detail: {
+          sessionId: targetSessionId,
+          terminalId: nextTerminalId,
+          text: selectedText,
+        },
+      }));
+    };
+    window.addEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
+    return () => window.removeEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
+  }, [markWorkspaceRestoreNavigationOverride, resolveSessionRootTerminalId, setAIPanelVisibility]);
+
   const pingTimerRef = useRef(null);
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
@@ -1650,14 +1686,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         ? targetSessionId.trim()
         : '';
     if (!bridge?.ReapplyAIChatTool) {
-      addToast(t('ai.reapply.unavailable'), 'error', 3200);
+      addToast(t('重新应用能力未就绪'), 'error', 3200);
       return false;
     }
     try {
       await bridge.ReapplyAIChatTool(artifactPath, effectiveTerminalId);
       return true;
     } catch (error) {
-      addToast(error instanceof Error ? t(error.message) : t('ai.reapply.unsupported'), 'error', 3200);
+      addToast(error instanceof Error ? t(error.message) : t('当前状态不支持重新应用'), 'error', 3200);
       return false;
     }
   }, [addToast, t]);
@@ -2395,6 +2431,25 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     const unbind = EventsOn('close-request', handleCloseWindow);
     return () => { if (unbind) unbind(); };
   }, [handleCloseWindow]);
+
+  useEffect(() => {
+    const handleOpenRuntimeEnvironmentSettings = (event) => {
+      const nextTab = typeof event?.detail?.tab === 'string' && event.detail.tab.trim()
+        ? event.detail.tab.trim()
+        : 'runtimeEnvironment';
+      setSettingsInitialTab(nextTab);
+      setShowSettings(true);
+      const toastMessage = typeof event?.detail?.toast === 'string' ? event.detail.toast.trim() : '';
+      if (toastMessage) {
+        const toastDuration = Number.isFinite(Number(event?.detail?.duration)) ? Number(event.detail.duration) : 6000;
+        const toastType = typeof event?.detail?.type === 'string' && event.detail.type.trim() ? event.detail.type.trim() : 'warning';
+        addToast(toastMessage, toastType, toastDuration);
+      }
+    };
+
+    window.addEventListener('open-runtime-environment-settings', handleOpenRuntimeEnvironmentSettings);
+    return () => window.removeEventListener('open-runtime-environment-settings', handleOpenRuntimeEnvironmentSettings);
+  }, [addToast]);
 
   // ── 监听云端同步失败事件 ──────────────────────────────────
   useEffect(() => {
@@ -4286,7 +4341,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               </Tiptop>
             )}
             <Tiptop text={t('设置')} placement="bottom">
-              <button className="btn btn-ghost btn-icon no-drag" onClick={() => setShowSettings(true)} aria-label={t('设置')}><Settings size={16} /></button>
+              <button
+                className="btn btn-ghost btn-icon no-drag"
+                onClick={() => {
+                  setSettingsInitialTab('general');
+                  setShowSettings(true);
+                }}
+                aria-label={t('设置')}
+              ><Settings size={16} /></button>
             </Tiptop>
             <div className="window-divider" />
             <Tiptop text={t('最小化')} placement="bottom">
@@ -5074,6 +5136,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
       {showSettings && (
         <SettingsModal
+          initialTab={settingsInitialTab}
           onClose={() => { setShowSettings(false); loadServers(); }}
           addToast={addToast}
           onRestored={loadServers}

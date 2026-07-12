@@ -12,25 +12,28 @@ import (
 )
 
 type AIProviderProfile struct {
-	ID                           string `json:"id"`
-	Name                         string `json:"name"`
-	Provider                     string `json:"provider"`
-	Model                        string `json:"model"`
-	BaseURL                      string `json:"baseUrl"`
-	APIKey                       string `json:"apiKey"`
-	CacheStrategy                string `json:"cacheStrategy"`
-	WebSearchEnabled             bool   `json:"webSearchEnabled"`
-	DedicatedWebSearchEnabled    bool   `json:"dedicatedWebSearchEnabled"`
-	DedicatedWebSearchProviderID string `json:"dedicatedWebSearchProviderId,omitempty"`
-	DedicatedProxyEnabled        bool   `json:"dedicatedProxyEnabled"`
-	DedicatedProxyID             string `json:"dedicatedProxyId,omitempty"`
-	ReasoningEffort              string `json:"reasoningEffort"`
-	EnableReasoningEffort        bool   `json:"enableReasoningEffort"`
-	OpenAILegacyReasoningFormatEnabled bool `json:"openAiLegacyReasoningFormatEnabled"`
-	ModelMaxTokens               int    `json:"modelMaxTokens,omitempty"`
-	ModelMaxThinkingTokens       int    `json:"modelMaxThinkingTokens,omitempty"`
-	Pinned                       bool   `json:"pinned"`
-	UpdatedAt                    int64  `json:"updatedAt,omitempty"`
+	ID                                 string         `json:"id"`
+	Name                               string         `json:"name"`
+	Provider                           string         `json:"provider"`
+	Model                              string         `json:"model"`
+	BaseURL                            string         `json:"baseUrl"`
+	APIKey                             string         `json:"apiKey"`
+	CacheStrategy                      string         `json:"cacheStrategy"`
+	WebSearchEnabled                   bool           `json:"webSearchEnabled"`
+	DedicatedWebSearchEnabled          bool           `json:"dedicatedWebSearchEnabled"`
+	DedicatedWebSearchProviderID       string         `json:"dedicatedWebSearchProviderId,omitempty"`
+	DedicatedProxyEnabled              bool           `json:"dedicatedProxyEnabled"`
+	DedicatedProxyID                   string         `json:"dedicatedProxyId,omitempty"`
+	ReasoningEffort                    string         `json:"reasoningEffort"`
+	EnableReasoningEffort              bool           `json:"enableReasoningEffort"`
+	OpenAILegacyReasoningFormatEnabled bool           `json:"openAiLegacyReasoningFormatEnabled"`
+	ModelMaxTokens                     int            `json:"modelMaxTokens,omitempty"`
+	ModelMaxThinkingTokens             int            `json:"modelMaxThinkingTokens,omitempty"`
+	Pinned                             bool           `json:"pinned"`
+	Builtin                            bool           `json:"builtin,omitempty"`
+	BuiltinLoginURL                    string         `json:"builtinLoginUrl,omitempty"`
+	APIKeyField                        map[string]any `json:"apiKeyField,omitempty"`
+	UpdatedAt                          int64          `json:"updatedAt,omitempty"`
 }
 
 type AIProviderRegistry struct {
@@ -40,6 +43,96 @@ type AIProviderRegistry struct {
 type AIProviderState struct {
 	CurrentProviderID string              `json:"currentProviderId"`
 	Providers         []AIProviderProfile `json:"providers"`
+}
+
+const (
+	aiBuiltinProviderNamePrefix = "[内置]-"
+)
+
+func cloneAIProviderAnyMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var cloned map[string]any
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return nil
+	}
+	return cloned
+}
+
+var aiBuiltinProviderPresetMap = map[string]AIProviderProfile{
+	"builtin-kimi": {
+		ID:              "builtin-kimi",
+		Name:            aiBuiltinProviderNamePrefix + "Kimi",
+		Provider:        "Compatible",
+		BaseURL:         "http://127.0.0.1:9543/v1",
+		BuiltinLoginURL: "https://www.kimi.com/",
+		APIKeyField: map[string]any{
+			"expression": "^.+$",
+			"paste": map[string]any{
+				"handlerId": "builtin-kimi-local-storage-json-v1",
+			},
+		},
+		Model:   "",
+		Pinned:  false,
+		Builtin: true,
+	},
+}
+
+func GetAIBuiltinProviderPreset(providerID string) (AIProviderProfile, bool) {
+	preset, ok := aiBuiltinProviderPresetMap[strings.TrimSpace(providerID)]
+	return preset, ok
+}
+
+func isAIBuiltinProviderName(name string) bool {
+	return strings.HasPrefix(strings.TrimSpace(name), aiBuiltinProviderNamePrefix)
+}
+
+func IsAIBuiltinProviderProfile(profile AIProviderProfile) bool {
+	if _, ok := GetAIBuiltinProviderPreset(profile.ID); ok {
+		return true
+	}
+	return isAIBuiltinProviderName(profile.Name)
+}
+
+func FindAIBuiltinProvider(profiles []AIProviderProfile) *AIProviderProfile {
+	for index := range profiles {
+		if IsAIBuiltinProviderProfile(profiles[index]) {
+			profile := profiles[index]
+			return &profile
+		}
+	}
+	return nil
+}
+
+func BuildAIBuiltinProviderProfile(profile AIProviderProfile, preservedAPIKey string) AIProviderProfile {
+	preset, ok := GetAIBuiltinProviderPreset(profile.ID)
+	if !ok {
+		preset = aiBuiltinProviderPresetMap["builtin-kimi"]
+	}
+	nextProfile := profile
+	nextProfile.ID = preset.ID
+	nextProfile.Name = preset.Name
+	nextProfile.Provider = preset.Provider
+	nextProfile.BaseURL = preset.BaseURL
+	nextProfile.Pinned = preset.Pinned
+	nextProfile.Builtin = true
+	nextProfile.BuiltinLoginURL = strings.TrimSpace(preset.BuiltinLoginURL)
+	nextProfile.APIKeyField = cloneAIProviderAnyMap(preset.APIKeyField)
+	nextProfile.Model = strings.TrimSpace(nextProfile.Model)
+	if nextProfile.Model == "" {
+		nextProfile.Model = strings.TrimSpace(preset.Model)
+	}
+	if trimmedAPIKey := strings.TrimSpace(preservedAPIKey); trimmedAPIKey != "" {
+		nextProfile.APIKey = trimmedAPIKey
+	} else {
+		nextProfile.APIKey = strings.TrimSpace(nextProfile.APIKey)
+	}
+	return nextProfile
 }
 
 func normalizeAIProviderProtocol(value string) string {
@@ -91,13 +184,12 @@ func normalizeAIProviderReasoningEffort(value string) string {
 	}
 }
 
-func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfile {
+func normalizeAIProviderProfilesWithBuiltin(profiles []AIProviderProfile, existingBuiltin *AIProviderProfile) []AIProviderProfile {
 	if profiles == nil {
-		return []AIProviderProfile{}
+		profiles = []AIProviderProfile{}
 	}
 
 	now := time.Now().UnixMilli()
-	ids := make(map[string]struct{}, len(profiles))
 	normalized := make([]AIProviderProfile, len(profiles))
 	copy(normalized, profiles)
 
@@ -109,6 +201,9 @@ func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfi
 		if strings.TrimSpace(profile.Name) == "" {
 			profile.Name = "未命名供应商"
 		}
+		profile.Builtin = false
+		profile.BuiltinLoginURL = ""
+		profile.APIKeyField = nil
 		profile.Provider = normalizeAIProviderProtocol(profile.Provider)
 		profile.Model = strings.TrimSpace(profile.Model)
 		if profile.Model == "" {
@@ -135,8 +230,27 @@ func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfi
 		if profile.UpdatedAt == 0 {
 			profile.UpdatedAt = now
 		}
-		ids[profile.ID] = struct{}{}
 	}
+
+	builtinCandidate := AIProviderProfile{}
+	if existingBuiltin != nil {
+		builtinCandidate = *existingBuiltin
+	}
+	for _, profile := range normalized {
+		if IsAIBuiltinProviderProfile(profile) {
+			builtinCandidate = profile
+			break
+		}
+	}
+
+	filtered := make([]AIProviderProfile, 0, len(normalized)+1)
+	for _, profile := range normalized {
+		if IsAIBuiltinProviderProfile(profile) {
+			continue
+		}
+		filtered = append(filtered, profile)
+	}
+	normalized = append(filtered, BuildAIBuiltinProviderProfile(builtinCandidate, builtinCandidate.APIKey))
 
 	dedicatedCandidateIDs := make(map[string]struct{}, len(normalized))
 	for _, profile := range normalized {
@@ -178,9 +292,17 @@ func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfi
 	return normalized
 }
 
-func normalizeAIProviderRegistry(registry AIProviderRegistry) AIProviderRegistry {
-	registry.Providers = normalizeAIProviderProfiles(registry.Providers)
+func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfile {
+	return normalizeAIProviderProfilesWithBuiltin(profiles, nil)
+}
+
+func normalizeAIProviderRegistryWithBuiltin(registry AIProviderRegistry, existingBuiltin *AIProviderProfile) AIProviderRegistry {
+	registry.Providers = normalizeAIProviderProfilesWithBuiltin(registry.Providers, existingBuiltin)
 	return registry
+}
+
+func normalizeAIProviderRegistry(registry AIProviderRegistry) AIProviderRegistry {
+	return normalizeAIProviderRegistryWithBuiltin(registry, nil)
 }
 
 func normalizeAIProviderState(state AIProviderState) AIProviderState {
@@ -224,7 +346,8 @@ func (c *ConfigManager) SaveAIProviderRegistry(registry AIProviderRegistry) erro
 	if c == nil {
 		return nil
 	}
-	normalized := normalizeAIProviderRegistry(registry)
+	existingBuiltin := FindAIBuiltinProvider(c.GetAIProviderRegistry().Providers)
+	normalized := normalizeAIProviderRegistryWithBuiltin(registry, existingBuiltin)
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
 		return err
@@ -283,16 +406,16 @@ func (a *App) SaveAIProviderState(jsonStr string) error {
 
 func toAIProviderRuntimeProfile(profile AIProviderProfile) aiprovider.Profile {
 	return aiprovider.Profile{
-		Provider:               profile.Provider,
-		Model:                  profile.Model,
-		BaseURL:                profile.BaseURL,
-		APIKey:                 profile.APIKey,
-		CacheStrategy:                 profile.CacheStrategy,
-		ReasoningEffort:               profile.ReasoningEffort,
-		EnableReasoningEffort:         profile.EnableReasoningEffort,
+		Provider:                           profile.Provider,
+		Model:                              profile.Model,
+		BaseURL:                            profile.BaseURL,
+		APIKey:                             profile.APIKey,
+		CacheStrategy:                      profile.CacheStrategy,
+		ReasoningEffort:                    profile.ReasoningEffort,
+		EnableReasoningEffort:              profile.EnableReasoningEffort,
 		OpenAILegacyReasoningFormatEnabled: profile.OpenAILegacyReasoningFormatEnabled,
-		ModelMaxTokens:                profile.ModelMaxTokens,
-		ModelMaxThinkingTokens: profile.ModelMaxThinkingTokens,
+		ModelMaxTokens:                     profile.ModelMaxTokens,
+		ModelMaxThinkingTokens:             profile.ModelMaxThinkingTokens,
 	}
 }
 

@@ -4,12 +4,19 @@ import { useTranslation, getLanguage } from '../../i18n.js'
 import AIProviderListRow from './AIProviderListRow.jsx'
 import AIProviderQuickEditOverlay from './AIProviderQuickEditOverlay.jsx'
 import Tiptop from '../Tiptop.jsx'
-import { getAIProviderState, normalizeAIProviderState, saveAIProviderState } from './aiProviderBridge.js'
+import { getAIProviderState, isBuiltinAIProvider, normalizeAIProviderState, saveAIProviderState } from './aiProviderBridge.js'
 
 const defaultProviders = []
 const summaryTooltipDelay = 300
-const tokenStoreUrl = 'https://aichatp.callmy.vip/app'
+const defaultTokenStoreUrl = 'https://aichatp.callmy.vip/app'
+const defaultTokenStoreTitle = 'Token 中心'
 const tokenStoreBaseDomain = 'callmy.vip'
+const embeddedBrowserAuthMessageTypes = new Set([
+  'lumin-builtin-provider-auth',
+  'builtin-provider-auth',
+  'builtin-ai-provider-auth',
+])
+const embeddedBrowserAuthRequestType = 'lumin-builtin-provider-auth-request'
 
 const cacheStrategyLabelKeys = {
   model: '基于模型能力',
@@ -34,11 +41,169 @@ function getApiKeyPreview(value) {
 function sortProviders(items) {
   const locale = getLanguage() || 'zh-CN'
   return [...items].sort((left, right) => {
-    if (Boolean(left.pinned) !== Boolean(right.pinned)) {
+    const leftBuiltin = isBuiltinAIProvider(left)
+    const rightBuiltin = isBuiltinAIProvider(right)
+    if (leftBuiltin !== rightBuiltin) {
+      return leftBuiltin ? 1 : -1
+    }
+    if (!leftBuiltin && Boolean(left.pinned) !== Boolean(right.pinned)) {
       return left.pinned ? -1 : 1
     }
     return left.name.localeCompare(right.name, locale)
   })
+}
+
+function parseEmbeddedBrowserMessage(data) {
+  if (data && typeof data === 'object') {
+    return data
+  }
+  if (typeof data !== 'string' || !data.trim()) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(data)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function readEmbeddedBrowserPathValue(source, path) {
+  if (!source || typeof source !== 'object' || typeof path !== 'string' || !path.trim()) {
+    return undefined
+  }
+  return path
+    .split('.')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .reduce((current, segment) => {
+      if (current === undefined || current === null) {
+        return undefined
+      }
+      if (typeof current === 'string') {
+        try {
+          current = JSON.parse(current)
+        } catch {
+          return undefined
+        }
+      }
+      if (typeof current !== 'object') {
+        return undefined
+      }
+      return current[segment]
+    }, source)
+}
+
+function resolveEmbeddedBrowserStorageValue(bucket, pathConfig, sourceType) {
+  if (!bucket || !pathConfig || typeof pathConfig !== 'object') {
+    return undefined
+  }
+  if (sourceType === 'cookie' && Array.isArray(bucket)) {
+    const expectedDomain = typeof pathConfig.domain === 'string' ? pathConfig.domain.trim() : ''
+    const expectedName = typeof pathConfig.name === 'string' ? pathConfig.name.trim() : ''
+    const matchedItem = bucket.find((item) => {
+      const itemDomain = typeof item?.domain === 'string' ? item.domain.trim() : ''
+      const itemName = typeof item?.name === 'string' ? item.name.trim() : (typeof item?.key === 'string' ? item.key.trim() : '')
+      return (!expectedDomain || itemDomain === expectedDomain) && expectedName && itemName === expectedName
+    })
+    return matchedItem?.value
+  }
+  const expectedKey = typeof pathConfig.key === 'string' ? pathConfig.key.trim() : ''
+  if (Array.isArray(bucket)) {
+    const exactItem = bucket.find((item) => {
+      const itemKey = typeof item?.key === 'string' ? item.key.trim() : (typeof item?.name === 'string' ? item.name.trim() : '')
+      const itemOrigin = typeof item?.origin === 'string' ? item.origin.trim() : ''
+      const expectedOrigin = typeof pathConfig.origin === 'string' ? pathConfig.origin.trim() : ''
+      return itemKey === expectedKey && (!expectedOrigin || !itemOrigin || itemOrigin === expectedOrigin)
+    })
+    if (exactItem?.value !== undefined) {
+      return exactItem.value
+    }
+    if (expectedKey.includes('.')) {
+      const [rootKey, ...restPath] = expectedKey.split('.')
+      const nestedItem = bucket.find((item) => {
+        const itemKey = typeof item?.key === 'string' ? item.key.trim() : (typeof item?.name === 'string' ? item.name.trim() : '')
+        return itemKey === rootKey
+      })
+      if (nestedItem?.value !== undefined) {
+        return readEmbeddedBrowserPathValue(nestedItem.value, restPath.join('.'))
+      }
+    }
+    return undefined
+  }
+  if (expectedKey && Object.prototype.hasOwnProperty.call(bucket, expectedKey)) {
+    return bucket[expectedKey]
+  }
+  return readEmbeddedBrowserPathValue(bucket, expectedKey)
+}
+
+function resolveEmbeddedBrowserAPIKey(payload, apiKeyField) {
+  const directCandidates = [
+    payload?.apiKey,
+    payload?.token,
+    payload?.value,
+    payload?.accessToken,
+  ]
+  const directApiKey = directCandidates.find((candidate) => typeof candidate === 'string' && candidate.trim())
+  if (directApiKey) {
+    return directApiKey.trim()
+  }
+  if (!apiKeyField || typeof apiKeyField !== 'object') {
+    return ''
+  }
+  const sourceType = typeof apiKeyField?.source === 'string' ? apiKeyField.source.trim().toLowerCase() : ''
+  const pathConfig = apiKeyField?.path && typeof apiKeyField.path === 'object' ? apiKeyField.path : null
+  let bucket = null
+  if (sourceType === 'cookie') {
+    bucket = payload?.cookies ?? payload?.cookie ?? payload?.cookieJar ?? null
+  } else if (sourceType === 'local_storage') {
+    bucket = payload?.localStorage ?? payload?.local_storage ?? payload?.storage?.localStorage ?? payload?.storage?.local_storage ?? null
+  } else if (sourceType === 'session_storage') {
+    bucket = payload?.sessionStorage ?? payload?.session_storage ?? payload?.storage?.sessionStorage ?? payload?.storage?.session_storage ?? null
+  }
+  const resolvedValue = resolveEmbeddedBrowserStorageValue(bucket, pathConfig, sourceType)
+  return typeof resolvedValue === 'string' ? resolvedValue.trim() : ''
+}
+
+function matchesEmbeddedBrowserAPIKeyExpression(value, expression) {
+  const trimmedValue = typeof value === 'string' ? value.trim() : ''
+  if (!trimmedValue) {
+    return false
+  }
+  const trimmedExpression = typeof expression === 'string' ? expression.trim() : ''
+  if (!trimmedExpression) {
+    return true
+  }
+  try {
+    return new RegExp(trimmedExpression).test(trimmedValue)
+  } catch {
+    return true
+  }
+}
+
+function resolveURLOrigin(value) {
+  const nextValue = typeof value === 'string' ? value.trim() : ''
+  if (!nextValue) {
+    return ''
+  }
+  try {
+    return new URL(nextValue).origin
+  } catch {
+    return ''
+  }
+}
+
+function buildEmbeddedBrowserAuthRequest(context) {
+  if (!context || typeof context !== 'object') {
+    return null
+  }
+  return {
+    type: embeddedBrowserAuthRequestType,
+    providerId: typeof context.providerId === 'string' ? context.providerId.trim() : '',
+    providerName: typeof context.providerName === 'string' ? context.providerName.trim() : '',
+    apiKeyField: context.apiKeyField && typeof context.apiKeyField === 'object' ? context.apiKeyField : null,
+    timestamp: Date.now(),
+  }
 }
 
 export default function AIProviderSelector({
@@ -50,6 +215,7 @@ export default function AIProviderSelector({
 }) {
   const { t } = useTranslation()
   const containerRef = useRef(null)
+  const iframeRef = useRef(null)
   const tooltipTimerRef = useRef(null)
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
@@ -63,6 +229,9 @@ export default function AIProviderSelector({
   const [tooltipTriggerRect, setTooltipTriggerRect] = useState(null)
   const [tokenStoreOpen, setTokenStoreOpen] = useState(false)
   const [tokenStoreLoading, setTokenStoreLoading] = useState(false)
+  const [tokenStoreFrameURL, setTokenStoreFrameURL] = useState(defaultTokenStoreUrl)
+  const [tokenStoreViewTitle, setTokenStoreViewTitle] = useState(defaultTokenStoreTitle)
+  const [embeddedBrowserContext, setEmbeddedBrowserContext] = useState(null)
   const expandLeft = triggerRect ? triggerRect.left + 400 > window.innerWidth - 16 : false
   const tooltipExpandLeft = tooltipTriggerRect ? tooltipTriggerRect.left + 280 > window.innerWidth - 16 : false
   const [editingState, setEditingState] = useState({ open: false, mode: 'edit', provider: null })
@@ -332,6 +501,9 @@ export default function AIProviderSelector({
     setOpen(false)
     setTokenStoreOpen(false)
     setTokenStoreLoading(false)
+    setTokenStoreFrameURL(defaultTokenStoreUrl)
+    setTokenStoreViewTitle(defaultTokenStoreTitle)
+    setEmbeddedBrowserContext(null)
     setTriggerRect(null)
     setTooltipTriggerRect(null)
     setDropdownMetrics(null)
@@ -361,10 +533,29 @@ export default function AIProviderSelector({
     }
   }, [onCurrentProviderChange])
 
+  const openEmbeddedBrowser = useCallback((url, title = defaultTokenStoreTitle, context = null) => {
+    const nextURL = typeof url === 'string' ? url.trim() : ''
+    if (!nextURL) {
+      return
+    }
+    const nextContext = context && typeof context === 'object' ? { ...context } : null
+    closeTooltip()
+    setOpen(false)
+    if (nextContext?.kind !== 'builtin_login' && nextContext?.kind !== 'builtin_doc') {
+      setEditingState({ open: false, mode: 'edit', provider: null })
+    }
+    setTokenStoreFrameURL(nextURL)
+    setTokenStoreViewTitle(typeof title === 'string' && title.trim() ? title.trim() : defaultTokenStoreTitle)
+    setEmbeddedBrowserContext(nextContext)
+    setTokenStoreLoading(true)
+    setTokenStoreOpen(true)
+  }, [closeTooltip])
+
   const handleOpenEditor = (mode, provider = null) => {
     setOpen(false)
     setTokenStoreOpen(false)
     setTokenStoreLoading(false)
+    setEmbeddedBrowserContext(null)
     setEditingState({ open: true, mode, provider })
   }
 
@@ -401,6 +592,7 @@ export default function AIProviderSelector({
         ? Math.floor(Number(draft.modelMaxThinkingTokens))
         : 0,
       pinned: Boolean(draft.pinned),
+      apiKeyField: draft?.apiKeyField && typeof draft.apiKeyField === 'object' ? draft.apiKeyField : null,
       updatedAt: Date.now(),
     }
 
@@ -421,7 +613,7 @@ export default function AIProviderSelector({
   }
 
   const handleDeleteProvider = async (provider) => {
-    if (!provider) {
+    if (!provider || isBuiltinAIProvider(provider)) {
       return
     }
     const confirmed = await window.luminDialog?.confirm(`${t('确定删除供应商')}「${provider.name || provider.provider || provider.id}」？${t('此操作不可撤销')}`)
@@ -450,6 +642,9 @@ export default function AIProviderSelector({
   }
 
   const handleTogglePin = async (item) => {
+    if (isBuiltinAIProvider(item)) {
+      return
+    }
     const nextBaseProviders = providerList.map((entry) => (
       entry.id === item.id ? { ...entry, pinned: !entry.pinned, updatedAt: Date.now() } : entry
     ))
@@ -460,12 +655,107 @@ export default function AIProviderSelector({
     await persistRegistryState(sortProviders(normalizedState.providers), normalizedState.currentProviderId)
   }
 
+  const completeEmbeddedBrowserBuiltinLogin = useCallback(async (providerId, apiKey) => {
+    const trimmedProviderId = typeof providerId === 'string' ? providerId.trim() : ''
+    const trimmedApiKey = typeof apiKey === 'string' ? apiKey.trim() : ''
+    if (!trimmedProviderId || !trimmedApiKey) {
+      return
+    }
+    const nextBaseProviders = providerList.map((item) => (
+      item.id === trimmedProviderId
+        ? { ...item, apiKey: trimmedApiKey, updatedAt: Date.now() }
+        : item
+    ))
+    const normalizedState = normalizeAIProviderState({
+      currentProviderId: getPersistedSelectionId(nextBaseProviders, persistedCurrentProviderId || nextBaseProviders[0]?.id || ''),
+      providers: nextBaseProviders,
+    })
+    await persistRegistryState(sortProviders(normalizedState.providers), normalizedState.currentProviderId)
+    setTokenStoreOpen(false)
+    setTokenStoreLoading(false)
+    setEmbeddedBrowserContext(null)
+  }, [getPersistedSelectionId, persistRegistryState, persistedCurrentProviderId, providerList])
+
+  useEffect(() => {
+    if (!tokenStoreOpen || embeddedBrowserContext?.kind !== 'builtin_login') {
+      return undefined
+    }
+
+    const targetOrigin = resolveURLOrigin(tokenStoreFrameURL)
+
+    const handleMessage = (event) => {
+      const sourceWindow = iframeRef.current?.contentWindow
+      if (!sourceWindow || event.source !== sourceWindow) {
+        return
+      }
+      if (targetOrigin && event.origin && event.origin !== targetOrigin) {
+        return
+      }
+      const payload = parseEmbeddedBrowserMessage(event.data)
+      if (!payload) {
+        return
+      }
+      const messageType = [
+        payload?.type,
+        payload?.kind,
+        payload?.channel,
+        payload?.event,
+      ].find((value) => typeof value === 'string' && value.trim())
+      if (!messageType || !embeddedBrowserAuthMessageTypes.has(messageType.trim())) {
+        return
+      }
+      const expectedProviderId = typeof embeddedBrowserContext?.providerId === 'string' ? embeddedBrowserContext.providerId.trim() : ''
+      const messageProviderId = typeof payload?.providerId === 'string' && payload.providerId.trim()
+        ? payload.providerId.trim()
+        : expectedProviderId
+      if (!expectedProviderId || messageProviderId !== expectedProviderId) {
+        return
+      }
+      const resolvedApiKey = resolveEmbeddedBrowserAPIKey(payload, embeddedBrowserContext?.apiKeyField)
+      const expression = embeddedBrowserContext?.apiKeyField?.expression
+      if (!matchesEmbeddedBrowserAPIKeyExpression(resolvedApiKey, expression)) {
+        return
+      }
+      void completeEmbeddedBrowserBuiltinLogin(messageProviderId, resolvedApiKey)
+    }
+
+    const requestPayload = buildEmbeddedBrowserAuthRequest(embeddedBrowserContext)
+    const requestAuthSnapshot = () => {
+      if (!requestPayload) {
+        return
+      }
+      const targetWindow = iframeRef.current?.contentWindow
+      if (targetWindow) {
+        targetWindow.postMessage(requestPayload, targetOrigin || '*')
+      }
+      const injectBridge = window?.go?.main?.App?.InjectAIBuiltinLoginBridge
+      if (typeof injectBridge === 'function') {
+        Promise.resolve(injectBridge(JSON.stringify({
+          frameSrc: tokenStoreFrameURL,
+          frameTitle: tokenStoreViewTitle || defaultTokenStoreTitle,
+          targetOrigin: targetOrigin || '*',
+          message: requestPayload,
+        }))).catch(() => {})
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    requestAuthSnapshot()
+    const timer = window.setInterval(requestAuthSnapshot, 1000)
+
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      window.clearInterval(timer)
+    }
+  }, [completeEmbeddedBrowserBuiltinLogin, embeddedBrowserContext, tokenStoreFrameURL, tokenStoreOpen])
+
   const renderRows = (items) => (
     <div>
       {items.map((item) => (
         <AIProviderListRow
           key={item.id}
           item={item}
+          builtin={isBuiltinAIProvider(item)}
           active={item.id === effectiveSelectedId}
           onSelect={() => handleSelectProvider(item.id)}
           onEdit={() => handleOpenEditor('edit', item)}
@@ -475,7 +765,12 @@ export default function AIProviderSelector({
     </div>
   )
 
-  const tokenStoreViewportBounds = workspaceBounds || panelBounds
+  const tokenStoreViewportBounds = workspaceBounds || panelBounds || {
+    top: 0,
+    left: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }
 
   return (
     <>
@@ -609,12 +904,7 @@ export default function AIProviderSelector({
                     <button
                       type="button"
                       aria-label={t('打开 Token 中心')}
-                      onClick={() => {
-                        closeTooltip()
-                        setOpen(false)
-                        setTokenStoreLoading(true)
-                        setTokenStoreOpen(true)
-                      }}
+                      onClick={() => openEmbeddedBrowser(defaultTokenStoreUrl, t('Token 中心'), { kind: 'token_store' })}
                       style={{
                         height: 28,
                         display: 'inline-flex',
@@ -703,7 +993,11 @@ export default function AIProviderSelector({
 
       {tokenStoreOpen && tokenStoreViewportBounds ? (
         <div
-          onClick={() => setTokenStoreOpen(false)}
+          onClick={() => {
+            setTokenStoreOpen(false)
+            setTokenStoreLoading(false)
+            setEmbeddedBrowserContext(null)
+          }}
           style={{
             position: 'fixed',
             top: tokenStoreViewportBounds.top,
@@ -733,13 +1027,14 @@ export default function AIProviderSelector({
             }}
           >
             <div style={{ height: 46, padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{t('Token 中心')}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{tokenStoreViewTitle || t('Token 中心')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   type="button"
                   onClick={() => {
                     setTokenStoreOpen(false)
                     setTokenStoreLoading(false)
+                    setEmbeddedBrowserContext(null)
                   }}
                   aria-label={t('关闭')}
                   style={{
@@ -800,8 +1095,9 @@ export default function AIProviderSelector({
                 </div>
               ) : null}
               <iframe
-                src={tokenStoreUrl}
-                title={t('Token 中心')}
+                ref={iframeRef}
+                src={tokenStoreFrameURL}
+                title={tokenStoreViewTitle || t('Token 中心')}
                 referrerPolicy="no-referrer"
                 onLoad={() => setTokenStoreLoading(false)}
                 style={{
@@ -828,6 +1124,7 @@ export default function AIProviderSelector({
         onClose={() => setEditingState({ open: false, mode: 'edit', provider: null })}
         onSave={handleSaveProvider}
         onDelete={handleDeleteProvider}
+        onOpenBuiltinLogin={openEmbeddedBrowser}
       />
     </>
   )

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>[内置]-Kimi 步骤文档</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                --bg: #f5f7fb;
+                --panel: #ffffff;
+                --panel-2: #f2f5fa;
+                --text: #111827;
+                --text-2: #4b5563;
+                --line: #d7deea;
+                --accent: #2563eb;
+                --accent-soft: rgba(37, 99, 235, 0.12);
+                --ok: #059669;
+                --shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #0b1220;
+                    --panel: #111a2b;
+                    --panel-2: #0f1727;
+                    --text: #edf2ff;
+                    --text-2: #aeb8cd;
+                    --line: #263247;
+                    --accent: #79a8ff;
+                    --accent-soft: rgba(121, 168, 255, 0.14);
+                    --ok: #34d399;
+                    --shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+                }
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                background: var(--bg);
+                color: var(--text);
+                font:
+                    15px/1.7 -apple-system,
+                    BlinkMacSystemFont,
+                    'Segoe UI',
+                    Inter,
+                    'PingFang SC',
+                    'Hiragino Sans GB',
+                    'Microsoft YaHei',
+                    sans-serif;
+            }
+            body {
+                padding: 32px;
+            }
+            .container {
+                max-width: 920px;
+                margin: 0 auto;
+            }
+            .steps {
+                margin: 0;
+                padding-left: 22px;
+                color: var(--text);
+            }
+            .steps li + li {
+                margin-top: 14px;
+            }
+            .code-block {
+                margin-top: 10px;
+                padding: 14px 16px;
+                border-radius: 16px;
+                border: 1px solid var(--line);
+                background: var(--panel-2);
+                overflow: auto;
+            }
+            .code-block code {
+                display: block;
+                white-space: pre-wrap;
+                word-break: break-word;
+                color: var(--text);
+                font:
+                    13px/1.7 ui-monospace,
+                    SFMono-Regular,
+                    Menlo,
+                    Consolas,
+                    monospace;
+            }
+            .section {
+                margin-top: 18px;
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 20px;
+                padding: 22px 22px 18px;
+                box-shadow: var(--shadow);
+            }
+            .section h2 {
+                margin: 0 0 12px;
+                font-size: 18px;
+            }
+            .note {
+                margin-top: 14px;
+                padding: 14px 16px;
+                border-radius: 16px;
+                background: rgba(5, 150, 105, 0.1);
+                border: 1px solid rgba(5, 150, 105, 0.24);
+                color: var(--ok);
+            }
+            a {
+                color: var(--accent);
+                text-decoration: none;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="section">
+                <h2>操作步骤</h2>
+                <ol class="steps">
+                    <li>在 <a href="https://www.kimi.com/" target="_blank" rel="noreferrer">https://www.kimi.com/</a> 完成网站登录。</li>
+                    <li>打开 F12 开发者控制台。</li>
+                    <li>
+                        在控制台手动输入以下内容并分别回车：
+                        <div class="code-block"><code>允许粘贴</code></div>
+                        <div class="code-block"><code>allow pasting</code></div>
+                    </li>
+                    <li>
+                        执行下面这段 JavaScript，将当前页面的全部本地存储复制到剪贴板：
+                        <div class="code-block"><code>(() =&gt; { const data = {}; for (let i = 0; i &lt; localStorage.length; i += 1) { const key = localStorage.key(i); data[key] = localStorage.getItem(key); } const text = JSON.stringify(data, null, 2); const textarea = document.createElement('textarea'); textarea.value = text; textarea.setAttribute('readonly', ''); textarea.style.position = 'fixed'; textarea.style.top = '-1000px'; textarea.style.left = '-1000px'; document.body.appendChild(textarea); textarea.focus(); textarea.select(); textarea.setSelectionRange(0, textarea.value.length); const copied = document.execCommand('copy'); document.body.removeChild(textarea); console.log(copied ? '已复制 localStorage 到剪贴板' : '复制失败，请手动全选复制下面内容：'); if (!copied) { console.log(text); } })();</code></div>
+                    </li>
+                    <li>
+                        粘贴到Apikey输入框
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </body>
+</html>

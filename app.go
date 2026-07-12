@@ -12,7 +12,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
@@ -21,6 +23,8 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	runtimeenv "luminssh-go/module/runtimeenv"
+	runtimeinstaller "luminssh-go/module/runtimeinstaller"
 
 	"github.com/gorilla/websocket"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -37,6 +41,10 @@ type App struct {
 	wsConns                   map[string]*wsEntry // sessionId -> active WebSocket
 	wsServer                  *http.Server        // WebSocket HTTP 服务器，用于优雅关闭
 	wsListener                net.Listener        // WebSocket 监听器，用于关闭时释放端口
+	mainLivenessLockPath      string
+	mainLivenessLockRelease   func()
+	builtinProcessMu          sync.Mutex
+	builtinProcesses          map[string]*exec.Cmd
 	quitting                  atomic.Bool         // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
 	closeAck                  atomic.Bool         // 前端已响应关闭弹窗（tray/cancel），取消 5s 兜底强制退出
 	onBeforeQuit              func()              // 退出前回调，由 main 设置用于清理托盘等
@@ -57,12 +65,19 @@ type wsEntry struct {
 	writeMu sync.Mutex
 }
 
+type BuiltinProviderRuntimeStatus struct {
+	ProviderID string `json:"providerId"`
+	State      string `json:"state"`
+	Ready      bool   `json:"ready"`
+}
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
 		sshManager:                NewSSHManager(),
 		configManager:             NewConfigManager(),
 		wsConns:                   make(map[string]*wsEntry),
+		builtinProcesses:          make(map[string]*exec.Cmd),
 		aiChatReqCancel:           make(map[string]context.CancelFunc),
 		aiPendingToolBatches:      make(map[string]*ai.PendingToolBatch),
 		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
@@ -77,6 +92,9 @@ func (a *App) startup(ctx context.Context) {
 	a.sshManager.ctx = ctx // Give SSH manager access to Wails events
 	a.sshManager.app = a   // Give SSH manager access to WebSocket registry
 	a.configManager.wailsCtx = ctx
+	if err := a.ensureMainLivenessLock(); err != nil {
+		log.Printf("failed to acquire main liveness lock: %v", err)
+	}
 
 	// ── 启动本地 WebSocket 终端服务器 ─────────────────────────────────
 	// 不经过 Wails IPC，直接走 TCP loopback，延迟极低
@@ -215,6 +233,7 @@ func (a *App) DoQuit() {
 		_ = a.wsListener.Close()
 		a.wsListener = nil
 	}
+	a.releaseMainLivenessLock()
 	runtime.Quit(a.ctx)
 }
 
@@ -772,6 +791,144 @@ func getProgramDirectory() string {
 	return filepath.Dir(exePath)
 }
 
+func (a *App) ensureMainLivenessLock() error {
+	if a == nil || a.configManager == nil {
+		return fmt.Errorf("config manager unavailable")
+	}
+	if a.mainLivenessLockRelease != nil && strings.TrimSpace(a.mainLivenessLockPath) != "" {
+		return nil
+	}
+	lockPath := filepath.Join(a.configManager.configDir, "luminssh-main.lock")
+	release, err := acquireMainLivenessLock(lockPath)
+	if err != nil {
+		return err
+	}
+	a.mainLivenessLockPath = lockPath
+	a.mainLivenessLockRelease = release
+	return nil
+}
+
+func (a *App) releaseMainLivenessLock() {
+	if a == nil || a.mainLivenessLockRelease == nil {
+		return
+	}
+	a.mainLivenessLockRelease()
+	a.mainLivenessLockRelease = nil
+}
+
+func isBuiltinProcessRunning(process *exec.Cmd) bool {
+	return process != nil && process.Process != nil && process.ProcessState == nil
+}
+
+func (a *App) getBuiltinProcess(providerID string) *exec.Cmd {
+	if a == nil {
+		return nil
+	}
+	a.builtinProcessMu.Lock()
+	defer a.builtinProcessMu.Unlock()
+	return a.builtinProcesses[providerID]
+}
+
+func (a *App) builtinKimiServiceRunning() bool {
+	preset, ok := ai.GetAIBuiltinProviderPreset("builtin-kimi")
+	if !ok {
+		return false
+	}
+	parsedURL, err := url.Parse(strings.TrimSpace(preset.BaseURL))
+	if err != nil || strings.TrimSpace(parsedURL.Host) == "" {
+		return false
+	}
+	conn, err := net.DialTimeout("tcp", parsedURL.Host, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+func builtinProviderLogPath(programDirectory string, providerID string) string {
+	switch strings.TrimSpace(providerID) {
+	case "", "builtin-kimi":
+		return filepath.Join(programDirectory, "modules", "kimiapi", "data", "luminssh-kimiapi.log")
+	default:
+		return ""
+	}
+}
+
+func readBuiltinProviderLogTail(programDirectory string, providerID string, maxLines int) string {
+	logPath := builtinProviderLogPath(programDirectory, providerID)
+	if strings.TrimSpace(logPath) == "" {
+		return ""
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	if maxLines > 0 && len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func wrapBuiltinProviderError(programDirectory string, providerID string, prefix string, err error) error {
+	logTail := readBuiltinProviderLogTail(programDirectory, providerID, 20)
+	if logTail == "" {
+		if err != nil {
+			return fmt.Errorf("%s: %w", prefix, err)
+		}
+		return fmt.Errorf("%s", prefix)
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w\n\n最近日志:\n%s", prefix, err, logTail)
+	}
+	return fmt.Errorf("%s\n\n最近日志:\n%s", prefix, logTail)
+}
+
+func (a *App) GetBuiltinProviderRuntimeStatus(providerID string) BuiltinProviderRuntimeStatus {
+	normalizedProviderID := strings.TrimSpace(providerID)
+	if normalizedProviderID == "" {
+		normalizedProviderID = "builtin-kimi"
+	}
+	status := BuiltinProviderRuntimeStatus{
+		ProviderID: normalizedProviderID,
+		State:      "idle",
+		Ready:      false,
+	}
+	if normalizedProviderID != "builtin-kimi" {
+		return status
+	}
+	if a.builtinKimiServiceRunning() {
+		status.State = "running"
+		status.Ready = true
+		return status
+	}
+	if isBuiltinProcessRunning(a.getBuiltinProcess(normalizedProviderID)) {
+		status.State = "starting"
+	}
+	return status
+}
+
+func (a *App) waitBuiltinProviderReady(providerID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	programDirectory := getProgramDirectory()
+	for time.Now().Before(deadline) {
+		status := a.GetBuiltinProviderRuntimeStatus(providerID)
+		if status.State == "running" {
+			return nil
+		}
+		if status.State == "idle" {
+			return wrapBuiltinProviderError(programDirectory, providerID, "kimiapi 启动失败", nil)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return wrapBuiltinProviderError(programDirectory, providerID, "kimiapi 启动超时", nil)
+}
+
 func resolveDownloadDefaultDirectory(template string) string {
 	programDir := getProgramDirectory()
 	trimmed := strings.TrimSpace(template)
@@ -910,6 +1067,40 @@ func (a *App) DownloadDirectoryCompressed(sessionId string, downloadID string, r
 
 func (a *App) AbortDownloadTransfer(identifier string) error {
 	return a.sshManager.AbortDownloadTransfer(identifier)
+}
+
+func openLocalDocument(path string) error {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" {
+		return fmt.Errorf("missing local path")
+	}
+	if _, err := os.Stat(cleaned); err != nil {
+		return err
+	}
+	switch goruntime.GOOS {
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", cleaned).Start()
+	case "darwin":
+		return exec.Command("open", cleaned).Start()
+	default:
+		return exec.Command("xdg-open", cleaned).Start()
+	}
+}
+
+func (a *App) OpenBuiltinProviderDoc(providerID string) error {
+	normalizedProviderID := strings.TrimSpace(providerID)
+	if normalizedProviderID == "" {
+		normalizedProviderID = "builtin-kimi"
+	}
+	fileName := ""
+	switch normalizedProviderID {
+	case "builtin-kimi":
+		fileName = "builtin-kimi.md"
+	default:
+		return fmt.Errorf("unsupported builtin provider: %s", normalizedProviderID)
+	}
+	docPath := filepath.Join(getProgramDirectory(), "modules", "kimiapi", fileName)
+	return openLocalDocument(docPath)
 }
 
 func (a *App) OpenLocalPathInExplorer(localPath string, isDirectory bool) error {
@@ -1198,6 +1389,181 @@ func (a *App) SetWebviewGpuDisabled(enabled bool) error {
 		return fmt.Errorf("current platform does not support disabling webview gpu acceleration")
 	}
 	return a.configManager.SetWebviewGpuDisabled(enabled)
+}
+
+func (a *App) GetRuntimeEnvironmentSettings() runtimeenv.Settings {
+	if a == nil || a.configManager == nil {
+		return runtimeenv.DefaultSettings()
+	}
+	return a.configManager.GetRuntimeEnvironmentSettings()
+}
+
+func (a *App) SaveRuntimeEnvironmentSettings(jsonStr string) error {
+	if a == nil || a.configManager == nil {
+		return nil
+	}
+	settings := runtimeenv.DefaultSettings()
+	if strings.TrimSpace(jsonStr) != "" {
+		if err := json.Unmarshal([]byte(jsonStr), &settings); err != nil {
+			return err
+		}
+	}
+	return a.configManager.SaveRuntimeEnvironmentSettings(settings)
+}
+
+func (a *App) GetRuntimeEnvironmentStatus() runtimeenv.Status {
+	settings := a.GetRuntimeEnvironmentSettings()
+	return runtimeenv.DetectStatus(getProgramDirectory(), settings)
+}
+
+func (a *App) InstallRuntimeEnvironment() (runtimeenv.Status, error) {
+	settings := a.GetRuntimeEnvironmentSettings()
+	return runtimeinstaller.InstallRuntimeEnvironment(getProgramDirectory(), settings)
+}
+
+func (a *App) InjectAIBuiltinLoginBridge(jsonStr string) error {
+	if a == nil || a.ctx == nil {
+		return nil
+	}
+	payload := map[string]interface{}{}
+	if strings.TrimSpace(jsonStr) != "" {
+		if err := json.Unmarshal([]byte(jsonStr), &payload); err != nil {
+			return err
+		}
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	script := `(function(){try{const payload=` + string(payloadBytes) + `;const frames=Array.from(document.querySelectorAll("iframe"));const frame=frames.find((item)=>{const expectedSrc=typeof payload.frameSrc==="string"?payload.frameSrc:"";const expectedTitle=typeof payload.frameTitle==="string"?payload.frameTitle:"";return(expectedSrc&&typeof item.src==="string"&&item.src.indexOf(expectedSrc)===0)||(expectedTitle&&item.title===expectedTitle)})||frames[0];if(!frame||!frame.contentWindow||!payload.message){return;}frame.contentWindow.postMessage(payload.message,payload.targetOrigin||"*");window.__luminBuiltinLoginBridgeLastPayload=payload;}catch(_){}})();`
+	runtime.WindowExecJS(a.ctx, script)
+	return nil
+}
+
+func (a *App) InitializeBuiltinProvider(providerID string) error {
+	normalizedProviderID := strings.TrimSpace(providerID)
+	if normalizedProviderID == "" {
+		normalizedProviderID = "builtin-kimi"
+	}
+	if normalizedProviderID != "builtin-kimi" {
+		return fmt.Errorf("unsupported builtin provider: %s", normalizedProviderID)
+	}
+	if err := a.ensureMainLivenessLock(); err != nil {
+		return err
+	}
+	if a.builtinKimiServiceRunning() {
+		return nil
+	}
+
+	a.builtinProcessMu.Lock()
+	existingProcess := a.builtinProcesses[normalizedProviderID]
+	if isBuiltinProcessRunning(existingProcess) {
+		a.builtinProcessMu.Unlock()
+		return a.waitBuiltinProviderReady(normalizedProviderID, 20*time.Second)
+	}
+
+	programDirectory := getProgramDirectory()
+	runtimeSettings := runtimeenv.DefaultSettings()
+	if a != nil && a.configManager != nil {
+		runtimeSettings = a.configManager.GetRuntimeEnvironmentSettings()
+	}
+	runtimeStatus := runtimeenv.DetectStatus(programDirectory, runtimeSettings)
+	if !runtimeStatus.Ready || strings.TrimSpace(runtimeStatus.BinaryPath) == "" {
+		a.builtinProcessMu.Unlock()
+		return fmt.Errorf("uv 运行环境未就绪，请先在运行环境页面完成安装")
+	}
+
+	moduleDirectory := filepath.Join(programDirectory, "modules", "kimiapi")
+	if _, err := os.Stat(filepath.Join(moduleDirectory, "pyproject.toml")); err != nil {
+		a.builtinProcessMu.Unlock()
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "缺少 kimiapi 项目文件", err)
+	}
+	if err := os.MkdirAll(filepath.Join(moduleDirectory, "data"), 0o755); err != nil {
+		a.builtinProcessMu.Unlock()
+		return err
+	}
+
+	logFile, err := os.OpenFile(filepath.Join(moduleDirectory, "data", "luminssh-kimiapi.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		a.builtinProcessMu.Unlock()
+		return err
+	}
+
+	baseEnv := append(os.Environ(),
+		"LUMINSSH_MAIN_LOCK_PATH="+a.mainLivenessLockPath,
+		"LUMINSSH_MAIN_LOCK_POLL_INTERVAL=1",
+		"UV_PROJECT_ENVIRONMENT=.venv",
+		"PYTHONUTF8=1",
+		"HTTP_PROXY=",
+		"HTTPS_PROXY=",
+		"ALL_PROXY=",
+		"NO_PROXY=",
+		"http_proxy=",
+		"https_proxy=",
+		"all_proxy=",
+		"no_proxy=",
+	)
+
+	syncCmd := exec.Command(runtimeStatus.BinaryPath, "sync", "--locked", "--no-install-project")
+	syncCmd.Dir = moduleDirectory
+	syncCmd.Env = baseEnv
+	syncCmd.Stdout = logFile
+	syncCmd.Stderr = logFile
+	a.builtinProcessMu.Unlock()
+	if err := syncCmd.Run(); err != nil {
+		_ = logFile.Close()
+		return err
+	}
+	a.builtinProcessMu.Lock()
+
+	pythonBinaryPath := filepath.Join(moduleDirectory, ".venv", "bin", "python")
+	if goruntime.GOOS == "windows" {
+		pythonBinaryPath = filepath.Join(moduleDirectory, ".venv", "Scripts", "python.exe")
+	}
+	if _, err := os.Stat(pythonBinaryPath); err != nil {
+		_ = logFile.Close()
+		a.builtinProcessMu.Unlock()
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "未找到 kimiapi 虚拟环境 Python", err)
+	}
+
+	cmd := exec.Command(pythonBinaryPath, "run.py", "--main-liveness-lock-path", a.mainLivenessLockPath)
+	cmd.Dir = moduleDirectory
+	cmd.Env = baseEnv
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
+		a.builtinProcessMu.Unlock()
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "kimiapi 进程启动失败", err)
+	}
+
+	a.builtinProcesses[normalizedProviderID] = cmd
+	a.builtinProcessMu.Unlock()
+
+	go func(expectedProviderID string, expectedCmd *exec.Cmd, file *os.File) {
+		_ = expectedCmd.Wait()
+		_ = file.Close()
+		a.builtinProcessMu.Lock()
+		if currentProcess := a.builtinProcesses[expectedProviderID]; currentProcess == expectedCmd {
+			delete(a.builtinProcesses, expectedProviderID)
+		}
+		a.builtinProcessMu.Unlock()
+	}(normalizedProviderID, cmd, logFile)
+
+	if err := a.waitBuiltinProviderReady(normalizedProviderID, 20*time.Second); err != nil {
+		a.builtinProcessMu.Lock()
+		currentProcess := a.builtinProcesses[normalizedProviderID]
+		if currentProcess == cmd {
+			delete(a.builtinProcesses, normalizedProviderID)
+		}
+		a.builtinProcessMu.Unlock()
+		if currentProcess == cmd && cmd.Process != nil && cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (a *App) GetWorkspaceState() string {

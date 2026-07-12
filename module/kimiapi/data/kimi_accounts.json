@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "id": "30015b78caa746aa968c6639d4474fdd",
+      "name": "Kimi 1",
+      "raw_token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ1c2VyLWNlbnRlciIsImV4cCI6MTc4NDczMDI0OCwiaWF0IjoxNzgyMTM4MjQ4LCJqdGkiOiJkOHNrYjI0cWRxZWxza2tmaDQ0ZyIsInR5cCI6ImFjY2VzcyIsImFwcF9pZCI6ImtpbWkiLCJzdWIiOiJjdTlkanAwMWdlbTdkbHVmNDFoMCIsInNwYWNlX2lkIjoiY3U5ZGpwMDFnZW03ZGx1ZjQxZ2ciLCJhYnN0cmFjdF91c2VyX2lkIjoiY3U5ZGpwMDFnZW03ZGx1ZjQxZzAiLCJyb2xlcyI6WyJ2aWRlb19nZW5fYWNjZXNzIiwiZGVlcF9yZXNlYXJjaCJdLCJzc2lkIjoiMTczMTEyMTY4NDMyNDgyOTg1NCIsImRldmljZV9pZCI6IjE1NDE0MTIxNDYxNTE1MTIzMTUiLCJyZWdpb24iOiJjbiIsIm1lbWJlcnNoaXAiOnsibGV2ZWwiOjEwfX0.5FEAxjgijiKzlweQPvKwqZw2ZiUz0J_cw2C3teEz6Mp5tRVcBCkDFLsHsayTh-68j9E9h9MwQ1Psool5tbM1oQ",
+      "enabled": true,
+      "max_concurrency": 2,
+      "min_interval_seconds": 0.5,
+      "device_id": "7853451674379591545",
+      "created_at": 1783813213.099881,
+      "updated_at": 1783813213.099881,
+      "cached_access_token": "",
+      "cached_access_expires_at": 0.0,
+      "cached_access_updated_at": 0.0
+    }
+  ],
+  "updated_at": 1783813213.0999324
+}

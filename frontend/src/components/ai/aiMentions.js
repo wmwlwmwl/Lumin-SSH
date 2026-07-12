@@ -1,5 +1,7 @@
 import { t, getLanguage } from '../../i18n.js'
 
+const longTextWrapExtension = '.long_text_wrap'
+
 export const mentionRegex = /(?:^|(?<=\s))(?<!\\)@((?:\/)(?:[^\s\\]|\\ )+\/?|terminal\b)(?=[.,;:!?]?(?=[\s\r\n]|$))/i
 export const mentionRegexGlobal = new RegExp(mentionRegex.source, 'gi')
 
@@ -18,13 +20,22 @@ export function unescapeMentionPathSpaces(value) {
   return String(value || '').replace(/\\ /g, ' ')
 }
 
-export function isValidRemoteAbsolutePath(value) {
+export function normalizeMentionAbsolutePath(value) {
   let normalized = String(value || '').trim()
   normalized = normalized.replace(/^['"]|['"]$/g, '')
   if (normalized.startsWith('@')) {
     normalized = normalized.slice(1)
   }
   return normalized.startsWith('/') ? normalized : ''
+}
+
+export function isValidRemoteAbsolutePath(value) {
+  return normalizeMentionAbsolutePath(value)
+}
+
+function isLongTextWrapPath(value) {
+  const normalized = normalizeMentionAbsolutePath(value)
+  return normalized.toLowerCase().endsWith(longTextWrapExtension)
 }
 
 export function buildRemoteFileMention(value) {
@@ -349,6 +360,7 @@ export async function processAIMentions(
     readFile,
     listDir,
     getTerminalOutput,
+    readLocalWrappedFile,
   } = {},
 ) {
   const sourceText = typeof text === 'string' ? text : ''
@@ -370,22 +382,23 @@ export async function processAIMentions(
 
   replacedText = replacedText.replace(remotePathMentionRegexGlobal, (match, mention) => {
     const unescapedPath = unescapeMentionPathSpaces(mention)
-    const normalizedPath = isValidRemoteAbsolutePath(unescapedPath)
+    const normalizedPath = normalizeMentionAbsolutePath(unescapedPath)
     if (!normalizedPath) {
       return match
     }
 
-    const isFolder = normalizedPath.endsWith('/')
-    const mentionKey = `${isFolder ? 'folder' : 'file'}:${normalizedPath}`
+    const isWrappedFile = isLongTextWrapPath(normalizedPath)
+    const isFolder = !isWrappedFile && normalizedPath.endsWith('/')
+    const mentionKey = `${isWrappedFile ? 'wrapped' : isFolder ? 'folder' : 'file'}:${normalizedPath}`
     if (!mentionKeys.has(mentionKey)) {
       mentionKeys.add(mentionKey)
       mentions.push({
-        kind: isFolder ? 'folder' : 'file',
+        kind: isWrappedFile ? 'wrapped' : isFolder ? 'folder' : 'file',
         path: normalizedPath,
       })
     }
 
-    return `'${mention}' (see below for ${isFolder ? 'folder' : 'file'} content)`
+    return `'${mention}' (see below for ${isWrappedFile ? 'wrapped text' : isFolder ? 'folder' : 'file'} content)`
   })
 
   if (mentions.length === 0) {
@@ -414,6 +427,18 @@ export async function processAIMentions(
           ? `<folder_content path="${pathLabel}">\nError fetching content: Missing terminal session\n</folder_content>`
           : `<file_content path="${pathLabel}">\nError fetching content: Missing terminal session\n</file_content>`,
       )
+      continue
+    }
+
+    if (mention.kind === 'wrapped') {
+      const pathLabel = escapeMentionPathSpaces(mention.path)
+      try {
+        const content = typeof readLocalWrappedFile === 'function' ? await readLocalWrappedFile(mention.path) : ''
+        contentBlocks.push(`<file_content path="${pathLabel}">\n${String(content || '').trim()}\n</file_content>`)
+      } catch (error) {
+        const errorText = error instanceof Error ? error.message : String(error)
+        contentBlocks.push(`<file_content path="${pathLabel}">\nError fetching content: ${errorText}\n</file_content>`)
+      }
       continue
     }
 

@@ -74,8 +74,17 @@ func (b *AIProviderBindings) saveAIProviderRegistry(registry ai.AIProviderRegist
 	if b == nil || b.configManager == nil {
 		return nil
 	}
+	existingBuiltin := ai.FindAIBuiltinProvider(b.getAIProviderRegistry().Providers)
+	normalizedProviders := normalizeAIProviderProfilesForBinding(registry.Providers)
+	if existingBuiltin != nil {
+		for index := range normalizedProviders {
+			if ai.IsAIBuiltinProviderProfile(normalizedProviders[index]) {
+				normalizedProviders[index] = ai.BuildAIBuiltinProviderProfile(normalizedProviders[index], existingBuiltin.APIKey)
+			}
+		}
+	}
 	normalized := ai.AIProviderRegistry{
-		Providers: normalizeAIProviderProfilesForBinding(registry.Providers),
+		Providers: normalizedProviders,
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
@@ -168,7 +177,7 @@ func normalizeAIProviderReasoningEffortForBinding(value string) string {
 
 func normalizeAIProviderProfilesForBinding(profiles []ai.AIProviderProfile) []ai.AIProviderProfile {
 	if profiles == nil {
-		return []ai.AIProviderProfile{}
+		profiles = []ai.AIProviderProfile{}
 	}
 	now := time.Now().UnixMilli()
 	normalized := make([]ai.AIProviderProfile, len(profiles))
@@ -181,6 +190,8 @@ func normalizeAIProviderProfilesForBinding(profiles []ai.AIProviderProfile) []ai
 		if strings.TrimSpace(profile.Name) == "" {
 			profile.Name = "未命名供应商"
 		}
+		profile.Builtin = false
+		profile.BuiltinLoginURL = ""
 		profile.Provider = normalizeAIProviderProtocolForBinding(profile.Provider)
 		profile.Model = strings.TrimSpace(profile.Model)
 		if profile.Model == "" {
@@ -207,6 +218,21 @@ func normalizeAIProviderProfilesForBinding(profiles []ai.AIProviderProfile) []ai
 			profile.UpdatedAt = now
 		}
 	}
+	builtinCandidate := ai.AIProviderProfile{}
+	for _, profile := range normalized {
+		if ai.IsAIBuiltinProviderProfile(profile) {
+			builtinCandidate = profile
+			break
+		}
+	}
+	filtered := make([]ai.AIProviderProfile, 0, len(normalized)+1)
+	for _, profile := range normalized {
+		if ai.IsAIBuiltinProviderProfile(profile) {
+			continue
+		}
+		filtered = append(filtered, profile)
+	}
+	normalized = append(filtered, ai.BuildAIBuiltinProviderProfile(builtinCandidate, builtinCandidate.APIKey))
 	dedicatedCandidateIDs := make(map[string]struct{}, len(normalized))
 	for _, profile := range normalized {
 		if aiprovider.CanBeDedicatedWebSearchCandidate(profile.Provider) {

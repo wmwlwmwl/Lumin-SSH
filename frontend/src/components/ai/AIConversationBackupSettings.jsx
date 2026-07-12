@@ -321,7 +321,7 @@ export default function AIConversationBackupSettings({
                           fontWeight: 700,
                         }}
                       >
-                        {role === 'user' ? t('用户') : t('Ai助手')}
+                        {role === 'user' ? t('用户') : t('助手')}
                       </span>
                       {entry.ts > 0 ? (
                         <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
@@ -427,7 +427,7 @@ export default function AIConversationBackupSettings({
                       fontWeight: 700,
                     }}
                   >
-                    {backup.messageRole === 'user' ? t('用户') : t('Ai助手')}
+                    {backup.messageRole === 'user' ? t('用户') : t('助手')}
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                     {backup.ts > 0 ? formatDateTime(backup.ts, lang) : formatBackupIdTime(backup.id, lang)}

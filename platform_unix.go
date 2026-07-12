@@ -37,5 +37,24 @@ func ensureSingleInstance() {
 	singletonLock = f
 }
 
+func acquireMainLivenessLock(path string) (func(), error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := file.Truncate(0); err == nil {
+		_, _ = file.Write([]byte("1"))
+		_, _ = file.Seek(0, 0)
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, nil
+}
+
 // applyPlatformOptions 在 Linux 上无额外选项
 func applyPlatformOptions(opts *options.App, configManager *ConfigManager) {}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { Copy, Clipboard, Trash2, CheckSquare, Play, Clock, X, Zap } from 'lucide-react';
+import { Copy, Clipboard, Trash2, CheckSquare, Play, Clock, X, Zap, MessageSquarePlus } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { EventsOn } from '../../wailsjs/runtime/runtime.js';
 import { getModKey, formatShortcut } from '../utils/platform.js';
@@ -993,6 +993,21 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           termRef.current.focus();
         });
         break;
+      case 'sendToAssistant': {
+        const selectedText = termRef.current.getSelection();
+        if (selectedText) {
+          window.dispatchEvent(new CustomEvent('ai-terminal-send-to-assistant', {
+            detail: {
+              sessionId: serverIdRef.current,
+              terminalId: sessionId,
+              text: selectedText,
+            },
+          }));
+          termRef.current.clearSelection();
+        }
+        termRef.current.focus();
+        break;
+      }
       case 'clear':
         termRef.current.clear();
         termRef.current.focus();
@@ -1970,6 +1985,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             { icon: <Clipboard size={13} />, label: t('粘贴'), action: 'paste', shortcut: formatShortcut('Ctrl+V') },
             { type: 'separator' },
             { icon: <CheckSquare size={13} />, label: t('全选'), action: 'selectAll' },
+            { icon: <MessageSquarePlus size={13} />, label: t('添加到 AI助手'), action: 'sendToAssistant', disabled: !contextHasSelection },
             { icon: <Trash2 size={13} />, label: t('清空屏幕'), action: 'clear', shortcut: formatShortcut('Ctrl+L') },
           ].map((item, idx) =>
             item.type === 'separator' ? (

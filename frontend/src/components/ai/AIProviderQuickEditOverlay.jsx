@@ -2,8 +2,10 @@ import { ArrowLeft, Check, CircleHelp, Globe, Save, Search, Trash2 } from 'lucid
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation, t as translate } from '../../i18n.js'
 import { getAIGlobalSettings } from './aiGlobalSettingsBridge.js'
+import { isBuiltinAIProvider, runAIProviderAPIKeyPasteHandler } from './aiProviderBridge.js'
+import { getRuntimeEnvironmentStatus } from '../settings/runtimeEnvironmentBridge.js'
 import {
-  availableAIProviderOptions,
+  availableAIProviders,
   canUseDedicatedWebSearchCandidate,
   getAIProviderDefinition,
 } from './providers/index.js'
@@ -28,9 +30,70 @@ const reasoningEffortLabels = {
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384
 const DEFAULT_MAX_THINKING_TOKENS = 8192
 const DEFAULT_EFFORT_REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh']
+const providerHighlightLabelKeys = {
+  Compatible: '高兼容',
+  Responses: '高缓存',
+}
+
+function getProviderDisplayLabel(provider, t) {
+  if (!provider || typeof provider !== 'object') {
+    return ''
+  }
+  const highlightLabelKey = providerHighlightLabelKeys[provider.value]
+  if (!highlightLabelKey) {
+    return provider.label
+  }
+  return `(${t(highlightLabelKey)})${provider.label}`
+}
 
 function getAppBridge() {
   return window?.go?.main?.AIBindings || window?.go?.main?.AIProviderBindings || window?.go?.main?.App
+}
+
+async function getBuiltinProviderRuntimeStatus(providerId) {
+  const getter = window?.go?.main?.App?.GetBuiltinProviderRuntimeStatus
+  if (typeof getter !== 'function') {
+    return { providerId: 'builtin-kimi', state: 'idle', ready: false }
+  }
+  const normalizedProviderId = typeof providerId === 'string' && providerId.trim() ? providerId.trim() : 'builtin-kimi'
+  try {
+    const result = await getter(normalizedProviderId)
+    const state = typeof result?.state === 'string' && result.state.trim() ? result.state.trim() : (result?.ready ? 'running' : 'idle')
+    return {
+      providerId: normalizedProviderId,
+      state,
+      ready: result?.ready === true,
+    }
+  } catch {
+    return { providerId: normalizedProviderId, state: 'idle', ready: false }
+  }
+}
+
+function requestRuntimeEnvironmentSetup(message) {
+  window.dispatchEvent(new CustomEvent('open-runtime-environment-settings', {
+    detail: {
+      tab: 'runtimeEnvironment',
+      toast: typeof message === 'string' ? message.trim() : '',
+      duration: 6000,
+      type: 'warning',
+    },
+  }))
+}
+
+async function initializeBuiltinProvider(providerId) {
+  const runtimeEnvironmentStatus = await getRuntimeEnvironmentStatus()
+  if (runtimeEnvironmentStatus?.ready !== true) {
+    requestRuntimeEnvironmentSetup(translate('请先安装 uv 运行环境后再初始化内置 Kimi'))
+    return { blockedByRuntimeEnvironment: true }
+  }
+
+  const initializer = window?.go?.main?.App?.InitializeBuiltinProvider
+  if (typeof initializer !== 'function') {
+    return { blockedByRuntimeEnvironment: false }
+  }
+  const normalizedProviderId = typeof providerId === 'string' && providerId.trim() ? providerId.trim() : 'builtin-kimi'
+  await initializer(normalizedProviderId)
+  return { blockedByRuntimeEnvironment: false }
 }
 
 function normalizePositiveInteger(value, fallback = 0) {
@@ -118,6 +181,17 @@ function resolveEffortReasoningSelection(draft, capability) {
   return storedValue || 'disable'
 }
 
+function cloneApiKeyField(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return null
+  }
+}
+
 function buildDraft(provider) {
   const providerDefinition = getAIProviderDefinition(provider?.provider || 'Compatible')
   const resolvedModel = typeof provider?.model === 'string' && provider.model.trim()
@@ -153,17 +227,27 @@ function buildDraft(provider) {
     modelMaxTokens: normalizePositiveInteger(provider?.modelMaxTokens, capability.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS),
     modelMaxThinkingTokens: normalizePositiveInteger(provider?.modelMaxThinkingTokens, capability.maxThinkingTokens || DEFAULT_MAX_THINKING_TOKENS),
     pinned: Boolean(provider?.pinned),
+    builtinLoginURL: typeof provider?.builtinLoginUrl === 'string'
+      ? provider.builtinLoginUrl.trim()
+      : (typeof provider?.builtinLoginURL === 'string' ? provider.builtinLoginURL.trim() : ''),
+    apiKeyField: cloneApiKeyField(provider?.apiKeyField),
   }
 }
 
-function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWidth = '100%' }) {
+function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWidth = '100%', showSelectedIcon = true, disabled = false }) {
   const currentOption = options.find((option) => option.value === value) || options[0]
 
   return (
     <div ref={menuRef} style={{ position: 'relative' }}>
       <button
         type="button"
-        onClick={onToggle}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) {
+            return
+          }
+          onToggle?.()
+        }}
         style={{
           height: 34,
           width: '100%',
@@ -176,6 +260,8 @@ function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWid
           background: open ? 'rgba(var(--accent-rgb), 0.10)' : 'var(--surface-base)',
           color: 'var(--text-primary)',
           boxSizing: 'border-box',
+          opacity: disabled ? 0.7 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
           transition: 'var(--transition)',
         }}>
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 500 }}>
@@ -184,7 +270,7 @@ function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWid
         <span style={{ color: 'var(--text-tertiary)', fontSize: 11, transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'var(--transition)' }}>▾</span>
       </button>
 
-      {open ? (
+      {open && !disabled ? (
         <div
           style={{
             position: 'absolute',
@@ -223,7 +309,7 @@ function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWid
                   transition: 'var(--transition)',
                 }}>
                 <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option.label}</span>
-                {active ? <Check size={13} color="var(--accent)" /> : null}
+                {active && showSelectedIcon ? <Check size={13} color="var(--accent)" /> : null}
               </button>
             )
           })}
@@ -233,7 +319,7 @@ function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWid
   )
 }
 
-export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provider, providers = [], panelBounds, onClose, onSave, onDelete }) {
+export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provider, providers = [], panelBounds, onClose, onSave, onDelete, onOpenBuiltinLogin }) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState(buildDraft())
   const [modelQuery, setModelQuery] = useState('')
@@ -253,10 +339,21 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   const dedicatedProxyFieldRef = useRef(null)
   const autoRefreshTimerRef = useRef(null)
   const lastAutoRefreshKeyRef = useRef('')
+  const [builtinProviderRuntimeState, setBuiltinProviderRuntimeState] = useState('idle')
 
   const providerDefinition = useMemo(
     () => getAIProviderDefinition(draft.provider),
     [draft.provider],
+  )
+
+  const builtinProvider = isBuiltinAIProvider(provider) || isBuiltinAIProvider(draft)
+
+  const providerOptions = useMemo(
+    () => availableAIProviders.map((provider) => ({
+      value: provider.value,
+      label: getProviderDisplayLabel(provider, t),
+    })),
+    [t],
   )
 
   const modelCapability = useMemo(() => {
@@ -324,8 +421,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
       value: node.id,
       label: [
         node.name || t('未命名节点'),
-        node.type === 'http' ? t('HTTP 代理') : t('SOCKS5 代理'),
-        `${node.host}:${node.port}`,
+        `${node.type === 'http' ? 'http' : 'socks5'}://${node.host}:${node.port}`,
       ].join(' · '),
     })),
   ]), [proxyNodes, t])
@@ -342,6 +438,20 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
 
   const title = draft.name || (mode === 'create' ? t('新增供应商') : t('编辑供应商'))
   const subtitle = mode === 'create' ? t('创建供应商配置...') : t('编辑...')
+
+  const handleAPIKeyPaste = (event) => {
+    const handlerId = typeof draft?.apiKeyField?.paste?.handlerId === 'string' ? draft.apiKeyField.paste.handlerId.trim() : ''
+    if (!handlerId) {
+      return
+    }
+    event.preventDefault()
+    const pastedText = event.clipboardData?.getData('text/plain') || ''
+    const resolvedApiKey = runAIProviderAPIKeyPasteHandler(pastedText, draft.apiKeyField)
+    setDraft((prev) => ({
+      ...prev,
+      apiKey: typeof resolvedApiKey === 'string' ? resolvedApiKey : '',
+    }))
+  }
 
   const refreshModelsWithCredentials = async (providerValue, baseUrlValue, apiKeyValue, selectedModel = '') => {
     const trimmedProvider = typeof providerValue === 'string' ? providerValue.trim() : ''
@@ -442,6 +552,31 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   }, [open, provider])
 
   useEffect(() => {
+    if (!open || !builtinProvider) {
+      setBuiltinProviderRuntimeState('idle')
+      return undefined
+    }
+    let cancelled = false
+
+    const refreshBuiltinProviderRuntimeStatus = async () => {
+      const status = await getBuiltinProviderRuntimeStatus(draft.id || provider?.id || 'builtin-kimi')
+      if (!cancelled) {
+        setBuiltinProviderRuntimeState(status.state === 'running' ? 'running' : (status.state === 'starting' ? 'starting' : 'idle'))
+      }
+    }
+
+    void refreshBuiltinProviderRuntimeStatus()
+    const timer = window.setInterval(() => {
+      void refreshBuiltinProviderRuntimeStatus()
+    }, 1000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [builtinProvider, draft.id, open, provider?.id])
+
+  useEffect(() => {
     if (!providerMenuOpen && !dedicatedProviderMenuOpen && !proxyMenuOpen) {
       return undefined
     }
@@ -524,6 +659,9 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   }
 
   const handleProviderSelect = (nextProvider) => {
+    if (builtinProvider) {
+      return
+    }
     const nextProviderDefinition = getAIProviderDefinition(nextProvider)
     setDraft((prev) => {
       const nextModel = prev.model || nextProviderDefinition.defaultModel
@@ -934,6 +1072,10 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   const validationButtonVariant = webSearchValidationMessage
     ? (webSearchValidationPassed ? 'success' : 'error')
     : 'default'
+  const builtinProviderInitializeDisabled = builtinProviderRuntimeState === 'starting' || builtinProviderRuntimeState === 'running'
+  const builtinProviderInitializeLabel = builtinProviderRuntimeState === 'running'
+    ? '[运行中]'
+    : (builtinProviderRuntimeState === 'starting' ? '[启动中]' : '[初始化]')
 
   return (
     <div
@@ -991,7 +1133,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {mode === 'edit' ? (
+            {mode === 'edit' && !builtinProvider ? (
               <button
                 type="button"
                 onClick={() => onDelete?.(provider)}
@@ -1040,6 +1182,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('配置文件')}</label>
               <input
                 value={draft.name}
+                disabled={builtinProvider}
                 onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
                 placeholder={t('输入配置名')}
                 style={{
@@ -1052,6 +1195,8 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
                   padding: '0 10px',
                   boxSizing: 'border-box',
                   outline: 'none',
+                  opacity: builtinProvider ? 0.7 : 1,
+                  cursor: builtinProvider ? 'not-allowed' : 'text',
                 }}
               />
             </div>
@@ -1060,11 +1205,13 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('API提供商')}</label>
               <SelectMenu
                 value={draft.provider}
-                options={availableAIProviderOptions}
+                options={providerOptions}
                 open={providerMenuOpen}
                 onToggle={() => setProviderMenuOpen((prev) => !prev)}
                 onSelect={handleProviderSelect}
                 menuRef={providerFieldRef}
+                showSelectedIcon={false}
+                disabled={builtinProvider}
               />
             </div>
           </div>
@@ -1102,6 +1249,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>{t('基础 URL')}</label>
             <input
               value={draft.baseUrl}
+              disabled={builtinProvider}
               onChange={(event) => setDraft((prev) => ({ ...prev, baseUrl: event.target.value }))}
               placeholder="https://api.example.com/v1"
               style={{
@@ -1114,15 +1262,80 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
                 padding: '0 10px',
                 boxSizing: 'border-box',
                 outline: 'none',
+                opacity: builtinProvider ? 0.7 : 1,
+                cursor: builtinProvider ? 'not-allowed' : 'text',
               }}
             />
           </div>
 
           <div style={{ display: 'grid', gap: 2 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>{t('API 密钥')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>{t('API 密钥')}</label>
+              {builtinProvider ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={builtinProviderInitializeDisabled}
+                    onClick={async () => {
+                      if (builtinProviderInitializeDisabled) {
+                        return
+                      }
+                      setBuiltinProviderRuntimeState('starting')
+                      try {
+                        const result = await initializeBuiltinProvider(draft.id)
+                        if (result?.blockedByRuntimeEnvironment) {
+                          setBuiltinProviderRuntimeState('idle')
+                          return
+                        }
+                        const status = await getBuiltinProviderRuntimeStatus(draft.id)
+                        setBuiltinProviderRuntimeState(status.state === 'running' ? 'running' : (status.state === 'starting' ? 'starting' : 'idle'))
+                      } catch (error) {
+                        setBuiltinProviderRuntimeState('idle')
+                        const message = error instanceof Error ? error.message : String(error || '')
+                        if (message.trim()) {
+                          window.alert(message)
+                        }
+                      }
+                    }}
+                    style={{
+                      padding: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      color: builtinProviderInitializeDisabled ? 'var(--text-tertiary)' : 'var(--accent)',
+                      fontSize: 12,
+                      lineHeight: 1.2,
+                      fontWeight: 600,
+                      cursor: builtinProviderInitializeDisabled ? 'default' : 'pointer',
+                    }}
+                  >
+                    {builtinProviderInitializeLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenBuiltinLogin?.('/docs/builtin-kimi.html', draft.name || t('文档'), {
+                      kind: 'builtin_doc',
+                      providerId: draft.id,
+                      providerName: draft.name,
+                    })}
+                    style={{
+                      padding: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--accent)',
+                      fontSize: 12,
+                      lineHeight: 1.2,
+                      fontWeight: 600,
+                    }}
+                  >
+                    [文档]
+                  </button>
+                </>
+              ) : null}
+            </div>
             <input
               value={draft.apiKey}
               onChange={(event) => setDraft((prev) => ({ ...prev, apiKey: event.target.value }))}
+              onPaste={handleAPIKeyPaste}
               placeholder={t('输入 API Key')}
               style={{
                 height: 34,
@@ -1535,7 +1748,14 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
 
           <div style={{ display: 'grid', gap: 3 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('模型')}</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{t('模型')}</label>
+                {modelRefreshError ? (
+                  <div style={{ color: 'var(--danger)', fontSize: 11, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                    {modelRefreshError}
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={handleRefreshModels}
@@ -1568,12 +1788,6 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
                 outline: 'none',
               }}
             />
-
-            {modelRefreshError ? (
-              <div style={{ color: 'var(--danger)', fontSize: 11, lineHeight: 1.4 }}>
-                {modelRefreshError}
-              </div>
-            ) : null}
 
             <div style={{ minHeight: 200, border: '1px solid var(--border)', background: 'var(--surface-base)', display: 'flex', flexDirection: 'column' }}>
               {filteredModels.length > 0 || modelQuery.trim() ? (

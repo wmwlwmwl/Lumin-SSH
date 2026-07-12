@@ -1177,15 +1177,15 @@ func (a *App) runAIChatAttemptCompletionExecution(execution *aiToolExecutionStat
 		execution.Cancel()
 	}
 	resultText := sanitizeAIToolResultText(strings.TrimSpace(execution.Tool.Params["result"]))
-	statusText := "ai.status.completed"
+	statusText := "已完成"
 	toolResultText := "Done"
 	if resultText == "" {
-		resultText = "ai.completion.done"
+		resultText = "任务已完成"
 	}
 	if execution.isTerminated() {
-		statusText = "ai.status.terminated"
-		resultText = "ai.tool.terminated"
-		toolResultText = "ai.tool.terminated"
+		statusText = "已终止"
+		resultText = "工具已终止"
+		toolResultText = "工具已终止"
 	}
 	a.emitAIChatEvent(map[string]interface{}{
 		"kind":      "upsert_message",

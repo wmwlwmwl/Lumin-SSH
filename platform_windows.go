@@ -59,6 +59,47 @@ func ensureSingleInstance() {
 	}
 }
 
+func acquireMainLivenessLock(path string) (func(), error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := file.Truncate(0); err == nil {
+		_, _ = file.Write([]byte("1"))
+		_, _ = file.Seek(0, 0)
+	}
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	procLockFileEx := kernel32.NewProc("LockFileEx")
+	procUnlockFileEx := kernel32.NewProc("UnlockFileEx")
+	const lockfileExclusiveLock = 0x00000002
+	var overlapped syscall.Overlapped
+	locked, _, lockErr := procLockFileEx.Call(
+		file.Fd(),
+		uintptr(lockfileExclusiveLock),
+		0,
+		1,
+		0,
+		uintptr(unsafe.Pointer(&overlapped)),
+	)
+	if locked == 0 {
+		_ = file.Close()
+		if lockErr != syscall.Errno(0) {
+			return nil, lockErr
+		}
+		return nil, syscall.EINVAL
+	}
+	return func() {
+		_, _, _ = procUnlockFileEx.Call(
+			file.Fd(),
+			0,
+			1,
+			0,
+			uintptr(unsafe.Pointer(&overlapped)),
+		)
+		_ = file.Close()
+	}, nil
+}
+
 // getScreenSize 用 Windows API 获取主显示器可用逻辑像素（已扣除 DPI 缩放）
 func getScreenSize() (int, int) {
 	user32 := syscall.NewLazyDLL("user32.dll")

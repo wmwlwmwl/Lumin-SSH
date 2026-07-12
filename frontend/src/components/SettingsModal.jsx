@@ -15,17 +15,20 @@ import GeneralTab from './settings/GeneralTab';
 import NetworkTab from './settings/NetworkTab';
 import AppearanceTab from './settings/AppearanceTab';
 import FileManagerTab from './settings/FileManagerTab';
+import RuntimeEnvironmentTab from './settings/RuntimeEnvironmentTab';
 import ShortcutsTab from './settings/ShortcutsTab';
 import SyncTab from './settings/SyncTab';
+import { DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS, getRuntimeEnvironmentSettings, resolveRuntimeEnvironmentPathPreview, saveRuntimeEnvironmentSettings } from './settings/runtimeEnvironmentBridge.js';
 
-const TAB_ICON = { general: SlidersHorizontal, network: Globe, fileManager: Folder, appearance: Palette, shortcuts: Keyboard, sync: Cloud, app: Info };
+const TAB_ICON = { general: SlidersHorizontal, network: Globe, fileManager: Folder, runtimeEnvironment: Database, appearance: Palette, shortcuts: Keyboard, sync: Cloud, app: Info };
 
-const TAB_LABELS = { general: '通用', network: '网络', fileManager: '文件管理器', appearance: '外观', shortcuts: '快捷键', sync: '同步与云', app: '关于' };
+const TAB_LABELS = { general: '通用', network: '网络', fileManager: '文件管理器', runtimeEnvironment: '运行环境', appearance: '外观', shortcuts: '快捷键', sync: '同步与云', app: '关于' };
 
 const TABS = [
   { id: 'general' },
   { id: 'network' },
   { id: 'fileManager' },
+  { id: 'runtimeEnvironment' },
   { id: 'appearance' },
   { id: 'shortcuts' },
   { id: 'sync' },
@@ -208,6 +211,7 @@ export default function SettingsModal({
   onRestored,
   probePanelPosition,
   onProbePanelPositionChange,
+  initialTab = 'general',
 }) {
   const CURRENT_VERSION = APP_VERSION;
   const CURRENT_BUILD_TIME = APP_BUILD_TIME;
@@ -240,7 +244,7 @@ export default function SettingsModal({
     });
   };
 
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(initialTab || 'general');
 
   // WebDAV state
   const [webdavForm, setWebdavForm] = useState(defaultWebdavForm);
@@ -395,6 +399,12 @@ export default function SettingsModal({
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [listeningKey, addToast]);
+
+  useEffect(() => {
+    if (typeof initialTab === 'string' && initialTab.trim()) {
+      setActiveTab(initialTab.trim())
+    }
+  }, [initialTab])
 
   const handleThemeChange = (mode) => {
     setThemeMode(mode);
@@ -599,6 +609,10 @@ export default function SettingsModal({
   const [fileManagerUploadMaxFiles, setFileManagerUploadMaxFiles] = useState(localStorage.getItem('fileManagerUploadMaxFiles') || '6');
   const [fileManagerUploadMaxChunksPerFile, setFileManagerUploadMaxChunksPerFile] = useState(localStorage.getItem('fileManagerUploadMaxChunksPerFile') || '8');
   const [fileManagerUploadGlobalInflightLimit, setFileManagerUploadGlobalInflightLimit] = useState(localStorage.getItem('fileManagerUploadGlobalInflightLimit') || '24');
+  const [runtimeEnvironmentEnabled, setRuntimeEnvironmentEnabled] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.enabled);
+  const [runtimeEnvironmentType, setRuntimeEnvironmentType] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.environmentType);
+  const [runtimeEnvironmentTargetPathTemplate, setRuntimeEnvironmentTargetPathTemplate] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.targetPathTemplate);
+  const [runtimeEnvironmentModulePath, setRuntimeEnvironmentModulePath] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.modulePath);
 
   const handleToggleConfirmCloseSession = () => {
     const next = !confirmCloseSession;
@@ -698,6 +712,61 @@ export default function SettingsModal({
     if (next === '') localStorage.removeItem(key);
     else localStorage.setItem(key, next);
   };
+  const handleToggleRuntimeEnvironmentEnabled = async () => {
+    const next = !runtimeEnvironmentEnabled;
+    setRuntimeEnvironmentEnabled(next);
+    try {
+      const saved = await saveRuntimeEnvironmentSettings({
+        enabled: next,
+        environmentType: runtimeEnvironmentType,
+        targetPathTemplate: runtimeEnvironmentTargetPathTemplate,
+        modulePath: runtimeEnvironmentModulePath,
+      });
+      setRuntimeEnvironmentEnabled(saved.enabled);
+      setRuntimeEnvironmentType(saved.environmentType);
+      setRuntimeEnvironmentTargetPathTemplate(saved.targetPathTemplate);
+      setRuntimeEnvironmentModulePath(saved.modulePath);
+    } catch (err) {
+      setRuntimeEnvironmentEnabled(!next);
+      addToast($t('运行环境设置保存失败') + `: ${err}`, 'error');
+    }
+  };
+  const handleRuntimeEnvironmentTypeChange = async (e) => {
+    const next = e.target.value;
+    setRuntimeEnvironmentType(next);
+    try {
+      const saved = await saveRuntimeEnvironmentSettings({
+        enabled: runtimeEnvironmentEnabled,
+        environmentType: next,
+        targetPathTemplate: runtimeEnvironmentTargetPathTemplate,
+        modulePath: runtimeEnvironmentModulePath,
+      });
+      setRuntimeEnvironmentEnabled(saved.enabled);
+      setRuntimeEnvironmentType(saved.environmentType);
+      setRuntimeEnvironmentTargetPathTemplate(saved.targetPathTemplate);
+      setRuntimeEnvironmentModulePath(saved.modulePath);
+    } catch (err) {
+      addToast($t('运行环境设置保存失败') + `: ${err}`, 'error');
+    }
+  };
+  const handleRuntimeEnvironmentTargetPathTemplateChange = async (e) => {
+    const next = e.target.value;
+    setRuntimeEnvironmentTargetPathTemplate(next);
+    try {
+      const saved = await saveRuntimeEnvironmentSettings({
+        enabled: runtimeEnvironmentEnabled,
+        environmentType: runtimeEnvironmentType,
+        targetPathTemplate: next,
+        modulePath: runtimeEnvironmentModulePath,
+      });
+      setRuntimeEnvironmentEnabled(saved.enabled);
+      setRuntimeEnvironmentType(saved.environmentType);
+      setRuntimeEnvironmentTargetPathTemplate(saved.targetPathTemplate);
+      setRuntimeEnvironmentModulePath(saved.modulePath);
+    } catch (err) {
+      addToast($t('运行环境设置保存失败') + `: ${err}`, 'error');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -783,6 +852,16 @@ export default function SettingsModal({
             if (!cancelled && typeof enabled === 'boolean') setWebviewGpuDisabled(enabled);
           })
           .catch(() => {});
+      })
+      .catch(() => {});
+
+    getRuntimeEnvironmentSettings()
+      .then((settings) => {
+        if (cancelled || !settings) return;
+        setRuntimeEnvironmentEnabled(Boolean(settings.enabled));
+        setRuntimeEnvironmentType(settings.environmentType || DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.environmentType);
+        setRuntimeEnvironmentTargetPathTemplate(settings.targetPathTemplate || DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.targetPathTemplate);
+        setRuntimeEnvironmentModulePath(settings.modulePath || DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.modulePath);
       })
       .catch(() => {});
 
@@ -1155,6 +1234,9 @@ export default function SettingsModal({
                 fileManagerUploadGlobalInflightLimit={fileManagerUploadGlobalInflightLimit}
                 onFileManagerUploadGlobalInflightLimitChange={handleFileManagerUploadSettingChange('fileManagerUploadGlobalInflightLimit', setFileManagerUploadGlobalInflightLimit)}
               />
+            )}
+            {activeTab === 'runtimeEnvironment' && (
+              <RuntimeEnvironmentTab />
             )}
             {activeTab === 'appearance' && (
               <AppearanceTab

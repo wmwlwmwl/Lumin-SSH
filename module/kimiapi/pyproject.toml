@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kimi2api"
+version = "1.2.0"
+description = "Kimi AI Python OpenAI SDK Compatible API"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.24.0",
+    "uvicorn>=0.30.0",
+    "python-dotenv>=1.0.0",
+    "itsdangerous>=2.1.0",
+    "python-multipart>=0.0.6",
+    "tzdata>=2024.1",
+    "backports.zoneinfo>=0.2.1; python_version < '3.9'",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "respx>=0.21",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*", "*Test"]
+
+[tool.ruff]
+exclude = ["app/static"]
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

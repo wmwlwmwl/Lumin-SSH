@@ -22,6 +22,7 @@ import (
 	"github.com/studio-b12/gowebdav"
 
 	ai "luminssh-go/internal/ai"
+	runtimeenv "luminssh-go/module/runtimeenv"
 )
 
 // parseIntOrDefault 解析字符串为整数，失败时返回默认值
@@ -82,7 +83,8 @@ type FileManagerSettings struct {
 }
 
 type AppSettings struct {
-	WebviewGpuDisabled bool `json:"webviewGpuDisabled,omitempty"`
+	WebviewGpuDisabled bool                `json:"webviewGpuDisabled,omitempty"`
+	RuntimeEnvironment runtimeenv.Settings `json:"runtimeEnvironment,omitempty"`
 }
 
 type ConfigManager struct {
@@ -1212,6 +1214,20 @@ func (c *ConfigManager) SetWebviewGpuDisabled(enabled bool) error {
 	settings := c.getAppSettingsLocked()
 	settings.WebviewGpuDisabled = enabled
 	return c.saveAppSettingsLocked(settings)
+}
+
+func (c *ConfigManager) GetRuntimeEnvironmentSettings() runtimeenv.Settings {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return runtimeenv.NormalizeSettings(c.getAppSettingsLocked().RuntimeEnvironment)
+}
+
+func (c *ConfigManager) SaveRuntimeEnvironmentSettings(settings runtimeenv.Settings) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	appSettings := c.getAppSettingsLocked()
+	appSettings.RuntimeEnvironment = runtimeenv.NormalizeSettings(settings)
+	return c.saveAppSettingsLocked(appSettings)
 }
 
 func (c *ConfigManager) GetChmodDialogSettings() map[string]interface{} {

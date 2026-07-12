@@ -156,29 +156,29 @@ function normalizeAICommandStatus(value) {
   switch (normalized) {
     case '运行中':
     case '执行中':
-      return 'ai.status.running'
+      return '执行中'
     case '等待处理':
-      return 'ai.status.awaiting_action'
+      return '等待处理'
     case '后台继续':
-      return 'ai.status.background'
+      return '后台继续'
     case '已终止':
-      return 'ai.status.terminated'
+      return '已终止'
     case '已执行':
-      return 'ai.status.executed'
+      return '已执行'
     case '错误':
-      return 'ai.status.error'
+      return '错误'
     default:
       return normalized
   }
 }
 
-const runningStatusKey = 'ai.status.running'
+const runningStatusKey = '执行中'
 
 export default function AIChatCommandCard({ purpose, command, output, status = runningStatusKey, extra = {} }) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const normalizedStatus = useMemo(() => normalizeAICommandStatus(status), [status])
-  const expanded = isExpanded || ((normalizedStatus === 'ai.status.awaiting_action' || normalizedStatus === 'ai.status.background' || normalizedStatus === 'ai.status.terminated') && Boolean(output))
+  const expanded = isExpanded || ((normalizedStatus === '等待处理' || normalizedStatus === '后台继续' || normalizedStatus === '已终止') && Boolean(output))
   const normalizedCommand = String(command || '')
   const riskState = useMemo(() => assessSensitiveCommandRisk(normalizedCommand), [normalizedCommand])
   const riskBadgePalette = useMemo(() => getRiskBadgePalette(riskState.severity), [riskState.severity])

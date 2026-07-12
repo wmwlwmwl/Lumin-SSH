@@ -32,7 +32,7 @@ function IconButton({ title, active = false, onClick, children }) {
   );
 }
 
-export default function AIProviderListRow({ item, active = false, onSelect, onEdit, onTogglePin }) {
+export default function AIProviderListRow({ item, active = false, builtin = false, onSelect, onEdit, onTogglePin }) {
   const { t } = useTranslation()
   const secondaryLabel = item.model || item.description || 'Compatible'
 
@@ -71,9 +71,11 @@ export default function AIProviderListRow({ item, active = false, onSelect, onEd
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
         {active ? <Check size={13} color="var(--accent)" /> : <div style={{ width: 13 }} />}
-        <IconButton title={item.pinned ? t('取消置顶') : t('置顶')} active={item.pinned} onClick={onTogglePin}>
-          <Pin size={13} />
-        </IconButton>
+        {!builtin ? (
+          <IconButton title={item.pinned ? t('取消置顶') : t('置顶')} active={item.pinned} onClick={onTogglePin}>
+            <Pin size={13} />
+          </IconButton>
+        ) : null}
         <IconButton title={t('编辑供应商')} onClick={onEdit}>
           <SquarePen size={13} />
         </IconButton>

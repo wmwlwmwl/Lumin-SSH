@@ -8,7 +8,7 @@ import AIConversationBackupSettings from './ai/AIConversationBackupSettings.jsx'
 import AIPanelSettingsOverlay from './ai/AIPanelSettingsOverlay.jsx'
 import AIComposer from './ai/AIComposer.jsx'
 import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIChatTool, listAIChatCommandTerminalCandidates, previewAIChatToolRestore, rejectAIChatTools, rejectAIChatToolsForQueuedSubmission, restoreAIChatTool, setAIChatSkipNextAutomaticRequest, startAIChat, terminateAIChatTool } from './ai/aiChatBridge.js'
-import { createAIConversation, deleteAIConversation, getAIConversation, listAIConversations, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, saveAIConversation } from './ai/aiConversationBridge.js'
+import { createAIConversation, deleteAIConversation, getAIConversation, listAIConversations, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation } from './ai/aiConversationBridge.js'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.js'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js'
 import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, updateMCPClientServerTimeout } from './ai/mcpClientBridge.js'
@@ -19,6 +19,145 @@ import { getConversationBranchAnchor } from './ai/chat/aiChatMessageTopology.js'
 
 function formatMessageTime() {
   return new Date().toLocaleTimeString(getLanguage() || 'zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function splitTerminalOutputLinesKeepNewline(content) {
+  if (!content) {
+    return []
+  }
+  const matches = String(content).match(/[^\n]*\n|[^\n]+/g)
+  return Array.isArray(matches) ? matches : []
+}
+
+function processTerminalOutputLineWithCarriageReturns(line) {
+  const segments = String(line).split('\r')
+  if (segments.length === 1) {
+    return line
+  }
+  let current = Array.from(segments[0] || '')
+  for (const segment of segments.slice(1)) {
+    if (!segment) {
+      continue
+    }
+    const segmentRunes = Array.from(segment)
+    if (segmentRunes.length >= current.length) {
+      current = segmentRunes
+      continue
+    }
+    const next = [...current]
+    for (let index = 0; index < segmentRunes.length; index += 1) {
+      next[index] = segmentRunes[index]
+    }
+    current = next
+  }
+  return current.join('')
+}
+
+function processTerminalOutputCarriageReturns(input) {
+  const source = String(input || '')
+  if (!source.includes('\r')) {
+    return source
+  }
+  return source.split('\n').map(processTerminalOutputLineWithCarriageReturns).join('\n')
+}
+
+function processTerminalOutputBackspaces(input) {
+  const source = String(input || '')
+  if (!source.includes('\b')) {
+    return source
+  }
+  const output = []
+  for (const ch of Array.from(source)) {
+    if (ch === '\b') {
+      if (output.length > 0) {
+        output.pop()
+      }
+      continue
+    }
+    output.push(ch)
+  }
+  return output.join('')
+}
+
+function truncateTerminalOutputForPrompt(content, lineLimit, characterLimit) {
+  const normalizedContent = String(content || '')
+  const normalizedLineLimit = Number.isFinite(Number(lineLimit)) ? Math.trunc(Number(lineLimit)) : 0
+  const normalizedCharacterLimit = Number.isFinite(Number(characterLimit)) ? Math.trunc(Number(characterLimit)) : 0
+  if (normalizedLineLimit <= 0 && normalizedCharacterLimit <= 0) {
+    return normalizedContent
+  }
+  if (normalizedCharacterLimit > 0) {
+    const runes = Array.from(normalizedContent)
+    if (runes.length > normalizedCharacterLimit) {
+      const beforeLimit = Math.floor(normalizedCharacterLimit / 5)
+      const afterLimit = normalizedCharacterLimit - beforeLimit
+      const startSection = runes.slice(0, beforeLimit).join('')
+      const endSection = runes.slice(runes.length - afterLimit).join('')
+      const omittedChars = runes.length - normalizedCharacterLimit
+      return `${startSection}\n[...${omittedChars} characters omitted...]\n${endSection}`
+    }
+  }
+  if (normalizedLineLimit <= 0) {
+    return normalizedContent
+  }
+  const lines = splitTerminalOutputLinesKeepNewline(normalizedContent)
+  const totalLines = lines.length
+  if (totalLines <= normalizedLineLimit) {
+    return normalizedContent
+  }
+  const beforeLimit = Math.floor(normalizedLineLimit / 5)
+  const afterLimit = normalizedLineLimit - beforeLimit
+  const startSection = lines.slice(0, beforeLimit).join('')
+  const endSection = lines.slice(totalLines - afterLimit).join('')
+  const omittedLines = totalLines - normalizedLineLimit
+  return `${startSection}\n[...${omittedLines} lines omitted...]\n\n${endSection}`
+}
+
+function applyTerminalOutputRunLengthEncoding(content) {
+  if (!content) {
+    return content
+  }
+  const lines = splitTerminalOutputLinesKeepNewline(content)
+  if (lines.length === 0) {
+    return content
+  }
+  let result = ''
+  let prevLine = lines[0]
+  let repeatCount = 0
+  const flush = () => {
+    if (repeatCount > 0) {
+      const compressionDesc = `<previous line repeated ${repeatCount} additional times>\n`
+      if (compressionDesc.length < prevLine.length * (repeatCount + 1)) {
+        result += prevLine
+        result += compressionDesc
+      } else {
+        for (let index = 0; index <= repeatCount; index += 1) {
+          result += prevLine
+        }
+      }
+      repeatCount = 0
+      return
+    }
+    result += prevLine
+  }
+  for (let index = 1; index < lines.length; index += 1) {
+    const currentLine = lines[index]
+    if (currentLine === prevLine) {
+      repeatCount += 1
+      continue
+    }
+    flush()
+    prevLine = currentLine
+  }
+  flush()
+  return result
+}
+
+function compressTerminalOutputForPrompt(input, lineLimit, characterLimit) {
+  let processed = String(input || '')
+  processed = processTerminalOutputCarriageReturns(processed)
+  processed = processTerminalOutputBackspaces(processed)
+  return truncateTerminalOutputForPrompt(applyTerminalOutputRunLengthEncoding(processed), lineLimit, characterLimit)
 }
 
 function createEmptyPanelState() {
@@ -47,28 +186,28 @@ function normalizeAIMessageStatus(value) {
   const normalized = typeof value === 'string' ? value.trim() : ''
   switch (normalized) {
     case '待批准':
-      return 'ai.status.pending_approval'
+      return '待批准'
     case '待审阅':
-      return 'ai.status.pending_review'
+      return '待审阅'
     case '执行中':
     case '运行中':
-      return 'ai.status.running'
+      return '执行中'
     case '已执行':
-      return 'ai.status.executed'
+      return '已执行'
     case '已完成':
-      return 'ai.status.completed'
+      return '已完成'
     case '已终止':
-      return 'ai.status.terminated'
+      return '已终止'
     case '错误':
-      return 'ai.status.error'
+      return '错误'
     case '已拒绝':
-      return 'ai.status.rejected'
+      return '已拒绝'
     case '等待处理':
-      return 'ai.status.awaiting_action'
+      return '等待处理'
     case '后台继续':
-      return 'ai.status.background'
+      return '后台继续'
     case '排队中, 等待终端空闲':
-      return 'ai.status.queued_waiting_terminal'
+      return '排队中, 等待终端空闲'
     default:
       return normalized
   }
@@ -77,7 +216,7 @@ function normalizeAIMessageStatus(value) {
 function truncateConversationTitle(text) {
   const normalized = String(text || '').trim().replace(/\s+/g, ' ')
   if (!normalized) {
-    return translate('ai.conversation.new')
+    return translate('新对话')
   }
   return normalized.length > 36 ? `${normalized.slice(0, 36)}...` : normalized
 }
@@ -319,7 +458,7 @@ function upsertMessageBeforeAssistant(messages, requestId, nextMessage) {
 }
 
 const AI_CONVERSATION_DIFF_TOOL_NAMES = new Set(['apply_diff', 'write_to_file', 'search_replace', 'edit_file', 'apply_patch'])
-const AI_CONVERSATION_DIFF_SUCCESS_STATUSES = new Set(['ai.status.executed', 'ai.status.completed'])
+const AI_CONVERSATION_DIFF_SUCCESS_STATUSES = new Set(['已执行', '已完成'])
 
 function extractAIConversationDiffPrimaryPath(copyContent, fallbackSummary) {
   const normalizedCopyContent = typeof copyContent === 'string' ? copyContent.trim() : ''
@@ -391,7 +530,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   }, [applyMCPSettingsState])
 
   const showAlert = useCallback(async (message) => {
-    const finalMessage = typeof message === 'string' && message.trim() ? translate(message.trim()) : translate('ai.restore.unsupported')
+    const finalMessage = typeof message === 'string' && message.trim() ? translate(message.trim()) : translate('当前状态不支持还原')
     if (window?.luminDialog?.alert) {
       await window.luminDialog.alert(finalMessage, t('提示'))
       return
@@ -418,6 +557,29 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       panelMountedRef.current = false
     }
   }, [])
+
+  useEffect(() => {
+    const handleAppendComposerText = (event) => {
+      const targetSessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : ''
+      const targetTerminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : ''
+      const appendedText = typeof event?.detail?.text === 'string' ? event.detail.text.trim() : ''
+      if (!appendedText) {
+        return
+      }
+      if (targetSessionId !== (sessionId || '').trim() || targetTerminalId !== (terminalId || '').trim()) {
+        return
+      }
+      setComposerInputValue((current) => {
+        const currentValue = typeof current === 'string' ? current : ''
+        if (!currentValue.trim()) {
+          return appendedText
+        }
+        return currentValue.endsWith('\n') ? `${currentValue}${appendedText}` : `${currentValue}\n${appendedText}`
+      })
+    }
+    window.addEventListener('ai-composer-append', handleAppendComposerText)
+    return () => window.removeEventListener('ai-composer-append', handleAppendComposerText)
+  }, [sessionId, terminalId])
 
   const panelState = terminalPanels[panelInstanceKey] || createEmptyPanelState()
   const terminalLabelMap = useMemo(() => {
@@ -1052,7 +1214,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
             if (message.id === assistantMessageId && message.kind === 'assistant') {
               return {
                 ...message,
-                text: typeof payload.text === 'string' ? payload.text : translate('ai.command.execution_rejected'),
+                text: typeof payload.text === 'string' ? payload.text : translate('已拒绝执行工具调用'),
                 metrics: Array.isArray(message.metrics) ? message.metrics : [],
                 streaming: false,
                 extra: {
@@ -1061,10 +1223,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
                 },
               }
             }
-            if ((message.kind === 'tool' || message.kind === 'command') && AI_CONVERSATION_DIFF_SUCCESS_STATUSES.size >= 0 && ['ai.status.pending_approval', 'ai.status.running', 'ai.status.awaiting_action', 'ai.status.queued_waiting_terminal'].includes(normalizeAIMessageStatus(message.status))) {
+            if ((message.kind === 'tool' || message.kind === 'command') && AI_CONVERSATION_DIFF_SUCCESS_STATUSES.size >= 0 && ['待批准', '执行中', '等待处理', '排队中, 等待终端空闲'].includes(normalizeAIMessageStatus(message.status))) {
               return {
                 ...message,
-                status: 'ai.status.rejected',
+                status: '已拒绝',
               }
             }
             return message
@@ -1285,7 +1447,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
 
       if (payload.kind === 'error') {
         const assistantMessageId = matchedPanel.activeAssistantMessageId || requestId
-        const finalErrorText = payload.error || translate('ai.request.failed')
+        const finalErrorText = payload.error || translate('请求失败')
 
         const nextMessages = matchedPanel.messages
           .filter((message) => !(message.id === `${assistantMessageId}-reasoning` && message.kind === 'reasoning'))
@@ -1778,6 +1940,12 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       return false
     }
 
+    let targetConversation = activeConversation
+    if (!targetConversation) {
+      targetConversation = await createAIConversation(truncateConversationTitle(nextText))
+      setConversationList((prev) => upsertConversationSummary(prev, targetConversation))
+    }
+
     const executionContextSnapshot = getExecutionContextSnapshot({
       sessionId,
       terminalId,
@@ -1787,8 +1955,11 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       nextText,
       normalizedGlobalAISettings.slashCommands,
     )
-    const baseUserPromptText = slashExpandedPromptText
-      ? `<user_message>\n${slashExpandedPromptText}\n</user_message>`
+    const preprocessedPromptText = slashExpandedPromptText && targetConversation?.id
+      ? await preprocessAIConversationLongText(targetConversation.id, slashExpandedPromptText)
+      : (slashExpandedPromptText || '')
+    const baseUserPromptText = preprocessedPromptText
+      ? `<user_message>\n${preprocessedPromptText}\n</user_message>`
       : ''
     const promptWithMentions = baseUserPromptText
       ? await processRemoteFileMentions(baseUserPromptText, {
@@ -1797,20 +1968,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
           listDir: (activeSessionId, remotePath) => AppGo.ListDir(activeSessionId, remotePath),
           getTerminalOutput: () => {
             const snapshotProvider = window?.__luminTerminalSnapshots?.[terminalId]
-            return typeof snapshotProvider === 'function' ? snapshotProvider() : ''
+            const rawOutput = typeof snapshotProvider === 'function' ? snapshotProvider() : ''
+            return compressTerminalOutputForPrompt(rawOutput, terminalOutputLineLimit, terminalOutputCharacterLimit)
           },
+          readLocalWrappedFile: (localPath) => readAIConversationWrappedFile(targetConversation.id, localPath),
         })
       : ''
     const processedPromptText = [promptWithMentions, environmentDetailsBlock]
       .filter((item) => typeof item === 'string' && item.trim())
       .join('\n\n')
       .trim()
-
-    let targetConversation = activeConversation
-    if (!targetConversation) {
-      targetConversation = await createAIConversation(truncateConversationTitle(nextText))
-      setConversationList((prev) => upsertConversationSummary(prev, targetConversation))
-    }
 
     const baseConversation = isEditingExistingMessage || isRetryingMessage
       ? truncateConversationAfterMessage(targetConversation, activeComposerState.targetMessageId)
@@ -1854,7 +2021,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     }
     const persistedConversation = {
       ...baseConversation,
-      title: baseConversation.title && baseConversation.title !== translate('ai.conversation.new') ? baseConversation.title : truncateConversationTitle(nextText),
+      title: baseConversation.title && baseConversation.title !== translate('新对话') ? baseConversation.title : truncateConversationTitle(nextText),
       updatedAt: Date.now(),
       status: 'streaming',
       messages: [...(baseConversation.messages || []), userMessage],
@@ -1892,7 +2059,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       })
       return true
     } catch (error) {
-      const errorText = error instanceof Error ? error.message : translate('ai.request.failed')
+      const errorText = error instanceof Error ? error.message : translate('请求失败')
       const erroredConversation = {
         ...nextConversation,
         updatedAt: Date.now(),
@@ -1933,7 +2100,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, panelInstanceKey)
       return false
     }
-  }, [activeConversation, composerEditState, composerImages, effectiveAutoApprovalEnabled, effectiveProviderId, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, saveConversationSnapshot, setPanelState, terminalId, truncateConversationAfterMessage])
+  }, [activeConversation, composerEditState, composerImages, effectiveAutoApprovalEnabled, effectiveProviderId, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, saveConversationSnapshot, setPanelState, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
 
   const handleRetryUserMessage = useCallback(async (messageId, text, images = []) => {
     if (!activeConversation) {
@@ -2056,7 +2223,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       })
       return true
     } catch (error) {
-      const errorText = error instanceof Error ? error.message : translate('ai.request.failed')
+      const errorText = error instanceof Error ? error.message : translate('请求失败')
       const erroredConversation = {
         ...nextConversation,
         updatedAt: Date.now(),
@@ -2237,7 +2404,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       })
       return true
     } catch (error) {
-      const errorText = error instanceof Error ? error.message : translate('ai.request.failed')
+      const errorText = error instanceof Error ? error.message : translate('请求失败')
       const erroredConversation = {
         ...nextConversation,
         updatedAt: Date.now(),
@@ -2349,7 +2516,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         }))
       }
     } catch (error) {
-      await showAlert(error instanceof Error ? translate(error.message) : translate('ai.restore.unsupported'))
+      await showAlert(error instanceof Error ? translate(error.message) : translate('当前状态不支持还原'))
     }
   }, [showAlert, terminalId])
 
@@ -2359,7 +2526,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       clearRestorePreview()
       return true
     } catch (error) {
-      await showAlert(error instanceof Error ? translate(error.message) : translate('ai.restore.unsupported'))
+      await showAlert(error instanceof Error ? translate(error.message) : translate('当前状态不支持还原'))
       return false
     }
   }, [clearRestorePreview, showAlert, terminalId])

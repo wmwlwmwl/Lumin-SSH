@@ -8,18 +8,18 @@ function normalizeAIMessageStatus(value) {
   const normalized = typeof value === 'string' ? value.trim() : ''
   switch (normalized) {
     case '待审阅':
-      return 'ai.status.pending_review'
+      return '待审阅'
     case '待批准':
-      return 'ai.status.pending_approval'
+      return '待批准'
     case '执行中':
     case '运行中':
-      return 'ai.status.running'
+      return '执行中'
     case '错误':
-      return 'ai.status.error'
+      return '错误'
     case '已终止':
-      return 'ai.status.terminated'
+      return '已终止'
     case '已拒绝':
-      return 'ai.status.rejected'
+      return '已拒绝'
     default:
       return normalized
   }
@@ -53,25 +53,25 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
   }, [restored])
 
   const normalizedStatus = useMemo(() => normalizeAIMessageStatus(status), [status])
-  const expanded = isExpanded || ((isAutoExpanded && !hasSubsequentAssistantMessage) || ((normalizedStatus === 'ai.status.error' || normalizedStatus === 'ai.status.terminated') && Boolean(result)))
+  const expanded = isExpanded || ((isAutoExpanded && !hasSubsequentAssistantMessage) || ((normalizedStatus === '错误' || normalizedStatus === '已终止') && Boolean(result)))
   const statusPalette = useMemo(() => {
     switch (normalizedStatus) {
-      case 'ai.status.pending_review':
-      case 'ai.status.pending_approval':
+      case '待审阅':
+      case '待批准':
         return {
           border: '1px solid rgba(var(--warning-rgb), 0.35)',
           background: 'rgba(var(--warning-rgb), 0.08)',
           color: 'var(--warning)',
         }
-      case 'ai.status.running':
+      case '执行中':
         return {
           border: '1px solid rgba(var(--accent-rgb), 0.35)',
           background: 'rgba(var(--accent-rgb), 0.08)',
           color: 'var(--accent)',
         }
-      case 'ai.status.error':
-      case 'ai.status.terminated':
-      case 'ai.status.rejected':
+      case '错误':
+      case '已终止':
+      case '已拒绝':
         return {
           border: '1px solid rgba(var(--danger-rgb), 0.35)',
           background: 'rgba(var(--danger-rgb), 0.08)',

@@ -1,10 +1,10 @@
 import { t } from '../../i18n.js'
+import { runAIProviderPasteHandlerById } from './aiProviderPasteHandlers.js'
 
 const EMPTY_STATE = { currentProviderId: '', providers: [] }
 const VALID_PROTOCOLS = new Set(['Compatible', 'Responses', 'Messages'])
 const VALID_CACHE_STRATEGIES = new Set(['off', 'model', '5m', '1h'])
 const VALID_REASONING_EFFORTS = new Set(['disable', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
-
 function getAppBridge() {
   return window?.go?.main?.AIBindings || window?.go?.main?.AIProviderBindings || window?.go?.main?.App
 }
@@ -32,6 +32,129 @@ function normalizePositiveInteger(value) {
   return Math.floor(nextValue)
 }
 
+export function isBuiltinAIProvider(provider) {
+  return provider?.builtin === true
+}
+
+function cloneApiKeyField(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return null
+  }
+}
+
+function readEmbeddedBrowserPathValue(source, path) {
+  if (!source || typeof source !== 'object' || typeof path !== 'string' || !path.trim()) {
+    return undefined
+  }
+  return path
+    .split('.')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .reduce((current, segment) => {
+      if (current === undefined || current === null) {
+        return undefined
+      }
+      if (typeof current === 'string') {
+        try {
+          current = JSON.parse(current)
+        } catch {
+          return undefined
+        }
+      }
+      if (typeof current !== 'object') {
+        return undefined
+      }
+      return current[segment]
+    }, source)
+}
+
+function resolveEmbeddedBrowserStorageValue(bucket, pathConfig, sourceType) {
+  if (!bucket || !pathConfig || typeof pathConfig !== 'object') {
+    return undefined
+  }
+  if (sourceType === 'cookie' && Array.isArray(bucket)) {
+    const expectedDomain = typeof pathConfig.domain === 'string' ? pathConfig.domain.trim() : ''
+    const expectedName = typeof pathConfig.name === 'string' ? pathConfig.name.trim() : ''
+    const matchedItem = bucket.find((item) => {
+      const itemDomain = typeof item?.domain === 'string' ? item.domain.trim() : ''
+      const itemName = typeof item?.name === 'string' ? item.name.trim() : (typeof item?.key === 'string' ? item.key.trim() : '')
+      return (!expectedDomain || itemDomain === expectedDomain) && expectedName && itemName === expectedName
+    })
+    return matchedItem?.value
+  }
+  const expectedKey = typeof pathConfig.key === 'string' ? pathConfig.key.trim() : ''
+  if (Array.isArray(bucket)) {
+    const exactItem = bucket.find((item) => {
+      const itemKey = typeof item?.key === 'string' ? item.key.trim() : (typeof item?.name === 'string' ? item.name.trim() : '')
+      const itemOrigin = typeof item?.origin === 'string' ? item.origin.trim() : ''
+      const expectedOrigin = typeof pathConfig.origin === 'string' ? pathConfig.origin.trim() : ''
+      return itemKey === expectedKey && (!expectedOrigin || !itemOrigin || itemOrigin === expectedOrigin)
+    })
+    if (exactItem?.value !== undefined) {
+      return exactItem.value
+    }
+    if (expectedKey.includes('.')) {
+      const [rootKey, ...restPath] = expectedKey.split('.')
+      const nestedItem = bucket.find((item) => {
+        const itemKey = typeof item?.key === 'string' ? item.key.trim() : (typeof item?.name === 'string' ? item.name.trim() : '')
+        return itemKey === rootKey
+      })
+      if (nestedItem?.value !== undefined) {
+        return readEmbeddedBrowserPathValue(nestedItem.value, restPath.join('.'))
+      }
+    }
+    return undefined
+  }
+  if (expectedKey && Object.prototype.hasOwnProperty.call(bucket, expectedKey)) {
+    return bucket[expectedKey]
+  }
+  return readEmbeddedBrowserPathValue(bucket, expectedKey)
+}
+
+export function resolveEmbeddedBrowserAPIKey(payload, apiKeyField) {
+  const directCandidates = [
+    payload?.apiKey,
+    payload?.token,
+    payload?.value,
+    payload?.accessToken,
+  ]
+  const directApiKey = directCandidates.find((candidate) => typeof candidate === 'string' && candidate.trim())
+  if (directApiKey) {
+    return directApiKey.trim()
+  }
+  if (!apiKeyField || typeof apiKeyField !== 'object') {
+    return ''
+  }
+  const sourceType = typeof apiKeyField?.source === 'string' ? apiKeyField.source.trim().toLowerCase() : ''
+  const pathConfig = apiKeyField?.path && typeof apiKeyField.path === 'object' ? apiKeyField.path : null
+  let bucket = null
+  if (sourceType === 'cookie') {
+    bucket = payload?.cookies ?? payload?.cookie ?? payload?.cookieJar ?? null
+  } else if (sourceType === 'local_storage') {
+    bucket = payload?.localStorage ?? payload?.local_storage ?? payload?.storage?.localStorage ?? payload?.storage?.local_storage ?? null
+  } else if (sourceType === 'session_storage') {
+    bucket = payload?.sessionStorage ?? payload?.session_storage ?? payload?.storage?.sessionStorage ?? payload?.storage?.session_storage ?? null
+  }
+  const resolvedValue = resolveEmbeddedBrowserStorageValue(bucket, pathConfig, sourceType)
+  return typeof resolvedValue === 'string' ? resolvedValue.trim() : ''
+}
+
+export function runAIProviderAPIKeyPasteHandler(rawText, apiKeyField) {
+  const normalizedText = typeof rawText === 'string' ? rawText : ''
+  const handlerId = typeof apiKeyField?.paste?.handlerId === 'string' ? apiKeyField.paste.handlerId.trim() : ''
+  return runAIProviderPasteHandlerById(
+    handlerId,
+    normalizedText,
+    cloneApiKeyField(apiKeyField),
+    { resolveEmbeddedBrowserAPIKey },
+  )
+}
+
 function normalizeProvider(provider, index) {
   const now = Date.now()
   return {
@@ -56,6 +179,11 @@ function normalizeProvider(provider, index) {
     modelMaxTokens: normalizePositiveInteger(provider?.modelMaxTokens),
     modelMaxThinkingTokens: normalizePositiveInteger(provider?.modelMaxThinkingTokens),
     pinned: Boolean(provider?.pinned),
+    builtin: provider?.builtin === true,
+    builtinLoginURL: typeof provider?.builtinLoginUrl === 'string'
+      ? provider.builtinLoginUrl.trim()
+      : (typeof provider?.builtinLoginURL === 'string' ? provider.builtinLoginURL.trim() : ''),
+    apiKeyField: cloneApiKeyField(provider?.apiKeyField),
     updatedAt: typeof provider?.updatedAt === 'number' ? provider.updatedAt : now,
   }
 }
