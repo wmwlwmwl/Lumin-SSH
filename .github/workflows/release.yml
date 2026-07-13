@@ -108,8 +108,14 @@ jobs:
           name: "Lumin SSH Client ${{ github.ref_name }}"
           body: |
             ## 功能增强
-            - 集成内置 Kimi 模型
-            - 改进 AI 助手约束
+            - 支持服务器批量多选管理、选择性导出
+            - 首页分组展开收起操作
+            - 自动更新支持多线程并发
+            - 备份加密格式升级 LUMIN2
+            - 完善云端备份恢复与同步显示
+            - 修复工作区恢复竞态、异步 SFTP 初始化
+            - 保留终端连接阶段输出与粘贴命令记录
+            - 更新语言包，清理 i18n 与 UI 文案
 
             ## 产物下载
             - Linux 便携版 ([Lumin-V${{ steps.version.outputs.version }}-linux-amd64](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-linux-amd64))：即下即用
