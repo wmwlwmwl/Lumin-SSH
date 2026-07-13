@@ -33,6 +33,7 @@ var ErrHostKeyChanged = errors.New("host key has changed")
 const (
 	postAuthSlowNoticeTimeout = 10 * time.Second
 	postAuthChannelTimeout    = 30 * time.Second
+	sftpInitWaitTimeout       = 5 * time.Second
 )
 
 // PendingHostKey 保存等待用户确认的主机密钥变更信息
@@ -47,8 +48,11 @@ type PendingHostKey struct {
 // sshClientEntry 保存单个 SSH 连接共享的 client 和 sftp 实例
 // 同一服务器的多个终端复用同一 TCP 连接
 type sshClientEntry struct {
-	Client *ssh.Client
-	SFTP   *sftp.Client
+	Client        *ssh.Client
+	SFTP          *sftp.Client
+	SFTPReady     chan struct{}
+	SFTPReadyOnce sync.Once
+	SFTPInitErr   error
 }
 
 type SessionData struct {
@@ -410,7 +414,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			client = existing.Client
 			clientCreated = false
 		} else {
-			m.clients[connKey] = &sshClientEntry{Client: client, SFTP: nil}
+			m.clients[connKey] = &sshClientEntry{Client: client, SFTPReady: make(chan struct{})}
 			m.connTerminals[connKey] = []string{}
 			m.mu.Unlock()
 
@@ -628,28 +632,30 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 
 func (m *SSHManager) initSFTPClient(sessionId string, connKey string, conn Connection, client *ssh.Client) {
 	sftpClient, err := sftp.NewClient(client)
-	if err != nil {
-		if m.ctx != nil {
-			runtime.EventsEmit(m.ctx, "ssh-status", map[string]interface{}{
-				"sessionId": sessionId,
-				"status":    "sftp-unavailable",
-				"host":      conn.Host,
-				"port":      conn.Port,
-				"username":  conn.Username,
-				"error":     err.Error(),
-			})
-		}
-		return
-	}
 	m.mu.Lock()
 	entry, ok := m.clients[connKey]
 	if !ok || entry.Client != client {
 		m.mu.Unlock()
-		sftpClient.Close()
+		if sftpClient != nil {
+			sftpClient.Close()
+		}
 		return
 	}
 	entry.SFTP = sftpClient
+	entry.SFTPInitErr = err
+	entry.SFTPReadyOnce.Do(func() { close(entry.SFTPReady) })
 	m.mu.Unlock()
+
+	if err != nil && m.ctx != nil {
+		runtime.EventsEmit(m.ctx, "ssh-status", map[string]interface{}{
+			"sessionId": sessionId,
+			"status":    "sftp-unavailable",
+			"host":      conn.Host,
+			"port":      conn.Port,
+			"username":  conn.Username,
+			"error":     err.Error(),
+		})
+	}
 }
 
 func (m *SSHManager) watchClient(connKey string, client *ssh.Client) {
@@ -768,16 +774,46 @@ func (m *SSHManager) getClientEntry(sessionId string) (*ssh.Client, *sftp.Client
 	return entry.Client, entry.SFTP, nil
 }
 
-// getSFTPClient 查找 session 对应的 SFTP 客户端，不可用时返回 error
+// getSFTPClient 查找 session 对应的 SFTP 客户端；初始化中时短暂等待。
 func (m *SSHManager) getSFTPClient(sessionId string) (*sftp.Client, error) {
-	_, sftpClient, err := m.getClientEntry(sessionId)
-	if err != nil {
-		return nil, err
+	m.mu.RLock()
+	s, ok := m.sessions[sessionId]
+	if !ok {
+		m.mu.RUnlock()
+		return nil, fmt.Errorf("session not found")
 	}
-	if sftpClient == nil {
+	entry, ok := m.clients[s.ConnKey]
+	if !ok {
+		m.mu.RUnlock()
+		return nil, fmt.Errorf("client not found for session")
+	}
+	if entry.SFTP != nil {
+		sftpClient := entry.SFTP
+		m.mu.RUnlock()
+		return sftpClient, nil
+	}
+	ready := entry.SFTPReady
+	m.mu.RUnlock()
+
+	if ready == nil {
 		return nil, fmt.Errorf("SFTP not available")
 	}
-	return sftpClient, nil
+	select {
+	case <-ready:
+	case <-time.After(sftpInitWaitTimeout):
+		return nil, fmt.Errorf("SFTP initialization timed out")
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	entry, ok = m.clients[s.ConnKey]
+	if !ok || entry.SFTP == nil {
+		if ok && entry.SFTPInitErr != nil {
+			return nil, fmt.Errorf("SFTP not available: %w", entry.SFTPInitErr)
+		}
+		return nil, fmt.Errorf("SFTP not available")
+	}
+	return entry.SFTP, nil
 }
 
 func (m *SSHManager) abortUploadsForSession(sessionId string) {
@@ -1416,7 +1452,11 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 			result = nil
 		}
 	}()
-	client, sftpClient, err := m.getClientEntry(sessionId)
+	client, _, err := m.getClientEntry(sessionId)
+	if err != nil {
+		return nil, err
+	}
+	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -2532,7 +2572,10 @@ func (m *SSHManager) DeleteItemContext(ctx context.Context, sessionId string, pa
 		return err
 	}
 	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
+		sftpClient, err = m.getSFTPClient(sessionId)
+		if err != nil {
+			return err
+		}
 	}
 	if err := ensureContextActive(ctx); err != nil {
 		return err
@@ -2568,12 +2611,9 @@ func (m *SSHManager) MkdirContext(ctx context.Context, sessionId string, path st
 	if err := ensureContextActive(ctx); err != nil {
 		return err
 	}
-	_, sftpClient, err := m.getClientEntry(sessionId)
+	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return err
-	}
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
 	}
 	return sftpClient.MkdirAll(path)
 }
@@ -2586,12 +2626,9 @@ func (m *SSHManager) RenameItemContext(ctx context.Context, sessionId string, ol
 	if err := ensureContextActive(ctx); err != nil {
 		return err
 	}
-	_, sftpClient, err := m.getClientEntry(sessionId)
+	sftpClient, err := m.getSFTPClient(sessionId)
 	if err != nil {
 		return err
-	}
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
 	}
 	return sftpClient.Rename(oldPath, newPath)
 }

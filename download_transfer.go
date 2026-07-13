@@ -621,12 +621,13 @@ func (m *SSHManager) DownloadDirectoryCompressed(sessionId string, downloadID st
 	}
 	task.setLocalTempDir(tempDir)
 
-	client, sftpClient, err := m.getClientEntry(sessionId)
+	client, _, err := m.getClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
+	sftpClient, err := m.getSFTPClient(sessionId)
+	if err != nil {
+		return err
 	}
 
 	remoteParentDir := pathpkg.Dir(normalizedRemotePath)
