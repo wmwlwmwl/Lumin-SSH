@@ -1170,6 +1170,117 @@ func stripOuterToolParamNewlines(value string) string {
 	return strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
 }
 
+func skipAIToolXMLWhitespace(value string, startIndex int) int {
+	cursor := startIndex
+	for cursor < len(value) {
+		switch value[cursor] {
+		case ' ', '\t', '\r', '\n':
+			cursor++
+		default:
+			return cursor
+		}
+	}
+	return cursor
+}
+
+func buildAIToolTagCandidates() []aiToolTagCandidate {
+	candidates := make([]aiToolTagCandidate, 0, len(aiSupportedToolNames))
+	for _, toolName := range aiSupportedToolNames {
+		candidates = append(candidates, aiToolTagCandidate{
+			Name:       toolName,
+			OpeningTag: fmt.Sprintf("<%s>", toolName),
+			ClosingTag: fmt.Sprintf("</%s>", toolName),
+		})
+	}
+	return candidates
+}
+
+func buildAIToolParamTagCandidates() []aiToolParamTagCandidate {
+	candidates := make([]aiToolParamTagCandidate, 0, len(aiSupportedToolParamNames))
+	for _, paramName := range aiSupportedToolParamNames {
+		candidates = append(candidates, aiToolParamTagCandidate{
+			ParamName:  paramName,
+			OpeningTag: fmt.Sprintf("<%s>", paramName),
+			ClosingTag: fmt.Sprintf("</%s>", paramName),
+		})
+	}
+	return candidates
+}
+
+func parseAINextToolUseFromXML(xmlContent string, startIndex int) (aiParsedToolUse, int, bool) {
+	cursor := skipAIToolXMLWhitespace(xmlContent, startIndex)
+	toolCandidates := buildAIToolTagCandidates()
+	paramCandidates := buildAIToolParamTagCandidates()
+
+	for _, candidate := range toolCandidates {
+		if !strings.HasPrefix(xmlContent[cursor:], candidate.OpeningTag) {
+			continue
+		}
+
+		tool := aiParsedToolUse{
+			Name:   candidate.Name,
+			Params: map[string]string{},
+		}
+		toolStartIndex := cursor
+		cursor += len(candidate.OpeningTag)
+		currentParamName := ""
+		currentParamValueStart := 0
+		currentParamClosingTag := ""
+
+		for cursor < len(xmlContent) {
+			if currentParamName != "" {
+				closingIndex := strings.Index(xmlContent[cursor:], currentParamClosingTag)
+				if closingIndex == -1 {
+					return aiParsedToolUse{}, 0, false
+				}
+				paramValueEnd := cursor + closingIndex
+				paramValue := xmlContent[currentParamValueStart:paramValueEnd]
+				if isRawPreserveToolParam(tool.Name, currentParamName) {
+					tool.Params[currentParamName] = stripOuterToolParamNewlines(paramValue)
+				} else {
+					tool.Params[currentParamName] = normalizeAINonRawToolParamValue(paramValue)
+				}
+				cursor = paramValueEnd + len(currentParamClosingTag)
+				currentParamName = ""
+				currentParamClosingTag = ""
+				continue
+			}
+
+			if strings.HasPrefix(xmlContent[cursor:], candidate.ClosingTag) {
+				tool.RawXML = xmlContent[toolStartIndex : cursor+len(candidate.ClosingTag)]
+				return tool, cursor + len(candidate.ClosingTag), true
+			}
+
+			matchedParam := false
+			for _, paramCandidate := range paramCandidates {
+				if !strings.HasPrefix(xmlContent[cursor:], paramCandidate.OpeningTag) {
+					continue
+				}
+				currentParamName = paramCandidate.ParamName
+				cursor += len(paramCandidate.OpeningTag)
+				currentParamValueStart = cursor
+				currentParamClosingTag = paramCandidate.ClosingTag
+				matchedParam = true
+				break
+			}
+			if matchedParam {
+				continue
+			}
+
+			cursor++
+		}
+
+		return aiParsedToolUse{}, 0, false
+	}
+
+	return aiParsedToolUse{}, 0, false
+}
+
+func containsAICompleteToolXMLWrapper(content string, conversationID string) bool {
+	_, innerXML, _, ok := extractAssistantToolXMLSegment(content, conversationID)
+	return ok && strings.TrimSpace(innerXML) != ""
+}
+
 func parseToolUsesFromXML(xmlContent string, conversationID string) []aiParsedToolUse {
 	toolCandidates := make([]aiToolTagCandidate, 0, len(aiSupportedToolNames))
 	for _, toolName := range aiSupportedToolNames {
@@ -1267,29 +1378,45 @@ func extractAssistantToolXMLSegment(content string, conversationID string) (stri
 	if startIndex == -1 {
 		return trimmedContent, "", "", false
 	}
+
 	innerStartIndex := startIndex + len(startTag)
-	endOffset := strings.Index(trimmedContent[innerStartIndex:], endTag)
-	if endOffset == -1 {
-		return trimmedContent, "", "", false
+	cursor := innerStartIndex
+	parsedToolCount := 0
+
+	for {
+		cursor = skipAIToolXMLWhitespace(trimmedContent, cursor)
+		if cursor >= len(trimmedContent) {
+			return trimmedContent, "", "", false
+		}
+		if strings.HasPrefix(trimmedContent[cursor:], endTag) {
+			if parsedToolCount == 0 {
+				return strings.TrimSpace(trimmedContent[:startIndex]), "", strings.TrimSpace(trimmedContent[cursor+len(endTag):]), false
+			}
+			innerXML := strings.TrimSpace(trimmedContent[innerStartIndex:cursor])
+			if innerXML == "" {
+				return strings.TrimSpace(trimmedContent[:startIndex]), "", strings.TrimSpace(trimmedContent[cursor+len(endTag):]), false
+			}
+			return strings.TrimSpace(trimmedContent[:startIndex]), innerXML, strings.TrimSpace(trimmedContent[cursor+len(endTag):]), true
+		}
+
+		_, nextCursor, ok := parseAINextToolUseFromXML(trimmedContent, cursor)
+		if !ok || nextCursor <= cursor {
+			return trimmedContent, "", "", false
+		}
+		cursor = nextCursor
+		parsedToolCount++
 	}
-	innerEndIndex := innerStartIndex + endOffset
-	innerXML := strings.TrimSpace(trimmedContent[innerStartIndex:innerEndIndex])
-	if innerXML == "" {
-		return strings.TrimSpace(trimmedContent[:startIndex]), "", strings.TrimSpace(trimmedContent[innerEndIndex+len(endTag):]), false
-	}
-	return strings.TrimSpace(trimmedContent[:startIndex]), innerXML, strings.TrimSpace(trimmedContent[innerEndIndex+len(endTag):]), true
 }
 
 func validateAssistantToolXMLProtocol(content string, conversationID string) (string, string, string, error) {
 	tagSet := getTaskScopedToolXMLTagSet(conversationID)
 	startTag := fmt.Sprintf("<%s>", tagSet.ExecuteMultipleToolsTagName)
 	endTag := fmt.Sprintf("</%s>", tagSet.ExecuteMultipleToolsTagName)
-	trimmedContent := strings.TrimSpace(content)
 	before, innerXML, after, ok := extractAssistantToolXMLSegment(content, conversationID)
 	if !ok {
 		return before, innerXML, after, fmt.Errorf("assistant response must contain exactly one top-level %s...%s block", startTag, endTag)
 	}
-	if strings.Count(trimmedContent, startTag) != 1 || strings.Count(trimmedContent, endTag) != 1 {
+	if containsAICompleteToolXMLWrapper(before, conversationID) || containsAICompleteToolXMLWrapper(after, conversationID) {
 		return before, innerXML, after, fmt.Errorf("assistant response must contain exactly one top-level %s...%s block", startTag, endTag)
 	}
 	return before, innerXML, after, nil
@@ -1335,31 +1462,31 @@ func validateAIStandaloneOnlyBatchTools(tools []aiParsedToolUse, conversationID 
 }
 
 func buildNoToolRetryMessage(conversationID string) string {
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
-	return strings.TrimSpace(fmt.Sprintf(`[ERROR] You did not use a tool in your previous response. Every assistant response must contain exactly one top-level <%s>...</%s> block with at least one tool call inside it.
+	_ = getTaskScopedToolXMLTagSet(conversationID)
+	return strings.TrimSpace(`[ERROR] You did not use a tool in your previous response.
 
-You may include concise natural-language text before or after that block when needed, but do not emit more than one top-level tool wrapper in a single response.
-
-If you have completed the task, use the attempt_completion tool as the only tool call in the response.
-If you need additional information from the user, use the ask_followup_question tool as the only tool call in the response.
-Never batch attempt_completion or ask_followup_question with any other tool. If they appear alongside other tools, they will be ignored.
-Otherwise, continue with the next step using an appropriate tool.`, tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName))
+Your next reply must be a minimal valid tool reply.
+Use exactly one top-level tool wrapper with at least one real tool call inside it.
+If the task is complete, reply with only the completion tool.
+If you need more information, reply with only the follow-up tool.
+Otherwise, reply with only the next tool batch.
+Do not add explanation before or after the tool reply.`)
 }
 
 func buildInvalidToolProtocolRetryMessage(conversationID string, detail string) string {
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
+	_ = getTaskScopedToolXMLTagSet(conversationID)
 	trimmedDetail := strings.TrimSpace(detail)
 	if trimmedDetail == "" {
 		trimmedDetail = "assistant response violated the XML tool protocol"
 	}
 	return strings.TrimSpace(fmt.Sprintf(`[ERROR] Invalid tool protocol in your previous response: %s
 
-Every assistant response must contain exactly one top-level <%s>...</%s> block with at least one recognized tool call inside it.
-Never emit more than one top-level wrapper in a single response.
-If you use attempt_completion, it must be the only child tool inside the top-level wrapper.
-If you use ask_followup_question, it must be the only child tool inside the top-level wrapper.
-When calling other tools, keep all tool calls inside the same single top-level wrapper and do not append a second wrapper later in the same response.
-Otherwise, continue with the next step using an appropriate tool.`, trimmedDetail, tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName))
+Your next reply must be a minimal valid tool reply.
+Use exactly one top-level tool wrapper and place all tool calls inside it.
+If you use the completion tool, it must be the only child tool.
+If you use the follow-up tool, it must be the only child tool.
+Do not add explanation, recovery commentary, or a second wrapper.
+Output the tool reply and stop.`, trimmedDetail))
 }
 
 func buildParsedToolUseDedupeKey(tool aiParsedToolUse) string {

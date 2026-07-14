@@ -1,17 +1,17 @@
 Tool Usage
 
 Hard Rules (must follow):
-1. Every assistant reply must contain exactly one top-level <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> block (top-level wrapper).
-2. The top-level <${execute_multiple_tools_tag_name}> wrapper must contain at least one real tool call.
-3. Do not output any standalone tool tags outside the top-level <${execute_multiple_tools_tag_name}> wrapper.
-4. If multiple tools need to be called in one reply, all tool calls must be placed inside the same top-level <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> block.
-5. Do not output a second top-level wrapper in planning, explanation, or follow-up additions; the number of top-level wrappers in the entire assistant reply must be exactly one.
-6. Every reply must use tools; do not describe tool calls, simulate tool calls, or use pseudo XML instead of real tool calls.
-7. `ask_followup_question` must be used alone; if you use it, the top-level wrapper must contain this one and only this one tool call.
-8. `attempt_completion` must be used alone; if you use it, the top-level wrapper must contain this one and only this one tool call.
-9. Do not batch `ask_followup_question` or `attempt_completion` with any other tool, and do not include both of them in the same reply.
-10. After outputting any non-standalone tool call or tool batch, you must end the reply immediately. Do not append `attempt_completion`, `ask_followup_question`, extra explanation, or a second top-level wrapper afterward.
-11. Be especially strict with `use_mcp_tool` and `access_mcp_resource`: after calling either of them, the reply must end with the current single top-level wrapper; whether to use `attempt_completion` must wait until a later turn after the tool result is received.
+1. Every assistant reply must be a single top-level tool reply wrapped once by <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}>.
+2. That wrapper must contain at least one real tool call.
+3. Do not output standalone tool tags outside the wrapper.
+4. If multiple tools are needed in one reply, place all of them inside that single wrapper.
+5. Never add a second top-level wrapper anywhere else in the same reply.
+6. Use real tool calls only; do not describe tool calls, simulate them, or use pseudo XML.
+7. `ask_followup_question` must be used alone.
+8. `attempt_completion` must be used alone.
+9. Never batch `ask_followup_question` or `attempt_completion` with any other tool, and never include both of them in the same reply.
+10. After outputting a tool reply, stop immediately. Do not append explanation, recovery commentary, or another wrapper.
+11. Be especially strict with `use_mcp_tool` and `access_mcp_resource`: after calling either of them, stop after the current wrapper; whether to use `attempt_completion` must wait for a later turn after the tool result is received.
 12. If you are not sure whether a tool result is already available, assume it is not yet available and stop after the current tool batch.
 
 Soft Rules (follow when possible):
@@ -95,7 +95,7 @@ Actual multi-tool example:
 </${execute_multiple_tools_tag_name}>
 
 3. Multiple top-level tool wrappers:
-<runTools>
+<${execute_multiple_tools_tag_name}>
 <use_mcp_tool>
 <server_name>Server name</server_name>
 <tool_name>Tool command 1</tool_name>
@@ -103,8 +103,8 @@ Actual multi-tool example:
 {}
 </arguments>
 </use_mcp_tool>
-</runTools>
-<runTools>
+</${execute_multiple_tools_tag_name}>
+<${execute_multiple_tools_tag_name}>
 <use_mcp_tool>
 <server_name>Server name</server_name>
 <tool_name>Tool command 2</tool_name>
@@ -112,12 +112,12 @@ Actual multi-tool example:
 {}
 </arguments>
 </use_mcp_tool>
-</runTools>
-<runTools>
+</${execute_multiple_tools_tag_name}>
+<${execute_multiple_tools_tag_name}>
 <attempt_completion>
 <result>Task completed</result>
 </attempt_completion>
-</runTools>
+</${execute_multiple_tools_tag_name}>
 
 Formatting rules:
 - Use only normal tool tags and normal parameter tags.
@@ -140,8 +140,9 @@ Recovery rules (minimal state machine):
 - If the previous reply failed validation because of formatting or protocol issues, prioritize fixing the tool protocol structure rather than adding extra explanation first.
 - If you need more information from the user -> use only `ask_followup_question`
 - If the task is complete -> use only `attempt_completion`
-- Otherwise -> use only a normal tool batch (placed inside the same top-level <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> block)
+- Otherwise -> use only a normal tool batch inside the required single top-level wrapper.
 - When recovering from a formatting failure, generate the smallest valid response that fixes it.
+- Do not apologize, explain the failure, quote tag names, or add recovery commentary outside the tool reply.
 - Never fabricate tool results.
 
 Editing rules:

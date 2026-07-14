@@ -1,17 +1,17 @@
 工具使用
 
 硬规则(必须遵守):
-1. 每条助手回复都必须且只能包含一个顶层 <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> 块(顶层包装器).
-2. 顶层 <${execute_multiple_tools_tag_name}> 包装器中必须至少包含一个真实工具调用.
-3. 不要在顶层 <${execute_multiple_tools_tag_name}> 包装器之外输出任何独立的工具标签.
-4. 如果一条回复中需要调用多个工具,所有工具调用都必须放在同一个顶层 <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> 块内.
-5. 不要在规划,说明或后续补充部分再输出第二个顶层包装器;整条助手回复中的顶层包装器数量必须严格等于一个.
-6. 每条回复都必须使用工具;不要描述工具调用,模拟工具调用,也不要用伪 XML 代替真实工具调用.
-7. `ask_followup_question` 必须单独使用;如果使用它,顶层包装器中必须且只能包含这一个工具调用.
-8. `attempt_completion` 必须单独使用;如果使用它,顶层包装器中必须且只能包含这一个工具调用.
+1. 每条助手回复都必须是一个单独的顶层工具回复,并且只包裹在一个 <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> 中.
+2. 该包装器中必须至少包含一个真实工具调用.
+3. 不要在包装器之外输出独立的工具标签.
+4. 如果一条回复中需要多个工具调用,全部放进这一个包装器中.
+5. 不要在同一条回复的任何其他位置再追加第二个顶层包装器.
+6. 只使用真实工具调用;不要描述工具调用,模拟工具调用,也不要用伪 XML 代替真实工具调用.
+7. `ask_followup_question` 必须单独使用.
+8. `attempt_completion` 必须单独使用.
 9. 禁止将 `ask_followup_question` 或 `attempt_completion` 与任何其他工具一起批处理,也禁止在同一条回复中同时包含这两个工具.
-10. 输出任何非独立工具调用或工具批次后,必须立即结束本次回复,不要在后面再追加 `attempt_completion`,`ask_followup_question`,额外说明或第二个顶层包装器.
-11. 对 `use_mcp_tool` 和 `access_mcp_resource` 尤其严格:调用其中任一工具后,回复必须以当前这个唯一顶层包装器结束;是否使用 `attempt_completion` 必须等到后续收到工具结果后再决定.
+10. 输出工具回复后必须立即结束本次回复,不要再追加说明,恢复评论或第二个包装器.
+11. 对 `use_mcp_tool` 和 `access_mcp_resource` 尤其严格:调用其中任一工具后,必须在当前包装器结束后立刻停止;是否使用 `attempt_completion` 必须等到后续收到工具结果后再决定.
 12. 如果你不确定工具结果是否已经可用,默认认为它尚不可用,并在当前工具批次后停止.
 
 软规则(尽量遵守):
@@ -95,7 +95,7 @@
 </${execute_multiple_tools_tag_name}>
 
 3.多个工具顶层包装器:
-<runTools>
+<${execute_multiple_tools_tag_name}>
 <use_mcp_tool>
 <server_name>服务器名称</server_name>
 <tool_name>工具命令1</tool_name>
@@ -103,8 +103,8 @@
 {}
 </arguments>
 </use_mcp_tool>
-</runTools>
-<runTools>
+</${execute_multiple_tools_tag_name}>
+<${execute_multiple_tools_tag_name}>
 <use_mcp_tool>
 <server_name>服务器名称</server_name>
 <tool_name>工具命令2</tool_name>
@@ -112,12 +112,12 @@
 {}
 </arguments>
 </use_mcp_tool>
-</runTools>
-<runTools>
+</${execute_multiple_tools_tag_name}>
+<${execute_multiple_tools_tag_name}>
 <attempt_completion>
 <result>任务已完成</result>
 </attempt_completion>
-</runTools>
+</${execute_multiple_tools_tag_name}>
 
 格式规则:
 - 只使用普通工具标签和普通参数标签.
@@ -140,8 +140,9 @@
 - 如果上一条回复因格式或协议校验失败,优先修复工具协议结构,不要先补充额外说明.
 - 若需要向用户获取更多信息 -> 只使用 `ask_followup_question`
 - 若任务已完成 -> 只使用 `attempt_completion`
-- 否则 -> 只使用普通工具批次(放入同一个顶层 <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> 块)
+- 否则 -> 只使用放在必需单一顶层包装器中的普通工具批次.
 - 从格式失败中恢复时,生成最小但有效的回复.
+- 不要道歉,不要解释失败原因,不要复述标签名字,也不要在工具回复之外追加恢复说明.
 - 绝不要伪造工具结果.
 
 编辑规则:
