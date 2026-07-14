@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { t as $t } from '../../i18n.js';
 import { Lightbulb } from 'lucide-react';
-import { ToggleSwitch } from './SharedComponents';
+import { ToggleSwitch, RadioOption } from './SharedComponents';
 import { getAIGlobalSettings, saveAIGlobalSettings } from '../ai/aiGlobalSettingsBridge.js';
 import { getProxyNodes, saveProxyNodes, normalizeProxyNode } from './proxyNodesBridge.js';
 
@@ -26,7 +26,7 @@ function getIsMobileLayout() {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_MEDIA_QUERY).matches;
 }
 
-export default function NetworkTab({ pingEnabled, onTogglePingEnabled, probeInterval, onProbeIntervalChange, pingInterval, onPingIntervalChange }) {
+export default function NetworkTab({ pingEnabled, onTogglePingEnabled, pingMode, onPingModeChange, probeInterval, onProbeIntervalChange, pingInterval, onPingIntervalChange }) {
   const [proxyNodes, setProxyNodes] = useState([]);
   const [proxyForm, setProxyForm] = useState(defaultProxyForm);
   const [editingProxyId, setEditingProxyId] = useState('');
@@ -169,6 +169,22 @@ export default function NetworkTab({ pingEnabled, onTogglePingEnabled, probeInte
             </div>
             <ToggleSwitch checked={pingEnabled} onChange={onTogglePingEnabled} />
           </div>
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{$t('检测方式')}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('选择延迟检测的探测方式，不同方式适用于不同网络环境。')}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[
+            { id: 'auto', label: <><span style={{ fontSize: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontWeight: 700, marginRight: 6 }}>{$t('推荐')}</span>{$t('智能检测')}</>, desc: $t('根据连接类型自动选择：直连测 TCP 拨号延迟，TUN/代理强制读 SSH Banner 验证可达性') },
+            { id: 'banner', label: $t('SSH Banner RTT'), desc: $t('所有连接都读取 SSH 握手响应测速，准确反映真实可达性，能穿透 TUN/代理；不可达服务器需等待超时') },
+            { id: 'tcp', label: $t('TCP Dial'), desc: $t('仅检测 TCP 端口连通性，速度最快，但在 TUN/代理下可能把不可达服务器误判为在线') },
+          ].map((opt) => (
+            <RadioOption key={opt.id} selected={pingMode === opt.id} label={opt.label} description={opt.desc} onClick={() => onPingModeChange(opt.id)} />
+          ))}
+        </div>
+        <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--surface-overlay)', borderRadius: 8, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7, border: '1px solid var(--border-light)' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', marginRight: 4 }}><Lightbulb size={14} /></span> <strong style={{ color: 'var(--text-secondary)' }}>{$t('提示：')}</strong>{$t('使用 TUN 模式代理（Clash/V2Ray 等）时建议选「智能检测」或「SSH Banner RTT」，可准确识别不可达服务器；纯局域网或未开代理时选「TCP Dial」最快。')}
         </div>
       </div>
       <div>

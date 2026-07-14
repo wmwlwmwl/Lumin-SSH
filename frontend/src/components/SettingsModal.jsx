@@ -315,6 +315,7 @@ export default function SettingsModal({
   const [pingEnabled, setPingEnabled] = useState(localStorage.getItem('pingEnabled') !== 'false');
   const [probeInterval, setProbeInterval] = useState(parseInt(localStorage.getItem('probeInterval') || '3', 10));
   const [pingInterval, setPingInterval] = useState(parseInt(localStorage.getItem('pingInterval') || '2', 10));
+  const [pingMode, setPingMode] = useState(localStorage.getItem('pingMode') || 'auto');
 
   // Appearance state
   const [themeMode, setThemeMode] = useState(localStorage.getItem('themeMode') || 'dark');
@@ -1098,6 +1099,7 @@ export default function SettingsModal({
   };
   const handleProbeIntervalChange = (s) => { setProbeInterval(s); localStorage.setItem('probeInterval', String(s)); window.dispatchEvent(new Event('probeIntervalChanged')); };
   const handlePingIntervalChange = (s) => { setPingInterval(s); localStorage.setItem('pingInterval', String(s)); window.dispatchEvent(new Event('pingIntervalChanged')); };
+  const handlePingModeChange = (mode) => { setPingMode(mode); localStorage.setItem('pingMode', mode); window.dispatchEvent(new Event('pingModeChanged')); };
   const handleTerminalColorThemeChange = (key) => { setTerminalColorTheme(key); localStorage.setItem('terminalColorTheme', key); window.dispatchEvent(new CustomEvent('terminal-theme-changed', { detail: key })); };
   const handleSyncModeChange = async (mode) => { setSyncMode(mode); try { await AppGo.SetSyncMode(mode); } catch (_) {} };
   const handleAutoSyncEnabledChange = async (enabled) => { setAutoSyncEnabled(enabled); try { await AppGo.SetAutoSyncEnabled(enabled); } catch (_) {} };
@@ -1207,6 +1209,8 @@ export default function SettingsModal({
               <NetworkTab
                 pingEnabled={pingEnabled}
                 onTogglePingEnabled={handleTogglePingEnabled}
+                pingMode={pingMode}
+                onPingModeChange={handlePingModeChange}
                 probeInterval={probeInterval}
                 onProbeIntervalChange={handleProbeIntervalChange}
                 pingInterval={pingInterval}

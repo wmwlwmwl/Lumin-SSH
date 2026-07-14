@@ -1684,8 +1684,8 @@ func (a *App) SaveGlobalCommandHistory(jsonStr string) error {
 	return a.configManager.SaveGlobalCommandHistory(jsonStr)
 }
 
-// PingServer pings a server
-func (a *App) PingServer(connId string) map[string]interface{} {
+// PingServer pings a server. mode 为延迟检测方式：auto / banner / tcp（见 ping.go normalizePingMode）。
+func (a *App) PingServer(connId string, mode string) map[string]interface{} {
 	conn, ok := a.configManager.GetConnectionByID(connId)
 	if !ok {
 		return map[string]interface{}{
@@ -1700,7 +1700,7 @@ func (a *App) PingServer(connId string) map[string]interface{} {
 			"latency": 0,
 		}
 	}
-	return PingServer(resolvedConn)
+	return PingServer(resolvedConn, mode)
 }
 
 // UpdateApp downloads a platform update package, verifies it, and starts the
