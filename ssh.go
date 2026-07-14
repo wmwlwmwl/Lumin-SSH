@@ -30,6 +30,15 @@ import (
 // ErrHostKeyChanged 在远程主机密钥发生变化时返回，需要用户确认
 var ErrHostKeyChanged = errors.New("host key has changed")
 
+var sshHostKeyAlgorithms = []string{
+	"ssh-ed25519",
+	"ecdsa-sha2-nistp256",
+	"ecdsa-sha2-nistp384",
+	"ecdsa-sha2-nistp521",
+	"rsa-sha2-512",
+	"rsa-sha2-256",
+}
+
 const (
 	postAuthSlowNoticeTimeout = 10 * time.Second
 	postAuthChannelTimeout    = 30 * time.Second
@@ -257,18 +266,11 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 		}
 
 		config := &ssh.ClientConfig{
-			User:            conn.Username,
-			Auth:            authMethods,
-			HostKeyCallback: customHostKeyCallback,
-			Timeout:         10 * time.Second,
-			HostKeyAlgorithms: []string{
-				"ssh-ed25519",
-				"ecdsa-sha2-nistp256",
-				"ecdsa-sha2-nistp384",
-				"ecdsa-sha2-nistp521",
-				"rsa-sha2-512",
-				"rsa-sha2-256",
-			},
+			User:              conn.Username,
+			Auth:              authMethods,
+			HostKeyCallback:   customHostKeyCallback,
+			Timeout:           10 * time.Second,
+			HostKeyAlgorithms: append([]string(nil), sshHostKeyAlgorithms...),
 		}
 
 		target := dialAddr(conn.Host, conn.Port)

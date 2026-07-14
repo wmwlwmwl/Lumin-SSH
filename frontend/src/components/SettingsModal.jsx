@@ -54,6 +54,7 @@ const defaultR2Form = {
 };
 
 const defaultFTPForm = {
+  mode: 'explicit_tls',
   host: '',
   port: 21,
   username: '',
@@ -71,6 +72,14 @@ const defaultSFTPForm = {
   privateKey: '',
   remoteDir: '/Lumin/',
   maxBackups: '',
+};
+
+const parseConnectionTestPort = (value) => {
+  const port = parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error($t('请输入有效端口'));
+  }
+  return port;
 };
 
 const PROVIDERS = {
@@ -132,8 +141,8 @@ const PROVIDERS = {
     accentRgb: '244, 114, 182',
     successMsgKey: '已成功绑定 FTP 服务器',
     defaultForm: defaultFTPForm,
-    test: (f) => AppGo.TestFTPConnection(f.host, f.port, f.username, f.password),
-    save: (f) => AppGo.SaveFTPConfig({ host: f.host, port: String(f.port), username: f.username, password: f.password, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
+    test: (f) => AppGo.TestFTPConnection(f.host, parseConnectionTestPort(f.port), f.username, f.password, f.mode),
+    save: (f) => AppGo.SaveFTPConfig({ mode: f.mode, host: f.host, port: String(f.port), username: f.username, password: f.password, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
     sync: () => AppGo.SyncFromFTP(),
     backup: () => AppGo.BackupToFTP(),
     list: () => AppGo.ListFTPBackups(),
@@ -141,8 +150,9 @@ const PROVIDERS = {
     restoreWithPassword: (name, pw) => AppGo.RestoreFromFTPFileWithPassword(name, pw),
     getConfig: () => AppGo.GetFTPConfig(),
     isConfigured: (f) => !!f.host,
-    applyConfig: (data) => ({ host: data.host || '', port: data.port || 21, username: data.username || '', password: data.password || '', remoteDir: data.remoteDir || '/Lumin/', maxBackups: data.maxBackups || '' }),
+    applyConfig: (data) => ({ mode: data.mode || 'explicit_tls', host: data.host || '', port: data.port || 21, username: data.username || '', password: data.password || '', remoteDir: data.remoteDir || '/Lumin/', maxBackups: data.maxBackups || '' }),
     summaryFields: (f) => [
+      { label: $t('连接模式'), value: f.mode === 'plain' ? $t('普通 FTP（不安全）') : $t('显式 FTPS（推荐）'), primary: true },
       { label: $t('主机地址'), value: f.host, primary: true },
       { label: $t('端口'), value: f.port },
       { label: $t('用户名'), value: f.username, primary: true },
@@ -158,7 +168,7 @@ const PROVIDERS = {
     accentRgb: '34, 197, 94',
     successMsgKey: '已成功绑定 SFTP 服务器',
     defaultForm: defaultSFTPForm,
-    test: (f) => AppGo.TestSFTPConnection(f.host, f.port, f.username, f.password, f.authMethod, f.privateKey),
+    test: (f) => AppGo.TestSFTPConnection(f.host, parseConnectionTestPort(f.port), f.username, f.password, f.authMethod, f.privateKey, ''),
     save: (f) => AppGo.SaveSFTPConfig({ host: f.host, port: String(f.port), username: f.username, password: f.password, authMethod: f.authMethod, privateKey: f.privateKey, remoteDir: f.remoteDir, maxBackups: String(f.maxBackups || '') }),
     sync: () => AppGo.SyncFromSFTP(),
     backup: () => AppGo.BackupToSFTP(),
@@ -878,7 +888,7 @@ export default function SettingsModal({
     Promise.all([
       AppGo.GetFTPConfig().then(c => {
         if (cancelled || !c || !c.host) return;
-        setFtpForm(prev => ({ ...prev, host: c.host, port: c.port, username: c.username, password: c.password, remoteDir: c.remoteDir, maxBackups: c.maxBackups || '' }));
+        setFtpForm(prev => ({ ...prev, mode: c.mode || 'explicit_tls', host: c.host, port: c.port, username: c.username, password: c.password, remoteDir: c.remoteDir, maxBackups: c.maxBackups || '' }));
         setFtpConfigured(true);
       }).catch(() => {}),
       AppGo.GetSFTPConfig().then(c => {
@@ -946,13 +956,15 @@ export default function SettingsModal({
     }
   };
 
-  const makeSaveHandler = (key) => async () => {
+  const makeSaveHandler = (key, beforeSave) => async () => {
     const p = PROVIDERS[key];
     const s = providerState[key];
+    const form = { ...s.form };
     s.setLoading(true);
     try {
-      await p.save(s.form);
-      if (p.isConfigured(s.form)) {
+      await beforeSave?.(form);
+      await p.save(form);
+      if (p.isConfigured(form)) {
         s.setConfigured(true);
         s.setEditing(false);
         try {
@@ -979,19 +991,113 @@ export default function SettingsModal({
     }
   };
 
+  const confirmFTPConnection = async (form) => {
+    const port = parseConnectionTestPort(form.port);
+    const result = await PROVIDERS.ftp.test(form);
+    const certificate = result?.certificateApprovalRequired;
+    if (!certificate) return;
+
+    const names = [...(certificate.dnsNames || []), ...(certificate.ipAddresses || [])].join(', ') || '-';
+    const action = await window.luminDialog?.choice?.(
+      [
+        $t('FTPS 服务器证书不受系统信任。'),
+        $t('请先通过可信渠道核对证书指纹，再决定是否接受。'),
+        '',
+        `${$t('主机:')} ${certificate.endpoint}`,
+        `${$t('证书指纹:')} ${certificate.fingerprint}`,
+        `${$t('证书主题:')} ${certificate.subject}`,
+        `${$t('证书签发者:')} ${certificate.issuer}`,
+        `${$t('证书名称:')} ${names}`,
+        `${$t('有效期:')} ${certificate.notBefore} — ${certificate.notAfter}`,
+        ...(certificate.pinnedFingerprint ? ['', `${$t('旧证书指纹:')} ${certificate.pinnedFingerprint}`] : []),
+      ].join('\n'),
+      $t('FTPS 证书确认'),
+      [
+        { label: $t('接受并保存'), value: 1, primary: true },
+        { label: $t('取消'), value: 0, secondary: true },
+      ]
+    );
+    if (action !== 1) throw new Error($t('已取消证书信任'));
+    await AppGo.TestFTPConnectionWithCertificateApproval(
+      form.host, port, form.username, form.password, form.mode,
+      certificate.fingerprint, certificate.pinnedFingerprint || ''
+    );
+  };
+
+  const confirmSFTPConnection = async (form) => {
+    const port = parseConnectionTestPort(form.port);
+    const result = await PROVIDERS.sftp.test(form);
+    const mismatch = result?.hostKeyMismatch;
+    if (!mismatch) return;
+
+    const action = await window.luminDialog?.choice?.(
+      [
+        $t('远程主机密钥已变更，可能存在中间人攻击！'),
+        '',
+        `${$t('主机:')} ${form.host}:${port}`,
+        '',
+        $t('新密钥指纹:'),
+        mismatch.newFingerprint,
+        '',
+        $t('旧密钥指纹:'),
+        ...(mismatch.oldFingerprints || []),
+        '',
+        $t('请先通过可信渠道核对新指纹。确认这是预期变更后，才能接受并保存。'),
+      ].join('\n'),
+      $t('SFTP 主机密钥已变更'),
+      [
+        { label: $t('接受并保存'), value: 1, primary: true },
+        { label: $t('取消'), value: 0, secondary: true },
+      ]
+    );
+    if (action !== 1) throw new Error($t('已取消主机密钥更新'));
+    await AppGo.TestSFTPConnectionWithHostKeyApproval(
+      form.host, port, form.username, form.password, form.authMethod, form.privateKey, '', mismatch.newFingerprint
+    );
+  };
+
+  const confirmSecureProviders = async (providerIds) => {
+    for (const providerId of [...new Set(providerIds)]) {
+      if (providerId === 'ftp' && providerState.ftp.configured) {
+        await confirmFTPConnection({ ...providerState.ftp.form });
+      } else if (providerId === 'sftp' && providerState.sftp.configured) {
+        await confirmSFTPConnection({ ...providerState.sftp.form });
+      }
+    }
+  };
+
+  const makeSecureTestHandler = (key, confirmConnection) => async () => {
+    const p = PROVIDERS[key];
+    const s = providerState[key];
+    const form = { ...s.form };
+    s.setTesting(true);
+    s.setTestResult(null);
+    try {
+      await confirmConnection(form);
+      s.setTestResult('ok');
+      addToast(`${p.name} ${$t('连接测试成功 ✓')}`, 'success');
+    } catch (err) {
+      s.setTestResult('fail');
+      addToast(`${p.name} ${$t('连接测试失败')}: ${err}`, 'error');
+    } finally {
+      s.setTesting(false);
+    }
+  };
+
   const handleTest = makeTestHandler('webdav');
   const handleSave = makeSaveHandler('webdav');
   const handleR2Test = makeTestHandler('r2');
   const handleR2Save = makeSaveHandler('r2');
-  const handleTestFTP = makeTestHandler('ftp');
-  const handleSaveFTP = makeSaveHandler('ftp');
-  const handleTestSFTP = makeTestHandler('sftp');
-  const handleSaveSFTP = makeSaveHandler('sftp');
+  const handleTestFTP = makeSecureTestHandler('ftp', confirmFTPConnection);
+  const handleSaveFTP = makeSaveHandler('ftp', confirmFTPConnection);
+  const handleTestSFTP = makeSecureTestHandler('sftp', confirmSFTPConnection);
+  const handleSaveSFTP = makeSaveHandler('sftp', confirmSFTPConnection);
 
   const loadRestoreBackups = async (providerId) => {
     setLoadingBackups(true);
     try {
       const p = PROVIDERS[providerId];
+      await confirmSecureProviders([providerId]);
       const list = await p.list();
       if (!list || list.length === 0) {
         setFailedRestoreProviders(prev => [...new Set([...prev, providerId])]);
@@ -1033,6 +1139,7 @@ export default function SettingsModal({
     setRestoring(true);
     try {
       const p = PROVIDERS[restoreProvider];
+      await confirmSecureProviders(syncMode === 'all' ? configuredProviderIds() : [restoreProvider]);
       if (password && p.restoreWithPassword) {
         await p.restoreWithPassword(selectedBackup, password);
       } else {
@@ -1073,6 +1180,7 @@ export default function SettingsModal({
   const handleSync = async () => {
     setSyncing(true);
     try {
+      await confirmSecureProviders(syncMode === 'all' ? configuredProviderIds() : [syncMode]);
       if (syncMode === 'all') {
         const res = await AppGo.SyncAllProviders();
         addToast(`${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
