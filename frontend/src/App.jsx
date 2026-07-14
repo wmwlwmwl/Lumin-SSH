@@ -1276,6 +1276,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   // pingModeRef：让 pingAll（依赖数组为空的 useCallback）始终读到最新 pingMode，而不必把 pingMode 加进依赖、重建定时器。
   const pingModeRef = useRef(pingMode);
   useEffect(() => { pingModeRef.current = pingMode; }, [pingMode]);
+  // pingFailCountRef：记录每台服务器「连续被判离线」的轮数。网络瞬时抖动会让在线服务器偶发判离线，
+  // 为避免 UI 闪烁，连续 2 轮都报告离线才确认离线；只要中间一轮在线就清零。
+  const pingFailCountRef = useRef({});
 
   useEffect(() => {
     const handler = () => {
@@ -1994,9 +1997,30 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           }
         })
       );
-      const map = {};
-      results.forEach((r) => { map[r.id] = { online: r.online, latency: r.latency }; });
-      setPings(map);
+      // 合并新旧状态：网络瞬时抖动会让在线服务器偶发判离线，因此「连续 2 轮」都报告离线才确认离线，
+      // 未确认期间保留上一轮的在线状态与延迟数值，避免 UI 闪烁。
+      const FAIL_THRESHOLD = 2;
+      const failCounts = pingFailCountRef.current;
+      setPings((prev) => {
+        const map = {};
+        results.forEach((r) => {
+          if (r.online) {
+            // 在线：清零失败计数，采用本轮最新延迟。
+            delete failCounts[r.id];
+            map[r.id] = { online: true, latency: r.latency };
+          } else {
+            // 本轮报告离线：累加失败计数，仅当连续达标才确认离线；否则沿用上轮在线状态。
+            failCounts[r.id] = (failCounts[r.id] || 0) + 1;
+            if (failCounts[r.id] >= FAIL_THRESHOLD) {
+              map[r.id] = { online: false, latency: prev[r.id]?.latency ?? null };
+            } else {
+              // 保留上轮状态（可能在线/可能尚无记录）；若无记录则记一次离线占位。
+              map[r.id] = prev[r.id] ? { ...prev[r.id] } : { online: false, latency: null };
+            }
+          }
+        });
+        return map;
+      });
     } finally {
       pingInFlightRef.current = false;
     }
@@ -2006,6 +2030,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (activeSessionId !== null) return; // ponytail: 不在主页时不 ping
     if (!pingEnabled) {
       setPings({});
+      pingFailCountRef.current = {};
       return;
     }
     pingAll();
