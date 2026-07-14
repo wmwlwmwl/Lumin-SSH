@@ -1,5 +1,6 @@
-import { ArrowLeft, Check, CircleHelp, Globe, Save, Search, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, CircleHelp, Clipboard, Globe, Save, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { EventsOn } from '../../../wailsjs/runtime/runtime.js'
 import { useTranslation, t as translate } from '../../i18n.js'
 import { getAIGlobalSettings } from './aiGlobalSettingsBridge.js'
 import { isBuiltinAIProvider, runAIProviderAPIKeyPasteHandler } from './aiProviderBridge.js'
@@ -80,7 +81,7 @@ function requestRuntimeEnvironmentSetup(message) {
   }))
 }
 
-async function initializeBuiltinProvider(providerId) {
+async function initializeBuiltinProvider(providerId, language) {
   const runtimeEnvironmentStatus = await getRuntimeEnvironmentStatus()
   if (runtimeEnvironmentStatus?.ready !== true) {
     requestRuntimeEnvironmentSetup(translate('请先安装 uv 运行环境后再初始化内置 Kimi'))
@@ -92,7 +93,8 @@ async function initializeBuiltinProvider(providerId) {
     return { blockedByRuntimeEnvironment: false }
   }
   const normalizedProviderId = typeof providerId === 'string' && providerId.trim() ? providerId.trim() : 'builtin-kimi'
-  await initializer(normalizedProviderId)
+  const normalizedLanguage = typeof language === 'string' ? language.trim() : ''
+  await initializer(normalizedProviderId, normalizedLanguage)
   return { blockedByRuntimeEnvironment: false }
 }
 
@@ -320,7 +322,7 @@ function SelectMenu({ value, options, open, onToggle, onSelect, menuRef, menuWid
 }
 
 export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provider, providers = [], panelBounds, onClose, onSave, onDelete, onOpenBuiltinLogin }) {
-  const { t } = useTranslation()
+  const { t, lang } = useTranslation()
   const [draft, setDraft] = useState(buildDraft())
   const [modelQuery, setModelQuery] = useState('')
   const [modelOptions, setModelOptions] = useState(buildInitialModelOptions(getAIProviderDefinition('Compatible'), 'gpt-5.4'))
@@ -340,6 +342,10 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   const autoRefreshTimerRef = useRef(null)
   const lastAutoRefreshKeyRef = useRef('')
   const [builtinProviderRuntimeState, setBuiltinProviderRuntimeState] = useState('idle')
+  const [showBuiltinProviderInitDialog, setShowBuiltinProviderInitDialog] = useState(false)
+  const [builtinProviderInitLogs, setBuiltinProviderInitLogs] = useState('')
+  const [builtinProviderInitTerminating, setBuiltinProviderInitTerminating] = useState(false)
+  const builtinProviderInitLogsRef = useRef(null)
 
   const providerDefinition = useMemo(
     () => getAIProviderDefinition(draft.provider),
@@ -554,6 +560,9 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   useEffect(() => {
     if (!open || !builtinProvider) {
       setBuiltinProviderRuntimeState('idle')
+      setShowBuiltinProviderInitDialog(false)
+      setBuiltinProviderInitLogs('')
+      setBuiltinProviderInitTerminating(false)
       return undefined
     }
     let cancelled = false
@@ -565,6 +574,20 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
       }
     }
 
+    const unbindLog = EventsOn('builtin-provider-init-log', (payload) => {
+      const normalizedProviderId = typeof (draft.id || provider?.id) === 'string' && (draft.id || provider?.id).trim()
+        ? (draft.id || provider?.id).trim()
+        : 'builtin-kimi'
+      if (payload?.providerId !== normalizedProviderId) {
+        return
+      }
+      const text = typeof payload?.text === 'string' ? payload.text : ''
+      if (!text) {
+        return
+      }
+      setBuiltinProviderInitLogs((prev) => prev + text)
+    })
+
     void refreshBuiltinProviderRuntimeStatus()
     const timer = window.setInterval(() => {
       void refreshBuiltinProviderRuntimeStatus()
@@ -573,6 +596,9 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     return () => {
       cancelled = true
       window.clearInterval(timer)
+      if (typeof unbindLog === 'function') {
+        unbindLog()
+      }
     }
   }, [builtinProvider, draft.id, open, provider?.id])
 
@@ -653,6 +679,13 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     }
     return modelOptions.filter((item) => item.toLowerCase().includes(keyword))
   }, [modelOptions, modelQuery])
+
+  useEffect(() => {
+    if (!showBuiltinProviderInitDialog || !builtinProviderInitLogsRef.current) {
+      return
+    }
+    builtinProviderInitLogsRef.current.scrollTop = builtinProviderInitLogsRef.current.scrollHeight
+  }, [builtinProviderInitLogs, showBuiltinProviderInitDialog])
 
   if (!open) {
     return null
@@ -1077,6 +1110,37 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     ? '[运行中]'
     : (builtinProviderRuntimeState === 'starting' ? '[启动中]' : '[初始化]')
 
+  const handleTerminateBuiltinProviderInitialization = async () => {
+    const terminator = window?.go?.main?.App?.CancelBuiltinProviderInitialization
+    if (typeof terminator !== 'function' || builtinProviderInitTerminating) {
+      return
+    }
+    try {
+      setBuiltinProviderInitTerminating(true)
+      const normalizedProviderId = typeof draft.id === 'string' && draft.id.trim() ? draft.id.trim() : 'builtin-kimi'
+      await terminator(normalizedProviderId)
+    } finally {
+      setBuiltinProviderInitTerminating(false)
+      setShowBuiltinProviderInitDialog(false)
+      setBuiltinProviderInitLogs('')
+      setBuiltinProviderRuntimeState('idle')
+    }
+  }
+
+  const handleCopyBuiltinProviderInitLogs = async () => {
+    if (!builtinProviderInitLogs.trim()) {
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(builtinProviderInitLogs)
+      return
+    } catch {}
+    try {
+      const { ClipboardSetText } = await import('../../../wailsjs/runtime/runtime.js')
+      await ClipboardSetText(builtinProviderInitLogs)
+    } catch {}
+  }
+
   return (
     <div
       onClick={onClose}
@@ -1281,19 +1345,33 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
                         return
                       }
                       setBuiltinProviderRuntimeState('starting')
+                      setBuiltinProviderInitLogs('')
+                      setShowBuiltinProviderInitDialog(true)
                       try {
-                        const result = await initializeBuiltinProvider(draft.id)
+                        const result = await initializeBuiltinProvider(draft.id, lang)
                         if (result?.blockedByRuntimeEnvironment) {
+                          setShowBuiltinProviderInitDialog(false)
                           setBuiltinProviderRuntimeState('idle')
                           return
                         }
                         const status = await getBuiltinProviderRuntimeStatus(draft.id)
                         setBuiltinProviderRuntimeState(status.state === 'running' ? 'running' : (status.state === 'starting' ? 'starting' : 'idle'))
+                        setShowBuiltinProviderInitDialog(false)
+                        setBuiltinProviderInitLogs('')
                       } catch (error) {
+                        setShowBuiltinProviderInitDialog(false)
                         setBuiltinProviderRuntimeState('idle')
                         const message = error instanceof Error ? error.message : String(error || '')
+                        if (message.includes('内置 Kimi 初始化已终止')) {
+                          setBuiltinProviderInitLogs('')
+                          return
+                        }
                         if (message.trim()) {
-                          window.alert(message)
+                          if (window?.luminDialog?.alert) {
+                            await window.luminDialog.alert(message, t('内置 Kimi 初始化失败'), { copyable: true })
+                          } else {
+                            console.error(message)
+                          }
                         }
                       }
                     }}
@@ -1873,6 +1951,71 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
             </div>
           </div>
         </div>
+        {showBuiltinProviderInitDialog ? (
+          <div
+            className="modal-overlay"
+            style={{ zIndex: 180 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              className="modal modal-md"
+              style={{
+                width: 'min(860px, calc(100vw - 40px))',
+                maxWidth: 'min(860px, calc(100vw - 40px))',
+                padding: 24,
+                display: 'grid',
+                gap: 14,
+              }}
+            >
+              <div style={{ display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{t('内置 Kimi 初始化中')}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+                  {t('正在创建 .venv、准备 pip 并安装依赖，请稍候。')}
+                </div>
+              </div>
+              <textarea
+                ref={builtinProviderInitLogsRef}
+                readOnly
+                value={builtinProviderInitLogs}
+                spellCheck={false}
+                style={{
+                  width: '100%',
+                  minHeight: 320,
+                  maxHeight: '52vh',
+                  resize: 'vertical',
+                  borderRadius: 10,
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface-sunken)',
+                  color: 'var(--text-primary)',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  padding: '12px 14px',
+                  boxSizing: 'border-box',
+                  whiteSpace: 'pre-wrap',
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleCopyBuiltinProviderInitLogs}
+                  disabled={!builtinProviderInitLogs.trim()}
+                >
+                  <Clipboard size={14} />
+                  {t('复制日志')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={handleTerminateBuiltinProviderInitialization}
+                  disabled={builtinProviderInitTerminating}
+                >
+                  {builtinProviderInitTerminating ? t('终止中...') : t('终止')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

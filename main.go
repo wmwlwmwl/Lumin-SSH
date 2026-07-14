@@ -4,11 +4,8 @@ import (
 	"context"
 	"embed"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
-
-	runtimebundle "luminssh-go/module/runtimebundle"
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
@@ -90,12 +87,6 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 8, G: 12, B: 20, A: 255}, // #080c14
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
-			go func() {
-				targetRoot := filepath.Join(getProgramDirectory(), "modules", "kimiapi")
-				if err := runtimebundle.ReleaseEmbeddedDirectory(embeddedModuleFS, "module/kimiapi", targetRoot); err != nil {
-					println("release kimiapi bundle failed:", err.Error())
-				}
-			}()
 			startSystray(app)
 		},
 		OnShutdown: func(ctx context.Context) {

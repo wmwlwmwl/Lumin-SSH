@@ -110,3 +110,4 @@ Special notes:
 Serious reminder again:
 1. You must not output multiple top-level tool wrappers in a single reply
 2. There are 2 special tools that must not be merged with other tools in the same tool call
+3. All tools must include closing tool tags </

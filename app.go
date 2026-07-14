@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	runtimebundle "luminssh-go/module/runtimebundle"
 	runtimeenv "luminssh-go/module/runtimeenv"
 	runtimeinstaller "luminssh-go/module/runtimeinstaller"
 
@@ -45,6 +47,11 @@ type App struct {
 	mainLivenessLockRelease   func()
 	builtinProcessMu          sync.Mutex
 	builtinProcesses          map[string]*exec.Cmd
+	builtinBundleMu           sync.Mutex
+	builtinBundleReady        map[string]bool
+	builtinInitMu             sync.Mutex
+	builtinInitCommands       map[string]*exec.Cmd
+	builtinInitCancelRequests map[string]bool
 	quitting                  atomic.Bool // 标记用户确认退出，OnBeforeClose 放行（跨 goroutine 访问需原子操作）
 	closeAck                  atomic.Bool // 前端已响应关闭弹窗（tray/cancel），取消 5s 兜底强制退出
 	onBeforeQuit              func()      // 退出前回调，由 main 设置用于清理托盘等
@@ -78,6 +85,9 @@ func NewApp() *App {
 		configManager:             NewConfigManager(),
 		wsConns:                   make(map[string]*wsEntry),
 		builtinProcesses:          make(map[string]*exec.Cmd),
+		builtinBundleReady:        make(map[string]bool),
+		builtinInitCommands:       make(map[string]*exec.Cmd),
+		builtinInitCancelRequests: make(map[string]bool),
 		aiChatReqCancel:           make(map[string]context.CancelFunc),
 		aiPendingToolBatches:      make(map[string]*ai.PendingToolBatch),
 		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
@@ -905,6 +915,315 @@ func (a *App) getBuiltinProcess(providerID string) *exec.Cmd {
 	return a.builtinProcesses[providerID]
 }
 
+func builtinProviderBundleFileMatches(targetRoot string, relativePath string) bool {
+	normalizedPath := strings.TrimSpace(strings.ReplaceAll(relativePath, "\\", "/"))
+	if normalizedPath == "" {
+		return false
+	}
+	embeddedContent, err := embeddedModuleFS.ReadFile("module/kimiapi/" + normalizedPath)
+	if err != nil {
+		return false
+	}
+	targetContent, err := os.ReadFile(filepath.Join(targetRoot, filepath.FromSlash(normalizedPath)))
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(embeddedContent, targetContent)
+}
+
+func builtinProviderBundleNeedsRelease(providerID string, targetRoot string) bool {
+	switch strings.TrimSpace(providerID) {
+	case "", "builtin-kimi":
+		if _, err := os.Stat(filepath.Join(targetRoot, "python-version")); err == nil {
+			return true
+		}
+		requiredFiles := []string{
+			"pyproject.toml",
+			"run.py",
+			".python-version",
+			"requirements.lock.txt",
+			"builtin-kimi.md",
+		}
+		for _, relativePath := range requiredFiles {
+			if !builtinProviderBundleFileMatches(targetRoot, relativePath) {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *App) ensureBuiltinProviderBundle(providerID string) error {
+	if a == nil {
+		return fmt.Errorf("app unavailable")
+	}
+	normalizedProviderID := strings.TrimSpace(providerID)
+	if normalizedProviderID == "" {
+		normalizedProviderID = "builtin-kimi"
+	}
+	if normalizedProviderID != "builtin-kimi" {
+		return fmt.Errorf("unsupported builtin provider: %s", normalizedProviderID)
+	}
+	programDirectory := getProgramDirectory()
+	targetRoot := filepath.Join(programDirectory, "modules", "kimiapi")
+
+	a.builtinBundleMu.Lock()
+	defer a.builtinBundleMu.Unlock()
+
+	if a.builtinBundleReady == nil {
+		a.builtinBundleReady = make(map[string]bool)
+	}
+	if a.builtinBundleReady[normalizedProviderID] {
+		return nil
+	}
+	if !builtinProviderBundleNeedsRelease(normalizedProviderID, targetRoot) {
+		a.builtinBundleReady[normalizedProviderID] = true
+		return nil
+	}
+	if err := runtimebundle.ReleaseEmbeddedDirectory(embeddedModuleFS, "module/kimiapi", targetRoot); err != nil {
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "释放 kimiapi 资源失败", err)
+	}
+	a.builtinBundleReady[normalizedProviderID] = true
+	return nil
+}
+
+func builtinProviderPreferredPython(moduleDirectory string) string {
+	data, err := os.ReadFile(filepath.Join(moduleDirectory, ".python-version"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func builtinProviderVenvPythonPath(moduleDirectory string) string {
+	if goruntime.GOOS == "windows" {
+		return filepath.Join(moduleDirectory, ".venv", "Scripts", "python.exe")
+	}
+	return filepath.Join(moduleDirectory, ".venv", "bin", "python")
+}
+
+func builtinProviderHasValidVenv(moduleDirectory string) bool {
+	pythonBinaryPath := builtinProviderVenvPythonPath(moduleDirectory)
+	if strings.TrimSpace(pythonBinaryPath) == "" {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(moduleDirectory, ".venv", "pyvenv.cfg")); err != nil {
+		return false
+	}
+	if _, err := os.Stat(pythonBinaryPath); err != nil {
+		return false
+	}
+	return true
+}
+
+var errBuiltinProviderInitializationCancelled = errors.New("内置 Kimi 初始化已终止")
+
+type builtinProviderInitEventWriter struct {
+	app        *App
+	providerID string
+}
+
+func (w builtinProviderInitEventWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if w.app != nil {
+		w.app.emitBuiltinProviderInitLog(w.providerID, string(p))
+	}
+	return len(p), nil
+}
+
+func (a *App) setBuiltinProviderInitCommand(providerID string, command *exec.Cmd) {
+	if a == nil {
+		return
+	}
+	a.builtinInitMu.Lock()
+	defer a.builtinInitMu.Unlock()
+	if a.builtinInitCommands == nil {
+		a.builtinInitCommands = make(map[string]*exec.Cmd)
+	}
+	if command == nil {
+		delete(a.builtinInitCommands, providerID)
+		return
+	}
+	a.builtinInitCommands[providerID] = command
+}
+
+func (a *App) clearBuiltinProviderInitCommand(providerID string, command *exec.Cmd) {
+	if a == nil {
+		return
+	}
+	a.builtinInitMu.Lock()
+	defer a.builtinInitMu.Unlock()
+	if current := a.builtinInitCommands[providerID]; current == command {
+		delete(a.builtinInitCommands, providerID)
+	}
+}
+
+func (a *App) setBuiltinProviderInitCancelled(providerID string, cancelled bool) {
+	if a == nil {
+		return
+	}
+	a.builtinInitMu.Lock()
+	defer a.builtinInitMu.Unlock()
+	if a.builtinInitCancelRequests == nil {
+		a.builtinInitCancelRequests = make(map[string]bool)
+	}
+	a.builtinInitCancelRequests[providerID] = cancelled
+}
+
+func (a *App) isBuiltinProviderInitCancelled(providerID string) bool {
+	if a == nil {
+		return false
+	}
+	a.builtinInitMu.Lock()
+	defer a.builtinInitMu.Unlock()
+	return a.builtinInitCancelRequests[providerID]
+}
+
+func (a *App) emitBuiltinProviderInitLog(providerID string, text string) {
+	if a == nil || a.ctx == nil || strings.TrimSpace(providerID) == "" || text == "" {
+		return
+	}
+	runtime.EventsEmit(a.ctx, "builtin-provider-init-log", map[string]interface{}{
+		"providerId": providerID,
+		"text":       text,
+	})
+}
+
+func builtinProviderUsesChineseMirror(language string) bool {
+	normalizedLanguage := strings.ToLower(strings.TrimSpace(language))
+	return strings.HasPrefix(normalizedLanguage, "zh")
+}
+
+func (a *App) appendBuiltinProviderLog(logFile *os.File, providerID string, lines ...string) {
+	if logFile == nil && a == nil {
+		return
+	}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			if logFile != nil {
+				_, _ = logFile.WriteString("\n")
+			}
+			if a != nil {
+				a.emitBuiltinProviderInitLog(providerID, "\n")
+			}
+			continue
+		}
+		if logFile != nil {
+			_, _ = logFile.WriteString(line + "\n")
+		}
+		if a != nil {
+			a.emitBuiltinProviderInitLog(providerID, line+"\n")
+		}
+	}
+}
+
+func (a *App) runBuiltinProviderLoggedCommand(providerID string, binaryPath string, args []string, moduleDirectory string, env []string, logFile *os.File) error {
+	commandParts := append([]string{filepath.Base(strings.TrimSpace(binaryPath))}, args...)
+	a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Running: "+strings.TrimSpace(strings.Join(commandParts, " ")))
+	cmd := exec.Command(binaryPath, args...)
+	cmd.Dir = moduleDirectory
+	cmd.Env = env
+	outputWriter := io.Writer(logFile)
+	if outputWriter == nil {
+		outputWriter = builtinProviderInitEventWriter{app: a, providerID: providerID}
+	} else {
+		outputWriter = io.MultiWriter(logFile, builtinProviderInitEventWriter{app: a, providerID: providerID})
+	}
+	cmd.Stdout = outputWriter
+	cmd.Stderr = outputWriter
+	a.setBuiltinProviderInitCommand(providerID, cmd)
+	defer a.clearBuiltinProviderInitCommand(providerID, cmd)
+	if err := cmd.Run(); err != nil {
+		if a.isBuiltinProviderInitCancelled(providerID) {
+			return errBuiltinProviderInitializationCancelled
+		}
+		return err
+	}
+	if a.isBuiltinProviderInitCancelled(providerID) {
+		return errBuiltinProviderInitializationCancelled
+	}
+	return nil
+}
+
+func (a *App) ensureBuiltinProviderVenv(providerID string, binaryPath string, moduleDirectory string, env []string, logFile *os.File) error {
+	if builtinProviderHasValidVenv(moduleDirectory) {
+		return nil
+	}
+
+	venvDirectory := filepath.Join(moduleDirectory, ".venv")
+	if err := os.RemoveAll(venvDirectory); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	preferredPython := builtinProviderPreferredPython(moduleDirectory)
+	if preferredPython != "" {
+		a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Creating .venv with preferred Python "+preferredPython+"...")
+		if err := a.runBuiltinProviderLoggedCommand(providerID, binaryPath, []string{"venv", "--seed", "--python", preferredPython, ".venv"}, moduleDirectory, env, logFile); err == nil {
+			return nil
+		} else if errors.Is(err, errBuiltinProviderInitializationCancelled) {
+			return err
+		} else {
+			a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Preferred Python create failed, retrying with default Python.", "")
+		}
+	}
+
+	a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Creating .venv with default Python...")
+	return a.runBuiltinProviderLoggedCommand(providerID, binaryPath, []string{"venv", "--seed", ".venv"}, moduleDirectory, env, logFile)
+}
+
+func (a *App) ensureBuiltinProviderPip(providerID string, moduleDirectory string, pythonBinaryPath string, env []string, logFile *os.File) error {
+	if err := a.runBuiltinProviderLoggedCommand(providerID, pythonBinaryPath, []string{"-m", "pip", "--version"}, moduleDirectory, env, logFile); err == nil {
+		return nil
+	} else if errors.Is(err, errBuiltinProviderInitializationCancelled) {
+		return err
+	}
+	a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] pip is missing, bootstrapping with ensurepip...")
+	if err := a.runBuiltinProviderLoggedCommand(providerID, pythonBinaryPath, []string{"-m", "ensurepip", "--upgrade"}, moduleDirectory, env, logFile); err != nil {
+		return err
+	}
+	return a.runBuiltinProviderLoggedCommand(providerID, pythonBinaryPath, []string{"-m", "pip", "--version"}, moduleDirectory, env, logFile)
+}
+
+func (a *App) installBuiltinProviderRequirements(providerID string, moduleDirectory string, pythonBinaryPath string, language string, env []string, logFile *os.File) error {
+	requirementsPath := filepath.Join(moduleDirectory, "requirements.lock.txt")
+	if _, err := os.Stat(requirementsPath); err != nil {
+		return err
+	}
+
+	a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Installing Python dependencies from requirements.lock.txt...")
+	defaultArgs := []string{
+		"-m", "pip", "install",
+		"--disable-pip-version-check",
+		"--require-hashes",
+		"-r", "requirements.lock.txt",
+	}
+
+	if builtinProviderUsesChineseMirror(language) {
+		mirrorArgs := []string{
+			"-m", "pip", "install",
+			"--disable-pip-version-check",
+			"--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple",
+			"--trusted-host", "pypi.tuna.tsinghua.edu.cn",
+			"--require-hashes",
+			"-r", "requirements.lock.txt",
+		}
+		a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Chinese UI detected, trying Tsinghua PyPI mirror first.")
+		if err := a.runBuiltinProviderLoggedCommand(providerID, pythonBinaryPath, mirrorArgs, moduleDirectory, env, logFile); err == nil {
+			return nil
+		} else if errors.Is(err, errBuiltinProviderInitializationCancelled) {
+			return err
+		} else {
+			a.appendBuiltinProviderLog(logFile, providerID, "[Lumin] Mirror install failed, retrying with official PyPI.", "")
+		}
+	}
+
+	return a.runBuiltinProviderLoggedCommand(providerID, pythonBinaryPath, defaultArgs, moduleDirectory, env, logFile)
+}
+
 func (a *App) builtinKimiServiceRunning() bool {
 	preset, ok := ai.GetAIBuiltinProviderPreset("builtin-kimi")
 	if !ok {
@@ -1174,6 +1493,9 @@ func (a *App) OpenBuiltinProviderDoc(providerID string) error {
 		fileName = "builtin-kimi.md"
 	default:
 		return fmt.Errorf("unsupported builtin provider: %s", normalizedProviderID)
+	}
+	if err := a.ensureBuiltinProviderBundle(normalizedProviderID); err != nil {
+		return err
 	}
 	docPath := filepath.Join(getProgramDirectory(), "modules", "kimiapi", fileName)
 	return openLocalDocument(docPath)
@@ -1516,7 +1838,7 @@ func (a *App) InjectAIBuiltinLoginBridge(jsonStr string) error {
 	return nil
 }
 
-func (a *App) InitializeBuiltinProvider(providerID string) error {
+func (a *App) InitializeBuiltinProvider(providerID string, language string) error {
 	normalizedProviderID := strings.TrimSpace(providerID)
 	if normalizedProviderID == "" {
 		normalizedProviderID = "builtin-kimi"
@@ -1524,11 +1846,16 @@ func (a *App) InitializeBuiltinProvider(providerID string) error {
 	if normalizedProviderID != "builtin-kimi" {
 		return fmt.Errorf("unsupported builtin provider: %s", normalizedProviderID)
 	}
+	a.setBuiltinProviderInitCancelled(normalizedProviderID, false)
+	defer a.setBuiltinProviderInitCancelled(normalizedProviderID, false)
 	if err := a.ensureMainLivenessLock(); err != nil {
 		return err
 	}
 	if a.builtinKimiServiceRunning() {
 		return nil
+	}
+	if err := a.ensureBuiltinProviderBundle(normalizedProviderID); err != nil {
+		return err
 	}
 
 	a.builtinProcessMu.Lock()
@@ -1554,6 +1881,10 @@ func (a *App) InitializeBuiltinProvider(providerID string) error {
 		a.builtinProcessMu.Unlock()
 		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "缺少 kimiapi 项目文件", err)
 	}
+	if _, err := os.Stat(filepath.Join(moduleDirectory, "requirements.lock.txt")); err != nil {
+		a.builtinProcessMu.Unlock()
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "缺少 kimiapi 依赖锁定文件", err)
+	}
 	if err := os.MkdirAll(filepath.Join(moduleDirectory, "data"), 0o755); err != nil {
 		a.builtinProcessMu.Unlock()
 		return err
@@ -1568,7 +1899,6 @@ func (a *App) InitializeBuiltinProvider(providerID string) error {
 	baseEnv := append(os.Environ(),
 		"LUMINSSH_MAIN_LOCK_PATH="+a.mainLivenessLockPath,
 		"LUMINSSH_MAIN_LOCK_POLL_INTERVAL=1",
-		"UV_PROJECT_ENVIRONMENT=.venv",
 		"PYTHONUTF8=1",
 		"HTTP_PROXY=",
 		"HTTPS_PROXY=",
@@ -1580,34 +1910,55 @@ func (a *App) InitializeBuiltinProvider(providerID string) error {
 		"no_proxy=",
 	)
 
-	syncCmd := exec.Command(runtimeStatus.BinaryPath, "sync", "--locked", "--no-install-project")
-	syncCmd.Dir = moduleDirectory
-	syncCmd.Env = baseEnv
-	syncCmd.Stdout = logFile
-	syncCmd.Stderr = logFile
 	a.builtinProcessMu.Unlock()
-	if err := syncCmd.Run(); err != nil {
-		_ = logFile.Close()
-		return err
-	}
-	a.builtinProcessMu.Lock()
 
-	pythonBinaryPath := filepath.Join(moduleDirectory, ".venv", "bin", "python")
-	if goruntime.GOOS == "windows" {
-		pythonBinaryPath = filepath.Join(moduleDirectory, ".venv", "Scripts", "python.exe")
+	if err := a.ensureBuiltinProviderVenv(normalizedProviderID, runtimeStatus.BinaryPath, moduleDirectory, baseEnv, logFile); err != nil {
+		_ = logFile.Close()
+		if errors.Is(err, errBuiltinProviderInitializationCancelled) {
+			return err
+		}
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "kimiapi Python 环境准备失败", err)
 	}
+
+	pythonBinaryPath := builtinProviderVenvPythonPath(moduleDirectory)
 	if _, err := os.Stat(pythonBinaryPath); err != nil {
 		_ = logFile.Close()
-		a.builtinProcessMu.Unlock()
 		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "未找到 kimiapi 虚拟环境 Python", err)
+	}
+
+	if err := a.ensureBuiltinProviderPip(normalizedProviderID, moduleDirectory, pythonBinaryPath, baseEnv, logFile); err != nil {
+		_ = logFile.Close()
+		if errors.Is(err, errBuiltinProviderInitializationCancelled) {
+			return err
+		}
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "kimiapi pip 环境准备失败", err)
+	}
+
+	if err := a.installBuiltinProviderRequirements(normalizedProviderID, moduleDirectory, pythonBinaryPath, language, baseEnv, logFile); err != nil {
+		_ = logFile.Close()
+		if errors.Is(err, errBuiltinProviderInitializationCancelled) {
+			return err
+		}
+		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "kimiapi 依赖安装失败", err)
+	}
+
+	a.builtinProcessMu.Lock()
+	existingProcess = a.builtinProcesses[normalizedProviderID]
+	if isBuiltinProcessRunning(existingProcess) {
+		a.builtinProcessMu.Unlock()
+		_ = logFile.Close()
+		return a.waitBuiltinProviderReady(normalizedProviderID, 20*time.Second)
 	}
 
 	cmd := exec.Command(pythonBinaryPath, "run.py", "--main-liveness-lock-path", a.mainLivenessLockPath)
 	cmd.Dir = moduleDirectory
 	cmd.Env = baseEnv
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	outputWriter := io.MultiWriter(logFile, builtinProviderInitEventWriter{app: a, providerID: normalizedProviderID})
+	cmd.Stdout = outputWriter
+	cmd.Stderr = outputWriter
+	a.setBuiltinProviderInitCommand(normalizedProviderID, cmd)
 	if err := cmd.Start(); err != nil {
+		a.clearBuiltinProviderInitCommand(normalizedProviderID, cmd)
 		_ = logFile.Close()
 		a.builtinProcessMu.Unlock()
 		return wrapBuiltinProviderError(programDirectory, normalizedProviderID, "kimiapi 进程启动失败", err)
@@ -1624,6 +1975,7 @@ func (a *App) InitializeBuiltinProvider(providerID string) error {
 			delete(a.builtinProcesses, expectedProviderID)
 		}
 		a.builtinProcessMu.Unlock()
+		a.clearBuiltinProviderInitCommand(expectedProviderID, expectedCmd)
 	}(normalizedProviderID, cmd, logFile)
 
 	if err := a.waitBuiltinProviderReady(normalizedProviderID, 20*time.Second); err != nil {
@@ -1636,9 +1988,32 @@ func (a *App) InitializeBuiltinProvider(providerID string) error {
 		if currentProcess == cmd && cmd.Process != nil && cmd.ProcessState == nil {
 			_ = cmd.Process.Kill()
 		}
+		a.clearBuiltinProviderInitCommand(normalizedProviderID, cmd)
+		if a.isBuiltinProviderInitCancelled(normalizedProviderID) {
+			return errBuiltinProviderInitializationCancelled
+		}
 		return err
 	}
 
+	a.clearBuiltinProviderInitCommand(normalizedProviderID, cmd)
+	return nil
+}
+
+func (a *App) CancelBuiltinProviderInitialization(providerID string) error {
+	normalizedProviderID := strings.TrimSpace(providerID)
+	if normalizedProviderID == "" {
+		normalizedProviderID = "builtin-kimi"
+	}
+	a.setBuiltinProviderInitCancelled(normalizedProviderID, true)
+
+	a.builtinInitMu.Lock()
+	command := a.builtinInitCommands[normalizedProviderID]
+	a.builtinInitMu.Unlock()
+	if command != nil && command.Process != nil && command.ProcessState == nil {
+		if err := command.Process.Kill(); err != nil && !strings.Contains(strings.ToLower(err.Error()), "already finished") {
+			return err
+		}
+	}
 	return nil
 }
 

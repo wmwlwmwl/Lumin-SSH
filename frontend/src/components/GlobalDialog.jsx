@@ -10,15 +10,17 @@ export default function GlobalDialog() {
   useEffect(() => {
     // 注册全局 API
     window.luminDialog = {
-      alert: (message, title = t('提示')) => {
+      alert: (message, title = t('提示'), options = {}) => {
+        const normalizedMessage = typeof message === 'string' ? message : String(message ?? '');
         return new Promise((resolve) => {
           setDialogs(prev => {
-            if (prev.some(d => d.type === 'alert' && d.message === message)) return prev;
+            if (prev.some(d => d.type === 'alert' && d.message === normalizedMessage && d.title === title)) return prev;
             return [...prev, {
               id: Date.now() + Math.random(),
               type: 'alert',
               title,
-              message,
+              message: normalizedMessage,
+              copyable: options?.copyable !== false,
               onClose: () => resolve()
             }];
           });
@@ -114,15 +116,96 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
   const [inputValue, setInputValue] = useState(current.defaultValue || '');
   const [checked, setChecked] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const messageText = typeof current.message === 'string' ? current.message : String(current.message ?? '');
+  const showCopyButton = current.copyable === true && !!messageText;
+  const isLongTextAlert = current.type === 'alert' && (messageText.includes('\n') || messageText.length > 160);
+
+  const handleCopyMessage = async () => {
+    if (!messageText) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(messageText);
+      return;
+    } catch {}
+    try {
+      const { ClipboardSetText } = await import('../../wailsjs/runtime/runtime.js');
+      await ClipboardSetText(messageText);
+    } catch {}
+  };
 
   return (
-    <div className="modal modal-sm" style={{ padding: 32, textAlign: 'center' }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
-        {current.title}
+    <div
+      className={isLongTextAlert ? 'modal modal-md' : 'modal modal-sm'}
+      style={{
+        padding: 32,
+        textAlign: isLongTextAlert ? 'left' : 'center',
+        maxWidth: isLongTextAlert ? 'min(820px, calc(100vw - 32px))' : undefined,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: showCopyButton ? 'space-between' : 'center',
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', minWidth: 0 }}>
+          {current.title}
+        </div>
+        {showCopyButton ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={handleCopyMessage}
+            style={{ flexShrink: 0 }}
+          >
+            <Clipboard size={14} />
+            {t('复制')}
+          </button>
+        ) : null}
       </div>
-      <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginBottom: 28, lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: current.type === 'choice' ? 'pre-wrap' : undefined, textAlign: current.type === 'choice' ? 'left' : undefined }}>
-        {current.message}
-      </div>
+      {isLongTextAlert ? (
+        <textarea
+          readOnly
+          value={messageText}
+          spellCheck={false}
+          onFocus={(event) => event.currentTarget.select()}
+          style={{
+            width: '100%',
+            minHeight: 220,
+            maxHeight: '45vh',
+            marginBottom: 28,
+            padding: '12px 14px',
+            resize: 'vertical',
+            borderRadius: 10,
+            border: '1px solid var(--border)',
+            background: 'var(--surface-sunken)',
+            color: 'var(--text-primary)',
+            fontSize: 13,
+            lineHeight: 1.6,
+            boxSizing: 'border-box',
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            fontSize: 14,
+            color: 'var(--text-tertiary)',
+            marginBottom: 28,
+            lineHeight: 1.6,
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            whiteSpace: 'pre-wrap',
+            textAlign: current.type === 'choice' || current.type === 'alert' ? 'left' : undefined,
+            userSelect: 'text',
+          }}
+        >
+          {messageText}
+        </div>
+      )}
       
       {current.type === 'prompt' && (
         <>

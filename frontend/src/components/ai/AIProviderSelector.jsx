@@ -331,21 +331,29 @@ export default function AIProviderSelector({
     return nextProviders[0]?.id || ''
   }, [isControlled, persistSelectedProviderId, persistedCurrentProviderId])
 
+  const resolveProviderRegistryState = useCallback(async () => {
+    const state = await getAIProviderState()
+    const hasPersistedProviders = Array.isArray(state.providers) && state.providers.length > 0
+    const nextState = hasPersistedProviders
+      ? state
+      : normalizeAIProviderState({ currentProviderId: providers[0]?.id || '', providers })
+    const nextProviders = sortProviders(nextState.providers)
+    const nextSelectedId = nextState.currentProviderId || nextProviders[0]?.id || ''
+    return {
+      hasPersistedProviders,
+      nextProviders,
+      nextSelectedId,
+    }
+  }, [providers])
+
   useEffect(() => {
     let cancelled = false
 
-    getAIProviderState()
-      .then(async (state) => {
+    resolveProviderRegistryState()
+      .then(async ({ hasPersistedProviders, nextProviders, nextSelectedId }) => {
         if (cancelled) {
           return
         }
-        const hasPersistedProviders = Array.isArray(state.providers) && state.providers.length > 0
-        const nextState = hasPersistedProviders
-          ? state
-          : normalizeAIProviderState({ currentProviderId: providers[0]?.id || '', providers })
-        const nextProviders = sortProviders(nextState.providers)
-        const nextSelectedId = nextState.currentProviderId || nextProviders[0]?.id || ''
-
         setProviderList(nextProviders)
         setPersistedCurrentProviderId(nextSelectedId)
 
@@ -368,7 +376,7 @@ export default function AIProviderSelector({
     return () => {
       cancelled = true
     }
-  }, [persistRegistryState, providers])
+  }, [persistRegistryState, providers, resolveProviderRegistryState])
 
   useEffect(() => () => closeTooltip(), [closeTooltip])
 
@@ -497,8 +505,10 @@ export default function AIProviderSelector({
   }, [editingState.open, open, tokenStoreOpen])
 
   useEffect(() => {
+    let cancelled = false
     closeTooltip()
     setOpen(false)
+    setSearchValue('')
     setTokenStoreOpen(false)
     setTokenStoreLoading(false)
     setTokenStoreFrameURL(defaultTokenStoreUrl)
@@ -510,7 +520,36 @@ export default function AIProviderSelector({
     setPanelBounds(null)
     setWorkspaceBounds(null)
     setEditingState({ open: false, mode: 'edit', provider: null })
-  }, [closeTooltip, dismissSignal])
+
+    if (dismissSignal <= 0) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    resolveProviderRegistryState()
+      .then(({ nextProviders, nextSelectedId }) => {
+        if (cancelled) {
+          return
+        }
+        setProviderList(nextProviders)
+        setPersistedCurrentProviderId(nextSelectedId)
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+        const nextState = normalizeAIProviderState({ currentProviderId: providers[0]?.id || '', providers })
+        const nextProviders = sortProviders(nextState.providers)
+        const nextSelectedId = nextState.currentProviderId || nextProviders[0]?.id || ''
+        setProviderList(nextProviders)
+        setPersistedCurrentProviderId(nextSelectedId)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [closeTooltip, dismissSignal, providers, resolveProviderRegistryState])
 
   useEffect(() => {
     if (!tokenStoreOpen) {

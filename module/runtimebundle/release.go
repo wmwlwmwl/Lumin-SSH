@@ -9,7 +9,28 @@ import (
 	"strings"
 )
 
-func clearDirectoryExceptVenv(targetRoot string) error {
+func shouldPreserveEntryName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case ".venv", "data":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldSkipReleasePath(relativePath string) bool {
+	trimmed := strings.Trim(strings.ReplaceAll(relativePath, "\\", "/"), "/")
+	if trimmed == "" {
+		return false
+	}
+	topLevelName := trimmed
+	if slashIndex := strings.Index(trimmed, "/"); slashIndex >= 0 {
+		topLevelName = trimmed[:slashIndex]
+	}
+	return shouldPreserveEntryName(topLevelName)
+}
+
+func clearDirectoryExceptPersistentEntries(targetRoot string) error {
 	entries, err := os.ReadDir(targetRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -18,7 +39,7 @@ func clearDirectoryExceptVenv(targetRoot string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if entry.Name() == ".venv" {
+		if shouldPreserveEntryName(entry.Name()) {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(targetRoot, entry.Name())); err != nil {
@@ -44,15 +65,26 @@ func ReleaseEmbeddedDirectory(sourceFS fs.FS, sourceRoot string, targetRoot stri
 	if err != nil {
 		return err
 	}
-	if err := clearDirectoryExceptVenv(cleanTargetRoot); err != nil {
+	if err := clearDirectoryExceptPersistentEntries(cleanTargetRoot); err != nil {
 		return err
 	}
 	return fs.WalkDir(subFS, ".", func(currentPath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		relativePath := strings.TrimPrefix(pathpkg.Clean(currentPath), ".")
-		relativePath = strings.TrimPrefix(relativePath, "/")
+		relativePath := pathpkg.Clean(currentPath)
+		if relativePath == "." {
+			relativePath = ""
+		} else {
+			relativePath = strings.TrimPrefix(relativePath, "./")
+			relativePath = strings.TrimPrefix(relativePath, "/")
+		}
+		if shouldSkipReleasePath(relativePath) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		targetPath := cleanTargetRoot
 		if relativePath != "" {
 			targetPath = filepath.Join(cleanTargetRoot, filepath.FromSlash(relativePath))

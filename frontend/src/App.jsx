@@ -336,6 +336,35 @@ function resolveAIWorkspaceTerminalBindingByTerminalId(sessions, terminalId) {
   return null;
 }
 
+function mergeRestoredWorkspaceSessions(currentSessions, nextRestoredSessions, restoringSessionIds) {
+  const currentList = Array.isArray(currentSessions) ? currentSessions : [];
+  const restoredMap = new Map((Array.isArray(nextRestoredSessions) ? nextRestoredSessions : []).map((session) => [session.id, session]));
+  return currentList.map((session) => {
+    if (!restoringSessionIds.has(session?.id) || !restoredMap.has(session.id)) {
+      return session;
+    }
+    return restoredMap.get(session.id);
+  });
+}
+
+function mergeRestoredWorkspaceLayouts(currentLayouts, nextRestoredLayouts, restoringSessionIds, activeSessionIds) {
+  const merged = {};
+  Object.entries(currentLayouts || {}).forEach(([layoutId, layout]) => {
+    const sessionId = layout?.sessionId;
+    if (!sessionId || !restoringSessionIds.has(sessionId)) {
+      merged[layoutId] = layout;
+    }
+  });
+  Object.entries(nextRestoredLayouts || {}).forEach(([layoutId, layout]) => {
+    const sessionId = layout?.sessionId;
+    if (!sessionId || !restoringSessionIds.has(sessionId) || !activeSessionIds.has(sessionId)) {
+      return;
+    }
+    merged[layoutId] = layout;
+  });
+  return merged;
+}
+
 export default function App() {
   const { t, lang } = useTranslation();
   const [servers, setServers] = useState([]);
@@ -2623,7 +2652,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       terminals: [{ id: sessionId, label: `${t('终端')}1` }],
     };
 
-    setSessions((prev) => [...prev, newSession]);
+    const nextSessions = [...sessionsRef.current, newSession];
+    sessionsRef.current = nextSessions;
+    setSessions(nextSessions);
     setActiveSessionId(sessionId);
     setActiveTerminalId(sessionId);
     setContentTab('terminal');
@@ -2644,7 +2675,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     } catch (err) {
       handleConnectError(sessionId, err);
     }
-  }, [handleConnectError, markWorkspaceRestoreNavigationOverride, reconnectSession]);
+  }, [handleConnectError, markWorkspaceRestoreNavigationOverride, reconnectSession, resolveSessionRootTerminalId, t]);
 
   // ── Close session ──────────────────────────────────────────
   // ponytail: 内部关闭逻辑，不带确认弹窗，供 closeSession 和右键菜单共用
@@ -2724,6 +2755,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   // ── 在当前服务器上新建终端标签 ──────────────────────────────
   const openNewTerminal = useCallback(async (sessionId) => {
+    markWorkspaceRestoreNavigationOverride();
     if (creatingTerminalRef.current) return;
 
     const session = sessionsRef.current.find(s => s.id === sessionId);
@@ -2748,6 +2780,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           ? { ...s, terminals: [...(s.terminals || []), { id: newTermId, label: termLabel }] }
           : s
       ));
+      sessionsRef.current = nextSessions;
       setSessions(nextSessions);
       setActiveTerminalId(newTermId);
       setContentTab('terminal');
@@ -2762,7 +2795,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       creatingTerminalRef.current = null;
       if (mountedRef.current) setCreatingTerminalSessionId(null);
     }
-  }, [addToast, t]);
+  }, [addToast, markWorkspaceRestoreNavigationOverride, t]);
 
   // ── 关闭单个终端标签 ──────────────────────────────────────
   const closeTerminal = useCallback((sessionId, terminalId, e) => {
@@ -3677,6 +3710,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   }, [saveServerConfig, addToast, t, startSaveFlowAnimation]);
 
   const handleSaveAndConnectServer = useCallback(async (data) => {
+    markWorkspaceRestoreNavigationOverride();
     try {
       const savedServer = await saveServerConfig(data);
       if (!savedServer) return null;
@@ -3694,7 +3728,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         terminals: [{ id: sessionId, label: `${t('终端')}1` }],
       };
 
-      setSessions((prev) => [...prev, newSession]);
+      const nextSessions = [...sessionsRef.current, newSession];
+      sessionsRef.current = nextSessions;
+      setSessions(nextSessions);
       setActiveSessionId(sessionId);
       setActiveTerminalId(sessionId);
       setContentTab('terminal');
@@ -3718,7 +3754,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       addToast(err, 'error');
       return null;
     }
-  }, [saveServerConfig, addToast, t, postConnectSetup, handleConnectError]);
+  }, [saveServerConfig, addToast, handleConnectError, markWorkspaceRestoreNavigationOverride, postConnectSetup, t]);
 
   const handleDeleteServer = useCallback(async (id) => {
     try {

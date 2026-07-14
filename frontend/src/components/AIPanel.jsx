@@ -528,6 +528,44 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       return null
     }
   }, [applyMCPSettingsState])
+  const refreshMCPOutputCompressionSettings = useCallback(async () => {
+    try {
+      const settings = await AppGo.GetMCPOutputCompressionSettings()
+      if (!panelMountedRef.current || !settings) {
+        return null
+      }
+      const nextLineLimit = Math.max(10, Math.min(5000, settings.terminalOutputLineLimit || 0))
+      const nextCharacterLimit = Math.max(1000, Math.min(500000, settings.terminalOutputCharacterLimit || 0))
+      setTerminalOutputLineLimit(nextLineLimit)
+      setTerminalOutputCharacterLimit(nextCharacterLimit)
+      return settings
+    } catch {
+      return null
+    }
+  }, [])
+  const refreshAIHomeData = useCallback(async () => {
+    const results = await Promise.allSettled([
+      listAIConversations(),
+      getAIGlobalSettings(),
+      refreshMCPServerInfo(),
+      refreshMCPOutputCompressionSettings(),
+    ])
+    if (!panelMountedRef.current) {
+      return
+    }
+    const conversationResult = results[0]
+    const settingsResult = results[1]
+    setConversationList(
+      conversationResult.status === 'fulfilled' && Array.isArray(conversationResult.value)
+        ? conversationResult.value
+        : [],
+    )
+    setGlobalAISettings(
+      settingsResult.status === 'fulfilled'
+        ? settingsResult.value
+        : null,
+    )
+  }, [refreshMCPOutputCompressionSettings, refreshMCPServerInfo])
 
   const showAlert = useCallback(async (message) => {
     const finalMessage = typeof message === 'string' && message.trim() ? translate(message.trim()) : translate('当前状态不支持还原')
@@ -771,52 +809,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   }, [panelInstanceKey])
 
   useEffect(() => {
-    void refreshMCPServerInfo()
-  }, [refreshMCPServerInfo])
-
-  useEffect(() => {
-    let cancelled = false
-
-    Promise.all([listAIConversations(), getAIGlobalSettings()])
-      .then(([summaries, settings]) => {
-        if (cancelled) {
-          return
-        }
-        setConversationList(Array.isArray(summaries) ? summaries : [])
-        setGlobalAISettings(settings)
-      })
-      .catch(() => {
-        if (cancelled) {
-          return
-        }
-        setConversationList([])
-        setGlobalAISettings(null)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    AppGo.GetMCPOutputCompressionSettings()
-      .then((settings) => {
-        if (cancelled || !settings) {
-          return
-        }
-        const nextLineLimit = Math.max(10, Math.min(5000, settings.terminalOutputLineLimit || 0))
-        const nextCharacterLimit = Math.max(1000, Math.min(500000, settings.terminalOutputCharacterLimit || 0))
-        setTerminalOutputLineLimit(nextLineLimit)
-        setTerminalOutputCharacterLimit(nextCharacterLimit)
-      })
-      .catch(() => {})
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    void refreshAIHomeData()
+  }, [refreshAIHomeData])
 
   useEffect(() => {
     if (!showSettingsPanel) {
@@ -1596,7 +1590,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     }))
   }, [conversationDiffItems, sessionId, terminalId])
 
-  const handleGoHome = useCallback(() => {
+  const handleGoHome = useCallback(async () => {
     if (typeof window !== 'undefined') {
       if (terminalId) {
         window.dispatchEvent(new CustomEvent('ai-change-review-clear', {
@@ -1615,9 +1609,6 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     setPopupDismissVersion((current) => current + 1)
     resetComposerEditState()
     const previousRequestId = terminalPanelsRef.current[panelInstanceKey]?.activeRequestId
-    if (previousRequestId) {
-      void cancelAIChat(previousRequestId)
-    }
     setPanelState(panelInstanceKey, (current) => ({
       ...current,
       activeConversationId: '',
@@ -1638,7 +1629,13 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       isCondensingContext: false,
       activeChangeReview: null,
     }))
-  }, [clearRestorePreview, panelInstanceKey, resetComposerEditState, sessionId, setPanelState, terminalId])
+    if (previousRequestId) {
+      try {
+        await cancelAIChat(previousRequestId)
+      } catch {}
+    }
+    await refreshAIHomeData()
+  }, [clearRestorePreview, panelInstanceKey, refreshAIHomeData, resetComposerEditState, sessionId, setPanelState, terminalId])
 
   // ponytail: unmount/会话关闭时取消未决的 AI 请求，避免后端 aiPendingToolBatches 等 map 残留
   useEffect(() => {
