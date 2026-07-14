@@ -75,10 +75,10 @@ function ProviderCard({ provider, providerKey, form, configured, editing, onEdit
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {children}
           <div style={{ display: 'flex', gap: 12, marginTop: 12, alignItems: 'center' }}>
-            <button className="btn btn-secondary" onClick={onTest} disabled={testing}>
+            <button className="btn btn-secondary" onClick={onTest} disabled={testing || loading}>
               {testing ? $t('测试中...') : <><Plug size={14} /> {$t('测试连接')}</>} {testResult === 'ok' && '✓'} {testResult === 'fail' && '✗'}
             </button>
-            <button className="btn btn-primary" onClick={onSave} disabled={loading}>
+            <button className="btn btn-primary" onClick={onSave} disabled={loading || testing}>
               {loading ? $t('保存中...') : <><Save size={14} /> {$t('保存配置')}</>}
             </button>
             {editing && (
@@ -330,12 +330,24 @@ export default function SyncTab({
           onSave={onSaveFTP}
         >
           <div className="form-group">
+            <label className="form-label">{$t('连接模式')}</label>
+            <select className="input" value={ftpForm.mode || 'explicit_tls'} onChange={setFTPField('mode')}>
+              <option value="explicit_tls">{$t('显式 FTPS（推荐）')}</option>
+              <option value="plain">{$t('普通 FTP（不安全）')}</option>
+            </select>
+          </div>
+          {ftpForm.mode === 'plain' && (
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: 'var(--warning)', fontSize: 12, lineHeight: 1.6 }}>
+              {$t('普通 FTP 不加密连接，用户名、密码、文件名和传输数据可能被截获。备份文件加密也无法保护 FTP 登录和传输元数据。')}
+            </div>
+          )}
+          <div className="form-group">
             <label className="form-label">{$t('主机地址')}</label>
             <input className="input" value={ftpForm.host} onChange={setFTPField('host')} placeholder="ftp.example.com" />
           </div>
           <div className="form-group">
             <label className="form-label">{$t('端口')}</label>
-            <input className="input" type="number" value={ftpForm.port} onChange={setFTPField('port')} />
+            <input className="input" type="number" min="1" max="65535" value={ftpForm.port} onChange={setFTPField('port')} />
           </div>
           <div className="form-group">
             <label className="form-label">{$t('用户名')}</label>
@@ -378,7 +390,7 @@ export default function SyncTab({
           </div>
           <div className="form-group">
             <label className="form-label">{$t('端口')}</label>
-            <input className="input" type="number" value={sftpForm.port} onChange={setSFTPField('port')} />
+            <input className="input" type="number" min="1" max="65535" value={sftpForm.port} onChange={setSFTPField('port')} />
           </div>
           <div className="form-group">
             <label className="form-label">{$t('用户名')}</label>
@@ -443,10 +455,10 @@ export default function SyncTab({
         {lastBackup && <div style={{ fontSize: 12, color: 'var(--success)', marginBottom: 12 }}>{$t('上次同步')}: {lastBackup}</div>}
 
         <div style={{ display: 'flex', gap: 12 }}>
-          <button className="btn btn-secondary" onClick={onSync} disabled={syncing}>
+          <button className="btn btn-secondary" onClick={onSync} disabled={syncing || loadingBackups || restoring}>
             {syncing ? $t('同步中...') : <><RefreshCw size={14} /> {$t('合并同步')}</>}
           </button>
-          <button className="btn btn-secondary" onClick={onRestore} disabled={loadingBackups || restoring}>
+          <button className="btn btn-secondary" onClick={onRestore} disabled={loadingBackups || restoring || syncing}>
             {loadingBackups ? $t('加载备份列表中...') : <><RefreshCw size={14} /> {$t('从云端恢复')}</>}
           </button>
         </div>

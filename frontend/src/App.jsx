@@ -1511,7 +1511,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   }, [clearToastTimer, removeToastImmediately]);
   const addToast = useCallback((message, type = 'info', duration = 3000) => {
     const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, message, type, closing: false }]);
+    const text = message instanceof Error ? message.message : String(message ?? '');
+    setToasts((prev) => [...prev, { id, message: text, type, closing: false }]);
     if (duration > 0) {
       const autoTimer = setTimeout(() => {
         if (mountedRef.current) {
@@ -5521,7 +5522,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 {t('云端同步失败')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 6 }}>
-                {t('数据未能上传到云端，本地数据不受影响。')}
+                {syncFailed.category === 'trust'
+                  ? t('服务器身份信息已变化，请前往“设置 → 同步与云”核对后恢复同步。')
+                  : t('数据未能上传到云端，本地数据不受影响。')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--danger)', background: 'rgba(var(--danger-rgb), 0.08)', padding: '6px 10px', borderRadius: 8, marginBottom: 14, wordBreak: 'break-all', lineHeight: 1.5 }}>
                 {syncFailed.error}
@@ -5538,10 +5541,17 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 <button
                   style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'var(--primary)', border: 'none', color: '#fff', cursor: 'pointer', transition: 'all 0.2s' }}
                   onClick={async () => {
+                    if (syncFailed.category === 'trust') {
+                      setSyncFailed(null);
+                      setSettingsInitialTab('sync');
+                      setShowSettings(true);
+                      return;
+                    }
+                    const failedSync = syncFailed;
                     setSyncFailed(null);
                     const err = await AppGo.RetrySync();
                     if (err) {
-                      setSyncFailed({ provider: '', error: err });
+                      setSyncFailed({ ...failedSync, error: err });
                     } else {
                       addToast(t('同步成功'), 'success', 3000);
                     }
@@ -5549,7 +5559,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                   onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                   onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                 >
-                  {t('重试')}
+                  {syncFailed.category === 'trust' ? t('前往同步与云') : t('重试')}
                 </button>
               </div>
             </div>

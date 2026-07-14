@@ -1660,6 +1660,7 @@ func (a *App) GetFTPConfig() map[string]interface{} {
 		return nil
 	}
 	return map[string]interface{}{
+		"mode":       conf.Mode,
 		"host":       conf.Host,
 		"port":       conf.Port,
 		"username":   conf.Username,
@@ -1673,8 +1674,12 @@ func (a *App) SaveFTPConfig(config map[string]string) error {
 	return a.configManager.SaveFTPConfig(config)
 }
 
-func (a *App) TestFTPConnection(host string, port int, username, password string) error {
-	return a.configManager.TestFTPConnection(host, port, username, password)
+func (a *App) TestFTPConnection(host string, port int, username, password, mode string) (*FTPConnectionTestResult, error) {
+	return a.configManager.TestFTPConnection(host, port, username, password, mode)
+}
+
+func (a *App) TestFTPConnectionWithCertificateApproval(host string, port int, username, password, mode, approvedFingerprint, expectedPinnedFingerprint string) (*FTPConnectionTestResult, error) {
+	return a.configManager.TestFTPConnectionWithCertificateApproval(host, port, username, password, mode, approvedFingerprint, expectedPinnedFingerprint)
 }
 
 func (a *App) BackupToFTP() (map[string]interface{}, error) {
@@ -1719,8 +1724,12 @@ func (a *App) SaveSFTPConfig(config map[string]string) error {
 	return a.configManager.SaveSFTPConfig(config)
 }
 
-func (a *App) TestSFTPConnection(host string, port int, username, password, authMethod, privateKey, passphrase string) error {
+func (a *App) TestSFTPConnection(host string, port int, username, password, authMethod, privateKey, passphrase string) (*SFTPConnectionTestResult, error) {
 	return a.configManager.TestSFTPConnection(host, port, username, password, authMethod, privateKey, passphrase)
+}
+
+func (a *App) TestSFTPConnectionWithHostKeyApproval(host string, port int, username, password, authMethod, privateKey, passphrase, approvedFingerprint string) (*SFTPConnectionTestResult, error) {
+	return a.configManager.TestSFTPConnectionWithHostKeyApproval(host, port, username, password, authMethod, privateKey, passphrase, approvedFingerprint)
 }
 
 func (a *App) BackupToSFTP() (map[string]interface{}, error) {

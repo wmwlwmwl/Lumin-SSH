@@ -1466,35 +1466,77 @@ func mergeAIGlobalSettings(localSettings ai.AIGlobalSettings, remoteSettings *ai
 
 // ─── 同步模式分发 ─────────────────────────────────────────
 
-// getSyncProviders 返回当前同步模式下所有已配置的提供商
-func (c *ConfigManager) getSyncProviders() []providerEntry {
+// getSyncProviders 返回当前同步模式下所有已配置的提供商及初始化失败。
+func (c *ConfigManager) getSyncProviders() ([]providerEntry, []providerFailure) {
 	mode := c.GetSyncMode()
 	var entries []providerEntry
+	var failures []providerFailure
 
-	add := func(match string, storageFn func() (RemoteStorage, int, error)) {
-		if mode == match || mode == "all" {
-			s, max, err := storageFn()
-			if err == nil {
-				entries = append(entries, providerEntry{storage: s, maxBackups: max})
-			}
+	add := func(id string, configured bool, storageFn func() (RemoteStorage, int, error)) {
+		if mode != id && mode != "all" {
+			return
 		}
+		if mode == "all" && !configured {
+			return
+		}
+		s, max, err := storageFn()
+		if err != nil {
+			failures = append(failures, providerFailure{provider: id, err: err})
+			return
+		}
+		entries = append(entries, providerEntry{provider: id, storage: s, maxBackups: max})
 	}
 
-	add("webdav", c.newWebdavStorage)
-	add("r2", c.newR2Storage)
-	add("ftp", c.newFTPStorage)
-	add("sftp", c.newSFTPStorage)
+	webdav := c.GetWebdavConfig()
+	r2 := c.GetR2Config()
+	ftpConfig := c.GetFTPConfig()
+	sftpConfig := c.GetSFTPConfig()
+	add("webdav", webdav != nil && webdav["url"] != "", c.newWebdavStorage)
+	add("r2", r2 != nil && r2.Bucket != "" && r2.Endpoint != "", c.newR2Storage)
+	add("ftp", ftpConfig != nil && ftpConfig.Host != "", c.newFTPStorage)
+	add("sftp", sftpConfig != nil && sftpConfig.Host != "", c.newSFTPStorage)
 
-	return entries
+	return entries, failures
 }
 
 type providerEntry struct {
+	provider   string
 	storage    RemoteStorage
 	maxBackups int
 }
 
+type providerFailure struct {
+	provider string
+	err      error
+}
+
+func providerFailuresError(failures []providerFailure) error {
+	if len(failures) == 0 {
+		return nil
+	}
+	errs := make([]error, 0, len(failures))
+	for _, failure := range failures {
+		errs = append(errs, fmt.Errorf("%s: %w", failure.provider, failure.err))
+	}
+	return errors.Join(errs...)
+}
+
+func (c *ConfigManager) emitSyncFailure(provider string, err error) {
+	if err == nil {
+		return
+	}
+	payload := map[string]interface{}{"provider": provider, "error": err.Error(), "category": "sync"}
+	if reason, ok := syncTrustFailureReason(err); ok {
+		payload["category"] = "trust"
+		payload["reason"] = reason
+	}
+	c.emitSyncEvent("sync-failed", payload)
+}
+
 func (c *ConfigManager) SyncAllProviders() (map[string]interface{}, error) {
-	return c.syncAllProviders(c.getSyncProviders())
+	providers, failures := c.getSyncProviders()
+	result, err := c.syncAllProviders(providers)
+	return result, errors.Join(providerFailuresError(failures), err)
 }
 
 // AutoSync 自动同步：下载云端 → 双向合并(本地优先) → 上传到所有已配置的云端。
@@ -1510,10 +1552,18 @@ func (c *ConfigManager) AutoSync() {
 	}
 	defer c.syncRunning.Store(false)
 
-	providers := c.getSyncProviders()
+	providers, failures := c.getSyncProviders()
+	for _, failure := range failures {
+		log.Printf("autoSync provider %s initialization failed: %v", failure.provider, failure.err)
+		c.emitSyncFailure(failure.provider, failure.err)
+	}
 	if c.GetSyncMode() == "all" {
+		if len(providers) == 0 && len(failures) > 0 {
+			return
+		}
 		if _, err := c.syncAllProviders(providers); err != nil {
 			log.Printf("autoSync all failed: %v", err)
+			c.emitSyncFailure("all", err)
 		}
 		return
 	}
@@ -1542,14 +1592,8 @@ func (c *ConfigManager) AutoSync() {
 
 			// 全部重试失败，通知前端
 			if lastErr != nil {
-				providerName := fmt.Sprintf("%T", p.storage)
-				log.Printf("autoSync all %d attempts failed for %s: %v", maxRetries, providerName, lastErr)
-				if c.wailsCtx != nil {
-					runtime.EventsEmit(c.wailsCtx, "sync-failed", map[string]interface{}{
-						"provider": providerName,
-						"error":    lastErr.Error(),
-					})
-				}
+				log.Printf("autoSync all %d attempts failed for %s: %v", maxRetries, p.provider, lastErr)
+				c.emitSyncFailure(p.provider, lastErr)
 			}
 		}(p)
 	}
@@ -1558,15 +1602,21 @@ func (c *ConfigManager) AutoSync() {
 
 // RetrySync 前端手动重试同步，返回错误信息供前端展示
 func (c *ConfigManager) RetrySync() string {
-	providers := c.getSyncProviders()
+	providers, failures := c.getSyncProviders()
 	if c.GetSyncMode() == "all" {
-		_, err := c.syncAllProviders(providers)
-		if err != nil {
+		var syncErr error
+		if len(providers) > 0 {
+			_, syncErr = c.syncAllProviders(providers)
+		}
+		if err := errors.Join(providerFailuresError(failures), syncErr); err != nil {
 			return err.Error()
 		}
 		return ""
 	}
 	var errs []string
+	for _, failure := range failures {
+		errs = append(errs, fmt.Sprintf("%s: %v", failure.provider, failure.err))
+	}
 	for _, p := range providers {
 		func() {
 			if cl, ok := p.storage.(storageCloser); ok {
