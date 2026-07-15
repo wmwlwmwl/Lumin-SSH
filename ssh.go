@@ -39,6 +39,14 @@ var sshHostKeyAlgorithms = []string{
 	"rsa-sha2-256",
 }
 
+func hostKeyAlgorithmsForConnection(conn Connection) []string {
+	algorithms := append([]string(nil), sshHostKeyAlgorithms...)
+	if conn.AllowLegacySSHRSA {
+		algorithms = append(algorithms, ssh.KeyAlgoRSA)
+	}
+	return algorithms
+}
+
 const (
 	postAuthSlowNoticeTimeout = 10 * time.Second
 	postAuthChannelTimeout    = 30 * time.Second
@@ -270,7 +278,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			Auth:              authMethods,
 			HostKeyCallback:   customHostKeyCallback,
 			Timeout:           10 * time.Second,
-			HostKeyAlgorithms: append([]string(nil), sshHostKeyAlgorithms...),
+			HostKeyAlgorithms: hostKeyAlgorithmsForConnection(conn),
 		}
 
 		target := dialAddr(conn.Host, conn.Port)

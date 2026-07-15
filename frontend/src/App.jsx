@@ -3693,7 +3693,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     return savedServer;
   }, [loadServers, addToast, t]);
 
-  const handleSaveServer = useCallback(async (data) => {
+  const handleSaveServer = useCallback(async (data, shouldClearAfterAdd = true) => {
     try {
       const savedServer = await saveServerConfig(data);
       if (!savedServer) return null;
@@ -3701,7 +3701,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         startSaveFlowAnimation(savedServer, data);
       } else {
         addToast(t('服务器添加成功'), 'success');
-        setServerEditor(null);
+        if (shouldClearAfterAdd) setServerEditor(null);
       }
       return savedServer;
     } catch (err) {
@@ -3710,14 +3710,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     }
   }, [saveServerConfig, addToast, t, startSaveFlowAnimation]);
 
-  const handleSaveAndConnectServer = useCallback(async (data) => {
+  const handleSaveAndConnectServer = useCallback(async (data, shouldClearAfterAdd = true) => {
     markWorkspaceRestoreNavigationOverride();
     try {
       const savedServer = await saveServerConfig(data);
       if (!savedServer) return null;
 
       addToast(t('服务器添加成功'), 'success');
-      setServerEditor(null);
+      if (shouldClearAfterAdd) setServerEditor(null);
 
       const sessionId = `session_${Date.now()}`;
       const newSession = {

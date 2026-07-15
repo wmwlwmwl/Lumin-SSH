@@ -3190,6 +3190,18 @@ body.theme-light .dashboard-server-editor {
   gap: 10px;
 }
 
+.server-editor-compat-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.server-editor-compat-check input { margin-top: 3px; accent-color: var(--accent); cursor: pointer; }
+.server-editor-compat-check span { display: flex; flex-direction: column; gap: 2px; }
+.server-editor-compat-check strong { color: var(--text-primary); font-size: var(--text-sm); font-weight: 500; }
+.server-editor-compat-check small { color: var(--text-tertiary); font-size: var(--text-xs); }
+
 .dashboard-server-editor .form-label {
   color: var(--editor-ink-soft);
   font-size: 11px;

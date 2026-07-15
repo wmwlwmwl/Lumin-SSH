@@ -53,6 +53,7 @@ type Connection struct {
 	CredentialID        string `json:"credentialId,omitempty"` // ponytail: 非空时用 Credential 认证，忽略内联字段
 	TerminalInitPath    string `json:"terminalInitPath,omitempty"`
 	FileManagerInitPath string `json:"fileManagerInitPath,omitempty"`
+	AllowLegacySSHRSA   bool   `json:"allowLegacySshRsa,omitempty"`
 	ProxyMode           string `json:"proxyMode,omitempty"`
 	ProxyNodeID         string `json:"proxyNodeId,omitempty"`
 	ProxyType           string `json:"proxyType,omitempty"`

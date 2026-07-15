@@ -17,6 +17,7 @@ const defaultForm = {
   passphrase: '',
   terminalInitPath: '',
   fileManagerInitPath: '',
+  allowLegacySshRsa: false,
   proxyMode: 'direct',
   proxyNodeId: '',
   proxyType: 'socks5',
@@ -132,6 +133,7 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
       data.port = parseInt(data.port, 10) || 22;
       data.terminalInitPath = String(data.terminalInitPath || '').trim();
       data.fileManagerInitPath = String(data.fileManagerInitPath || '').trim();
+      data.allowLegacySshRsa = !!form.allowLegacySshRsa;
       data.proxyMode = form.proxyMode || 'direct';
       data.proxyNodeId = String(data.proxyNodeId || '').trim();
       data.proxyType = form.proxyType || 'socks5';
@@ -166,10 +168,10 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
       if (server?.id) data.id = server.id;
 
       if (submitAction === 'connect' && !server?.id && onSaveAndConnect) {
-        const result = await onSaveAndConnect(data);
+        const result = await onSaveAndConnect(data, clearAfterAdd);
         if (clearAfterAdd && result) resetInlineForm();
       } else {
-        const result = await onSave(data);
+        const result = await onSave(data, clearAfterAdd);
         if (!server?.id && clearAfterAdd && result) resetInlineForm();
       }
     } finally {
@@ -534,6 +536,17 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
                   />
                 </div>
               </div>
+              <label className="server-editor-compat-check">
+                <input
+                  type="checkbox"
+                  checked={!!form.allowLegacySshRsa}
+                  onChange={(e) => setForm((f) => ({ ...f, allowLegacySshRsa: e.target.checked }))}
+                />
+                <span>
+                  <strong>{t('兼容旧版 ssh-rsa 主机密钥')}</strong>
+                  <small>{t('仅当服务器只支持 ssh-rsa 时启用；不支持低于 1024 位的 RSA 主机密钥')}</small>
+                </span>
+              </label>
             </div>
           </div>
         </div>
@@ -550,15 +563,15 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
             </>
           ) : (
             <>
+              <label className="server-editor-clear-check" title={t('添加成功后清空表单，方便连续添加多台服务器')}>
+                <input type="checkbox" checked={clearAfterAdd} onChange={(e) => setClearAfterAdd(e.target.checked)} />
+                {t('添加后清空')}
+              </label>
               {server && (
                 <button type="button" className="btn btn-secondary" onClick={handleCancel}>
                   {t('取消')}
                 </button>
               )}
-              <label className="server-editor-clear-check" title={t('添加成功后清空表单，方便连续添加多台服务器')}>
-                <input type="checkbox" checked={clearAfterAdd} onChange={(e) => setClearAfterAdd(e.target.checked)} />
-                {t('添加后清空')}
-              </label>
               <button type="button" data-submit-action="save" className="btn btn-primary" disabled={saving} onClick={() => void submitForm('save')}>
                 {saving ? t('保存中...') : t('添加')}
               </button>

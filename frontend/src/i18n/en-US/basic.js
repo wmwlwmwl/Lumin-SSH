@@ -427,6 +427,8 @@ export default {
   "高级选项": "Advanced",
   "终端默认 cd 目录": "Terminal Default cd Directory",
   "文件管理器初始目录": "File Manager Initial Directory",
+  "兼容旧版 ssh-rsa 主机密钥": "Allow legacy ssh-rsa host keys",
+  "仅当服务器只支持 ssh-rsa 时启用；不支持低于 1024 位的 RSA 主机密钥": "Enable only for servers that offer ssh-rsa exclusively; RSA host keys below 1024 bits are not supported.",
   "代理服务器": "Proxy Server",
   "代理模式": "Proxy Mode",
   "直连": "Direct",
