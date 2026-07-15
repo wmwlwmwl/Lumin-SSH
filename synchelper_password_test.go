@@ -15,12 +15,16 @@ import (
 type memoryStorage struct {
 	files    map[string][]byte
 	readErr  map[string]error
+	listErr  error
 	writeErr error
 	writes   []string
 	deletes  []string
 }
 
 func (s *memoryStorage) ListFiles() ([]RemoteFile, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	files := make([]RemoteFile, 0, len(s.files))
 	for name, data := range s.files {
 		files = append(files, RemoteFile{Name: name, Size: int64(len(data)), ModTime: time.Now()})
@@ -80,7 +84,12 @@ func testSyncManager(t *testing.T) *ConfigManager {
 
 func encryptedSnapshot(t *testing.T, password, id string) []byte {
 	t.Helper()
-	data, err := json.Marshal(SyncSnapshot{Connections: []Connection{{ID: id, Host: id, LastModified: 1}}})
+	return encryptedSyncSnapshot(t, password, &SyncSnapshot{Connections: []Connection{{ID: id, Host: id, LastModified: 1}}})
+}
+
+func encryptedSyncSnapshot(t *testing.T, password string, snap *SyncSnapshot) []byte {
+	t.Helper()
+	data, err := json.Marshal(snap)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,6 +320,158 @@ func TestSyncAllProvidersStrictPreservesPasswordError(t *testing.T) {
 	_, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: s}}, "错误", true)
 	if !errors.Is(err, errRecoveryPassword) {
 		t.Fatalf("all 严格同步应保留密码错误链，得到：%v", err)
+	}
+}
+
+func TestSnapshotEqualIgnoresTimeListOrderAndQuickJSONFormatting(t *testing.T) {
+	first := &SyncSnapshot{
+		Connections:   []Connection{{ID: "a", Host: "一"}, {ID: "b", Host: "二"}},
+		Credentials:   []Credential{{ID: "x", Name: "甲"}, {ID: "y", Name: "乙"}},
+		QuickCommands: `[{"name":"先","command":"one"},{"name":"后","command":"two"}]`,
+		SnapshotTime:  1,
+	}
+	second := &SyncSnapshot{
+		Connections:   []Connection{{ID: "b", Host: "二"}, {ID: "a", Host: "一"}},
+		Credentials:   []Credential{{ID: "y", Name: "乙"}, {ID: "x", Name: "甲"}},
+		QuickCommands: "[ { \"command\": \"one\", \"name\": \"先\" }, { \"command\": \"two\", \"name\": \"后\" } ]",
+		SnapshotTime:  999,
+	}
+	if !snapshotEqual(first, second) {
+		t.Fatal("业务比较应忽略快照时间、按 ID 比较列表，并按 JSON 语义比较快捷命令")
+	}
+	second.QuickCommands = `[{"name":"后","command":"two"},{"name":"先","command":"one"}]`
+	if snapshotEqual(first, second) {
+		t.Fatal("快捷命令业务顺序变化必须视为不同")
+	}
+}
+
+func TestSyncAllProvidersUploadsOnlyDifferentAndNoBackup(t *testing.T) {
+	cm := testSyncManager(t)
+	local := &SyncSnapshot{
+		Connections:         []Connection{{ID: "same", Host: "same", LastModified: 10}},
+		Credentials:         []Credential{},
+		QuickCommands:       "[]",
+		AIProviders:         []ai.AIProviderProfile{},
+		ProxyNodes:          []ai.AIProxyNode{},
+		SnapshotTime:        10,
+		HasCredentials:      true,
+		HasQuickCommands:    true,
+		HasAIProviders:      true,
+		HasAIGlobalSettings: true,
+		HasProxyNodes:       true,
+	}
+	if err := cm.persistSyncSnapshot(local); err != nil {
+		t.Fatal(err)
+	}
+	same := *cm.localSyncSnapshot()
+	same.SnapshotTime = 999
+	different := same
+	different.Connections = []Connection{{ID: "same", Host: "old", ProxyMode: "direct", LastModified: 1}}
+	matching := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSyncSnapshot(t, "密码", &same)}}
+	stale := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSyncSnapshot(t, "密码", &different)}}
+	empty := &memoryStorage{files: map[string][]byte{}}
+	result, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: matching}, {provider: "r2", storage: stale}, {provider: "ftp", storage: empty}}, "密码")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matching.writes) != 0 || len(stale.writes) != 1 || len(empty.writes) != 1 {
+		t.Fatalf("应仅上传不同或无备份目标：matching=%v stale=%v empty=%v", matching.writes, stale.writes, empty.writes)
+	}
+	if result["action"] != "upload" || result["uploaded"] != 2 {
+		t.Fatalf("动作和上传数错误：%v", result)
+	}
+}
+
+func TestSyncAllProvidersRealDownloadFailureFailsClosed(t *testing.T) {
+	cm := testSyncManager(t)
+	good := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "密码", "remote")}}
+	bad := &memoryStorage{listErr: errors.New("网络中断")}
+	if _, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: good}, {provider: "r2", storage: bad}}, "密码"); err == nil {
+		t.Fatal("任一真实下载失败应 fail closed")
+	}
+	if len(good.writes) != 0 || len(bad.writes) != 0 {
+		t.Fatalf("下载失败不得上传：good=%v bad=%v", good.writes, bad.writes)
+	}
+	if _, err := os.Stat(cm.connFile); !os.IsNotExist(err) {
+		t.Fatalf("下载失败不得持久化本地：%v", err)
+	}
+}
+
+func TestSyncAllProvidersRollsBackUploadsOnFailure(t *testing.T) {
+	cm := testSyncManager(t)
+	first := &memoryStorage{files: map[string][]byte{}}
+	second := &memoryStorage{files: map[string][]byte{}, writeErr: errors.New("上传失败")}
+	if _, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: first}, {provider: "r2", storage: second}}, "密码"); err == nil {
+		t.Fatal("后续上传失败应整体失败")
+	}
+	if len(first.writes) != 1 || len(first.deletes) != 1 || first.writes[0] != first.deletes[0] {
+		t.Fatalf("后续上传失败应回滚本轮文件：writes=%v deletes=%v", first.writes, first.deletes)
+	}
+	if _, err := os.Stat(cm.connFile); !os.IsNotExist(err) {
+		t.Fatalf("上传失败不得持久化本地：%v", err)
+	}
+}
+
+func TestSyncAllProvidersRollsBackWhenLocalPersistFails(t *testing.T) {
+	cm := testSyncManager(t)
+	if err := os.Mkdir(cm.quickCmdFile, 0700); err != nil {
+		t.Fatal(err)
+	}
+	storage := &memoryStorage{files: map[string][]byte{}}
+	if _, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: storage}}, "密码"); err == nil {
+		t.Fatal("本地持久化失败应整体失败")
+	}
+	if len(storage.writes) != 1 || len(storage.deletes) != 1 || storage.writes[0] != storage.deletes[0] {
+		t.Fatalf("本地持久化失败应回滚本轮文件：writes=%v deletes=%v", storage.writes, storage.deletes)
+	}
+}
+
+func TestSyncAllProvidersPropagatesDeletionIntoFinal(t *testing.T) {
+	cm := testSyncManager(t)
+	if err := cm.persistSyncSnapshot(&SyncSnapshot{
+		Connections:   []Connection{{ID: "deleted", Host: "deleted", LastModified: 100}},
+		QuickCommands: "[]",
+		SnapshotTime:  100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cm.saveLastSyncTime(200)
+	remote := &SyncSnapshot{Connections: []Connection{}, SnapshotTime: 300}
+	storage := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSyncSnapshot(t, "密码", remote)}}
+	result, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: storage}}, "密码")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cm.GetConnections(); len(got) != 0 {
+		t.Fatalf("远端删除应传播到 FINAL 和本地：%+v", got)
+	}
+	if len(storage.writes) != 1 || result["action"] != "merge" {
+		t.Fatalf("删除传播后的完整 FINAL 应回写旧格式远端：writes=%v result=%v", storage.writes, result)
+	}
+	decrypted, err := decryptLUMIN2(string(storage.files[storage.writes[0]]), "密码")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uploaded SyncSnapshot
+	if err := json.Unmarshal([]byte(decrypted), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if len(uploaded.Connections) != 0 {
+		t.Fatalf("上传 FINAL 不得复活已删除连接：%+v", uploaded.Connections)
+	}
+}
+
+func TestSyncAllProvidersInitializationFailureStopsBeforeSync(t *testing.T) {
+	cm := testSyncManager(t)
+	storage := &memoryStorage{files: map[string][]byte{}}
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+		return []providerEntry{{provider: "webdav", storage: storage}}, []providerFailure{{provider: "r2", err: errors.New("初始化失败")}}
+	}
+	if _, err := cm.SyncAllProviders(); err == nil {
+		t.Fatal("all 入口初始化失败应立即停止")
+	}
+	if len(storage.writes) != 0 {
+		t.Fatalf("初始化失败不得继续同步：%v", storage.writes)
 	}
 }
 
