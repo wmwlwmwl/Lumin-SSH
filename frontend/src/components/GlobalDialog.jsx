@@ -43,7 +43,7 @@ export default function GlobalDialog() {
           });
         });
       },
-      prompt: (message, defaultValue = '', title = t('输入信息'), checkboxLabel = '') => {
+      prompt: (message, defaultValue = '', title = t('输入信息'), checkboxLabel = '', options = {}) => {
         return new Promise((resolve) => {
           setDialogs(prev => {
             if (prev.some(d => d.type === 'prompt' && d.message === message)) return prev;
@@ -54,6 +54,7 @@ export default function GlobalDialog() {
               message,
               defaultValue,
               checkboxLabel,
+              inputType: options?.inputType === 'password' ? 'password' : 'text',
               onConfirm: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
               onCancel: () => resolve(null)
             }];
@@ -118,6 +119,7 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
   const [showPassword, setShowPassword] = useState(false);
   const messageText = typeof current.message === 'string' ? current.message : String(current.message ?? '');
   const showCopyButton = current.copyable === true && !!messageText;
+  const isPasswordInput = current.inputType === 'password' || !!current.checkboxLabel;
   const isLongTextAlert = current.type === 'alert' && (messageText.includes('\n') || messageText.length > 160);
 
   const handleCopyMessage = async () => {
@@ -216,13 +218,13 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
               style={{ width: '100%', textAlign: 'center', fontSize: 16, padding: current.checkboxLabel ? '12px 68px 12px 16px' : '12px 36px 12px 16px' }}
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
-              type={current.checkboxLabel && !showPassword ? 'password' : 'text'}
+              type={isPasswordInput && !showPassword ? 'password' : 'text'}
               onKeyDown={e => {
                 if (e.key === 'Enter') onConfirm(inputValue, checked);
                 if (e.key === 'Escape') onClose();
               }}
             />
-            {current.checkboxLabel && (
+            {isPasswordInput && (
               <Tiptop
                 text={showPassword ? t('隐藏密码') : t('显示密码')}
                 style={{

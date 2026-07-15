@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -118,6 +119,8 @@ type ConfigManager struct {
 	credCacheDirty          bool         // 凭据缓存是否需要刷新
 	syncRunning             atomic.Bool  // AutoSync 并发去重
 	wailsCtx                context.Context
+	syncProvidersForTest    func() ([]providerEntry, []providerFailure)
+	allSyncProvidersForTest func() ([]providerEntry, []providerFailure)
 }
 
 func NewConfigManager() *ConfigManager {
@@ -236,6 +239,11 @@ const (
 	lumin2HeaderSize = 1 + 4 + 16 + 12
 )
 
+var (
+	errRecoveryPassword              = errors.New("恢复密码错误")
+	errRecoveryPasswordResetRequired = errors.New("RECOVERY_PASSWORD_RESET_REQUIRED")
+)
+
 func encryptLUMIN2(text, password string) (string, error) {
 	salt, nonce := make([]byte, 16), make([]byte, 12)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
@@ -298,7 +306,7 @@ func decryptLUMIN2(text, password string) (string, error) {
 	}
 	plaintext, err := gcm.Open(nil, payload[21:33], payload[33:], nil)
 	if err != nil {
-		return "", fmt.Errorf("LUMIN2 解密失败，请确认密码是否正确")
+		return "", fmt.Errorf("%w，请确认密码是否正确", errRecoveryPassword)
 	}
 	return string(plaintext), nil
 }
@@ -652,8 +660,6 @@ func (c *ConfigManager) BatchSetConnectionGroup(ids []string, group string) erro
 	go c.AutoSync()
 	return nil
 }
-
-
 
 // SetConnectionOS 仅更新服务器的操作系统字段；值未变化时不触发同步。
 func (c *ConfigManager) SetConnectionOS(id string, osValue string) error {
@@ -1263,13 +1269,23 @@ func (c *ConfigManager) GetRecoveryPassword() string {
 	return c.decrypt(string(data))
 }
 
-// SetRecoveryPassword 设置恢复密码；空串则清除。
+func normalizeRecoveryPassword(password string) string {
+	if strings.TrimSpace(password) == "" {
+		return ""
+	}
+	return password
+}
+
+// SetRecoveryPassword 设置恢复密码；空串或纯空白则清除。
 // 密码用主密钥加密后原子写入。
 func (c *ConfigManager) SetRecoveryPassword(password string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if strings.TrimSpace(password) == "" {
-		_ = os.Remove(c.recoveryPasswordFile)
+	password = normalizeRecoveryPassword(password)
+	if password == "" {
+		if err := os.Remove(c.recoveryPasswordFile); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("清除恢复密码失败: %w", err)
+		}
 		return nil
 	}
 	enc, err := c.encrypt(password)

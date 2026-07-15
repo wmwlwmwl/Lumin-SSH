@@ -103,12 +103,12 @@ func (c *ConfigManager) decryptAndParseSnapshot(data string, key []byte, passwor
 	decrypted := ""
 	if strings.HasPrefix(strings.TrimSpace(data), lumin2Prefix) {
 		if password == "" {
-			return nil, fmt.Errorf("LUMIN2 备份需要恢复密码")
+			return nil, fmt.Errorf("%w：LUMIN2 备份需要恢复密码", errRecoveryPassword)
 		}
 		var err error
 		decrypted, err = decryptLUMIN2(strings.TrimSpace(data), password)
 		if err != nil {
-			return nil, fmt.Errorf("LUMIN2 解密失败，请确认密码是否正确或文件是否损坏: %w", err)
+			return nil, fmt.Errorf("LUMIN2 解密失败：%w", err)
 		}
 	} else {
 		// 1.2.0+ 删除旧 hex 兼容：以下分支仅读取旧 .enc/hex。
@@ -460,14 +460,13 @@ func onlyNoBackupErrors(errs []string) bool {
 	return true
 }
 
-// fetchLatestBackup 从远端下载最新备份并解密为快照
-func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error) {
+// fetchLatestBackup 从远端严格下载并解密最新备份，不回退旧文件。
+func (c *ConfigManager) fetchLatestBackup(s RemoteStorage, password string) (*SyncSnapshot, error) {
 	files, err := s.ListFiles()
 	if err != nil {
 		return nil, fmt.Errorf("读取远程目录失败：%w", err)
 	}
 
-	// 按文件名（含毫秒精度时间戳）降序排列，跨平台一致性优于 ModTime
 	var backups []string
 	for _, f := range files {
 		if !f.IsDir && isBackupName(f.Name) {
@@ -479,36 +478,16 @@ func (c *ConfigManager) fetchLatestBackup(s RemoteStorage) (*SyncSnapshot, error
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(backups)))
 
-	// 取最新有效快照；若缺少 credentials 则遍历旧文件补充
-	var snap *SyncSnapshot
-	for _, name := range backups {
-		data, err := s.ReadFile(name)
-		if err != nil {
-			log.Printf("fetchLatestBackup: read %s: %v (skipping)", name, err)
-			continue
-		}
-		parsed, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), c.GetRecoveryPassword()) // key 仅为旧版 .enc 兼容；新版走明文或恢复密码
-		if err != nil {
-			log.Printf("fetchLatestBackup: decrypt %s: %v (skipping)", name, err)
-			continue
-		}
-		if parsed.Connections == nil {
-			continue
-		}
-		if snap == nil {
-			snap = parsed
-		}
-		// 最新快照缺凭据时，从旧文件中补充
-		if snap.Credentials == nil && parsed.Credentials != nil {
-			snap.Credentials = parsed.Credentials
-			log.Printf("fetchLatestBackup: recovered %d credentials from older backup %s", len(parsed.Credentials), name)
-		}
-		if snap.Connections != nil && snap.Credentials != nil {
-			break
-		}
+	data, err := s.ReadFile(backups[0])
+	if err != nil {
+		return nil, fmt.Errorf("读取最新备份 %s 失败：%w", backups[0], err)
 	}
-	if snap == nil {
-		return nil, fmt.Errorf("无法解析任何备份文件")
+	snap, err := c.decryptAndParseSnapshot(string(data), s.EncryptKey(), password)
+	if err != nil {
+		return nil, fmt.Errorf("解析最新备份 %s 失败：%w", backups[0], err)
+	}
+	if snap.Connections == nil {
+		return nil, fmt.Errorf("最新备份 %s 缺少连接数据", backups[0])
 	}
 	return snap, nil
 }
@@ -529,7 +508,12 @@ func (c *ConfigManager) localAIGlobalSettingsForSync() *ai.AIGlobalSettings {
 // 1.2.0+ 删除旧 hex 兼容：旧版用后端派生密钥加密上传 .enc，新版不再产生此类备份，
 // 但 decryptAndParseSnapshot 仍保留读取兼容。
 func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[string]interface{}, error) {
-	snap := SyncSnapshot{
+	snap := c.localSyncSnapshot()
+	return c.uploadSnapshot(s, snap, c.GetRecoveryPassword(), maxBackups)
+}
+
+func (c *ConfigManager) localSyncSnapshot() *SyncSnapshot {
+	return &SyncSnapshot{
 		Connections:         c.GetConnections(),
 		Credentials:         c.GetCredentials(),
 		QuickCommands:       c.loadRawFile(c.quickCmdFile),
@@ -543,19 +527,21 @@ func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[
 		HasAIGlobalSettings: true,
 		HasProxyNodes:       true,
 	}
+}
+
+func (c *ConfigManager) uploadSnapshot(s RemoteStorage, snap *SyncSnapshot, password string, maxBackups int) (map[string]interface{}, error) {
 	data, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("marshal snapshot: %w", err)
+		return nil, fmt.Errorf("序列化同步快照失败：%w", err)
 	}
 
 	timestamp := time.Now().Format("20060102_150405.000_-0700")
-	// ponytail: 有恢复密码才加密，默认明文；与导出入口径一致
 	var payload []byte
 	var fileName string
-	if password := c.GetRecoveryPassword(); password != "" {
+	if password != "" {
 		encrypted, err := encryptLUMIN2(string(data), password)
 		if err != nil {
-			return nil, fmt.Errorf("encrypt snapshot: %w", err)
+			return nil, fmt.Errorf("加密同步快照失败：%w", err)
 		}
 		payload = []byte(encrypted)
 		fileName = fmt.Sprintf("connections_backup_%s.lumin2", timestamp)
@@ -563,21 +549,20 @@ func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[
 		payload = data
 		fileName = fmt.Sprintf("connections_backup_%s.json", timestamp)
 	}
-	if err := s.WriteFile(fileName, payload); err != nil {
-		return nil, err
+	result := map[string]interface{}{
+		"path":  fileName,
+		"time":  time.Now().Format("2006-01-02 15:04:05 -0700"),
+		"count": len(snap.Connections),
 	}
-
+	if err := s.WriteFile(fileName, payload); err != nil {
+		return result, err
+	}
 	if maxBackups > 0 {
 		if err := c.pruneOldBackups(s, maxBackups); err != nil {
 			return nil, err
 		}
 	}
-
-	return map[string]interface{}{
-		"path":  fileName,
-		"time":  time.Now().Format("2006-01-02 15:04:05 -0700"),
-		"count": len(snap.Connections),
-	}, nil
+	return result, nil
 }
 
 // pruneOldBackups 删除超出数量的最旧备份文件
@@ -647,8 +632,8 @@ func (c *ConfigManager) listBackupFiles(s RemoteStorage) ([]map[string]interface
 // ─── 同步入口 ─────────────────────────────────────────────
 
 // syncFromProvider 手动合并同步：下载远端 → 合并连接+命令 → 保存本地 → 条件上传
-func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int) (map[string]interface{}, error) {
-	remoteSnap, err := c.fetchLatestBackup(s)
+func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int, password string) (map[string]interface{}, error) {
+	remoteSnap, err := c.fetchLatestBackup(s, password)
 	if err != nil {
 		return nil, err
 	}
@@ -724,7 +709,7 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int) (map[s
 		(remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, remoteSnap.ProxyNodes))
 	if changed {
 		c.bumpSnapshotTime() // 手动同步后更新总时间戳，确保下次自动同步方向正确
-		br, berr := c.backupConnections(s, maxBackups)
+		br, berr := c.uploadSnapshot(s, c.localSyncSnapshot(), password, maxBackups)
 		if berr != nil {
 			return nil, fmt.Errorf("上传合并快照失败: %w", berr)
 		}
@@ -896,7 +881,7 @@ func quickCommandInArray(arr []interface{}, key string) bool {
 	return false
 }
 
-func (c *ConfigManager) syncAllProviders(entries []providerEntry) (map[string]interface{}, error) {
+func (c *ConfigManager) syncAllProviders(entries []providerEntry, password string, strict ...bool) (map[string]interface{}, error) {
 	if len(entries) == 0 {
 		return nil, errors.New("没有可用同步目标")
 	}
@@ -928,13 +913,16 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry) (map[string]in
 	remoteHasAIGlobalSettings := false
 	remoteHasProxyNodes := false
 	var errs []string
+	var downloadErrs []error
 	downloaded := 0
 	var remoteSnaps []*SyncSnapshot
 
 	for _, p := range entries {
-		remoteSnap, err := c.fetchLatestBackup(p.storage)
+		remoteSnap, err := c.fetchLatestBackup(p.storage, password)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("%T 下载失败: %v", p.storage, err))
+			wrapped := fmt.Errorf("%s 下载失败：%w", p.provider, err)
+			errs = append(errs, wrapped.Error())
+			downloadErrs = append(downloadErrs, wrapped)
 			continue
 		}
 		downloaded++
@@ -962,8 +950,11 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry) (map[string]in
 		}
 	}
 
-	if downloaded == 0 && len(errs) > 0 && !onlyNoBackupErrors(errs) {
-		return nil, errors.New(strings.Join(errs, "; "))
+	if len(strict) > 0 && strict[0] && len(downloadErrs) > 0 {
+		return nil, errors.Join(downloadErrs...)
+	}
+	if downloaded == 0 && len(downloadErrs) > 0 && !onlyNoBackupErrors(errs) {
+		return nil, errors.Join(downloadErrs...)
 	}
 	remoteConns = filterRemoteDeletedConnections(remoteConns, remoteSnaps)
 	remoteCreds = filterRemoteDeletedCredentials(remoteCreds, remoteSnaps)
@@ -1063,8 +1054,9 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry) (map[string]in
 	c.bumpSnapshotTime()
 
 	uploaded := 0
+	uploadSnap := c.localSyncSnapshot()
 	for _, p := range entries {
-		if _, err := c.backupConnections(p.storage, p.maxBackups); err != nil {
+		if _, err := c.uploadSnapshot(p.storage, uploadSnap, password, p.maxBackups); err != nil {
 			errs = append(errs, fmt.Sprintf("%T 上传失败: %v", p.storage, err))
 		} else {
 			uploaded++
@@ -1097,7 +1089,7 @@ func (c *ConfigManager) emitSyncEvent(event string, data map[string]interface{})
 // - 所有方向：重叠连接/快捷命令按 per-item last_modified 取最新，单侧独有按 lastSyncTime 判断删除
 // - 无变化 → 静默跳过
 func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error {
-	remoteSnap, err := c.fetchLatestBackup(s)
+	remoteSnap, err := c.fetchLatestBackup(s, c.GetRecoveryPassword())
 	if err != nil {
 		if !isNoBackupError(err) {
 			return err
@@ -1468,15 +1460,25 @@ func mergeAIGlobalSettings(localSettings ai.AIGlobalSettings, remoteSettings *ai
 
 // getSyncProviders 返回当前同步模式下所有已配置的提供商及初始化失败。
 func (c *ConfigManager) getSyncProviders() ([]providerEntry, []providerFailure) {
-	mode := c.GetSyncMode()
+	if c.syncProvidersForTest != nil {
+		return c.syncProvidersForTest()
+	}
+	return c.configuredSyncProviders(c.GetSyncMode())
+}
+
+// getAllConfiguredSyncProviders 返回全部已配置提供商，不受当前同步模式限制。
+func (c *ConfigManager) getAllConfiguredSyncProviders() ([]providerEntry, []providerFailure) {
+	if c.allSyncProvidersForTest != nil {
+		return c.allSyncProvidersForTest()
+	}
+	return c.configuredSyncProviders("all")
+}
+
+func (c *ConfigManager) configuredSyncProviders(mode string) ([]providerEntry, []providerFailure) {
 	var entries []providerEntry
 	var failures []providerFailure
-
 	add := func(id string, configured bool, storageFn func() (RemoteStorage, int, error)) {
-		if mode != id && mode != "all" {
-			return
-		}
-		if mode == "all" && !configured {
+		if !configured || (mode != id && mode != "all") {
 			return
 		}
 		s, max, err := storageFn()
@@ -1495,7 +1497,6 @@ func (c *ConfigManager) getSyncProviders() ([]providerEntry, []providerFailure) 
 	add("r2", r2 != nil && r2.Bucket != "" && r2.Endpoint != "", c.newR2Storage)
 	add("ftp", ftpConfig != nil && ftpConfig.Host != "", c.newFTPStorage)
 	add("sftp", sftpConfig != nil && sftpConfig.Host != "", c.newSFTPStorage)
-
 	return entries, failures
 }
 
@@ -1526,7 +1527,10 @@ func (c *ConfigManager) emitSyncFailure(provider string, err error) {
 		return
 	}
 	payload := map[string]interface{}{"provider": provider, "error": err.Error(), "category": "sync"}
-	if reason, ok := syncTrustFailureReason(err); ok {
+	if errors.Is(err, errRecoveryPassword) {
+		payload["category"] = "password"
+		payload["reason"] = "recovery_password_incorrect"
+	} else if reason, ok := syncTrustFailureReason(err); ok {
 		payload["category"] = "trust"
 		payload["reason"] = reason
 	}
@@ -1535,8 +1539,218 @@ func (c *ConfigManager) emitSyncFailure(provider string, err error) {
 
 func (c *ConfigManager) SyncAllProviders() (map[string]interface{}, error) {
 	providers, failures := c.getSyncProviders()
-	result, err := c.syncAllProviders(providers)
+	result, err := c.syncAllProviders(providers, c.GetRecoveryPassword())
 	return result, errors.Join(providerFailuresError(failures), err)
+}
+
+// SyncWithRecoveryPassword 先用候选密码纯读取预检；确认可解最新备份后持久化，再进入同次严格同步。
+func (c *ConfigManager) SyncWithRecoveryPassword(password string) (map[string]interface{}, error) {
+	providers, failures := c.getSyncProviders()
+	if err := providerFailuresError(failures); err != nil {
+		closeProviders(providers)
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return nil, errors.New("没有可用同步目标")
+	}
+	for _, p := range providers {
+		_, err := c.fetchLatestBackup(p.storage, password)
+		if isNoBackupError(err) {
+			continue
+		}
+		if err != nil {
+			closeProviders(providers)
+			return nil, fmt.Errorf("%s 密码预检失败：%w", p.provider, err)
+		}
+	}
+	if err := c.SetRecoveryPassword(password); err != nil {
+		closeProviders(providers)
+		return nil, fmt.Errorf("保存恢复密码失败：%w", err)
+	}
+	if c.GetSyncMode() == "all" {
+		return c.syncAllProviders(providers, password, true)
+	}
+	defer closeProviders(providers)
+	return c.syncFromProvider(providers[0].storage, providers[0].maxBackups, password)
+}
+
+// ChangeRecoveryPassword 对所有目标预检成功后，以新密码各上传一次合并快照，最后持久化密码。
+func (c *ConfigManager) ChangeRecoveryPassword(newPassword string) error {
+	newPassword = normalizeRecoveryPassword(newPassword)
+	providers, failures := c.getAllConfiguredSyncProviders()
+	if err := providerFailuresError(failures); err != nil {
+		closeProviders(providers)
+		return err
+	}
+	if len(providers) == 0 {
+		return c.SetRecoveryPassword(newPassword)
+	}
+	defer closeProviders(providers)
+
+	oldPassword := c.GetRecoveryPassword()
+	remoteSnaps := make([]*SyncSnapshot, 0, len(providers))
+	for _, p := range providers {
+		snap, oldErr := c.fetchLatestBackup(p.storage, oldPassword)
+		if errors.Is(oldErr, errRecoveryPassword) {
+			var newErr error
+			snap, newErr = c.fetchLatestBackup(p.storage, newPassword)
+			if errors.Is(newErr, errRecoveryPassword) {
+				return fmt.Errorf("%w：%s 的云端备份无法使用旧密码或新密码解密", errRecoveryPasswordResetRequired, p.provider)
+			}
+			oldErr = newErr
+		}
+		if isNoBackupError(oldErr) {
+			continue
+		}
+		if oldErr != nil {
+			return fmt.Errorf("%s 预检失败：%w", p.provider, oldErr)
+		}
+		remoteSnaps = append(remoteSnaps, snap)
+	}
+
+	merged := c.localSyncSnapshot()
+	for _, snap := range remoteSnaps {
+		mergeSnapshot(c, merged, snap)
+	}
+	merged.SnapshotTime = time.Now().UnixMilli()
+	return c.uploadRecoveryPasswordSnapshot(providers, merged, newPassword, true)
+}
+
+// ResetRecoveryPassword 放弃读取云端，以本机快照覆盖所有已配置同步目标。
+func (c *ConfigManager) ResetRecoveryPassword(newPassword string) error {
+	newPassword = normalizeRecoveryPassword(newPassword)
+	providers, failures := c.getAllConfiguredSyncProviders()
+	if err := providerFailuresError(failures); err != nil {
+		closeProviders(providers)
+		return err
+	}
+	if len(providers) == 0 {
+		return c.SetRecoveryPassword(newPassword)
+	}
+	defer closeProviders(providers)
+
+	snap := c.localSyncSnapshot()
+	snap.SnapshotTime = time.Now().UnixMilli()
+	return c.uploadRecoveryPasswordSnapshot(providers, snap, newPassword, false)
+}
+
+func (c *ConfigManager) uploadRecoveryPasswordSnapshot(providers []providerEntry, snap *SyncSnapshot, password string, persistSnapshot bool) error {
+	var uploaded []uploadedSnapshot
+	for _, p := range providers {
+		result, err := c.uploadSnapshot(p.storage, snap, password, 0)
+		name := snapshotUploadPath(result)
+		if err == nil && name != "" {
+			uploaded = append(uploaded, uploadedSnapshot{p.storage, name})
+			continue
+		}
+		if name != "" {
+			_ = p.storage.DeleteFile(name)
+		}
+		rollbackUploadedSnapshots(uploaded)
+		if err == nil {
+			err = errors.New("上传结果缺少备份文件名")
+		}
+		return fmt.Errorf("%s 上传新密码快照失败：%w", p.provider, err)
+	}
+	if persistSnapshot {
+		if err := c.persistSyncSnapshot(snap); err != nil {
+			rollbackUploadedSnapshots(uploaded)
+			return err
+		}
+	}
+	if err := c.SetRecoveryPassword(password); err != nil {
+		rollbackUploadedSnapshots(uploaded)
+		return fmt.Errorf("保存恢复密码失败：%w", err)
+	}
+	c.saveLastSyncTime(time.Now().UnixMilli())
+	return nil
+}
+
+type uploadedSnapshot struct {
+	storage RemoteStorage
+	name    string
+}
+
+func snapshotUploadPath(result map[string]interface{}) string {
+	if result == nil {
+		return ""
+	}
+	name, _ := result["path"].(string)
+	return name
+}
+
+func rollbackUploadedSnapshots(uploaded []uploadedSnapshot) {
+	for _, file := range uploaded {
+		_ = file.storage.DeleteFile(file.name)
+	}
+}
+
+func closeProviders(providers []providerEntry) {
+	for _, p := range providers {
+		if closer, ok := p.storage.(storageCloser); ok {
+			_ = closer.Close()
+		}
+	}
+}
+
+func mergeSnapshot(c *ConfigManager, dst, src *SyncSnapshot) {
+	dst.Connections = c.mergeWithDeletionPropagation(dst.Connections, src.Connections, -1)
+	if src.HasCredentials {
+		dst.Credentials = c.mergeCredentials(dst.Credentials, src.Credentials, -1)
+	}
+	if src.HasQuickCommands {
+		dst.QuickCommands = c.mergeQuickCommands(dst.QuickCommands, src.QuickCommands, -1)
+	}
+	if src.HasAIProviders {
+		dst.AIProviders = c.mergeAIProviders(dst.AIProviders, src.AIProviders, -1)
+	}
+	if src.HasAIGlobalSettings {
+		var local ai.AIGlobalSettings
+		if dst.AIGlobalSettings != nil {
+			local = *dst.AIGlobalSettings
+		}
+		settings := mergeAIGlobalSettings(local, src.AIGlobalSettings)
+		dst.AIGlobalSettings = &settings
+	}
+	if src.HasProxyNodes {
+		dst.ProxyNodes = c.mergeAIProxyNodes(dst.ProxyNodes, src.ProxyNodes, -1)
+	}
+}
+
+func (c *ConfigManager) persistSyncSnapshot(snap *SyncSnapshot) error {
+	c.mu.Lock()
+	if err := c.saveConnectionsFile(snap.Connections); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("保存连接失败：%w", err)
+	}
+	if err := c.saveCredentialsFile(snap.Credentials); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("保存凭据失败：%w", err)
+	}
+	if err := atomicWriteFile(c.quickCmdFile, []byte(snap.QuickCommands), 0600); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("保存快捷命令失败：%w", err)
+	}
+	c.connCacheDirty, c.credCacheDirty = true, true
+	c.mu.Unlock()
+
+	if err := c.SaveAIProviderRegistry(ai.AIProviderRegistry{Providers: snap.AIProviders}); err != nil {
+		return fmt.Errorf("保存 AI 供应商失败：%w", err)
+	}
+	if snap.AIGlobalSettings != nil {
+		if err := c.SaveAIGlobalSettings(*snap.AIGlobalSettings); err != nil {
+			return fmt.Errorf("保存 AI 全局设置失败：%w", err)
+		}
+	} else if err := c.clearAIGlobalSettings(); err != nil {
+		return fmt.Errorf("清除 AI 全局设置失败：%w", err)
+	}
+	if err := c.SaveAIProxyNodes(snap.ProxyNodes); err != nil {
+		return fmt.Errorf("保存 AI 代理节点失败：%w", err)
+	}
+	if err := atomicWriteFile(c.syncTimeFile, []byte(fmt.Sprintf("%d", snap.SnapshotTime)), 0600); err != nil {
+		return fmt.Errorf("保存同步时间失败：%w", err)
+	}
+	return nil
 }
 
 // AutoSync 自动同步：下载云端 → 双向合并(本地优先) → 上传到所有已配置的云端。
@@ -1561,7 +1775,7 @@ func (c *ConfigManager) AutoSync() {
 		if len(providers) == 0 && len(failures) > 0 {
 			return
 		}
-		if _, err := c.syncAllProviders(providers); err != nil {
+		if _, err := c.syncAllProviders(providers, c.GetRecoveryPassword()); err != nil {
 			log.Printf("autoSync all failed: %v", err)
 			c.emitSyncFailure("all", err)
 		}
@@ -1588,6 +1802,9 @@ func (c *ConfigManager) AutoSync() {
 					return
 				}
 				log.Printf("autoSync attempt %d/%d failed: %v", attempt+1, maxRetries, lastErr)
+				if errors.Is(lastErr, errRecoveryPassword) {
+					break
+				}
 			}
 
 			// 全部重试失败，通知前端
@@ -1606,7 +1823,7 @@ func (c *ConfigManager) RetrySync() string {
 	if c.GetSyncMode() == "all" {
 		var syncErr error
 		if len(providers) > 0 {
-			_, syncErr = c.syncAllProviders(providers)
+			_, syncErr = c.syncAllProviders(providers, c.GetRecoveryPassword())
 		}
 		if err := errors.Join(providerFailuresError(failures), syncErr); err != nil {
 			return err.Error()
@@ -2022,7 +2239,7 @@ func (c *ConfigManager) syncFrom(storageFn func() (RemoteStorage, int, error)) (
 	if cl, ok := s.(storageCloser); ok {
 		defer cl.Close()
 	}
-	return c.syncFromProvider(s, max)
+	return c.syncFromProvider(s, max, c.GetRecoveryPassword())
 }
 
 // restoreFrom 创建存储、恢复、关闭连接。

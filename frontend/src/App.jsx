@@ -9,6 +9,7 @@ import AIPanel from './components/AIPanel.jsx';
 import AIChangeReviewWorkbench from './components/ai/AIChangeReviewWorkbench.jsx';
 import AIConversationDiffOverlay from './components/ai/AIConversationDiffOverlay.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
+import { isRecoveryPasswordError, syncWithRecoveryPassword } from './utils/recoveryPasswordSync.js';
 import CredentialsModal from './components/CredentialsModal.jsx';
 import Toast from './components/Toast.jsx';
 import CommandHistory from './components/CommandHistory.jsx';
@@ -2539,11 +2540,35 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   // ── 监听云端同步失败事件 ──────────────────────────────────
   useEffect(() => {
-    const unbind = EventsOn('sync-failed', (data) => {
-      setSyncFailed(data);
+    let active = true;
+    const unbind = EventsOn('sync-failed', async (data) => {
+      if (!isRecoveryPasswordError(data)) {
+        if (active) setSyncFailed(data);
+        return;
+      }
+      if (active) setSyncFailed(null);
+      try {
+        const { cancelled } = await syncWithRecoveryPassword({
+          initialError: data,
+          retry: (password) => AppGo.SyncWithRecoveryPassword(password),
+          prompt: (...args) => window.luminDialog.prompt(...args),
+          t,
+        });
+        if (active && !cancelled) addToast(t('同步成功'), 'success', 3000);
+      } catch (err) {
+        if (!active) return;
+        if (isRecoveryPasswordError(err)) {
+          addToast(t('恢复密码连续三次错误，同步已取消'), 'error', 4000);
+        } else {
+          setSyncFailed({ ...data, category: 'sync', error: String(err?.message ?? err) });
+        }
+      }
     });
-    return () => { if (unbind) unbind(); };
-  }, []);
+    return () => {
+      active = false;
+      if (unbind) unbind();
+    };
+  }, [addToast, t]);
 
   // ── 监听 SSH 连接状态事件 ─────────────────────────────────
   useEffect(() => {

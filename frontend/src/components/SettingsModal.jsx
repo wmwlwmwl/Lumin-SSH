@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { getAvailableLanguages, setLanguage as setGlobalLanguage, t as $t } from '../i18n.js';
 import { getModKey } from '../utils/platform.js';
@@ -10,6 +10,7 @@ import { Z } from '../constants/zIndex';
 import { WindowSetSize, WindowUnmaximise } from '../../wailsjs/runtime/runtime.js';
 import { hexToRgb } from '../utils/theme.js';
 import { getProgramFontAssignmentSnapshot, listProgramFonts, selectAndImportProgramFontFiles, setProgramFontPreference } from '../utils/programFonts.js';
+import { syncWithRecoveryPassword } from '../utils/recoveryPasswordSync.js';
 import AppTab from './settings/AppTab';
 import GeneralTab from './settings/GeneralTab';
 import NetworkTab from './settings/NetworkTab';
@@ -283,12 +284,21 @@ export default function SettingsModal({
   const [lastBackup, setLastBackup] = useState(null);
 
   // Recovery password (for cloud backup restore fallback)
-  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [hasRecoveryPassword, setHasRecoveryPassword] = useState(false);
   const [recoveryPasswordEditing, setRecoveryPasswordEditing] = useState(false);
   const [recoveryPasswordInput, setRecoveryPasswordInput] = useState('');
+  const [recoveryPasswordChanging, setRecoveryPasswordChanging] = useState(false);
   // 恢复失败时的密码兜底
   const [restoreWithPassword, setRestoreWithPassword] = useState(false);
   const [restorePasswordInput, setRestorePasswordInput] = useState('');
+
+  const handleClose = useCallback(() => {
+    setRecoveryPasswordInput('');
+    setRecoveryPasswordEditing(false);
+    setRestorePasswordInput('');
+    setRestoreWithPassword(false);
+    onClose();
+  }, [onClose]);
 
   // Sync provider selection
   const [syncProvider, setSyncProvider] = useState('webdav');
@@ -370,12 +380,12 @@ export default function SettingsModal({
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && !listeningKey) {
         e.preventDefault();
-        onClose();
+        handleClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [listeningKey, onClose]);
+  }, [listeningKey, handleClose]);
 
   // 监听并捕捉组合快捷键
   useEffect(() => {
@@ -845,9 +855,9 @@ export default function SettingsModal({
       })
       .catch(() => {});
 
-    // Load recovery password status
-    AppGo.GetRecoveryPassword()
-      .then((pw) => { if (!cancelled && pw) setRecoveryPassword(pw); })
+    // Load recovery password status without exposing plaintext to React.
+    AppGo.HasRecoveryPassword()
+      .then((configured) => { if (!cancelled) setHasRecoveryPassword(!!configured); })
       .catch(() => {});
 
     Promise.resolve(window?.go?.main?.App?.GetProgramDirectory?.())
@@ -1181,16 +1191,18 @@ export default function SettingsModal({
     setSyncing(true);
     try {
       await confirmSecureProviders(syncMode === 'all' ? configuredProviderIds() : [syncMode]);
-      if (syncMode === 'all') {
-        const res = await AppGo.SyncAllProviders();
-        addToast(`${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
-        onRestored?.();
-      } else {
-        const p = PROVIDERS[syncMode] || PROVIDERS.webdav;
-        const res = await p.sync();
-        addToast(`${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
-        onRestored?.();
-      }
+      const sync = syncMode === 'all'
+        ? () => AppGo.SyncAllProviders()
+        : () => (PROVIDERS[syncMode] || PROVIDERS.webdav).sync();
+      const { result: res, cancelled } = await syncWithRecoveryPassword({
+        sync,
+        retry: (password) => AppGo.SyncWithRecoveryPassword(password),
+        prompt: (...args) => window.luminDialog.prompt(...args),
+        t: $t,
+      });
+      if (cancelled) return;
+      addToast(`${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
+      onRestored?.();
     } catch (err) {
       addToast($t('合并同步失败') + ': ' + err, 'error');
     } finally {
@@ -1212,28 +1224,36 @@ export default function SettingsModal({
   const handleSyncModeChange = async (mode) => { setSyncMode(mode); try { await AppGo.SetSyncMode(mode); } catch (_) {} };
   const handleAutoSyncEnabledChange = async (enabled) => { setAutoSyncEnabled(enabled); try { await AppGo.SetAutoSyncEnabled(enabled); } catch (_) {} };
 
-  const handleSaveRecoveryPassword = async () => {
+  const changeRecoveryPassword = async (password) => {
+    setRecoveryPasswordChanging(true);
     try {
-      await AppGo.SetRecoveryPassword(recoveryPasswordInput);
-      setRecoveryPassword(recoveryPasswordInput);
+      try {
+        await AppGo.ChangeRecoveryPassword(password);
+      } catch (e) {
+        if (!String(e).includes('RECOVERY_PASSWORD_RESET_REQUIRED')) throw e;
+        const action = await window.luminDialog?.choice?.(
+          $t('旧密码和新密码都无法解密云端备份。继续将不读取或合并云端数据，而是以本机当前数据覆盖所有已配置的云端同步目标。旧备份会保留，但其他设备尚未同步到本机的数据可能丢失。'),
+          $t('确认强制重置恢复密码'),
+          [
+            { label: $t('以本机数据覆盖云端'), value: 'reset', primary: true },
+            { label: $t('取消'), value: 'cancel', secondary: true },
+          ]
+        );
+        if (action !== 'reset') return;
+        await AppGo.ResetRecoveryPassword(password);
+      }
+      setHasRecoveryPassword(!!password.trim());
       setRecoveryPasswordEditing(false);
       setRecoveryPasswordInput('');
-      addToast($t('恢复密码已保存'), 'success');
+      addToast(password.trim() ? $t('恢复密码已保存') : $t('恢复密码已清除'), 'success');
     } catch (e) {
-      addToast($t('保存恢复密码失败') + ': ' + e, 'error');
+      addToast((password.trim() ? $t('保存恢复密码失败') : $t('清除恢复密码失败')) + ': ' + e, 'error');
+    } finally {
+      setRecoveryPasswordChanging(false);
     }
   };
-  const handleClearRecoveryPassword = async () => {
-    try {
-      await AppGo.SetRecoveryPassword('');
-      setRecoveryPassword('');
-      setRecoveryPasswordEditing(false);
-      setRecoveryPasswordInput('');
-      addToast($t('恢复密码已清除'), 'success');
-    } catch (e) {
-      addToast($t('清除恢复密码失败') + ': ' + e, 'error');
-    }
-  };
+  const handleSaveRecoveryPassword = () => changeRecoveryPassword(recoveryPasswordInput);
+  const handleClearRecoveryPassword = () => changeRecoveryPassword('');
 
   const isAnyConfigured = isConfigured || r2Configured || ftpConfigured || sftpConfigured;
 
@@ -1244,7 +1264,7 @@ export default function SettingsModal({
         {/* Settings Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{$t('设置')}</div>
-          <button className="btn btn-ghost btn-icon" onClick={onClose} style={{ color: 'var(--text-secondary)' }}><X size={16} /></button>
+          <button className="btn btn-ghost btn-icon" onClick={handleClose} style={{ color: 'var(--text-secondary)' }}><X size={16} /></button>
         </div>
 
         {/* Settings Body Layout */}
@@ -1463,11 +1483,12 @@ export default function SettingsModal({
                 onRestore={handleRestore}
                 isAnyConfigured={isConfigured || r2Configured || ftpConfigured || sftpConfigured}
                 addToast={addToast}
-                recoveryPassword={recoveryPassword}
+                hasRecoveryPassword={hasRecoveryPassword}
                 recoveryPasswordEditing={recoveryPasswordEditing}
                 setRecoveryPasswordEditing={setRecoveryPasswordEditing}
                 recoveryPasswordInput={recoveryPasswordInput}
                 setRecoveryPasswordInput={setRecoveryPasswordInput}
+                recoveryPasswordChanging={recoveryPasswordChanging}
                 onSaveRecoveryPassword={handleSaveRecoveryPassword}
                 onClearRecoveryPassword={handleClearRecoveryPassword}
               />

@@ -1624,6 +1624,18 @@ func (a *App) SetRecoveryPassword(password string) error {
 	return a.configManager.SetRecoveryPassword(password)
 }
 
+func (a *App) ChangeRecoveryPassword(newPassword string) error {
+	return a.configManager.ChangeRecoveryPassword(newPassword)
+}
+
+func (a *App) ResetRecoveryPassword(newPassword string) error {
+	return a.configManager.ResetRecoveryPassword(newPassword)
+}
+
+func (a *App) SyncWithRecoveryPassword(password string) (map[string]interface{}, error) {
+	return a.configManager.SyncWithRecoveryPassword(password)
+}
+
 func (a *App) GetProxyNodes() []ai.AIProxyNode {
 	if a == nil || a.configManager == nil {
 		return []ai.AIProxyNode{}
