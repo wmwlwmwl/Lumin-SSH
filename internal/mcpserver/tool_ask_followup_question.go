@@ -21,10 +21,11 @@ type askFollowupQuestionQuestion struct {
 }
 
 type askFollowupQuestionOption struct {
-	ID       string `xml:"id,attr"`
-	Mode     string `xml:"mode,attr"`
-	Disabled string `xml:"disabled,attr"`
-	Text     string `xml:",chardata"`
+	ID          string `xml:"id,attr"`
+	Mode        string `xml:"mode,attr"`
+	Disabled    string `xml:"disabled,attr"`
+	Recommended string `xml:"recommended,attr"`
+	Text        string `xml:",chardata"`
 }
 
 type askFollowupQuestionSuggestion struct {
@@ -34,7 +35,7 @@ type askFollowupQuestionSuggestion struct {
 func askFollowupQuestionToolDefinition() ToolDefinition {
 	return ToolDefinition{
 		Name:        "ask_followup_question",
-		Description: "Present a multi-question questionnaire to the user and wait for their structured answer before continuing the task. Required arguments: question, follow_up. The follow_up field must contain one or more <question> blocks with <option> entries, or a legacy 2 to 4 <suggest>...</suggest> payload.",
+		Description: "Present a multi-question questionnaire to the user and wait for their structured answer before continuing the task. Required arguments: question, follow_up. The follow_up field must contain one or more <question> blocks with <option> entries. Each option may use id, mode, disabled, and recommended attributes. Legacy 2 to 12 <suggest>...</suggest> payloads are also supported.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -140,6 +141,10 @@ func parseAskFollowupPayload(raw string, fallbackQuestion string) ([]map[string]
 				switch strings.ToLower(strings.TrimSpace(option.Disabled)) {
 				case "1", "true", "yes":
 					optionPayload["disabled"] = true
+				}
+				switch strings.ToLower(strings.TrimSpace(option.Recommended)) {
+				case "1", "true", "yes":
+					optionPayload["recommended"] = true
 				}
 				options = append(options, optionPayload)
 			}

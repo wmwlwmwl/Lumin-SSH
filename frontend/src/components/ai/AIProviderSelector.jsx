@@ -30,6 +30,35 @@ function getCacheStrategyLabel(t, value) {
   return t(cacheStrategyLabelKeys[nextValue] || cacheStrategyLabelKeys.model)
 }
 
+const reasoningEffortLabelKeys = {
+  none: '无',
+  minimal: '最少',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '超高',
+}
+
+function getReasoningEffortLabel(t, value) {
+  const nextValue = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!nextValue || nextValue === 'disable') {
+    return ''
+  }
+  return t(reasoningEffortLabelKeys[nextValue] || nextValue)
+}
+
+function getProviderModelSummary(t, provider) {
+  const model = typeof provider?.model === 'string' ? provider.model.trim() : ''
+  if (!model) {
+    return t('未选择模型')
+  }
+  const reasoningEffortLabel = getReasoningEffortLabel(t, provider?.reasoningEffort)
+  if (!reasoningEffortLabel || provider?.enableReasoningEffort !== true) {
+    return model
+  }
+  return `${model}(${reasoningEffortLabel})`
+}
+
 function getApiKeyPreview(value) {
   const nextValue = typeof value === 'string' ? value.trim() : ''
   if (!nextValue) {
@@ -253,7 +282,7 @@ export default function AIProviderSelector({
 
   const providerSummaryRows = [
     { label: t('供应商'), value: selectedProvider?.name || t('选择供应商') },
-    { label: t('模型'), value: selectedProvider?.model || t('未选择模型') },
+    { label: t('模型'), value: getProviderModelSummary(t, selectedProvider) },
     { label: t('API兼容方式'), value: selectedProvider?.provider || 'Compatible' },
     { label: t('缓存策略'), value: getCacheStrategyLabel(t, selectedProvider?.cacheStrategy) },
     { label: 'Key', value: getApiKeyPreview(selectedProvider?.apiKey) || '-' },

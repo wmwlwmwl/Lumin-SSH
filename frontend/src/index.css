@@ -1838,7 +1838,14 @@ body.theme-light .batch-operation-bar {
 }
 .path-input:focus { border-color: var(--border-focus); }
 
-.file-list { flex: 1; overflow-y: auto; overflow-x: auto; }
+.file-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
 
 .file-list-header {
   display: grid;
@@ -1868,6 +1875,14 @@ body.theme-light .batch-operation-bar {
   align-items: center;
 }
 .file-item:hover { background: var(--surface-hover); }
+.file-item.selected { background: color-mix(in srgb, var(--accent) 15%, var(--surface-base)); }
+.file-item.selected:hover { background: color-mix(in srgb, var(--accent) 22%, var(--surface-hover)); }
+.file-list:not(:focus-within) .file-item.selected {
+  background: color-mix(in srgb, var(--text-tertiary) 8%, var(--surface-base));
+}
+.file-list:not(:focus-within) .file-item.selected:hover {
+  background: color-mix(in srgb, var(--text-tertiary) 12%, var(--surface-hover));
+}
 .file-item:hover .file-actions { opacity: 1; }
 
 .file-name-cell { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
@@ -2966,6 +2981,9 @@ body.theme-light .editor-field-shell.editor-field-shell-shine::after {
   font-family: inherit;
   outline: none;
   width: 100%;
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
 }
 
 /* ── 分割线 ─────────────────────────────────────────────────── */

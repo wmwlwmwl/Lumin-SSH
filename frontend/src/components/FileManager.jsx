@@ -609,6 +609,13 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const fileListRef = useRef(null);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [contextMenu, setContextMenu] = useState(null); // { pos, item }
+  const [selectedPaths, setSelectedPaths] = useState([]);
+  const lastClickedPathRef = useRef(null);
+  useEffect(() => {
+    setSelectedPaths([]);
+    lastClickedPathRef.current = null;
+  }, [currentPath]);
+  const [clipboard, setClipboard] = useState(null); // { paths: string[], mode: 'copy'|'cut', srcDir: string }
   const [renamingItem, setRenamingItem] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [chmodTarget, setChmodTarget] = useState(null); // { item, path, mode, includeSubdirectories, showIncludeSubdirectories }
@@ -637,6 +644,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const uploadInputRef = useRef(null);
+  const uploadFolderInputRef = useRef(null);
   const [workbenchState, setWorkbenchStateState] = useState(() => getSessionWorkbenchState(sessionGroupId));
   const [uploadQueueItems, setUploadQueueItems] = useState(() => getSessionUploadQueue(sessionGroupId));
   const activeUploadCount = useMemo(() => uploadQueueItems.filter((item) => item.status === 'queued' || item.status === 'uploading').length, [uploadQueueItems]);
@@ -1146,13 +1154,22 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       await window?.go?.main?.App?.UploadLocalPathsCompressed?.(
         sessionId,
         queueId,
-        Math.max(1, settings.maxFiles),
+        Math.max(1, localPaths.length === 1 ? settings.maxChunksPerFile : settings.maxFiles),
         localPaths,
         currentPath,
       );
       updateSessionUploadQueue(sessionGroupId, (current) => current.map((item) => (
         item.id === queueId
-          ? { ...item, status: 'completed', phase: 'completed', phaseProgress: 100, progress: 100, error: '', phaseDetail: t('已完成'), updatedAt: Date.now() }
+          ? {
+              ...item,
+              status: 'completed',
+              phase: item.phase === 'uploading-file' ? 'uploading-file-completed' : 'completed',
+              phaseProgress: 100,
+              progress: 100,
+              error: '',
+              phaseDetail: t('已完成'),
+              updatedAt: Date.now(),
+            }
           : item
       )));
       addToast(`${t('上传成功')}: ${name}`, 'success');
@@ -1436,6 +1453,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   };
 
   const handleUploadFolder = useCallback(async () => {
+    if (!isCompressedTransferEnabled()) {
+      uploadFolderInputRef.current?.click();
+      return;
+    }
     try {
       const dirPath = await AppGo.SelectUploadDirectory();
       console.log('[FileManager][native click upload folder] path', dirPath);
@@ -1708,12 +1729,19 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const handleDelete = async (item) => {
     const remotePath = joinPath(currentPath, item.name);
     const needConfirm = localStorage.getItem('skipFileDeleteConfirm') !== 'true';
-    if (needConfirm && !(await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？${t('此操作不可撤销')}`))) return;
+    if (needConfirm) {
+      const ok = await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？${t('此操作不可撤销')}`);
+      fileListRef.current?.focus();
+      if (!ok) return;
+    }
     try {
       await AppGo.DeleteItem(sessionId, remotePath, item.isDirectory);
+      setSelectedPaths(prev => prev.filter(p => p !== remotePath));
       await loadDir(currentPath);
     } catch (err) {
       addToast(`${t('删除失败')}: ${err}`, 'error');
+    } finally {
+      fileListRef.current?.focus();
     }
   };
 
@@ -1721,13 +1749,124 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const handleDeleteShell = async (item) => {
     const remotePath = joinPath(currentPath, item.name);
     const needConfirm = localStorage.getItem('skipFileDeleteConfirm') !== 'true';
-    if (needConfirm && !(await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？(rm -rf) ${t('此操作不可撤销')}`))) return;
+    if (needConfirm) {
+      const ok = await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？(rm -rf) ${t('此操作不可撤销')}`);
+      fileListRef.current?.focus();
+      if (!ok) return;
+    }
     try {
       await AppGo.DeleteItemShell(sessionId, remotePath);
+      setSelectedPaths(prev => prev.filter(p => p !== remotePath));
       await loadDir(currentPath);
     } catch (err) {
       addToast(`${t('删除失败')}: ${err}`, 'error');
+    } finally {
+      fileListRef.current?.focus();
     }
+  };
+
+  // Delete multiple selected items
+  const handleDeleteItems = async () => {
+    if (selectedPaths.length === 0) return;
+    const dirSet = new Set(items.filter(i => i.isDirectory).map(i => joinPath(currentPath, i.name)));
+    const needConfirm = localStorage.getItem('skipFileDeleteConfirm') !== 'true';
+    if (needConfirm) {
+      const ok = await window.luminDialog?.confirm(`${t('确定删除所选')} (${selectedPaths.length}${t('项')})？${t('此操作不可撤销')}`);
+      fileListRef.current?.focus();
+      if (!ok) return;
+    }
+    let successCount = 0;
+    let failCount = 0;
+    for (const path of selectedPaths) {
+      try {
+        await AppGo.DeleteItem(sessionId, path, dirSet.has(path));
+        successCount++;
+      } catch (err) {
+        failCount++;
+        console.error('delete item failed:', path, err);
+      }
+    }
+    if (successCount > 0) addToast(`${t('已删除')} ${successCount} ${t('项')}`, 'success');
+    if (failCount > 0) addToast(`${t('删除失败')}: ${failCount} ${t('项')}`, 'error');
+    setSelectedPaths([]);
+    await loadDir(currentPath);
+    fileListRef.current?.focus();
+  };
+
+  // Keyboard shortcuts for file list
+  const handleFileListKeyDown = (e) => {
+    if (renamingItem) return;
+    const isCtrl = e.ctrlKey || e.metaKey;
+    if (e.key === 'Delete' || e.key === 'Del') {
+      e.preventDefault();
+      void handleDeleteItems();
+      return;
+    }
+    if (isCtrl && e.key === 'a') {
+      e.preventDefault();
+      setSelectedPaths(sortedItems.map(i => joinPath(currentPath, i.name)));
+      return;
+    }
+    if (isCtrl && e.key === 'c') {
+      e.preventDefault();
+      if (selectedPaths.length === 0) return;
+      setClipboard({ paths: [...selectedPaths], mode: 'copy', srcDir: currentPath });
+      addToast(t('已复制'), 'info');
+      return;
+    }
+    if (isCtrl && e.key === 'x') {
+      e.preventDefault();
+      if (selectedPaths.length === 0) return;
+      setClipboard({ paths: [...selectedPaths], mode: 'cut', srcDir: currentPath });
+      addToast(t('已剪切'), 'info');
+      return;
+    }
+    if (isCtrl && e.key === 'v') {
+      e.preventDefault();
+      if (!clipboard) return;
+      void handlePaste();
+      return;
+    }
+  };
+
+  const handlePaste = async () => {
+    if (!clipboard || clipboard.paths.length === 0) return;
+    if (clipboard.srcDir === currentPath && clipboard.mode === 'cut') {
+      addToast(t('源目录与目标目录相同，无需移动'), 'warning');
+      return;
+    }
+    let count = 0;
+    for (const srcPath of clipboard.paths) {
+      const name = srcPath.split('/').pop();
+      let destPath = joinPath(currentPath, name);
+      if (clipboard.mode === 'copy' && clipboard.srcDir === currentPath) {
+        const base = name.replace(/(\.[^.]+)$/, '');
+        const ext = name !== base ? name.slice(base.length) : '';
+        const existing = new Set(items.map(i => i.name));
+        let copyName = `${base}_copy${ext}`;
+        let idx = 1;
+        while (existing.has(copyName)) {
+          idx++;
+          copyName = `${base}_copy${idx}${ext}`;
+        }
+        destPath = joinPath(currentPath, copyName);
+      }
+      try {
+        if (clipboard.mode === 'copy') {
+          await AppGo.CopyItem(sessionId, srcPath, destPath);
+        } else {
+          await AppGo.MoveItem(sessionId, srcPath, destPath);
+        }
+        count++;
+      } catch (err) {
+        addToast(`${t('操作失败')}: ${name} - ${err}`, 'error');
+      }
+    }
+    if (count > 0) {
+      addToast(`${t('操作完成')}: ${count} ${t('项')}`, 'success');
+      if (clipboard.mode === 'cut') setClipboard(null);
+    }
+    await loadDir(currentPath);
   };
 
   // Create directory
@@ -1794,9 +1933,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setRenameValue(item.name);
   };
 
-  const confirmRename = async () => {
+  const confirmRename = async (refocus = false) => {
     if (!renamingItem || !renameValue.trim() || renameValue === renamingItem.name) {
       setRenamingItem(null);
+      if (refocus) fileListRef.current?.focus();
       return;
     }
     const oldPath = joinPath(currentPath, renamingItem.name);
@@ -1809,6 +1949,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       addToast(`${t('重命名失败')}: ${err}`, 'error');
     } finally {
       setRenamingItem(null);
+      if (refocus) fileListRef.current?.focus();
     }
   };
 
@@ -2008,6 +2149,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         style={{ display: 'none' }}
         onChange={(e) => { void handleSelectedFiles(e); }}
       />
+      <input
+        ref={uploadFolderInputRef}
+        type="file"
+        multiple
+        webkitdirectory=""
+        directory=""
+        style={{ display: 'none' }}
+        onChange={(e) => { void handleSelectedFiles(e); }}
+      />
       {/* Toolbar */}
       <div className="file-toolbar">
         {/* Editable path input */}
@@ -2128,7 +2278,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       {/* Content area: file list + optional split editor */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* File List */}
-        <div className="file-list" ref={fileListRef} style={{ flex: 1, minWidth: 0 }}>
+        <div className="file-list" ref={fileListRef} tabIndex={0} onKeyDown={handleFileListKeyDown} style={{ flex: 1, minWidth: 0 }}>
           <div className="file-list-header">
             <span onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
               {t('名称')} {sortField === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
@@ -2181,13 +2331,51 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
           {!loading && sortedItems.map((item) => {
             const isRenaming = renamingItem?.name === item.name;
+            const itemPath = joinPath(currentPath, item.name);
+            const isSelected = selectedPaths.includes(itemPath);
+
+            const handleItemClick = (e) => {
+              if (isRenaming) return;
+              // e.detail 为连击次数：1=单击，2=双击。双击时交由 onDoubleClick 处理，
+              // 这里直接跳过，避免双击先触发一次选中再触发操作的副作用。
+              if ((e.detail || 1) >= 2) return;
+              fileListRef.current?.focus();
+              if (e.ctrlKey || e.metaKey) {
+                setSelectedPaths(prev =>
+                  prev.includes(itemPath) ? prev.filter(p => p !== itemPath) : [...prev, itemPath]
+                );
+                lastClickedPathRef.current = itemPath;
+              } else if (e.shiftKey && lastClickedPathRef.current) {
+                // Clear browser selection when shift-clicking to prevent text range highlighting
+                window.getSelection()?.removeAllRanges();
+                const lastIdx = sortedItems.findIndex(i => joinPath(currentPath, i.name) === lastClickedPathRef.current);
+                const currentIdx = sortedItems.findIndex(i => i.name === item.name);
+                if (lastIdx >= 0 && currentIdx >= 0) {
+                  const start = Math.min(lastIdx, currentIdx);
+                  const end = Math.max(lastIdx, currentIdx);
+                  setSelectedPaths(sortedItems.slice(start, end + 1).map(i => joinPath(currentPath, i.name)));
+                }
+              } else {
+                setSelectedPaths([itemPath]);
+                lastClickedPathRef.current = itemPath;
+              }
+            };
 
             return (
               <div
                 key={item.name}
-                className="file-item"
-                onDoubleClick={() => item.isDirectory ? navigate(item) : isEditable(item.name) && handleEdit(item)}
-                onClick={() => item.isDirectory && navigate(item)}
+                className={`file-item${isSelected ? ' selected' : ''}`}
+                onClick={handleItemClick}
+                onDoubleClick={() => {
+                  // 双击打开/编辑前，把该项设为唯一选中，行为与单资源管理器一致。
+                  setSelectedPaths([itemPath]);
+                  lastClickedPathRef.current = itemPath;
+                  if (item.isDirectory) {
+                    navigate(item);
+                  } else if (isEditable(item.name)) {
+                    handleEdit(item);
+                  }
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -2201,10 +2389,14 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                       className="rename-input"
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={confirmRename}
+                      onBlur={() => confirmRename(false)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') confirmRename();
-                        if (e.key === 'Escape') setRenamingItem(null);
+                        e.stopPropagation();
+                        if (e.key === 'Enter') confirmRename(true);
+                        if (e.key === 'Escape') {
+                          setRenamingItem(null);
+                          fileListRef.current?.focus();
+                        }
                       }}
                       autoFocus
                       onClick={(e) => e.stopPropagation()}

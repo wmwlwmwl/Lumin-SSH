@@ -58,9 +58,9 @@ const suggestionMarkdownComponents = {
   h3: ({ children }) => <span style={{ display: 'block', fontSize: 14, fontWeight: 700, lineHeight: 1.5 }}>{children}</span>,
 }
 
-function FollowUpSuggestionMarkdown({ text }) {
+function FollowUpSuggestionMarkdown({ text, inline = false }) {
   return (
-    <span style={{ display: 'block', width: '100%', lineHeight: 1.6, wordBreak: 'break-word' }}>
+    <span style={{ display: inline ? 'inline' : 'block', width: inline ? 'auto' : '100%', lineHeight: 1.6, wordBreak: 'break-word' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={suggestionMarkdownComponents}>
         {text || ''}
       </ReactMarkdown>
@@ -109,6 +109,7 @@ function normalizeFollowUpQuestions(question, questions, suggestions) {
                 answer,
                 mode: typeof option?.mode === 'string' ? option.mode.trim() : '',
                 disabled: option?.disabled === true,
+                recommended: option?.recommended === true,
               }
             })
             .filter(Boolean)
@@ -416,11 +417,10 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
         }
       `}</style>
       <div style={{ display: 'grid', gap: 4 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--accent)', fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-tertiary)' }}>
           <MessageCircleQuestionMark size={13} />
-          <span>{`Question ${currentLabel}/${totalLabel}`}</span>
+          <span>{t('追问建议')}</span>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{t('追问建议')}</div>
         <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.4 }}>
           <AIChatMarkdown text={currentQuestion.text || ''} />
         </div>
@@ -453,13 +453,52 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
               style={buildOptionButtonStyle(checked, disabled)}
             >
               <OptionIndicator type={optionType} checked={checked} />
-              <div style={{ minWidth: 0, display: 'grid', gap: option.mode ? 4 : 0 }}>
-                <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  <FollowUpSuggestionMarkdown text={option.answer} />
+              <div style={{ minWidth: 0, display: 'grid', gap: option.mode ? 6 : 0 }}>
+                <div style={{ minWidth: 0, fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                  {option.recommended ? (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border-subtle))',
+                        background: 'rgba(var(--accent-rgb), 0.12)',
+                        color: 'var(--accent)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        lineHeight: 1.4,
+                        whiteSpace: 'nowrap',
+                        marginRight: 8,
+                        verticalAlign: 'text-top',
+                      }}
+                    >
+                      {t('推荐')}
+                    </span>
+                  ) : null}
+                  <FollowUpSuggestionMarkdown text={option.answer} inline />
                 </div>
                 {option.mode ? (
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: 0.4, textTransform: 'uppercase' }}>
-                    {option.mode}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        border: '1px solid var(--border-subtle)',
+                        background: 'var(--surface-elevated)',
+                        color: 'var(--text-tertiary)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: 0.4,
+                        lineHeight: 1.4,
+                        textTransform: 'uppercase',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {option.mode}
+                    </span>
                   </div>
                 ) : null}
               </div>

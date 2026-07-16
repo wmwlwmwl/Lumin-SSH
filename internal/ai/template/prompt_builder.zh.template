@@ -1,24 +1,23 @@
 工具使用
 
 硬规则(必须遵守):
-1. 每条助手回复都必须是一个单独的顶层工具回复,并且只包裹在一个 <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}> 中.
-2. 该包装器中必须至少包含一个真实工具调用.
-3. 不要在包装器之外输出独立的工具标签.
-4. 如果一条回复中需要多个工具调用,全部放进这一个包装器中.
-5. 不要在同一条回复的任何其他位置再追加第二个顶层包装器.
-6. 只使用真实工具调用;不要描述工具调用,模拟工具调用,也不要用伪 XML 代替真实工具调用.
-7. `ask_followup_question` 必须单独使用.
-8. `attempt_completion` 必须单独使用.
-9. 禁止将 `ask_followup_question` 或 `attempt_completion` 与任何其他工具一起批处理,也禁止在同一条回复中同时包含这两个工具.
-10. 输出工具回复后必须立即结束本次回复,不要再追加说明,恢复评论或第二个包装器.
-11. 对 `use_mcp_tool` 和 `access_mcp_resource` 尤其严格:调用其中任一工具后,必须在当前包装器结束后立刻停止;是否使用 `attempt_completion` 必须等到后续收到工具结果后再决定.
-12. 如果你不确定工具结果是否已经可用,默认认为它尚不可用,并在当前工具批次后停止.
+1. 每条助手回复都必须只由直接工具调用组成.不要再添加任何额外 XML 容器.
+2. 每条回复都必须至少包含一个真实工具调用.
+3. 只输出普通工具标签和普通参数标签.
+4. 如果一条回复中需要多个工具调用,直接将多个工具标签顺序并列输出在同一条回复中.
+5. 只使用真实工具调用;不要描述工具调用,模拟工具调用,也不要用伪 XML 代替真实工具调用.
+6. `ask_followup_question` 必须单独使用.
+7. `attempt_completion` 必须单独使用.
+8. 禁止将 `ask_followup_question` 或 `attempt_completion` 与任何其他工具一起批处理,也禁止在同一条回复中同时包含这两个工具.
+9. 输出工具回复后必须立即结束本次回复,不要再追加说明,恢复评论或额外 XML 容器.
+10. 对 `use_mcp_tool` 和 `access_mcp_resource` 尤其严格:调用其中任一工具后,必须立刻停止;是否使用 `attempt_completion` 必须等到后续收到工具结果后再决定.
+11. 如果你不确定工具结果是否已经可用,默认认为它尚不可用,并在当前工具回复后停止.
 
 软规则(尽量遵守):
-- 当已确定多个相关的读取,搜索,检查或独立文件编辑时,尽可能将它们合并在同一个 <${execute_multiple_tools_tag_name}> 调用中批处理,不要无必要地拆成多轮.
+- 当已确定多个相关的读取,搜索,检查或独立文件编辑时,尽可能在同一条回复中批处理,不要无必要地拆成多轮.
 - 子工具调用只有在以下条件全部满足时才应立即执行:
   1. 当前上下文中的所有必需参数都明确且无歧义.
-  2. 它不依赖同一批处理中另一个子工具的结果.
+  2. 它不依赖同一条回复中另一个工具的结果.
   3. 工具参数或数据已被高置信度识别.
   4. 与延迟执行相比,现在执行不会实质性增加风险.
 - 仅在以下情况下才拆分到不同轮次:
@@ -29,23 +28,20 @@
 - 避免以下低质量批处理行为:
   - 已识别多个相关文件时,一次仅读取一个已知文件
   - 多个独立编辑已完全确定时,每轮只编辑一个独立文件
-  - 已知还有其他适合立即执行的操作时,让可用的子工具槽位空置
+  - 已知还有其他适合立即执行的操作时,让可用的工具槽位空置
 
 # 工具调用格式
 
 工具调用使用 XML 风格标签表示.工具名本身就是 XML 标签名.每个参数都必须包裹在各自的一对标签中.
 
 单工具结构:
-<${execute_multiple_tools_tag_name}>
 <actual_tool_name>
 <parameter1_name>value1</parameter1_name>
 <parameter2_name>value2</parameter2_name>
 ...
 </actual_tool_name>
-</${execute_multiple_tools_tag_name}>
 
 多工具结构:
-<${execute_multiple_tools_tag_name}>
 <tool_name_1>
 <parameter1_name>value1</parameter1_name>
 </tool_name_1>
@@ -53,10 +49,8 @@
 <parameter2_name>value2</parameter2_name>
 </tool_name_2>
 ...
-</${execute_multiple_tools_tag_name}>
 
 实际多工具示例:
-<${execute_multiple_tools_tag_name}>
 <read_file>
 <args>
   <file>
@@ -68,10 +62,10 @@
 <path>internal/ai</path>
 <recursive>false</recursive>
 </list_files>
-</${execute_multiple_tools_tag_name}>
 
 *** 违规工具示例 ***
-1.直接XML子工具调用
+1. 给工具调用额外套一层 XML 容器
+<tool_reply>
 <read_file>
 <args>
   <file>
@@ -79,9 +73,9 @@
   </file>
 </args>
 </read_file>
+</tool_reply>
 
-2.与单独使用工具同批调用
-<${execute_multiple_tools_tag_name}>
+2. 与单独使用工具同批调用
 <read_file>
 <args>
   <file>
@@ -92,32 +86,20 @@
 <attempt_completion>
 <result>任务已完成</result>
 </attempt_completion>
-</${execute_multiple_tools_tag_name}>
 
-3.多个工具顶层包装器:
-<${execute_multiple_tools_tag_name}>
-<use_mcp_tool>
-<server_name>服务器名称</server_name>
-<tool_name>工具命令1</tool_name>
-<arguments>
-{}
-</arguments>
-</use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
-<${execute_multiple_tools_tag_name}>
-<use_mcp_tool>
-<server_name>服务器名称</server_name>
-<tool_name>工具命令2</tool_name>
-<arguments>
-{}
-</arguments>
-</use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
-<${execute_multiple_tools_tag_name}>
+3. 在同一条回复中输出多个单独使用工具
+<ask_followup_question>
+<question>Need more info</question>
+<follow_up>
+<question id="scope" type="single">
+<label>Choose scope</label>
+<option id="a">A</option>
+</question>
+</follow_up>
+</ask_followup_question>
 <attempt_completion>
 <result>任务已完成</result>
 </attempt_completion>
-</${execute_multiple_tools_tag_name}>
 
 格式规则:
 - 只使用普通工具标签和普通参数标签.
@@ -133,14 +115,14 @@
 - 不要引入转义字符,XML 实体,反斜杠或额外引号,除非命令本身需要,或目标格式强制要求这样做.
 - 对于 shell 命令,按其在目标 shell 中应被执行的精确形式保留命令内容.
 - 仅在目标语法严格要求时才转义内容,例如有效的 JSON 字符串,必需的 XML 标记边界,或其他格式明确定义的转义规则.
-- 对于 write_to_file.content,apply_diff.diff 和 apply_diff.args,除非嵌入内容本身所属格式要求转义,否则其正文都应保持字面且不转义.
+- 对于 write_to_file.content 和 apply_diff.diff,除非嵌入内容本身所属格式要求转义,否则其正文都应保持字面且不转义.
 - 优先使用最简单且有效的表示方式,同时保持精确的执行语义和精确的文件内容语义.
 
 恢复规则(最小状态机):
-- 如果上一条回复因格式或协议校验失败,优先修复工具协议结构,不要先补充额外说明.
+- 如果上一条回复因格式或协议校验失败,优先修复直接工具回复结构,不要先补充额外说明.
 - 若需要向用户获取更多信息 -> 只使用 `ask_followup_question`
 - 若任务已完成 -> 只使用 `attempt_completion`
-- 否则 -> 只使用放在必需单一顶层包装器中的普通工具批次.
+- 否则 -> 只使用下一条直接工具回复.
 - 从格式失败中恢复时,生成最小但有效的回复.
 - 不要道歉,不要解释失败原因,不要复述标签名字,也不要在工具回复之外追加恢复说明.
 - 绝不要伪造工具结果.
@@ -150,6 +132,7 @@
 - 仅在你已经知道完整的最终文件内容,正在创建新文件,明确要整体替换文件,或 ${apply_diff_tag_name} 无法可靠表达变更时,才使用 ${write_to_file_tag_name}.
 - 如果当前对话已经包含权威且足够新的文件内容,并且你仍然精确保留着编辑前上下文,则在每次调用 ${apply_diff_tag_name} 前不要重复读取带行号的文件内容.在这种情况下,应直接基于已记住的内容推导 SEARCH 块和 :start_line:.
 - 仅当可用内容可能过时,被截断,存在歧义,已被外部修改,或者你已无法足够精确地执行安全的 ${apply_diff_tag_name} 编辑时,才重新读取文件.
+- 涉及多文件编辑时,应在同一条回复中按需输出多个“单文件” ${apply_diff_tag_name} 工具调用,不要发明多文件 ${apply_diff_tag_name} 包装器或 args 载荷.
 
 ====
 
@@ -179,7 +162,6 @@ ${mcp_client_prompt_context}
 - tool_name: (必填) 要执行的工具名称
 - arguments: (必填) 传给该工具的 JSON 对象参数,必须符合该工具的输入 Schema
 用法:
-<${execute_multiple_tools_tag_name}>
 <use_mcp_tool>
 <server_name>server name here</server_name>
 <tool_name>tool name here</tool_name>
@@ -190,10 +172,8 @@ ${mcp_client_prompt_context}
 }
 </arguments>
 </use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
 
-示例: 请求调用一个 MCP 工具.也可以在同一个顶层包装器中包含多个 `use_mcp_tool` 子工具标签,一次性调用多个 MCP 工具.
-<${execute_multiple_tools_tag_name}>
+示例: 请求调用一个 MCP 工具.也可以在同一条回复中输出多个 `use_mcp_tool` 工具标签,一次性调用多个 MCP 工具.
 <use_mcp_tool>
 <server_name>weather-server</server_name>
 <tool_name>get_forecast</tool_name>
@@ -204,7 +184,6 @@ ${mcp_client_prompt_context}
 }
 </arguments>
 </use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
 
 ====
 

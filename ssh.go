@@ -2552,6 +2552,29 @@ func rmRfCmd(path string) string {
 	return "rm -rf " + shellQuotePath(path)
 }
 
+// remoteCmdLongTimeout 是文件复制/移动这类可能很耗时操作（大文件 cp/mv）的超时上限。
+// executeCmdWithClientContext 固定 30 秒，对大文件 cp 会过早超时，故这里使用更长上限。
+const remoteCmdLongTimeout = 30 * time.Minute
+
+// execRemoteCmdLong 在 sessionId 对应服务器上执行命令，使用长超时，
+// 适用于 cp/mv 等可能耗时较久的文件操作。返回命令的退出错误。
+func (m *SSHManager) execRemoteCmdLong(ctx context.Context, sessionId string, cmd string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
+	client, _, err := m.getClientEntry(sessionId)
+	if err != nil {
+		return err
+	}
+	session, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	_, err = runCommandWithSessionContext(ctx, session, cmd, remoteCmdLongTimeout)
+	return err
+}
+
 func (m *SSHManager) DeleteItem(sessionId string, path string, isDir bool) error {
 	return m.DeleteItemContext(context.Background(), sessionId, path, isDir)
 }
@@ -2636,6 +2659,40 @@ func (m *SSHManager) RenameItemContext(ctx context.Context, sessionId string, ol
 		return err
 	}
 	return sftpClient.Rename(oldPath, newPath)
+}
+
+func (m *SSHManager) CopyItem(sessionId string, srcPath string, dstPath string) error {
+	return m.CopyItemContext(context.Background(), sessionId, srcPath, dstPath)
+}
+
+// CopyItemContext 在同一台服务器内复制文件或目录。
+// 直接在服务器上执行 cp -a：数据只在服务器本地磁盘流动，不走网络，
+// 远快于 SFTP 逐块读写。-a 保留权限/属主/时间戳，递归复制目录，并保留符号链接（不跟随）。
+func (m *SSHManager) CopyItemContext(ctx context.Context, sessionId string, srcPath string, dstPath string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
+	if isDangerousPath(srcPath) || isDangerousPath(dstPath) {
+		return fmt.Errorf("refusing to copy dangerous path")
+	}
+	return m.execRemoteCmdLong(ctx, sessionId, fmt.Sprintf("cp -a %s %s", shellQuotePath(srcPath), shellQuotePath(dstPath)))
+}
+
+func (m *SSHManager) MoveItem(sessionId string, srcPath string, dstPath string) error {
+	return m.MoveItemContext(context.Background(), sessionId, srcPath, dstPath)
+}
+
+// MoveItemContext 在同一台服务器内移动文件或目录。
+// 直接在服务器上执行 mv：同文件系统上仅改 inode 引用（瞬时），跨文件系统时
+// 由 mv 自动完成 cp + rm，数据只在服务器本地流动。
+func (m *SSHManager) MoveItemContext(ctx context.Context, sessionId string, srcPath string, dstPath string) error {
+	if err := ensureContextActive(ctx); err != nil {
+		return err
+	}
+	if isDangerousPath(srcPath) || isDangerousPath(dstPath) {
+		return fmt.Errorf("refusing to move dangerous path")
+	}
+	return m.execRemoteCmdLong(ctx, sessionId, fmt.Sprintf("mv %s %s", shellQuotePath(srcPath), shellQuotePath(dstPath)))
 }
 
 // progressReader wraps an io.Reader and emits progress events via Wails.

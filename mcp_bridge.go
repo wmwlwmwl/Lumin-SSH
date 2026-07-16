@@ -314,6 +314,20 @@ func (h mcpHost) DeleteItemContext(ctx context.Context, sessionID string, remote
 	return h.app.sshManager.DeleteItemContext(ctx, sessionID, remotePath, isDir)
 }
 
+func (h mcpHost) CopyItemContext(ctx context.Context, sessionID string, srcPath string, dstPath string) error {
+	if h.app == nil || h.app.sshManager == nil {
+		return fmt.Errorf("ssh manager unavailable")
+	}
+	return h.app.sshManager.CopyItemContext(ctx, sessionID, srcPath, dstPath)
+}
+
+func (h mcpHost) MoveItemContext(ctx context.Context, sessionID string, srcPath string, dstPath string) error {
+	if h.app == nil || h.app.sshManager == nil {
+		return fmt.Errorf("ssh manager unavailable")
+	}
+	return h.app.sshManager.MoveItemContext(ctx, sessionID, srcPath, dstPath)
+}
+
 func (h mcpHost) MkdirContext(ctx context.Context, sessionID string, remotePath string) error {
 	if h.app == nil || h.app.sshManager == nil {
 		return fmt.Errorf("ssh manager unavailable")
