@@ -95,7 +95,9 @@ function buildCompressedPhaseChunks(item) {
   const chunkSizeBytes = Math.max(1, Number(item.chunkSizeBytes) || 256 * 1024);
   const bytesUploaded = Math.max(0, Number(item.bytesUploaded) || 0);
   const totalChunks = Math.max(1, Math.ceil(bytesTotal / chunkSizeBytes));
-  const completedChunks = Math.min(totalChunks, Math.floor(bytesUploaded / chunkSizeBytes));
+  const completedChunks = bytesUploaded >= bytesTotal
+    ? totalChunks
+    : Math.min(totalChunks, Math.floor(bytesUploaded / chunkSizeBytes));
   const hasPartialChunk = bytesUploaded > completedChunks * chunkSizeBytes && completedChunks < totalChunks;
   const failedChunkIndex = item.status === 'failed'
     ? Math.min(totalChunks - 1, completedChunks)

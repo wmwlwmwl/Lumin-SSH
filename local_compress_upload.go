@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/crypto/ssh"
 )
 
 type localArchiveStats struct {
@@ -153,6 +155,7 @@ type compressedUploadSessionLimiter struct {
 
 var compressedUploadTasks sync.Map // uploadId -> *compressedUploadTask
 var compressedUploadSlots sync.Map // sessionId -> *compressedUploadSessionLimiter
+
 
 func clampPercent(value float64) float64 {
 	if value < 0 {
@@ -1042,64 +1045,225 @@ func (m *SSHManager) preflightCompressedUploadTargets(ctx context.Context, sessi
 	return nil
 }
 
-func (m *SSHManager) uploadLocalFileWithContext(ctx context.Context, localPath string, remoteDir string, onProgress func(int64, int64)) error {
-	sftpClient, err := m.getSFTPClientFromRemoteDirSession(ctx, remoteDir)
-	if err != nil {
-		return err
-	}
-
+func (m *SSHManager) uploadLocalFileWithContext(ctx context.Context, sshClient *ssh.Client, maxConcurrent int, localPath string, remoteDir string, onProgress func(int64, int64)) error {
 	src, err := os.Open(localPath)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 
-	destPath := filepath.ToSlash(filepath.Join(remoteDir, filepath.Base(localPath)))
-	dst, err := sftpClient.Create(destPath)
-	if err != nil {
-		return err
-	}
-	removeDest := true
-	defer func() {
-		_ = dst.Close()
-		if removeDest {
-			_ = sftpClient.Remove(destPath)
-		}
-	}()
-
 	var totalSize int64
 	if stat, statErr := src.Stat(); statErr == nil {
 		totalSize = stat.Size()
 	}
 
-	buf := make([]byte, 2*1024*1024)
-	var uploaded int64
-	for {
-		if err := ensureCompressedUploadContext(ctx); err != nil {
+	destPath := filepath.ToSlash(filepath.Join(remoteDir, filepath.Base(localPath)))
+	tempPath := destPath + ".luminpart." + newUploadObjectID("upload_file")
+
+	pool := newSFTPUploadPool(sshClient, maxConcurrent)
+	defer pool.Close()
+
+	// Pre-create remote temp file
+	{
+		client, err := pool.Acquire()
+		if err != nil {
 			return err
 		}
-		n, readErr := src.Read(buf)
-		if n > 0 {
-			if _, err := dst.Write(buf[:n]); err != nil {
-				return err
-			}
-			uploaded += int64(n)
-			if onProgress != nil {
-				onProgress(uploaded, totalSize)
-			}
+		handle, openErr := client.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+		pool.Release(client)
+		if openErr != nil {
+			return openErr
 		}
-		if readErr == io.EOF {
-			break
+		_ = handle.Close()
+	}
+
+	removeTemp := true
+	defer func() {
+		if !removeTemp {
+			return
 		}
-		if readErr != nil {
-			return readErr
+		if client, err := pool.Acquire(); err == nil {
+			_ = client.Remove(tempPath)
+			pool.Release(client)
+		}
+	}()
+
+	chunkSize := int64(256 * 1024) // 256KB chunks (matches frontend UI chunk size for smooth progress updates)
+	totalChunks := int64(0)
+	if totalSize > 0 {
+		totalChunks = (totalSize + chunkSize - 1) / chunkSize
+	}
+
+	workerCount := maxConcurrent
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	if totalChunks > 0 && workerCount > int(totalChunks) {
+		workerCount = int(totalChunks)
+	}
+
+	type chunkJob struct {
+		offset int64
+		length int64
+	}
+
+	jobs := make(chan chunkJob, totalChunks)
+	for i := int64(0); i < totalChunks; i++ {
+		offset := i * chunkSize
+		length := chunkSize
+		if offset+length > totalSize {
+			length = totalSize - offset
+		}
+		jobs <- chunkJob{offset: offset, length: length}
+	}
+	close(jobs)
+
+	var uploaded int64
+	var firstErr error
+	var errMu sync.Mutex
+	setErr := func(e error) {
+		if e == nil {
+			return
+		}
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = e
+		}
+		errMu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	defer workerCancel()
+
+	lastEmit := time.Now()
+	var emitMu sync.Mutex
+	maybeEmit := func(done int64, force bool) {
+		if onProgress == nil {
+			return
+		}
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		now := time.Now()
+		if force || now.Sub(lastEmit) > 200*time.Millisecond || done >= totalSize {
+			lastEmit = now
+			onProgress(done, totalSize)
 		}
 	}
 
-	if onProgress != nil {
-		onProgress(totalSize, totalSize)
+	for w := 0; w < workerCount; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			client, err := pool.Acquire()
+			if err != nil {
+				setErr(err)
+				workerCancel()
+				return
+			}
+			defer pool.Release(client)
+
+			handle, openErr := client.OpenFile(tempPath, os.O_WRONLY)
+			if openErr != nil {
+				setErr(openErr)
+				workerCancel()
+				return
+			}
+			defer handle.Close()
+
+			buf := make([]byte, chunkSize)
+			for {
+				select {
+				case <-workerCtx.Done():
+					return
+				case job, ok := <-jobs:
+					if !ok {
+						return
+					}
+					// Check error
+					errMu.Lock()
+					hasErr := firstErr != nil
+					errMu.Unlock()
+					if hasErr {
+						return
+					}
+
+					// Read chunk
+					n, readErr := src.ReadAt(buf[:job.length], job.offset)
+					if readErr != nil && readErr != io.EOF {
+						setErr(readErr)
+						workerCancel()
+						return
+					}
+					if n != int(job.length) {
+						setErr(fmt.Errorf("short read at offset %d: %d/%d", job.offset, n, job.length))
+						workerCancel()
+						return
+					}
+
+					// Write chunk using worker's persistent file handle
+					written, writeErr := handle.WriteAt(buf[:job.length], job.offset)
+					if writeErr != nil {
+						setErr(writeErr)
+						workerCancel()
+						return
+					}
+					if written != int(job.length) {
+						setErr(io.ErrShortWrite)
+						workerCancel()
+						return
+					}
+
+					newUploaded := atomic.AddInt64(&uploaded, job.length)
+					maybeEmit(newUploaded, false)
+				}
+			}
+		}()
 	}
-	removeDest = false
+
+	wg.Wait()
+
+	if firstErr != nil {
+		return firstErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	maybeEmit(totalSize, true)
+
+	// Complete by truncating and renaming
+	{
+		client, err := pool.Acquire()
+		if err != nil {
+			return err
+		}
+		finishErr := func() error {
+			handle, openErr := client.OpenFile(tempPath, os.O_WRONLY)
+			if openErr != nil {
+				return openErr
+			}
+			truncateErr := handle.Truncate(totalSize)
+			closeErr := handle.Close()
+			if truncateErr != nil {
+				return truncateErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+			if err := client.PosixRename(tempPath, destPath); err != nil {
+				return client.Rename(tempPath, destPath)
+			}
+			return nil
+		}()
+		pool.Release(client)
+		if finishErr != nil {
+			return finishErr
+		}
+	}
+
+	removeTemp = false
 	return nil
 }
 
@@ -1280,7 +1444,6 @@ func (m *SSHManager) getSFTPClientFromRemoteDirSession(ctx context.Context, remo
 	}
 	return m.getSFTPClient(sessionID)
 }
-
 func (m *SSHManager) UploadLocalPathsCompressed(sessionId string, uploadID string, maxConcurrent int, localPaths []string, remoteDir string) error {
 	paths := make([]string, 0, len(localPaths))
 	for _, localPath := range localPaths {
@@ -1319,6 +1482,11 @@ func (m *SSHManager) UploadLocalPathsCompressed(sessionId string, uploadID strin
 	}
 	defer releaseCompressedUploadSlot(limiter)
 
+	sshClient, _, err := m.getClientEntry(sessionId)
+	if err != nil {
+		return err
+	}
+
 	m.emitCompressedUploadProgress(sessionId, uploadID, "preparing", 0, 0, 0, 0, "", fmt.Sprintf("%d paths", len(paths)))
 
 	if len(paths) == 1 {
@@ -1329,7 +1497,7 @@ func (m *SSHManager) UploadLocalPathsCompressed(sessionId string, uploadID strin
 		if !info.IsDir() {
 			fileName := filepath.Base(paths[0])
 			m.emitCompressedUploadProgress(sessionId, uploadID, "uploading-file", 0, 0, 0, info.Size(), fileName, "")
-			if err := m.uploadLocalFileChunkedWithContext(ctx, sessionId, paths[0], remoteDir, maxConcurrent, func(done int64, total int64) {
+			if err := m.uploadLocalFileWithContext(ctx, sshClient, maxConcurrent, paths[0], remoteDir, func(done int64, total int64) {
 				phaseProgress := float64(100)
 				if total > 0 {
 					phaseProgress = float64(done) / float64(total) * 100
@@ -1384,7 +1552,7 @@ func (m *SSHManager) UploadLocalPathsCompressed(sessionId string, uploadID strin
 	m.emitCompressedUploadProgress(sessionId, uploadID, "uploading", 50, 0, 0, archiveSize, fileName, "uploading local tar.gz")
 	remoteArchive := filepath.ToSlash(filepath.Join(remoteDir, fileName))
 	task.setRemoteArchive(remoteArchive)
-	if err := m.uploadLocalFileWithContext(ctx, archivePath, remoteDir, func(done int64, total int64) {
+	if err := m.uploadLocalFileWithContext(ctx, sshClient, maxConcurrent, archivePath, remoteDir, func(done int64, total int64) {
 		phaseProgress := float64(100)
 		if total > 0 {
 			phaseProgress = float64(done) / float64(total) * 100
