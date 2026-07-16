@@ -50,6 +50,7 @@ function getUploadPhaseLabel(phase, direction, t) {
   if (phase === 'compressing') return direction === 'download' ? t('远端压缩中') : t('压缩中');
   if (phase === 'uploading') return direction === 'download' ? t('下载压缩包') : t('上传压缩包');
   if (phase === 'uploading-file') return t('上传文件');
+  if (phase === 'uploading-file-completed') return t('已完成');
   if (phase === 'downloading') return t('下载中');
   if (phase === 'verifying') return t('修复中');
   if (phase === 'extracting') return direction === 'download' ? t('本地解压中') : t('远端解压中');
@@ -73,7 +74,8 @@ function getCompressedPhaseDetail(item, t) {
   if (item.phase === 'scanning') return item.phaseDetail || t('正在扫描待压缩项目');
   if (item.phase === 'compressing') return item.phaseDetail || (direction === 'download' ? t('正在远端打包压缩包') : t('正在构建本机 tar.gz 压缩包'));
   if (item.phase === 'uploading') return item.phaseDetail || (direction === 'download' ? t('正在下载压缩包到本地') : t('正在上传压缩包到远端'));
-  if (item.phase === 'uploading-file') return '';
+  if (item.phase === 'uploading-file') return item.phaseDetail || '';
+  if (item.phase === 'uploading-file-completed') return item.phaseDetail || t('已完成');
   if (item.phase === 'downloading') return item.phaseDetail || t('下载中');
   if (item.phase === 'verifying') return item.phaseDetail || t('正在自动修复远端目录和已有文件权限');
   if (item.phase === 'cleanup-local') return t('正在删除本机临时压缩包');

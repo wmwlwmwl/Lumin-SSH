@@ -637,6 +637,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const uploadInputRef = useRef(null);
+  const uploadFolderInputRef = useRef(null);
   const [workbenchState, setWorkbenchStateState] = useState(() => getSessionWorkbenchState(sessionGroupId));
   const [uploadQueueItems, setUploadQueueItems] = useState(() => getSessionUploadQueue(sessionGroupId));
   const activeUploadCount = useMemo(() => uploadQueueItems.filter((item) => item.status === 'queued' || item.status === 'uploading').length, [uploadQueueItems]);
@@ -1146,13 +1147,22 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       await window?.go?.main?.App?.UploadLocalPathsCompressed?.(
         sessionId,
         queueId,
-        Math.max(1, settings.maxFiles),
+        Math.max(1, localPaths.length === 1 ? settings.maxChunksPerFile : settings.maxFiles),
         localPaths,
         currentPath,
       );
       updateSessionUploadQueue(sessionGroupId, (current) => current.map((item) => (
         item.id === queueId
-          ? { ...item, status: 'completed', phase: 'completed', phaseProgress: 100, progress: 100, error: '', phaseDetail: t('已完成'), updatedAt: Date.now() }
+          ? {
+              ...item,
+              status: 'completed',
+              phase: item.phase === 'uploading-file' ? 'uploading-file-completed' : 'completed',
+              phaseProgress: 100,
+              progress: 100,
+              error: '',
+              phaseDetail: t('已完成'),
+              updatedAt: Date.now(),
+            }
           : item
       )));
       addToast(`${t('上传成功')}: ${name}`, 'success');
@@ -1436,6 +1446,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   };
 
   const handleUploadFolder = useCallback(async () => {
+    if (!isCompressedTransferEnabled()) {
+      uploadFolderInputRef.current?.click();
+      return;
+    }
     try {
       const dirPath = await AppGo.SelectUploadDirectory();
       console.log('[FileManager][native click upload folder] path', dirPath);
@@ -2005,6 +2019,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         ref={uploadInputRef}
         type="file"
         multiple
+        style={{ display: 'none' }}
+        onChange={(e) => { void handleSelectedFiles(e); }}
+      />
+      <input
+        ref={uploadFolderInputRef}
+        type="file"
+        multiple
+        webkitdirectory=""
+        directory=""
         style={{ display: 'none' }}
         onChange={(e) => { void handleSelectedFiles(e); }}
       />

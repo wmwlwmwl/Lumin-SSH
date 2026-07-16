@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -1102,6 +1103,176 @@ func (m *SSHManager) uploadLocalFileWithContext(ctx context.Context, localPath s
 	return nil
 }
 
+func (m *SSHManager) uploadLocalFileChunkedWithContext(ctx context.Context, sessionId string, localPath string, remoteDir string, maxConcurrent int, onProgress func(int64, int64)) error {
+	src, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	info, err := src.Stat()
+	if err != nil {
+		return err
+	}
+
+	totalSize := info.Size()
+	chunkSize := int64(256 * 1024)
+	totalChunks := 0
+	if totalSize > 0 {
+		totalChunks = int((totalSize + chunkSize - 1) / chunkSize)
+	}
+
+	parallel := maxConcurrent
+	if parallel < 1 {
+		parallel = 1
+	}
+	if totalChunks > 0 && parallel > totalChunks {
+		parallel = totalChunks
+	}
+
+	taskID, err := m.BeginChunkedUploadTask(sessionId, remoteDir, parallel)
+	if err != nil {
+		return err
+	}
+
+	completed := false
+	defer func() {
+		if completed {
+			_ = m.FinishChunkedUploadTask(taskID)
+			return
+		}
+		_ = m.AbortChunkedUploadTask(taskID)
+	}()
+
+	fileID, err := m.BeginChunkedUploadFile(taskID, filepath.Base(localPath), totalSize, totalChunks)
+	if err != nil {
+		return err
+	}
+
+	if totalChunks == 0 {
+		if err := ensureCompressedUploadContext(ctx); err != nil {
+			return err
+		}
+		if onProgress != nil {
+			onProgress(0, 0)
+		}
+		if err := m.CompleteChunkedUploadFile(taskID, fileID); err != nil {
+			return err
+		}
+		completed = true
+		return nil
+	}
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type chunkJob struct {
+		index int
+		start int64
+		end   int64
+	}
+
+	jobs := make(chan chunkJob)
+	var wg sync.WaitGroup
+	var uploaded int64
+	var uploadedMu sync.Mutex
+	var errMu sync.Mutex
+	var firstErr error
+
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
+		}
+		errMu.Unlock()
+	}
+
+	for workerIndex := 0; workerIndex < parallel; workerIndex++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-workerCtx.Done():
+					return
+				case job, ok := <-jobs:
+					if !ok {
+						return
+					}
+					if err := ensureCompressedUploadContext(workerCtx); err != nil {
+						setErr(err)
+						return
+					}
+					buf := make([]byte, int(job.end-job.start))
+					n, readErr := src.ReadAt(buf, job.start)
+					if readErr != nil && readErr != io.EOF {
+						setErr(readErr)
+						return
+					}
+					if int64(n) != job.end-job.start {
+						setErr(io.ErrUnexpectedEOF)
+						return
+					}
+					if err := ensureCompressedUploadContext(workerCtx); err != nil {
+						setErr(err)
+						return
+					}
+					if err := m.UploadChunkBase64(taskID, fileID, job.index, job.start, base64.StdEncoding.EncodeToString(buf[:n])); err != nil {
+						setErr(err)
+						return
+					}
+					uploadedMu.Lock()
+					uploaded += int64(n)
+					currentUploaded := uploaded
+					uploadedMu.Unlock()
+					if onProgress != nil {
+						onProgress(currentUploaded, totalSize)
+					}
+				}
+			}
+		}()
+	}
+
+sendLoop:
+	for chunkIndex := 0; chunkIndex < totalChunks; chunkIndex++ {
+		start := int64(chunkIndex) * chunkSize
+		end := start + chunkSize
+		if end > totalSize {
+			end = totalSize
+		}
+		select {
+		case <-workerCtx.Done():
+			break sendLoop
+		case jobs <- chunkJob{index: chunkIndex, start: start, end: end}:
+		}
+	}
+
+	close(jobs)
+	wg.Wait()
+
+	errMu.Lock()
+	finalErr := firstErr
+	errMu.Unlock()
+	if finalErr != nil {
+		return finalErr
+	}
+	if err := ensureCompressedUploadContext(workerCtx); err != nil {
+		return err
+	}
+	if onProgress != nil {
+		onProgress(totalSize, totalSize)
+	}
+	if err := m.CompleteChunkedUploadFile(taskID, fileID); err != nil {
+		return err
+	}
+	completed = true
+	return nil
+}
+
 func (m *SSHManager) getSFTPClientFromRemoteDirSession(ctx context.Context, remoteDir string) (*sftp.Client, error) {
 	sessionID, ok := ctx.Value("compressedUploadSessionId").(string)
 	if !ok || sessionID == "" {
@@ -1158,7 +1329,7 @@ func (m *SSHManager) UploadLocalPathsCompressed(sessionId string, uploadID strin
 		if !info.IsDir() {
 			fileName := filepath.Base(paths[0])
 			m.emitCompressedUploadProgress(sessionId, uploadID, "uploading-file", 0, 0, 0, info.Size(), fileName, "")
-			if err := m.uploadLocalFileWithContext(ctx, paths[0], remoteDir, func(done int64, total int64) {
+			if err := m.uploadLocalFileChunkedWithContext(ctx, sessionId, paths[0], remoteDir, maxConcurrent, func(done int64, total int64) {
 				phaseProgress := float64(100)
 				if total > 0 {
 					phaseProgress = float64(done) / float64(total) * 100
