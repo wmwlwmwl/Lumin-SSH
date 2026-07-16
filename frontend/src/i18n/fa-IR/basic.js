@@ -10,6 +10,7 @@ export default {
   "关闭分屏组": "Close Split Group",
   "关闭终端": "Close Terminal",
   "关闭连接": "Close Connection",
+  "复制服务器密码": "رمز عبور سرور را کپی کنید",
   "分屏组": "Split Group",
   "刷新延迟": "Refresh Delay",
   "复制完整 diff/内容": "Copy Full Diff/Content",

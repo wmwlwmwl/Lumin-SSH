@@ -28,7 +28,7 @@ import ImportExportDialog from './components/ImportExportDialog.jsx';
 import ExportSelectedDialog from './components/ExportSelectedDialog.jsx';
 import Tiptop from './components/Tiptop.jsx';
 import { restoreAIChatTool } from './components/ai/aiChatBridge.js';
-import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket } from 'lucide-react';
+import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket, Copy } from 'lucide-react';
 import { Z } from './constants/zIndex';
 
 import logoImg from './assets/logo.png';
@@ -2112,6 +2112,40 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       activeTerminalId: nextTerminalId,
     });
   }, [markWorkspaceRestoreNavigationOverride, resolveSessionRootTerminalId]);
+
+  const canCopySessionPassword = useCallback((sessionId) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    if (!session?.serverId) {
+      return false;
+    }
+    const server = serversRef.current.find((item) => item.id === session.serverId);
+    if (!server) {
+      return false;
+    }
+    if (server.credentialId) {
+      const credential = credentials.find((item) => item.id === server.credentialId);
+      return credential?.authMethod === 'password';
+    }
+    return server.authMethod === 'password';
+  }, [credentials]);
+
+  const handleCopySessionPassword = useCallback(async (sessionId) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    if (!session?.serverId) {
+      addToast(t('复制失败'), 'error', 3000);
+      return;
+    }
+    try {
+      const password = await AppGo.GetConnectionPassword(session.serverId);
+      if (!password) {
+        throw new Error('empty password');
+      }
+      await navigator.clipboard.writeText(password);
+      addToast(t('已复制'), 'success', 2000);
+    } catch {
+      addToast(t('复制失败'), 'error', 3000);
+    }
+  }, [addToast, t]);
 
   // ── 重连会话核心逻辑 ────────────────────────────────────────
   const reconnectSession = useCallback(async (session, requestingTerminalId, options = {}) => {
@@ -5642,34 +5676,52 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       })()}
 
       {/* ── 标签右键菜单 ── */}
-      {tabContextMenu && (
-        <div className="tab-context-menu" style={{ left: tabContextMenu.x, top: tabContextMenu.y }}>
-            <div
-              className="tab-context-menu-item"
-              onClick={() => {
-                const sessionId = tabContextMenu.sessionId;
-                setTabContextMenu(null);
-                forceCloseSession(sessionId);
-              }}
-            >
-              <X size={14} /> {t('关闭连接')}
+      {tabContextMenu && (() => {
+        const showCopySessionPassword = canCopySessionPassword(tabContextMenu.sessionId);
+        return (
+          <div className="tab-context-menu" style={{ left: tabContextMenu.x, top: tabContextMenu.y }}>
+              {showCopySessionPassword && (
+                <>
+                  <div
+                    className="tab-context-menu-item"
+                    onClick={() => {
+                      const sessionId = tabContextMenu.sessionId;
+                      setTabContextMenu(null);
+                      void handleCopySessionPassword(sessionId);
+                    }}
+                  >
+                    <Copy size={14} /> {t('复制服务器密码')}
+                  </div>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                </>
+              )}
+              <div
+                className="tab-context-menu-item"
+                onClick={() => {
+                  const sessionId = tabContextMenu.sessionId;
+                  setTabContextMenu(null);
+                  forceCloseSession(sessionId);
+                }}
+              >
+                <X size={14} /> {t('关闭连接')}
+              </div>
+              {sessions.length >= 2 && (
+                <>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                  <div
+                    className="tab-context-menu-item"
+                    onClick={() => {
+                      setTabContextMenu(null);
+                      closeAllSessions();
+                    }}
+                  >
+                    <X size={14} /> {t('关闭全部')}
+                  </div>
+                </>
+              )}
             </div>
-            {sessions.length >= 2 && (
-              <>
-                <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-                <div
-                  className="tab-context-menu-item"
-                  onClick={() => {
-                    setTabContextMenu(null);
-                    closeAllSessions();
-                  }}
-                >
-                  <X size={14} /> {t('关闭全部')}
-                </div>
-              </>
-            )}
-          </div>
-      )}
+        );
+      })()}
       {/* ── 服务器列表下拉 ── */}
       {showSessionList && (
         <div

@@ -327,6 +327,24 @@ func (a *App) GetConnectionByID(id string) (Connection, error) {
 	return conn, nil
 }
 
+func (a *App) GetConnectionPassword(id string) (string, error) {
+	conn, ok := a.configManager.GetConnectionByID(id)
+	if !ok {
+		return "", fmt.Errorf("connection not found")
+	}
+	resolvedConn, err := a.configManager.ResolveConnectionRuntime(conn)
+	if err != nil {
+		return "", err
+	}
+	if resolvedConn.AuthMethod != "password" {
+		return "", fmt.Errorf("current connection does not use password auth")
+	}
+	if strings.TrimSpace(resolvedConn.Password) == "" {
+		return "", fmt.Errorf("password is empty")
+	}
+	return resolvedConn.Password, nil
+}
+
 // SaveConnection saves a new or existing connection
 func (a *App) SaveConnection(conn Connection, noSync bool) Connection {
 	return a.configManager.SaveConnection(conn, noSync)
