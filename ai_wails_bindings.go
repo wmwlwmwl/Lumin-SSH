@@ -281,6 +281,20 @@ func (d aiSSHDelegate) DeleteItemContext(ctx context.Context, sessionID string, 
 	return d.manager.DeleteItemContext(ctx, sessionID, remotePath, isDir)
 }
 
+func (d aiSSHDelegate) CopyItemContext(ctx context.Context, sessionID string, srcPath string, dstPath string) error {
+	if d.manager == nil {
+		return fmt.Errorf("ssh manager unavailable")
+	}
+	return d.manager.CopyItemContext(ctx, sessionID, srcPath, dstPath)
+}
+
+func (d aiSSHDelegate) MoveItemContext(ctx context.Context, sessionID string, srcPath string, dstPath string) error {
+	if d.manager == nil {
+		return fmt.Errorf("ssh manager unavailable")
+	}
+	return d.manager.MoveItemContext(ctx, sessionID, srcPath, dstPath)
+}
+
 func (d aiSSHDelegate) MkdirContext(ctx context.Context, sessionID string, remotePath string) error {
 	if d.manager == nil {
 		return fmt.Errorf("ssh manager unavailable")

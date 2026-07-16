@@ -739,6 +739,16 @@ func (a *App) RenameItem(sessionId string, oldPath string, newPath string) error
 	return a.sshManager.RenameItem(sessionId, oldPath, newPath)
 }
 
+// CopyItem copies a file or directory within the same server (server-local cp -a).
+func (a *App) CopyItem(sessionId string, srcPath string, dstPath string) error {
+	return a.sshManager.CopyItem(sessionId, srcPath, dstPath)
+}
+
+// MoveItem moves a file or directory within the same server (server-local mv).
+func (a *App) MoveItem(sessionId string, srcPath string, dstPath string) error {
+	return a.sshManager.MoveItem(sessionId, srcPath, dstPath)
+}
+
 // GetChmodDialogSettings returns remembered chmod dialog preferences
 func (a *App) GetChmodDialogSettings() map[string]interface{} {
 	return a.configManager.GetChmodDialogSettings()

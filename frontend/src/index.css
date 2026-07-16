@@ -1868,6 +1868,8 @@ body.theme-light .batch-operation-bar {
   align-items: center;
 }
 .file-item:hover { background: var(--surface-hover); }
+.file-item.selected { background: color-mix(in srgb, var(--accent) 15%, var(--surface-base)); }
+.file-item.selected:hover { background: color-mix(in srgb, var(--accent) 22%, var(--surface-hover)); }
 .file-item:hover .file-actions { opacity: 1; }
 
 .file-name-cell { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
