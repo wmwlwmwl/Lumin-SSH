@@ -122,6 +122,35 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
   const isPasswordInput = current.inputType === 'password' || !!current.checkboxLabel;
   const isLongTextAlert = current.type === 'alert' && (messageText.includes('\n') || messageText.length > 160);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'Enter') {
+        const tagName = document.activeElement?.tagName;
+        if (tagName === 'BUTTON' || tagName === 'TEXTAREA') {
+          return;
+        }
+        e.preventDefault();
+        if (current.type === 'prompt') {
+          onConfirm(inputValue, checked);
+        } else if (current.type === 'confirm') {
+          onConfirm(true, checked);
+        } else if (current.type === 'choice') {
+          const primaryBtn = current.buttons?.find(btn => btn.primary);
+          if (primaryBtn) {
+            onChoice(primaryBtn.value, checked);
+          }
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [current, inputValue, checked, onClose, onConfirm, onChoice]);
+
   const handleCopyMessage = async () => {
     if (!messageText) {
       return;
@@ -219,10 +248,6 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               type={isPasswordInput && !showPassword ? 'password' : 'text'}
-              onKeyDown={e => {
-                if (e.key === 'Enter') onConfirm(inputValue, checked);
-                if (e.key === 'Escape') onClose();
-              }}
             />
             {isPasswordInput && (
               <Tiptop
