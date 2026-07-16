@@ -12,16 +12,14 @@ import (
 )
 
 type taskScopedToolXMLTagSet struct {
-	ExecuteMultipleToolsTagName string
-	ApplyDiffTagName            string
-	WriteToFileTagName          string
+	ApplyDiffTagName   string
+	WriteToFileTagName string
 }
 
-func getPromptBuilderTaskScopedToolXMLTagSet(conversationID string) taskScopedToolXMLTagSet {
+func getPromptBuilderTaskScopedToolXMLTagSet() taskScopedToolXMLTagSet {
 	return taskScopedToolXMLTagSet{
-		ExecuteMultipleToolsTagName: "runTools",
-		ApplyDiffTagName:            "apply_diff",
-		WriteToFileTagName:          "write_to_file",
+		ApplyDiffTagName:   "apply_diff",
+		WriteToFileTagName: "write_to_file",
 	}
 }
 
@@ -80,14 +78,13 @@ func buildAIBaseTemplateVariables(languageCode string) map[string]string {
 	}
 }
 
-func buildPromptBuilderTemplateVariables(conversationID string, sessionID string, profile AIProviderProfile) map[string]string {
-	tagSet := getPromptBuilderTaskScopedToolXMLTagSet(conversationID)
+func buildPromptBuilderTemplateVariables(sessionID string, profile AIProviderProfile) map[string]string {
+	tagSet := getPromptBuilderTaskScopedToolXMLTagSet()
 	mcpClientPromptContext := strings.TrimSpace(getAIMCPClientPromptContext())
 	if mcpClientPromptContext != "" {
 		mcpClientPromptContext += "\n\n"
 	}
 	variables := buildAIBaseTemplateVariables(aiTemplateLanguageCode)
-	variables["execute_multiple_tools_tag_name"] = tagSet.ExecuteMultipleToolsTagName
 	variables["apply_diff_tag_name"] = tagSet.ApplyDiffTagName
 	variables["write_to_file_tag_name"] = tagSet.WriteToFileTagName
 	variables["session_id"] = strings.TrimSpace(sessionID)
@@ -103,7 +100,7 @@ func buildAIUserCompensationTemplateVariables() map[string]string {
 }
 
 func BuildChatSystemPromptWithProfile(appCtx context.Context, conversationID string, sessionID string, copyToClipboard bool, profile AIProviderProfile) string {
-	templateVariables := buildPromptBuilderTemplateVariables(conversationID, sessionID, profile)
+	templateVariables := buildPromptBuilderTemplateVariables(sessionID, profile)
 	templateText := readAIEmbeddedTemplate("prompt_builder")
 	return strings.TrimSpace(renderPromptBuilderTemplate(templateText, templateVariables))
 }

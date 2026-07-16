@@ -32,10 +32,11 @@ type AIConversationTaskSettings struct {
 }
 
 type AIConversationFollowUpOption struct {
-	ID       string `json:"id,omitempty"`
-	Answer   string `json:"answer,omitempty"`
-	Mode     string `json:"mode,omitempty"`
-	Disabled bool   `json:"disabled,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Answer      string `json:"answer,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty"`
+	Recommended bool   `json:"recommended,omitempty"`
 }
 
 type AIConversationFollowUpQuestion struct {
@@ -165,10 +166,11 @@ func normalizeAIConversationFollowUpOptions(options []AIConversationFollowUpOpti
 			optionID = fmt.Sprintf("%s-option-%d", questionID, index+1)
 		}
 		normalized = append(normalized, AIConversationFollowUpOption{
-			ID:       optionID,
-			Answer:   answer,
-			Mode:     strings.TrimSpace(option.Mode),
-			Disabled: option.Disabled,
+			ID:          optionID,
+			Answer:      answer,
+			Mode:        strings.TrimSpace(option.Mode),
+			Disabled:    option.Disabled,
+			Recommended: option.Recommended,
 		})
 	}
 	return normalized

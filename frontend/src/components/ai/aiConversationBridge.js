@@ -38,6 +38,7 @@ function normalizeAIFollowUpOption(option, index = 0, questionId = 'question-1')
     answer,
     mode: typeof option?.mode === 'string' && option.mode.trim() ? option.mode.trim() : '',
     disabled: option?.disabled === true,
+    recommended: option?.recommended === true,
   }
 }
 

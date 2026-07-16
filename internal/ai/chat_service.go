@@ -32,12 +32,6 @@ type AIChatRequestPayload struct {
 	Messages                 []AIChatRequestMessage `json:"messages"`
 }
 
-type aiTaskScopedToolXMLTagSet struct {
-	ExecuteMultipleToolsTagName string
-	ApplyDiffTagName            string
-	WriteToFileTagName          string
-}
-
 type aiParsedToolUse struct {
 	Name   string
 	Params map[string]string
@@ -156,6 +150,7 @@ var (
 	aiUserMessageBlockPattern                      = regexp.MustCompile(`(?s)<user_message>.*?</user_message>`)
 	aiRequestEnvironmentDetailsPattern             = regexp.MustCompile(`(?s)<environment_details>(.*?)</environment_details>`)
 	aiRequestConsiderationsPattern                 = regexp.MustCompile(`(?s)<considerations>\s*(.*?)\s*</considerations>`)
+	aiGenericXMLTagPattern                         = regexp.MustCompile(`</?[a-zA-Z_][^>]*>`)
 )
 
 func normalizeAIChatRequestMessages(messages []AIChatRequestMessage) []AIChatRequestMessage {
@@ -1163,16 +1158,8 @@ func getAIParsedToolBatchDecision(settings AIConversationTaskSettings, tools []a
 	return aiApprovalDecisionAutoApprove
 }
 
-func getTaskScopedToolXMLTagSet(conversationID string) aiTaskScopedToolXMLTagSet {
-	return aiTaskScopedToolXMLTagSet{
-		ExecuteMultipleToolsTagName: "runTools",
-		ApplyDiffTagName:            "apply_diff",
-		WriteToFileTagName:          "write_to_file",
-	}
-}
-
 func isRawPreserveToolParam(toolName string, paramName string) bool {
-	return (toolName == "write_to_file" && paramName == "content") || (toolName == "apply_diff" && (paramName == "diff" || paramName == "args"))
+	return (toolName == "write_to_file" && paramName == "content") || (toolName == "apply_diff" && paramName == "diff")
 }
 
 func stripOuterToolParamNewlines(value string) string {
@@ -1285,163 +1272,62 @@ func parseAINextToolUseFromXML(xmlContent string, startIndex int) (aiParsedToolU
 	return aiParsedToolUse{}, 0, false
 }
 
-func containsAICompleteToolXMLWrapper(content string, conversationID string) bool {
-	_, innerXML, _, ok := extractAssistantToolXMLSegment(content, conversationID)
-	return ok && strings.TrimSpace(innerXML) != ""
-}
-
-func parseToolUsesFromXML(xmlContent string, conversationID string) []aiParsedToolUse {
-	toolCandidates := make([]aiToolTagCandidate, 0, len(aiSupportedToolNames))
-	for _, toolName := range aiSupportedToolNames {
-		toolCandidates = append(toolCandidates, aiToolTagCandidate{
-			Name:       toolName,
-			OpeningTag: fmt.Sprintf("<%s>", toolName),
-			ClosingTag: fmt.Sprintf("</%s>", toolName),
-		})
-	}
-
-	getParamCandidates := func(toolName string) []aiToolParamTagCandidate {
-		candidates := make([]aiToolParamTagCandidate, 0, len(aiSupportedToolParamNames))
-		for _, paramName := range aiSupportedToolParamNames {
-			candidates = append(candidates, aiToolParamTagCandidate{
-				ParamName:  paramName,
-				OpeningTag: fmt.Sprintf("<%s>", paramName),
-				ClosingTag: fmt.Sprintf("</%s>", paramName),
-			})
-		}
-		return candidates
-	}
-
-	var accumulator strings.Builder
-	var parsedUses []aiParsedToolUse
-	var currentTool *aiParsedToolUse
-	var currentToolStartIndex int
-	var currentToolClosingTag string
-	var currentParamName string
-	var currentParamValueStart int
-	var currentParamClosingTag string
-
-	for index := 0; index < len(xmlContent); index++ {
-		accumulator.WriteByte(xmlContent[index])
-		current := accumulator.String()
-
-		if currentTool != nil && currentParamName != "" {
-			if strings.HasSuffix(current, currentParamClosingTag) {
-				paramValue := current[currentParamValueStart : len(current)-len(currentParamClosingTag)]
-				if isRawPreserveToolParam(currentTool.Name, currentParamName) {
-					currentTool.Params[currentParamName] = stripOuterToolParamNewlines(paramValue)
-				} else {
-					currentTool.Params[currentParamName] = normalizeAINonRawToolParamValue(paramValue)
-				}
-				currentParamName = ""
-				currentParamClosingTag = ""
-			}
+func parseToolUsesFromXML(xmlContent string) []aiParsedToolUse {
+	parsedUses := make([]aiParsedToolUse, 0)
+	for cursor := 0; cursor < len(xmlContent); {
+		tool, nextCursor, ok := parseAINextToolUseFromXML(xmlContent, cursor)
+		if ok && nextCursor > cursor {
+			parsedUses = append(parsedUses, tool)
+			cursor = nextCursor
 			continue
 		}
-
-		if currentTool != nil {
-			if strings.HasSuffix(current, currentToolClosingTag) {
-				currentTool.RawXML = current[currentToolStartIndex:]
-				parsedUses = append(parsedUses, *currentTool)
-				currentTool = nil
-				currentToolClosingTag = ""
-				continue
-			}
-
-			for _, candidate := range getParamCandidates(currentTool.Name) {
-				if strings.HasSuffix(current, candidate.OpeningTag) {
-					currentParamName = candidate.ParamName
-					currentParamValueStart = len(current)
-					currentParamClosingTag = candidate.ClosingTag
-					break
-				}
-			}
-			continue
-		}
-
-		for _, candidate := range toolCandidates {
-			if strings.HasSuffix(current, candidate.OpeningTag) {
-				currentTool = &aiParsedToolUse{
-					Name:   candidate.Name,
-					Params: map[string]string{},
-				}
-				currentToolStartIndex = len(current) - len(candidate.OpeningTag)
-				currentToolClosingTag = candidate.ClosingTag
-				break
-			}
-		}
+		cursor++
 	}
-
 	return parsedUses
 }
 
-func extractAssistantToolXMLSegment(content string, conversationID string) (string, string, string, bool) {
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
-	startTag := fmt.Sprintf("<%s>", tagSet.ExecuteMultipleToolsTagName)
-	endTag := fmt.Sprintf("</%s>", tagSet.ExecuteMultipleToolsTagName)
+func stripParsedToolUsesFromText(content string, tools []aiParsedToolUse) string {
+	stripped := content
+	for _, tool := range tools {
+		if strings.TrimSpace(tool.RawXML) == "" {
+			continue
+		}
+		stripped = strings.Replace(stripped, tool.RawXML, "", 1)
+	}
+	return strings.TrimSpace(stripped)
+}
+
+func containsAINonToolXMLMarkup(content string) bool {
+	return aiGenericXMLTagPattern.MatchString(strings.TrimSpace(content))
+}
+
+func containsAIRecognizedToolTag(content string) bool {
 	trimmedContent := strings.TrimSpace(content)
 	if trimmedContent == "" {
-		return "", "", "", false
+		return false
 	}
-	startIndex := strings.Index(trimmedContent, startTag)
-	if startIndex == -1 {
-		return trimmedContent, "", "", false
+	for _, candidate := range buildAIToolTagCandidates() {
+		if strings.Contains(trimmedContent, candidate.OpeningTag) || strings.Contains(trimmedContent, candidate.ClosingTag) {
+			return true
+		}
 	}
-
-	innerStartIndex := startIndex + len(startTag)
-	cursor := innerStartIndex
-	parsedToolCount := 0
-
-	for {
-		cursor = skipAIToolXMLWhitespace(trimmedContent, cursor)
-		if cursor >= len(trimmedContent) {
-			return trimmedContent, "", "", false
-		}
-		if strings.HasPrefix(trimmedContent[cursor:], endTag) {
-			if parsedToolCount == 0 {
-				return strings.TrimSpace(trimmedContent[:startIndex]), "", strings.TrimSpace(trimmedContent[cursor+len(endTag):]), false
-			}
-			innerXML := strings.TrimSpace(trimmedContent[innerStartIndex:cursor])
-			if innerXML == "" {
-				return strings.TrimSpace(trimmedContent[:startIndex]), "", strings.TrimSpace(trimmedContent[cursor+len(endTag):]), false
-			}
-			return strings.TrimSpace(trimmedContent[:startIndex]), innerXML, strings.TrimSpace(trimmedContent[cursor+len(endTag):]), true
-		}
-
-		_, nextCursor, ok := parseAINextToolUseFromXML(trimmedContent, cursor)
-		if !ok || nextCursor <= cursor {
-			return trimmedContent, "", "", false
-		}
-		cursor = nextCursor
-		parsedToolCount++
-	}
+	return false
 }
 
-func validateAssistantToolXMLProtocol(content string, conversationID string) (string, string, string, error) {
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
-	startTag := fmt.Sprintf("<%s>", tagSet.ExecuteMultipleToolsTagName)
-	endTag := fmt.Sprintf("</%s>", tagSet.ExecuteMultipleToolsTagName)
-	before, innerXML, after, ok := extractAssistantToolXMLSegment(content, conversationID)
-	if !ok {
-		return before, innerXML, after, fmt.Errorf("assistant response must contain exactly one top-level %s...%s block", startTag, endTag)
+func parseAssistantToolUses(content string) ([]aiParsedToolUse, error) {
+	trimmedContent := strings.TrimSpace(content)
+	if trimmedContent == "" {
+		return nil, fmt.Errorf("assistant response did not contain any tool calls")
 	}
-	if containsAICompleteToolXMLWrapper(before, conversationID) || containsAICompleteToolXMLWrapper(after, conversationID) {
-		return before, innerXML, after, fmt.Errorf("assistant response must contain exactly one top-level %s...%s block", startTag, endTag)
-	}
-	return before, innerXML, after, nil
-}
-
-func parseAssistantToolUses(content string, conversationID string) ([]aiParsedToolUse, error) {
-	_, innerXML, _, err := validateAssistantToolXMLProtocol(content, conversationID)
-	if err != nil {
-		return nil, err
-	}
-	parsedTools := dedupeParsedToolUses(parseToolUsesFromXML(innerXML, conversationID))
+	parsedTools := dedupeParsedToolUses(parseToolUsesFromXML(trimmedContent))
 	if len(parsedTools) == 0 {
-		tagSet := getTaskScopedToolXMLTagSet(conversationID)
-		return nil, fmt.Errorf("top-level <%s> block did not contain any recognized tool calls", tagSet.ExecuteMultipleToolsTagName)
+		return nil, fmt.Errorf("assistant response did not contain any recognized tool calls")
 	}
-	if err := validateAIStandaloneOnlyBatchTools(parsedTools, conversationID); err != nil {
+	remainingText := stripParsedToolUsesFromText(trimmedContent, parsedTools)
+	if remainingText != "" {
+		return nil, fmt.Errorf("assistant response must contain only direct tool calls with no extra text or XML container")
+	}
+	if err := validateAIStandaloneOnlyBatchTools(parsedTools); err != nil {
 		return nil, err
 	}
 	return parsedTools, nil
@@ -1456,34 +1342,33 @@ func isAIStandaloneOnlyBatchTool(name string) bool {
 	}
 }
 
-func validateAIStandaloneOnlyBatchTools(tools []aiParsedToolUse, conversationID string) error {
+func validateAIStandaloneOnlyBatchTools(tools []aiParsedToolUse) error {
 	if len(tools) <= 1 {
 		return nil
 	}
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
 	for _, tool := range tools {
 		if !isAIStandaloneOnlyBatchTool(tool.Name) {
 			continue
 		}
-		return fmt.Errorf("%s must be the only child tool inside <%s>...</%s>", strings.TrimSpace(tool.Name), tagSet.ExecuteMultipleToolsTagName, tagSet.ExecuteMultipleToolsTagName)
+		return fmt.Errorf("%s must be the only tool call in the reply", strings.TrimSpace(tool.Name))
 	}
 	return nil
 }
 
 func buildNoToolRetryMessage(conversationID string) string {
-	_ = getTaskScopedToolXMLTagSet(conversationID)
+	_ = conversationID
 	return strings.TrimSpace(`[ERROR] You did not use a tool in your previous response.
 
 Your next reply must be a minimal valid tool reply.
-Use exactly one top-level tool wrapper with at least one real tool call inside it.
+Output direct tool tags only, with no extra XML wrapper or container.
 If the task is complete, reply with only the completion tool.
 If you need more information, reply with only the follow-up tool.
-Otherwise, reply with only the next tool batch.
+Otherwise, reply with only the next tool call or direct tool batch.
 Do not add explanation before or after the tool reply.`)
 }
 
 func buildInvalidToolProtocolRetryMessage(conversationID string, detail string) string {
-	_ = getTaskScopedToolXMLTagSet(conversationID)
+	_ = conversationID
 	trimmedDetail := strings.TrimSpace(detail)
 	if trimmedDetail == "" {
 		trimmedDetail = "assistant response violated the XML tool protocol"
@@ -1491,10 +1376,10 @@ func buildInvalidToolProtocolRetryMessage(conversationID string, detail string) 
 	return strings.TrimSpace(fmt.Sprintf(`[ERROR] Invalid tool protocol in your previous response: %s
 
 Your next reply must be a minimal valid tool reply.
-Use exactly one top-level tool wrapper and place all tool calls inside it.
-If you use the completion tool, it must be the only child tool.
-If you use the follow-up tool, it must be the only child tool.
-Do not add explanation, recovery commentary, or a second wrapper.
+Output direct tool tags only, with no extra XML wrapper or container.
+If you use the completion tool, it must be the only tool call.
+If you use the follow-up tool, it must be the only tool call.
+Do not add explanation or recovery commentary outside the tool reply.
 Output the tool reply and stop.`, trimmedDetail))
 }
 
@@ -1550,19 +1435,16 @@ func dedupeParsedToolUses(tools []aiParsedToolUse) []aiParsedToolUse {
 	return deduped
 }
 
-func stripAssistantToolXML(content string, conversationID string) string {
-	before, _, after, ok := extractAssistantToolXMLSegment(content, conversationID)
-	if !ok {
-		return strings.TrimSpace(content)
+func stripAssistantToolXML(content string) string {
+	trimmedContent := strings.TrimSpace(content)
+	if trimmedContent == "" {
+		return ""
 	}
-	parts := make([]string, 0, 2)
-	if before != "" {
-		parts = append(parts, before)
+	parsedTools := parseToolUsesFromXML(trimmedContent)
+	if len(parsedTools) == 0 {
+		return trimmedContent
 	}
-	if after != "" {
-		parts = append(parts, after)
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+	return stripParsedToolUsesFromText(trimmedContent, parsedTools)
 }
 
 func normalizeAINonRawToolParamValue(value string) string {
@@ -1598,9 +1480,8 @@ func wrapAIXMLCDATA(value string) string {
 	return "<![CDATA[" + strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>") + "]]>"
 }
 
-func buildAIAttemptCompletionWrappedText(resultText string, conversationID string) string {
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
-	return strings.TrimSpace(fmt.Sprintf("<%s>\n<attempt_completion>\n<result>%s</result>\n</attempt_completion>\n</%s>", tagSet.ExecuteMultipleToolsTagName, wrapAIXMLCDATA(resultText), tagSet.ExecuteMultipleToolsTagName))
+func buildAIAttemptCompletionToolText(resultText string) string {
+	return strings.TrimSpace(fmt.Sprintf("<attempt_completion>\n<result>%s</result>\n</attempt_completion>", wrapAIXMLCDATA(resultText)))
 }
 
 func replaceAILatestAssistantMessageContent(messages []AIChatRequestMessage, content string) []AIChatRequestMessage {
@@ -1621,24 +1502,18 @@ func replaceAILatestAssistantMessageContent(messages []AIChatRequestMessage, con
 	})
 }
 
-func normalizeAIAssistantRoundResultForToolProtocol(roundResult aiChatRoundResult, conversationID string) aiChatRoundResult {
+func normalizeAIAssistantRoundResultForToolProtocol(roundResult aiChatRoundResult) aiChatRoundResult {
 	trimmedText := strings.TrimSpace(roundResult.Text)
 	if trimmedText == "" {
 		return roundResult
 	}
-	if _, _, _, err := validateAssistantToolXMLProtocol(trimmedText, conversationID); err == nil {
+	if len(parseToolUsesFromXML(trimmedText)) > 0 {
 		return roundResult
 	}
-	tagSet := getTaskScopedToolXMLTagSet(conversationID)
-	startTag := fmt.Sprintf("<%s>", tagSet.ExecuteMultipleToolsTagName)
-	endTag := fmt.Sprintf("</%s>", tagSet.ExecuteMultipleToolsTagName)
-	if strings.Contains(trimmedText, startTag) || strings.Contains(trimmedText, endTag) {
+	if containsAIRecognizedToolTag(trimmedText) || containsAINonToolXMLMarkup(trimmedText) {
 		return roundResult
 	}
-	if len(parseToolUsesFromXML(trimmedText, conversationID)) > 0 {
-		return roundResult
-	}
-	wrappedText := buildAIAttemptCompletionWrappedText(trimmedText, conversationID)
+	wrappedText := buildAIAttemptCompletionToolText(trimmedText)
 	roundResult.Text = wrappedText
 	if len(roundResult.NextRequestMessages) > 0 {
 		roundResult.NextRequestMessages = replaceAILatestAssistantMessageContent(roundResult.NextRequestMessages, wrappedText)
@@ -2348,7 +2223,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 		}
 
 		if round == 0 {
-			roundResult = normalizeAIAssistantRoundResultForToolProtocol(roundResult, payload.ConversationID)
+			roundResult = normalizeAIAssistantRoundResultForToolProtocol(roundResult)
 		}
 
 		trimmedText := strings.TrimSpace(roundResult.Text)
@@ -2385,7 +2260,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			continue
 		}
 
-		parsedTools, parseErr := parseAssistantToolUses(roundResult.Text, payload.ConversationID)
+		parsedTools, parseErr := parseAssistantToolUses(roundResult.Text)
 		if parseErr != nil {
 			consecutiveNoToolCount++
 			consecutiveNoAssistantCount = 0
@@ -2518,7 +2393,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 		consecutiveNoToolCount = 0
 		consecutiveNoAssistantCount = 0
 
-		visibleText := stripAssistantToolXML(roundResult.Text, payload.ConversationID)
+		visibleText := stripAssistantToolXML(roundResult.Text)
 		assistantCacheObjects := extractAILatestAssistantCacheObjects(roundResult.NextRequestMessages)
 		a.emitAIChatEvent(map[string]interface{}{
 			"kind":      "api_message_append",

@@ -186,6 +186,9 @@ function normalizeAIMessageStatus(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+const AI_FOLLOWUP_PENDING_STATUS_KEY = '等待处理'
+const AI_FOLLOWUP_COMPLETED_STATUS_KEY = '已完成'
+
 function truncateConversationTitle(text) {
   const normalized = String(text || '').trim().replace(/\s+/g, ' ')
   if (!normalized) {
@@ -278,6 +281,56 @@ function createAPIHistoryMessage({ role, content, messageId = '', uiMessageIds =
     cacheObjects: cloneAIConversationCacheObjects(cacheObjects),
     ts,
   }
+}
+
+function buildAIFollowupAnswerPayload(answer) {
+  if (typeof answer === 'string' && answer.trim()) {
+    const readableText = answer.trim()
+    return {
+      readableText,
+      content: `<user_message>\n${readableText}\n</user_message>`,
+    }
+  }
+  if (!answer || typeof answer !== 'object') {
+    return {
+      readableText: '',
+      content: '',
+    }
+  }
+  const readableText = typeof answer.readableText === 'string' && answer.readableText.trim()
+    ? answer.readableText.trim()
+    : ''
+  if (!readableText) {
+    return {
+      readableText: '',
+      content: '',
+    }
+  }
+  let surveyResponseBlock = ''
+  try {
+    surveyResponseBlock = `\n<survey_response>\n${JSON.stringify(answer, null, 2)}\n</survey_response>`
+  } catch {}
+  return {
+    readableText,
+    content: `<user_message>\n${readableText}\n</user_message>${surveyResponseBlock}`,
+  }
+}
+
+function findLatestAIFollowupMessageByRequestId(messages, requestId) {
+  const normalizedRequestId = typeof requestId === 'string' ? requestId.trim() : ''
+  if (!normalizedRequestId || !Array.isArray(messages)) {
+    return null
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || typeof message !== 'object' || message.kind !== 'followup') {
+      continue
+    }
+    if (typeof message.requestId === 'string' && message.requestId.trim() === normalizedRequestId) {
+      return message
+    }
+  }
+  return null
 }
 
 function collectTurnUiMessageIds(messages, assistantMessageId) {
@@ -434,7 +487,7 @@ function upsertMessageBeforeAssistant(messages, requestId, nextMessage) {
 }
 
 const AI_CONVERSATION_DIFF_TOOL_NAMES = new Set(['apply_diff', 'write_to_file', 'search_replace', 'edit_file', 'apply_patch'])
-const AI_CONVERSATION_DIFF_SUCCESS_STATUSES = new Set(['已执行', '已完成'])
+const AI_CONVERSATION_DIFF_SUCCESS_STATUSES = new Set(['已执行', AI_FOLLOWUP_COMPLETED_STATUS_KEY])
 
 function extractAIConversationDiffPrimaryPath(copyContent, fallbackSummary) {
   const normalizedCopyContent = typeof copyContent === 'string' ? copyContent.trim() : ''
@@ -1203,7 +1256,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'upsert_message' && payload.message) {
-        const nextMessage = enrichAIChatCommandMessage(payload.message)
+        const nextMessage = (() => {
+          const normalizedMessage = enrichAIChatCommandMessage(payload.message)
+          if (normalizedMessage?.kind === 'followup' && normalizeAIMessageStatus(normalizedMessage.status) !== AI_FOLLOWUP_PENDING_STATUS_KEY) {
+            return {
+              ...normalizedMessage,
+              requestId: '',
+            }
+          }
+          return normalizedMessage
+        })()
         setPanelState(matchedPanelKey, (current) => ({
           ...current,
           messages: upsertMessageBeforeAssistant(current.messages, current.activeAssistantMessageId || requestId, nextMessage),
@@ -1435,7 +1497,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
                 },
               }
             }
-            if ((message.kind === 'tool' || message.kind === 'command') && AI_CONVERSATION_DIFF_SUCCESS_STATUSES.size >= 0 && ['待批准', '执行中', '等待处理', '排队中, 等待终端空闲'].includes(normalizeAIMessageStatus(message.status))) {
+            if ((message.kind === 'tool' || message.kind === 'command') && AI_CONVERSATION_DIFF_SUCCESS_STATUSES.size >= 0 && ['待批准', '执行中', AI_FOLLOWUP_PENDING_STATUS_KEY, '排队中, 等待终端空闲'].includes(normalizeAIMessageStatus(message.status))) {
               return {
                 ...message,
                 status: '已拒绝',
@@ -2397,10 +2459,154 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     try {
       await resolveAIChatFollowup(requestId, payload.answer, [])
       return true
-    } catch {
+    } catch {}
+    const currentPanel = terminalPanelsRef.current[panelInstanceKey] || null
+    const currentConversation = currentPanel?.conversation || activeConversation
+    if (!currentConversation?.id) {
       return false
     }
-  }, [])
+    const { readableText, content: followupContent } = buildAIFollowupAnswerPayload(payload.answer)
+    if (!readableText || !followupContent) {
+      return false
+    }
+    const currentMessages = Array.isArray(currentPanel?.messages) ? currentPanel.messages : (Array.isArray(currentConversation.messages) ? currentConversation.messages : [])
+    const currentApiMessages = Array.isArray(currentPanel?.apiMessages) ? currentPanel.apiMessages : (Array.isArray(currentConversation.apiMessages) ? currentConversation.apiMessages : [])
+    const followupMessage = findLatestAIFollowupMessageByRequestId(currentMessages, requestId)
+    const followupMessageId = typeof followupMessage?.id === 'string' ? followupMessage.id.trim() : ''
+    const followupImages = normalizeMessageImages(payload.images)
+    const timestamp = Date.now()
+    const userMessageId = `${followupMessageId || requestId}-followup-answer-${timestamp}`
+    const userMessage = {
+      id: userMessageId,
+      kind: 'user',
+      text: readableText,
+      images: followupImages,
+      time: formatMessageTime(),
+    }
+    const resolvedMessages = currentMessages.map((message) => {
+      if (!followupMessageId || message?.id !== followupMessageId || message?.kind !== 'followup') {
+        return message
+      }
+      return {
+        ...message,
+        status: AI_FOLLOWUP_COMPLETED_STATUS_KEY,
+        requestId: '',
+      }
+    })
+    const nextMessages = [...resolvedMessages, userMessage]
+    const nextApiMessages = [
+      ...currentApiMessages,
+      createAPIHistoryMessage({
+        role: 'user',
+        content: followupContent,
+        messageId: `api-user-followup-${timestamp}`,
+        uiMessageIds: [userMessageId],
+        images: followupImages,
+        ts: timestamp,
+      }),
+    ]
+    const requestMessages = buildRequestMessages(nextApiMessages)
+    const nextRequestId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const assistantMessage = {
+      id: nextRequestId,
+      turnId: nextRequestId,
+      kind: 'assistant',
+      text: '▍',
+      time: formatMessageTime(),
+      metrics: [],
+      streaming: true,
+      extra: {
+        apiLengthBefore: nextApiMessages.length,
+        statusStartedAtMs: Date.now(),
+        firstTokenAtMs: 0,
+        requestStatusLive: true,
+        errorText: '',
+      },
+    }
+    const persistedConversation = {
+      ...currentConversation,
+      updatedAt: Date.now(),
+      status: 'streaming',
+      messages: nextMessages,
+      apiMessages: nextApiMessages,
+    }
+    const nextConversation = {
+      ...persistedConversation,
+      messages: [...nextMessages, assistantMessage],
+    }
+    requestConversationSmoothScrollToBottom()
+    setConversationList((prev) => upsertConversationSummary(prev, persistedConversation))
+    setPanelState(panelInstanceKey, {
+      activeConversationId: currentConversation.id,
+      conversation: nextConversation,
+      messages: nextConversation.messages,
+      apiMessages: nextApiMessages,
+      activeRequestId: nextRequestId,
+      activeAssistantMessageId: nextRequestId,
+      activeToolExecution: null,
+      toolApprovalMode: '',
+      requestPhase: 'streaming',
+      runtimePhase: 'api_request',
+      queuedSubmission: null,
+      isFlushingQueuedSubmission: false,
+      skipNextAutomaticRequest: false,
+      resumeAfterCancelRequestId: '',
+      activeChangeReview: null,
+    })
+    await saveConversationSnapshot(persistedConversation, panelInstanceKey, { hydrate: false })
+    try {
+      await startAIChat(nextRequestId, {
+        conversationId: currentConversation.id,
+        sessionId: terminalId,
+        autoApprove: effectiveAutoApprovalEnabled,
+        skipNextAutomaticRequest: false,
+        messages: requestMessages,
+      })
+      return true
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message : translate('请求失败')
+      const erroredConversation = {
+        ...nextConversation,
+        updatedAt: Date.now(),
+        status: 'error',
+        messages: nextConversation.messages.map((message) => {
+          if (message.id !== nextRequestId || message.kind !== 'assistant') {
+            return message
+          }
+          return {
+            ...message,
+            text: '',
+            metrics: [],
+            streaming: false,
+            extra: {
+              ...(message.extra || {}),
+              requestStatusLive: false,
+              errorText,
+            },
+          }
+        }),
+      }
+      setPanelState(panelInstanceKey, {
+        activeConversationId: currentConversation.id,
+        conversation: erroredConversation,
+        messages: erroredConversation.messages,
+        apiMessages: nextApiMessages,
+        activeRequestId: '',
+        activeAssistantMessageId: '',
+        activeToolExecution: null,
+        requestPhase: 'idle',
+        toolApprovalMode: '',
+        runtimePhase: 'ready',
+        queuedSubmission: null,
+        isFlushingQueuedSubmission: false,
+        skipNextAutomaticRequest: false,
+        resumeAfterCancelRequestId: '',
+        activeChangeReview: null,
+      })
+      await saveConversationSnapshot(erroredConversation, panelInstanceKey)
+      return false
+    }
+  }, [activeConversation, effectiveAutoApprovalEnabled, panelInstanceKey, requestConversationSmoothScrollToBottom, saveConversationSnapshot, setPanelState, terminalId])
 
   const handleConversationUserMessage = useCallback(async (payload) => {
     if (payload && typeof payload === 'object' && payload.kind === 'followup-response') {

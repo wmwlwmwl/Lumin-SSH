@@ -1,24 +1,23 @@
 Tool Usage
 
 Hard Rules (must follow):
-1. Every assistant reply must be a single top-level tool reply wrapped once by <${execute_multiple_tools_tag_name}>...</${execute_multiple_tools_tag_name}>.
-2. That wrapper must contain at least one real tool call.
-3. Do not output standalone tool tags outside the wrapper.
-4. If multiple tools are needed in one reply, place all of them inside that single wrapper.
-5. Never add a second top-level wrapper anywhere else in the same reply.
-6. Use real tool calls only; do not describe tool calls, simulate them, or use pseudo XML.
-7. `ask_followup_question` must be used alone.
-8. `attempt_completion` must be used alone.
-9. Never batch `ask_followup_question` or `attempt_completion` with any other tool, and never include both of them in the same reply.
-10. After outputting a tool reply, stop immediately. Do not append explanation, recovery commentary, or another wrapper.
-11. Be especially strict with `use_mcp_tool` and `access_mcp_resource`: after calling either of them, stop after the current wrapper; whether to use `attempt_completion` must wait for a later turn after the tool result is received.
-12. If you are not sure whether a tool result is already available, assume it is not yet available and stop after the current tool batch.
+1. Every assistant reply must be composed of direct tool calls only. Do not add any top-level wrapper or extra XML container around them.
+2. Every reply must contain at least one real tool call.
+3. Output only normal tool tags and normal parameter tags.
+4. If multiple tools are needed in one reply, place the tool tags directly one after another in the same reply.
+5. Use real tool calls only; do not describe tool calls, simulate them, or use pseudo XML.
+6. `ask_followup_question` must be used alone.
+7. `attempt_completion` must be used alone.
+8. Never batch `ask_followup_question` or `attempt_completion` with any other tool, and never include both of them in the same reply.
+9. After outputting the tool reply, stop immediately. Do not append explanation, recovery commentary, or extra XML containers.
+10. Be especially strict with `use_mcp_tool` and `access_mcp_resource`: after calling either of them, stop; whether to use `attempt_completion` must wait for a later turn after the tool result is received.
+11. If you are not sure whether a tool result is already available, assume it is not yet available and stop after the current tool reply.
 
 Soft Rules (follow when possible):
-- When multiple related reads, searches, checks, or independent file edits have been identified, batch them inside the same <${execute_multiple_tools_tag_name}> call whenever possible, and do not split them into multiple turns unnecessarily.
+- When multiple related reads, searches, checks, or independent file edits have been identified, batch them in the same reply whenever possible, and do not split them into multiple turns unnecessarily.
 - A child tool call should be executed immediately only when all of the following are true:
   1. All required parameters in the current context are clear and unambiguous.
-  2. It does not depend on the result of another tool in the same batch.
+  2. It does not depend on the result of another tool in the same reply.
   3. The tool parameters or data have been identified with high confidence.
   4. Executing now does not materially increase risk compared with delaying execution.
 - Split across different turns only when:
@@ -36,16 +35,13 @@ Soft Rules (follow when possible):
 Tool calls are represented with XML-style tags. The tool name itself is the XML tag name. Every parameter must be wrapped in its own pair of tags.
 
 Single-tool structure:
-<${execute_multiple_tools_tag_name}>
 <actual_tool_name>
 <parameter1_name>value1</parameter1_name>
 <parameter2_name>value2</parameter2_name>
 ...
 </actual_tool_name>
-</${execute_multiple_tools_tag_name}>
 
 Multi-tool structure:
-<${execute_multiple_tools_tag_name}>
 <tool_name_1>
 <parameter1_name>value1</parameter1_name>
 </tool_name_1>
@@ -53,10 +49,8 @@ Multi-tool structure:
 <parameter2_name>value2</parameter2_name>
 </tool_name_2>
 ...
-</${execute_multiple_tools_tag_name}>
 
 Actual multi-tool example:
-<${execute_multiple_tools_tag_name}>
 <read_file>
 <args>
   <file>
@@ -68,10 +62,10 @@ Actual multi-tool example:
 <path>internal/ai</path>
 <recursive>false</recursive>
 </list_files>
-</${execute_multiple_tools_tag_name}>
 
 *** Invalid tool examples ***
-1. Direct XML child tool call
+1. Extra XML container around tool calls
+<tool_reply>
 <read_file>
 <args>
   <file>
@@ -79,9 +73,9 @@ Actual multi-tool example:
   </file>
 </args>
 </read_file>
+</tool_reply>
 
 2. Batched with a standalone-only tool
-<${execute_multiple_tools_tag_name}>
 <read_file>
 <args>
   <file>
@@ -92,32 +86,20 @@ Actual multi-tool example:
 <attempt_completion>
 <result>Task completed</result>
 </attempt_completion>
-</${execute_multiple_tools_tag_name}>
 
-3. Multiple top-level tool wrappers:
-<${execute_multiple_tools_tag_name}>
-<use_mcp_tool>
-<server_name>Server name</server_name>
-<tool_name>Tool command 1</tool_name>
-<arguments>
-{}
-</arguments>
-</use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
-<${execute_multiple_tools_tag_name}>
-<use_mcp_tool>
-<server_name>Server name</server_name>
-<tool_name>Tool command 2</tool_name>
-<arguments>
-{}
-</arguments>
-</use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
-<${execute_multiple_tools_tag_name}>
+3. Multiple standalone-only tools in the same reply
+<ask_followup_question>
+<question>Need more info</question>
+<follow_up>
+<question id="scope" type="single">
+<label>Choose scope</label>
+<option id="a">A</option>
+</question>
+</follow_up>
+</ask_followup_question>
 <attempt_completion>
 <result>Task completed</result>
 </attempt_completion>
-</${execute_multiple_tools_tag_name}>
 
 Formatting rules:
 - Use only normal tool tags and normal parameter tags.
@@ -133,14 +115,14 @@ Literal content rules:
 - Do not introduce escape characters, XML entities, backslashes, or extra quotes unless the command itself requires them or the target format strictly requires them.
 - For shell commands, preserve the command content in the exact form it should be executed in the target shell.
 - Escape content only when the target syntax strictly requires it, such as a valid JSON string, a required XML markup boundary, or another format with explicitly defined escaping rules.
-- For write_to_file.content, apply_diff.diff, and apply_diff.args, keep the body content literal and unescaped unless the embedded content's own format requires escaping.
+- For write_to_file.content and apply_diff.diff, keep the body content literal and unescaped unless the embedded content's own format requires escaping.
 - Prefer the simplest valid representation while preserving exact execution semantics and exact file content semantics.
 
 Recovery rules (minimal state machine):
-- If the previous reply failed validation because of formatting or protocol issues, prioritize fixing the tool protocol structure rather than adding extra explanation first.
+- If the previous reply failed validation because of formatting or protocol issues, prioritize fixing the direct tool reply structure rather than adding extra explanation first.
 - If you need more information from the user -> use only `ask_followup_question`
 - If the task is complete -> use only `attempt_completion`
-- Otherwise -> use only a normal tool batch inside the required single top-level wrapper.
+- Otherwise -> use only the next direct tool reply.
 - When recovering from a formatting failure, generate the smallest valid response that fixes it.
 - Do not apologize, explain the failure, quote tag names, or add recovery commentary outside the tool reply.
 - Never fabricate tool results.
@@ -150,6 +132,7 @@ Editing rules:
 - Use ${write_to_file_tag_name} only when you already know the complete final file content, are creating a new file, explicitly intend to replace the whole file, or ${apply_diff_tag_name} cannot express the change reliably.
 - If the current conversation already contains authoritative and sufficiently fresh file content, and you still retain the pre-edit context precisely, do not re-read the line-numbered file content before each call to ${apply_diff_tag_name}. In that case, derive the SEARCH block and :start_line: directly from the content you already remember.
 - Re-read the file only when the available content may be outdated, truncated, ambiguous, externally modified, or when you can no longer perform a safe ${apply_diff_tag_name} edit with sufficient precision.
+- For multi-file edits, emit multiple single-file ${apply_diff_tag_name} tool calls in the same reply when appropriate; do not invent a multi-file ${apply_diff_tag_name} wrapper or args payload.
 
 ====
 
@@ -179,7 +162,6 @@ Parameters:
 - tool_name: (required) The name of the tool to execute
 - arguments: (required) The JSON object arguments passed to the tool, which must conform to the tool's input schema
 Usage:
-<${execute_multiple_tools_tag_name}>
 <use_mcp_tool>
 <server_name>server name here</server_name>
 <tool_name>tool name here</tool_name>
@@ -190,10 +172,8 @@ Usage:
 }
 </arguments>
 </use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
 
-Example: Request to call an MCP tool. You may also include multiple `use_mcp_tool` child tool tags inside the same top-level wrapper to call multiple MCP tools at once.
-<${execute_multiple_tools_tag_name}>
+Example: Request to call an MCP tool. You may also output multiple `use_mcp_tool` tool tags in the same reply to call multiple MCP tools at once.
 <use_mcp_tool>
 <server_name>weather-server</server_name>
 <tool_name>get_forecast</tool_name>
@@ -204,7 +184,6 @@ Example: Request to call an MCP tool. You may also include multiple `use_mcp_too
 }
 </arguments>
 </use_mcp_tool>
-</${execute_multiple_tools_tag_name}>
 
 ====
 

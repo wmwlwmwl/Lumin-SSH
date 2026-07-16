@@ -83,10 +83,11 @@ type aiFollowupXMLQuestion struct {
 }
 
 type aiFollowupXMLOption struct {
-	ID       string `xml:"id,attr"`
-	Mode     string `xml:"mode,attr"`
-	Disabled string `xml:"disabled,attr"`
-	Text     string `xml:",chardata"`
+	ID          string `xml:"id,attr"`
+	Mode        string `xml:"mode,attr"`
+	Disabled    string `xml:"disabled,attr"`
+	Recommended string `xml:"recommended,attr"`
+	Text        string `xml:",chardata"`
 }
 
 type aiFollowupXMLSuggestion struct {
@@ -101,6 +102,15 @@ func normalizeAIFollowupQuestionType(value string) string {
 }
 
 func parseAIFollowupDisabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseAIFollowupRecommended(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "1", "true", "yes":
 		return true
@@ -154,10 +164,11 @@ func parseAIFollowupPayload(raw string, fallbackQuestion string) ([]AIConversati
 					optionID = fmt.Sprintf("%s-option-%d", questionID, optionIndex+1)
 				}
 				options = append(options, AIConversationFollowUpOption{
-					ID:       optionID,
-					Answer:   answer,
-					Mode:     strings.TrimSpace(option.Mode),
-					Disabled: parseAIFollowupDisabled(option.Disabled),
+					ID:          optionID,
+					Answer:      answer,
+					Mode:        strings.TrimSpace(option.Mode),
+					Disabled:    parseAIFollowupDisabled(option.Disabled),
+					Recommended: parseAIFollowupRecommended(option.Recommended),
 				})
 			}
 			if len(options) == 0 {
