@@ -340,9 +340,9 @@ func buildAIChatToolParameterPlaceholder(name string, schema map[string]any, ses
 	case "wait":
 		return "true"
 	case "args":
-		return "<args>\n  <file>\n    <path>/path/to/file</path>\n  </file>\n</args>"
+		return "<args>\n  <file>\n    <path>/path/to/file_a</path>\n  </file>\n  <file>\n    <path>/path/to/file_b</path>\n  </file>\n</args>"
 	case "files":
-		return "[{\"path\":\"/path/to/file\",\"start_line\":1,\"end_line\":20}]"
+		return "[{\"path\":\"/path/to/file_a\"},{\"path\":\"/path/to/file_b\"}]"
 	case "start_line":
 		return "1"
 	case "end_line":

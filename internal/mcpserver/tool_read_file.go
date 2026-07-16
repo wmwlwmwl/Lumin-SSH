@@ -23,7 +23,39 @@ type ReadFileBatchResult struct {
 func readFileToolDefinition() ToolDefinition {
 	return ToolDefinition{
 		Name: "read_file",
-		Description: "Read one or more remote files from a connected SSH session. Supports task-scoped args XML, files array, and optional 1-based line ranges.",
+		Description: `Read one or more remote files from a connected SSH session. Supports task-scoped args XML, files array, and optional 1-based line ranges.
+Prefer reading related files together in a single request when you need to understand an area. For an initial read of relevant files, prefer whole-file reads instead of using line ranges.
+Use start_line and end_line only when you already know the target area and want a narrower follow-up read. If you use line ranges, provide both start_line and end_line together for each file.
+
+Preferred example:
+<read_file>
+<session_id>session_id from list_connected_sessions</session_id>
+<args>
+<file>
+<path>/remote/path/to/file_a</path>
+</file>
+<file>
+<path>/remote/path/to/file_b</path>
+</file>
+</args>
+</read_file>
+
+Less preferred example: use only for a focused follow-up read after you already know the relevant areas.
+<read_file>
+<session_id>session_id from list_connected_sessions</session_id>
+<args>
+<file>
+<path>/remote/path/to/file_a</path>
+<start_line>120</start_line>
+<end_line>180</end_line>
+</file>
+<file>
+<path>/remote/path/to/file_b</path>
+<start_line>20</start_line>
+<end_line>60</end_line>
+</file>
+</args>
+</read_file>`,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
