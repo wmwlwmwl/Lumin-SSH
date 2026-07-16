@@ -29,6 +29,7 @@ type AIChatRequestPayload struct {
 	SessionID                string                 `json:"sessionId"`
 	AutoApprove              bool                   `json:"autoApprove"`
 	SkipNextAutomaticRequest bool                   `json:"skipNextAutomaticRequest"`
+	AssistantFirstReplyText  string                 `json:"assistantFirstReplyText,omitempty"`
 	Messages                 []AIChatRequestMessage `json:"messages"`
 }
 
@@ -1112,16 +1113,23 @@ func getAIExecuteCommandDecision(settings AIConversationTaskSettings, command st
 }
 
 func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiParsedToolUse) aiApprovalDecision {
-	if _, ok := aiAlwaysAutoApprovedToolNames[strings.TrimSpace(tool.Name)]; ok {
+	toolName := strings.TrimSpace(tool.Name)
+	if _, ok := aiAlwaysAutoApprovedToolNames[toolName]; ok {
 		return aiApprovalDecisionAutoApprove
 	}
 	if isAIMCPClientToolAlwaysAllowed(tool) {
 		return aiApprovalDecisionAutoApprove
 	}
+	if toolName == "ask_followup_question" {
+		if settings.AlwaysAllowFollowupQuestions {
+			return aiApprovalDecisionAutoApprove
+		}
+		return aiApprovalDecisionAskUser
+	}
 	if !isAIAutoApprovalEffectivelyEnabled(settings) {
 		return aiApprovalDecisionAskUser
 	}
-	switch getAIAutoApprovalCategoryForTool(tool.Name) {
+	switch getAIAutoApprovalCategoryForTool(toolName) {
 	case "read":
 		if settings.AlwaysAllowReadOnly {
 			return aiApprovalDecisionAutoApprove
@@ -1203,6 +1211,22 @@ func buildAIToolParamTagCandidates() []aiToolParamTagCandidate {
 	return candidates
 }
 
+func findAIImplicitToolParamBoundary(xmlContent string, startIndex int, toolClosingTag string, paramCandidates []aiToolParamTagCandidate) int {
+	nextBoundary := len(xmlContent)
+	if closingIndex := strings.Index(xmlContent[startIndex:], toolClosingTag); closingIndex != -1 {
+		nextBoundary = startIndex + closingIndex
+	}
+	for _, paramCandidate := range paramCandidates {
+		if openingIndex := strings.Index(xmlContent[startIndex:], paramCandidate.OpeningTag); openingIndex != -1 {
+			candidateIndex := startIndex + openingIndex
+			if candidateIndex < nextBoundary {
+				nextBoundary = candidateIndex
+			}
+		}
+	}
+	return nextBoundary
+}
+
 func parseAINextToolUseFromXML(xmlContent string, startIndex int) (aiParsedToolUse, int, bool) {
 	cursor := skipAIToolXMLWhitespace(xmlContent, startIndex)
 	toolCandidates := buildAIToolTagCandidates()
@@ -1227,7 +1251,17 @@ func parseAINextToolUseFromXML(xmlContent string, startIndex int) (aiParsedToolU
 			if currentParamName != "" {
 				closingIndex := strings.Index(xmlContent[cursor:], currentParamClosingTag)
 				if closingIndex == -1 {
-					return aiParsedToolUse{}, 0, false
+					paramValueEnd := findAIImplicitToolParamBoundary(xmlContent, cursor, candidate.ClosingTag, paramCandidates)
+					paramValue := xmlContent[currentParamValueStart:paramValueEnd]
+					if isRawPreserveToolParam(tool.Name, currentParamName) {
+						tool.Params[currentParamName] = stripOuterToolParamNewlines(paramValue)
+					} else {
+						tool.Params[currentParamName] = normalizeAINonRawToolParamValue(paramValue)
+					}
+					cursor = paramValueEnd
+					currentParamName = ""
+					currentParamClosingTag = ""
+					continue
 				}
 				paramValueEnd := cursor + closingIndex
 				paramValue := xmlContent[currentParamValueStart:paramValueEnd]
@@ -1266,7 +1300,8 @@ func parseAINextToolUseFromXML(xmlContent string, startIndex int) (aiParsedToolU
 			cursor++
 		}
 
-		return aiParsedToolUse{}, 0, false
+		tool.RawXML = xmlContent[toolStartIndex:cursor]
+		return tool, cursor, true
 	}
 
 	return aiParsedToolUse{}, 0, false
@@ -1361,6 +1396,8 @@ func buildNoToolRetryMessage(conversationID string) string {
 
 Your next reply must be a minimal valid tool reply.
 Output direct tool tags only, with no extra XML wrapper or container.
+All opened tool tags and parameter tags must be properly closed.
+For example: <attempt_completion><result>...</result></attempt_completion>
 If the task is complete, reply with only the completion tool.
 If you need more information, reply with only the follow-up tool.
 Otherwise, reply with only the next tool call or direct tool batch.
@@ -1377,6 +1414,8 @@ func buildInvalidToolProtocolRetryMessage(conversationID string, detail string) 
 
 Your next reply must be a minimal valid tool reply.
 Output direct tool tags only, with no extra XML wrapper or container.
+All opened tool tags and parameter tags must be properly closed.
+For example: <attempt_completion><result>...</result></attempt_completion>
 If you use the completion tool, it must be the only tool call.
 If you use the follow-up tool, it must be the only tool call.
 Do not add explanation or recovery commentary outside the tool reply.
@@ -1727,6 +1766,100 @@ func decodeAIChatRequestPayload(raw string) (AIChatRequestPayload, error) {
 	}
 	payload.Messages = normalizeAIChatRequestMessages(messages)
 	return payload, nil
+}
+
+func shouldUseAIAssistantFirstReply(payload AIChatRequestPayload, requestMessages []AIChatRequestMessage) bool {
+	if strings.TrimSpace(payload.AssistantFirstReplyText) == "" {
+		return false
+	}
+	if countAIExplicitUserPromptMessages(requestMessages) > 1 {
+		return false
+	}
+	for _, message := range requestMessages {
+		if strings.EqualFold(strings.TrimSpace(message.Role), "assistant") {
+			return false
+		}
+	}
+	return true
+}
+
+func buildAIAssistantFirstReplyStreamChunks(text string) []string {
+	trimmedText := strings.TrimSpace(text)
+	if trimmedText == "" {
+		return nil
+	}
+	runes := []rune(trimmedText)
+	chunks := make([]string, 0, (len(runes)+23)/24)
+	for start := 0; start < len(runes); {
+		end := start + 24
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[start:end]))
+		start = end
+	}
+	return chunks
+}
+
+func waitForAIAssistantFirstReplyChunk(ctx context.Context, duration time.Duration) bool {
+	if duration <= 0 {
+		return ctx == nil || ctx.Err() == nil
+	}
+	if ctx == nil {
+		time.Sleep(duration)
+		return true
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (a *App) requestAIAssistantFirstReplyRound(ctx context.Context, requestID string, payload AIChatRequestPayload, requestMessages []AIChatRequestMessage) (aiChatRoundResult, error) {
+	result := aiChatRoundResult{}
+	assistantFirstReplyText := strings.TrimSpace(payload.AssistantFirstReplyText)
+	if assistantFirstReplyText == "" {
+		return result, fmt.Errorf("missing assistant first reply")
+	}
+	startedAt := time.Now()
+	firstTokenAt := time.Time{}
+	var contentBuilder strings.Builder
+	chunks := buildAIAssistantFirstReplyStreamChunks(assistantFirstReplyText)
+	for index, chunk := range chunks {
+		if ctx != nil && ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+		if firstTokenAt.IsZero() && strings.TrimSpace(chunk) != "" {
+			firstTokenAt = time.Now()
+		}
+		contentBuilder.WriteString(chunk)
+		a.emitAIChatEvent(map[string]interface{}{
+			"kind":      "delta",
+			"requestId": requestID,
+			"delta":     chunk,
+		})
+		if index < len(chunks)-1 && !waitForAIAssistantFirstReplyChunk(ctx, 24*time.Millisecond) {
+			return result, context.Canceled
+		}
+	}
+	result.Text = strings.TrimSpace(contentBuilder.String())
+	if result.Text == "" {
+		result.Text = assistantFirstReplyText
+	}
+	if !firstTokenAt.IsZero() {
+		result.FirstTokenMs = firstTokenAt.Sub(startedAt).Milliseconds()
+	}
+	result.ElapsedMs = time.Since(startedAt).Milliseconds()
+	result.NextRequestMessages = append([]AIChatRequestMessage{}, requestMessages...)
+	result.NextRequestMessages = append(result.NextRequestMessages, AIChatRequestMessage{
+		Role:    "assistant",
+		Content: result.Text,
+	})
+	return result, nil
 }
 
 func (a *App) StartAIChat(requestID string, messagesJSON string) error {
@@ -2142,6 +2275,9 @@ func (a *App) executeParsedToolUses(requestID string, assistantMessageID string,
 }
 
 func (a *App) requestAIProviderChatRound(ctx context.Context, requestID string, payload AIChatRequestPayload, profile AIProviderProfile, requestMessages []AIChatRequestMessage) (aiChatRoundResult, error) {
+	if shouldUseAIAssistantFirstReply(payload, requestMessages) {
+		return a.requestAIAssistantFirstReplyRound(ctx, requestID, payload, requestMessages)
+	}
 	switch profile.Provider {
 	case "Responses":
 		return a.requestResponsesAIChatRound(ctx, requestID, payload, profile, requestMessages)
@@ -2222,7 +2358,9 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			return
 		}
 
-		if round == 0 {
+		isAssistantFirstReplyRound := shouldUseAIAssistantFirstReply(payload, requestMessages)
+
+		if round == 0 && !isAssistantFirstReplyRound {
 			roundResult = normalizeAIAssistantRoundResultForToolProtocol(roundResult)
 		}
 
@@ -2262,9 +2400,67 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 
 		parsedTools, parseErr := parseAssistantToolUses(roundResult.Text)
 		if parseErr != nil {
+			visibleText := strings.TrimSpace(roundResult.Text)
+
+			if isAssistantFirstReplyRound {
+				nextRequestMessages := buildAINextRequestMessagesWithAssistant(requestMessages, roundResult)
+				assistantCacheObjects := extractAILatestAssistantCacheObjects(nextRequestMessages)
+				a.emitAIChatEvent(map[string]interface{}{
+					"kind":      "api_message_append",
+					"requestId": requestID,
+					"message": map[string]interface{}{
+						"messageId":    fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
+						"turnId":       assistantMessageID,
+						"role":         "assistant",
+						"content":      roundResult.Text,
+						"cacheObjects": assistantCacheObjects,
+						"ts":           time.Now().UnixMilli(),
+					},
+				})
+				a.emitAIChatEvent(map[string]interface{}{
+					"kind":            "assistant_replace",
+					"requestId":       requestID,
+					"text":            visibleText,
+					"streaming":       false,
+					"firstTokenMs":    roundResult.FirstTokenMs,
+					"elapsedMs":       roundResult.ElapsedMs,
+					"inputTokens":     roundResult.InputTokens,
+					"outputTokens":    roundResult.OutputTokens,
+					"tokensPerSecond": roundResult.TokensPerSecond,
+				})
+				if a.consumeAIChatSkipNextAutomaticRequest(requestID) {
+					a.skipCompatibleAIChatAfterResolvedTools(requestID)
+					return
+				}
+				noToolRetryPrompt := buildNoToolRetryMessage(payload.ConversationID)
+				requestMessages = append(nextRequestMessages,
+					AIChatRequestMessage{
+						Role:    "user",
+						Content: noToolRetryPrompt,
+					},
+				)
+				a.emitAIChatEvent(map[string]interface{}{
+					"kind":      "api_message_append",
+					"requestId": requestID,
+					"message": map[string]interface{}{
+						"messageId": fmt.Sprintf("api-user-notool-%d", time.Now().UnixNano()),
+						"role":      "user",
+						"content":   noToolRetryPrompt,
+						"ts":        time.Now().UnixMilli(),
+					},
+				})
+				nextAssistantMessageID := fmt.Sprintf("%s-cont-%d", requestID, time.Now().UnixNano())
+				a.emitAIChatEvent(map[string]interface{}{
+					"kind":      "assistant_continue",
+					"requestId": requestID,
+					"messageId": nextAssistantMessageID,
+				})
+				assistantMessageID = nextAssistantMessageID
+				continue
+			}
+
 			consecutiveNoToolCount++
 			consecutiveNoAssistantCount = 0
-			visibleText := strings.TrimSpace(roundResult.Text)
 			protocolRetryPrompt := buildInvalidToolProtocolRetryMessage(payload.ConversationID, parseErr.Error())
 			if consecutiveNoToolCount == 1 {
 				nextRequestMessages := buildAINextRequestMessagesWithAssistant(requestMessages, roundResult)

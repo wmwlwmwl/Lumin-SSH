@@ -279,6 +279,15 @@ export async function createAIConversation(title) {
   return snapshot
 }
 
+export async function getAIAssistantFirstReply(language = '') {
+  const bridge = getAppBridge()
+  if (!bridge?.GetAIAssistantFirstReply) {
+    return ''
+  }
+  const result = await bridge.GetAIAssistantFirstReply(typeof language === 'string' ? language : '')
+  return typeof result === 'string' ? result : ''
+}
+
 export async function getAIConversation(conversationId) {
   const bridge = getAppBridge()
   if (!bridge?.GetAIConversation) {

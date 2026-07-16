@@ -58,9 +58,9 @@ func renderPromptBuilderTemplate(templateText string, variables map[string]strin
 	})
 }
 
-func readAIEmbeddedTemplate(templateName string) string {
+func readAIEmbeddedTemplateForLanguage(templateName string, languageCode string) string {
 	normalizedTemplateName := strings.TrimSpace(templateName)
-	normalizedLanguageCode := strings.ToLower(strings.TrimSpace(aiTemplateLanguageCode))
+	normalizedLanguageCode := strings.ToLower(strings.TrimSpace(languageCode))
 	if normalizedTemplateName == "" || normalizedLanguageCode == "" {
 		return ""
 	}
@@ -70,6 +70,18 @@ func readAIEmbeddedTemplate(templateName string) string {
 		return ""
 	}
 	return string(data)
+}
+
+func readAIEmbeddedTemplate(templateName string) string {
+	return readAIEmbeddedTemplateForLanguage(templateName, aiTemplateLanguageCode)
+}
+
+func resolveAIAssistantReplyTemplateLanguage(languageCode string) string {
+	normalizedLanguageCode := strings.ToLower(strings.TrimSpace(languageCode))
+	if strings.HasPrefix(normalizedLanguageCode, "zh") {
+		return "zh"
+	}
+	return "en"
 }
 
 func buildAIBaseTemplateVariables(languageCode string) map[string]string {
@@ -108,6 +120,11 @@ func BuildChatSystemPromptWithProfile(appCtx context.Context, conversationID str
 func BuildAIUserCompensation() string {
 	templateText := readAIEmbeddedTemplate("user_compensation")
 	return strings.TrimSpace(renderPromptBuilderTemplate(templateText, buildAIUserCompensationTemplateVariables()))
+}
+
+func BuildAIAssistantFirstReply(languageCode string) string {
+	templateText := readAIEmbeddedTemplateForLanguage("assistant_first_reply", resolveAIAssistantReplyTemplateLanguage(languageCode))
+	return strings.TrimSpace(templateText)
 }
 
 func liveSearchAIChatToolDefinition() mcpserver.ToolDefinition {

@@ -52,6 +52,10 @@ func (b *AIBindings) StartAIChat(requestID string, messagesJSON string) error {
 	return b.runtime().StartAIChat(requestID, messagesJSON)
 }
 
+func (b *AIBindings) GetAIAssistantFirstReply(language string) string {
+	return ai.BuildAIAssistantFirstReply(language)
+}
+
 func (b *AIBindings) CancelAIChat(requestID string) {
 	b.runtime().CancelAIChat(requestID)
 }

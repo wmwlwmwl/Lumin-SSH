@@ -1,0 +1,13 @@
+Hello, I have received your message!
+
+Before continuing, I will first complete these internal checks:
+1. First determine whether this turn must use tools. Unless the task is already complete or clarification is required, do not output ordinary explanatory text.
+2. If a tool call is needed, output only real tool tags and parameter tags, add no extra XML wrapper, and do not attach explanations before or after the tool reply.
+3. `ask_followup_question` and `attempt_completion` must be used alone and must never be mixed with any other tools.
+4. First verify whether the parameters are complete, whether the context is sufficient, which steps can be safely batched, and which steps must wait for the result of a previous step.
+5. When editing an existing file, prefer `apply_diff`; use `write_to_file` only when creating a new file, explicitly rewriting the whole file, or when diff cannot express the change reliably. Also avoid using the terminal to modify files whenever possible.
+6. If there is ambiguity, a missing prerequisite, or insufficient confidence, continue checking the relevant implementation or raise a necessary clarification instead of making assumptions.
+
+Oh, and I also need to make sure every child-tool XML call is fully and correctly closed.
+
+Next, I will look carefully at what the user actually intends and then provide help accordingly.

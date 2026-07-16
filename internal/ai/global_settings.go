@@ -44,6 +44,8 @@ type AIGlobalSettings struct {
 	AlwaysAllowModeSwitch               bool             `json:"alwaysAllowModeSwitch"`
 	AlwaysAllowSubtasks                 bool             `json:"alwaysAllowSubtasks"`
 	AlwaysAllowFollowupQuestions        bool             `json:"alwaysAllowFollowupQuestions"`
+	SoundEnabled                        bool             `json:"soundEnabled"`
+	SoundVolume                         float64          `json:"soundVolume,omitempty"`
 	MCPEnabled                          bool             `json:"mcpEnabled"`
 	MCPAllowBrowserCalls                bool             `json:"mcpAllowBrowserCalls"`
 	TerminalIsolation                   bool             `json:"terminalIsolation"`
@@ -60,6 +62,8 @@ type AIGlobalSettings struct {
 
 func defaultAIGlobalSettings() AIGlobalSettings {
 	return AIGlobalSettings{
+		SoundEnabled:                  true,
+		SoundVolume:                   0.06,
 		MCPEnabled:                    true,
 		MCPAllowBrowserCalls:          false,
 		TerminalIsolation:             true,
@@ -175,6 +179,16 @@ func normalizeAIProxyType(value string) string {
 	}
 }
 
+func normalizeAISoundVolume(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
 func buildDefaultAIProxyNodeID(proxyType string, host string, port int, index int) string {
 	sanitizedHost := strings.ToLower(strings.TrimSpace(host))
 	sanitizedHost = strings.NewReplacer(":", "-", ".", "-", "[", "", "]", "", "/", "-", "\\", "-").Replace(sanitizedHost)
@@ -274,6 +288,7 @@ func normalizeAIGlobalSettings(settings AIGlobalSettings) AIGlobalSettings {
 	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute || settings.AlwaysAllowExecuteReadOnly
 	settings.ApprovalButtonOrder = normalizeAIApprovalButtonOrder(settings.ApprovalButtonOrder)
 	settings.CommandActionButtonOrder = normalizeAICommandActionButtonOrder(settings.CommandActionButtonOrder)
+	settings.SoundVolume = normalizeAISoundVolume(settings.SoundVolume)
 	if settings.UpdatedAt <= 0 {
 		settings.UpdatedAt = time.Now().UnixMilli()
 	}

@@ -124,6 +124,8 @@ export default function AIPanelSettingsOverlay({
   onRestoreConversationBackup,
   autoBackupEnabled,
   onToggleAutoBackup,
+  soundEnabled,
+  soundVolume,
   terminalOutputLineLimit,
   onTerminalOutputLineLimitChange,
   terminalOutputCharacterLimit,
@@ -471,6 +473,40 @@ export default function AIPanelSettingsOverlay({
                       onChange={() => onSaveGlobalAISettings?.({ continueAfterToolRejection: !continueAfterToolRejection })}
                     />
                   </div>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{t('任务提示音')}</div>
+                      <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('在追问需要处理和任务完成时播放提示音。')}</div>
+                    </div>
+                    <ToggleSwitchControl
+                      checked={soundEnabled !== false}
+                      onChange={() => onSaveGlobalAISettings?.({ soundEnabled: soundEnabled === false })}
+                    />
+                  </div>
+                  {soundEnabled !== false ? (
+                    <>
+                      <div style={{ borderTop: '1px solid var(--border)' }} />
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{t('提示音音量')}</div>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('默认 20%，可按需调节。')}</div>
+                          </div>
+                          <span style={{ fontSize: 13, minWidth: 56, textAlign: 'right', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{`${Math.round((Number.isFinite(Number(soundVolume)) ? Number(soundVolume) : 0.2) * 100)}%`}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={Math.round((Number.isFinite(Number(soundVolume)) ? Number(soundVolume) : 0.2) * 100)}
+                          onChange={(event) => onSaveGlobalAISettings?.({ soundVolume: Math.max(0, Math.min(1, (parseInt(event.target.value, 10) || 0) / 100)) })}
+                          style={{ width: '100%', cursor: 'pointer' }}
+                        />
+                      </div>
+                    </>
+                  ) : null}
                   <div style={{ borderTop: '1px solid var(--border)' }} />
                   <div style={{ display: 'grid', gap: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>

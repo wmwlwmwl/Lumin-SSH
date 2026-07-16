@@ -8,7 +8,7 @@ import AIConversationBackupSettings from './ai/AIConversationBackupSettings.jsx'
 import AIPanelSettingsOverlay from './ai/AIPanelSettingsOverlay.jsx'
 import AIComposer from './ai/AIComposer.jsx'
 import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIChatTool, listAIChatCommandTerminalCandidates, previewAIChatToolRestore, rejectAIChatTools, rejectAIChatToolsForQueuedSubmission, resolveAIChatFollowup, restoreAIChatTool, setAIChatSkipNextAutomaticRequest, startAIChat, terminateAIChatTool } from './ai/aiChatBridge.js'
-import { condenseAIConversationContext, createAIConversation, deleteAIConversation, getAIConversation, listAIConversations, normalizeAIConversationMessageSearchResult, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation, searchAIConversationMessages, subscribeAIConversationChanges } from './ai/aiConversationBridge.js'
+import { condenseAIConversationContext, createAIConversation, deleteAIConversation, getAIAssistantFirstReply, getAIConversation, listAIConversations, normalizeAIConversationMessageSearchResult, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation, searchAIConversationMessages, subscribeAIConversationChanges } from './ai/aiConversationBridge.js'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.js'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js'
 import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, updateMCPClientServerTimeout } from './ai/mcpClientBridge.js'
@@ -281,6 +281,14 @@ function createAPIHistoryMessage({ role, content, messageId = '', uiMessageIds =
     cacheObjects: cloneAIConversationCacheObjects(cacheObjects),
     ts,
   }
+}
+
+function shouldUseAssistantFirstReplyForConversation(conversation) {
+  const uiMessages = Array.isArray(conversation?.messages) ? conversation.messages : []
+  const apiMessages = Array.isArray(conversation?.apiMessages) ? conversation.apiMessages : []
+  const hasAssistantUIMessage = uiMessages.some((message) => message && typeof message === 'object' && message.kind === 'assistant')
+  const hasAssistantAPIMessage = apiMessages.some((message) => message && typeof message === 'object' && message.role === 'assistant')
+  return !hasAssistantUIMessage && !hasAssistantAPIMessage
 }
 
 function buildAIFollowupAnswerPayload(answer) {
@@ -594,6 +602,7 @@ function buildAIConversationSearchSnippet(text, query) {
 
 export default function AIPanel({ width, side, terminalId = 'global', sessionId = '', sessionTerminals = [] }) {
   const { t } = useTranslation()
+  const audioPlayersRef = useRef(new Map())
   const [mcpInfo, setMcpInfo] = useState({ url: '', transport: 'streamable-http', endpoint: '/mcp', instructions: '', logs: '', tools: [] })
   const [mcpClientServers, setMCPClientServers] = useState([])
   const [mcpClientGlobalConfigPath, setMCPClientGlobalConfigPath] = useState('')
@@ -813,6 +822,38 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const approvalButtonOrder = normalizedGlobalAISettings.approvalButtonOrder
   const commandActionButtonOrder = normalizedGlobalAISettings.commandActionButtonOrder
   const messageActionBarAtBottom = Boolean(normalizedGlobalAISettings.messageActionBarAtBottom)
+  const playAISound = useCallback((type) => {
+    if (normalizedGlobalAISettings.soundEnabled === false) {
+      return
+    }
+    const parsedVolume = Number(normalizedGlobalAISettings.soundVolume)
+    const volume = Number.isFinite(parsedVolume) ? Math.max(0, Math.min(1, parsedVolume)) : 0.06
+    if (volume <= 0) {
+      return
+    }
+    const soundKey = typeof type === 'string' ? type.trim() : ''
+    const audioPathByType = {
+      completion: '/audio/celebration.wav',
+      notification: '/audio/notification.wav',
+      progress: '/audio/progress_loop.wav',
+    }
+    const audioPath = audioPathByType[soundKey]
+    if (!audioPath) {
+      return
+    }
+    try {
+      let audio = audioPlayersRef.current.get(soundKey)
+      if (!(audio instanceof Audio)) {
+        audio = new Audio(audioPath)
+        audio.preload = 'auto'
+        audioPlayersRef.current.set(soundKey, audio)
+      }
+      audio.pause()
+      audio.currentTime = 0
+      audio.volume = volume
+      void audio.play().catch(() => {})
+    } catch {}
+  }, [normalizedGlobalAISettings.soundEnabled, normalizedGlobalAISettings.soundVolume])
   const normalizedGlobalSearchQuery = useMemo(() => normalizeAIConversationSearchQuery(globalSearchQuery), [globalSearchQuery])
   const normalizedConversationSearchQuery = useMemo(() => normalizeAIConversationSearchQuery(conversationSearchQuery), [conversationSearchQuery])
   const conversationSearchResults = useMemo(() => {
@@ -1080,6 +1121,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     }
   }), [clearRestorePreview, panelInstanceKey, resetComposerEditState, resetConversationSearchState, resetGlobalSearchState, setPanelState])
 
+  useEffect(() => () => {
+    audioPlayersRef.current.forEach((audio) => {
+      try {
+        audio.pause()
+        audio.src = ''
+      } catch {}
+    })
+    audioPlayersRef.current.clear()
+  }, [])
+
   useEffect(() => {
     if (!showSettingsPanel) {
       return
@@ -1256,6 +1307,9 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'upsert_message' && payload.message) {
+        if (payload.message.kind === 'completion' && String(payload.message.status || '').trim() === '已完成') {
+          playAISound('completion')
+        }
         const nextMessage = (() => {
           const normalizedMessage = enrichAIChatCommandMessage(payload.message)
           if (normalizedMessage?.kind === 'followup' && normalizeAIMessageStatus(normalizedMessage.status) !== AI_FOLLOWUP_PENDING_STATUS_KEY) {
@@ -1282,6 +1336,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'followup_required' && payload.message) {
+        playAISound('notification')
         const nextMessage = payload.message
         let nextConversation = null
         setPanelState(matchedPanelKey, (current) => {
@@ -1326,6 +1381,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'tool_approval_required' && Array.isArray(payload.messages)) {
+        playAISound('progress')
         const toolMessages = payload.messages
           .filter((message) => message && typeof message === 'object')
           .map((message) => message)
@@ -1394,6 +1450,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'tool_execution_terminal_assignment_required' && payload.message) {
+        playAISound('progress')
         const nextMessage = enrichAIChatCommandMessage(payload.message)
         setPanelState(matchedPanelKey, (current) => {
           const anchorAssistantMessageId = current.activeAssistantMessageId || requestId
@@ -1415,6 +1472,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'tool_execution_action_required' && payload.message) {
+        playAISound('progress')
         const nextMessage = enrichAIChatCommandMessage(payload.message)
         setPanelState(matchedPanelKey, (current) => {
           const anchorAssistantMessageId = current.activeAssistantMessageId || requestId
@@ -1812,7 +1870,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         unbind()
       }
     }
-  }, [saveConversationSnapshot, setPanelState])
+  }, [enrichAIChatCommandMessage, playAISound, saveConversationSnapshot, setPanelState])
 
   const conversationDiffItems = useMemo(() => {
     const sourceMessages = Array.isArray(panelState.messages) ? panelState.messages : []
@@ -2328,6 +2386,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     const baseConversation = isEditingExistingMessage || isRetryingMessage
       ? truncateConversationAfterMessage(targetConversation, activeComposerState.targetMessageId)
       : targetConversation
+    const shouldInjectAssistantFirstReply = shouldUseAssistantFirstReplyForConversation(baseConversation)
 
     const requestId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const baseApiMessages = Array.isArray(baseConversation.apiMessages) ? baseConversation.apiMessages : []
@@ -2378,6 +2437,11 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       messages: [...persistedConversation.messages, assistantMessage],
     }
 
+    let assistantFirstReplyText = ''
+    if (shouldInjectAssistantFirstReply) {
+      assistantFirstReplyText = (await getAIAssistantFirstReply(getLanguage())).trim()
+    }
+
     resetComposerEditState()
     requestConversationSmoothScrollToBottom()
     setConversationList((prev) => upsertConversationSummary(prev, persistedConversation))
@@ -2401,6 +2465,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         sessionId: terminalId,
         autoApprove: effectiveAutoApprovalEnabled,
         skipNextAutomaticRequest: Boolean(panelState.skipNextAutomaticRequest),
+        assistantFirstReplyText: assistantFirstReplyText || undefined,
         messages: requestMessages,
       })
       return true
@@ -2446,7 +2511,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, panelInstanceKey)
       return false
     }
-  }, [activeConversation, composerEditState, composerImages, effectiveAutoApprovalEnabled, effectiveProviderId, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, saveConversationSnapshot, setPanelState, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
+  }, [activeConversation, composerEditState, composerImages, effectiveAutoApprovalEnabled, effectiveProviderId, getAIAssistantFirstReply, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, saveConversationSnapshot, setPanelState, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
 
   const handleFollowupResponse = useCallback(async (payload) => {
     if (!payload || typeof payload !== 'object') {
@@ -2682,6 +2747,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     }
 
     const requestMessages = buildRequestMessages(requestApiMessages)
+    let assistantFirstReplyText = ''
+    if (shouldUseAssistantFirstReplyForConversation(baseConversation)) {
+      assistantFirstReplyText = (await getAIAssistantFirstReply(getLanguage())).trim()
+    }
     const requestId = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const assistantMessage = {
       id: requestId,
@@ -2733,6 +2802,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         sessionId: terminalId,
         autoApprove: effectiveAutoApprovalEnabled,
         skipNextAutomaticRequest: Boolean(panelState.skipNextAutomaticRequest),
+        assistantFirstReplyText: assistantFirstReplyText || undefined,
         messages: requestMessages,
       })
       return true
@@ -3616,6 +3686,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         onToggleAutoBackup={() => handleSaveAIPanelGlobalSettings({
           conversationAutoBackupEnabled: !normalizedGlobalAISettings.conversationAutoBackupEnabled,
         })}
+        soundEnabled={normalizedGlobalAISettings.soundEnabled !== false}
+        soundVolume={normalizedGlobalAISettings.soundVolume ?? 0.06}
         terminalOutputLineLimit={terminalOutputLineLimit}
         onTerminalOutputLineLimitChange={handleTerminalOutputLineLimitChange}
         terminalOutputCharacterLimit={terminalOutputCharacterLimit}

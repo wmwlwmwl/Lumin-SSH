@@ -1,4 +1,4 @@
-import { CheckCheck, Eye, SquarePen, Terminal, X } from 'lucide-react'
+import { CheckCheck, Eye, MessageCircleQuestionMark, SquarePen, Terminal, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '../../i18n.js'
 
@@ -11,12 +11,14 @@ const DEFAULT_AUTO_APPROVAL_SETTINGS = {
   alwaysAllowExecuteAllCommands: false,
   allowedCommands: [],
   deniedCommands: [],
+  alwaysAllowFollowupQuestions: false,
 }
 
 const VISIBLE_OPTIONS = [
   { key: 'alwaysAllowReadOnly', labelKey: '读取', icon: Eye },
   { key: 'alwaysAllowWrite', labelKey: '写入', icon: SquarePen },
   { key: 'alwaysAllowExecute', labelKey: '执行', icon: Terminal },
+  { key: 'alwaysAllowFollowupQuestions', labelKey: '追问', icon: MessageCircleQuestionMark },
 ]
 
 function normalizeStringList(values) {
@@ -44,7 +46,8 @@ function isAutoApprovalEffectivelyEnabled(settings) {
     settings?.alwaysAllowReadOnly
       || settings?.alwaysAllowWrite
       || settings?.alwaysAllowExecute
-      || settings?.alwaysAllowExecuteReadOnly,
+      || settings?.alwaysAllowExecuteReadOnly
+      || settings?.alwaysAllowFollowupQuestions,
   )
 }
 
@@ -59,6 +62,7 @@ function normalizeAutoApprovalSettings(settings) {
     alwaysAllowExecute: Boolean(settings?.alwaysAllowExecute),
     alwaysAllowExecuteReadOnly: Boolean(settings?.alwaysAllowExecuteReadOnly),
     alwaysAllowExecuteAllCommands: allowedCommands.includes('*'),
+    alwaysAllowFollowupQuestions: Boolean(settings?.alwaysAllowFollowupQuestions),
     allowedCommands,
     deniedCommands,
   }
@@ -271,6 +275,7 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
       alwaysAllowWrite: nextSettings.alwaysAllowWrite,
       alwaysAllowExecute: nextSettings.alwaysAllowExecute,
       alwaysAllowExecuteReadOnly: nextSettings.alwaysAllowExecuteReadOnly,
+      alwaysAllowFollowupQuestions: nextSettings.alwaysAllowFollowupQuestions,
       allowedCommands: nextSettings.allowedCommands,
       deniedCommands: nextSettings.deniedCommands,
       autoApprovalEnabled: nextSettings.autoApprovalEnabled,
@@ -409,7 +414,7 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{t('自动批准')}</div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-              {t('当前阶段仅展示并生效读取,写入,执行.')}
+              {t('当前阶段展示并生效读取,写入,执行,追问.')}
             </div>
           </div>
           <div style={{ padding: 12, display: 'grid', gap: 8, overflowX: 'hidden' }}>

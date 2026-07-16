@@ -19,6 +19,8 @@ const DEFAULT_AI_GLOBAL_SETTINGS = {
   alwaysAllowModeSwitch: false,
   alwaysAllowSubtasks: false,
   alwaysAllowFollowupQuestions: false,
+  soundEnabled: true,
+  soundVolume: 0.06,
   mcpEnabled: true,
   mcpAllowBrowserCalls: false,
   terminalIsolation: true,
@@ -68,6 +70,20 @@ function normalizeApprovalButtonOrder(value) {
 function normalizeCommandActionButtonOrder(value) {
   const nextValue = typeof value === 'string' ? value.trim() : ''
   return VALID_COMMAND_ACTION_BUTTON_ORDERS.has(nextValue) ? nextValue : 'terminate-continue'
+}
+
+function normalizeSoundVolume(value) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return 0.06
+  }
+  if (parsed < 0) {
+    return 0
+  }
+  if (parsed > 1) {
+    return 1
+  }
+  return parsed
 }
 
 function normalizeProxyType(value) {
@@ -125,6 +141,8 @@ export function normalizeAIGlobalSettings(settings) {
   const rawAIRequestProxyId = typeof settings?.aiRequestProxyId === 'string' ? settings.aiRequestProxyId.trim() : ''
   const aiRequestProxyId = proxyNodes.some((node) => node.id === rawAIRequestProxyId) ? rawAIRequestProxyId : ''
   const updatedAt = Number.isFinite(Number(settings?.updatedAt)) && Number(settings?.updatedAt) > 0 ? Number(settings.updatedAt) : Date.now()
+  const soundEnabled = settings?.soundEnabled !== false
+  const soundVolume = normalizeSoundVolume(settings?.soundVolume)
 
   return {
     ...DEFAULT_AI_GLOBAL_SETTINGS,
@@ -146,6 +164,8 @@ export function normalizeAIGlobalSettings(settings) {
     alwaysAllowModeSwitch: Boolean(settings?.alwaysAllowModeSwitch),
     alwaysAllowSubtasks: Boolean(settings?.alwaysAllowSubtasks),
     alwaysAllowFollowupQuestions: Boolean(settings?.alwaysAllowFollowupQuestions),
+    soundEnabled,
+    soundVolume,
     mcpEnabled: settings?.mcpEnabled !== false,
     mcpAllowBrowserCalls: Boolean(settings?.mcpAllowBrowserCalls),
     terminalIsolation: settings?.terminalIsolation !== false,
