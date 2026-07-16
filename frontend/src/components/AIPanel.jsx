@@ -700,27 +700,33 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     }
   }, [])
   const refreshAIHomeData = useCallback(async () => {
-    const results = await Promise.allSettled([
-      listAIConversations(),
-      getAIGlobalSettings(),
-      refreshMCPServerInfo(),
-      refreshMCPOutputCompressionSettings(),
-    ])
-    if (!panelMountedRef.current) {
-      return
+    void getAIGlobalSettings()
+      .then((value) => {
+        if (!panelMountedRef.current) {
+          return
+        }
+        setGlobalAISettings(value)
+      })
+      .catch(() => {
+        if (!panelMountedRef.current) {
+          return
+        }
+        setGlobalAISettings(null)
+      })
+    void refreshMCPServerInfo()
+    void refreshMCPOutputCompressionSettings()
+    try {
+      const conversations = await listAIConversations()
+      if (!panelMountedRef.current) {
+        return
+      }
+      setConversationList(Array.isArray(conversations) ? conversations : [])
+    } catch {
+      if (!panelMountedRef.current) {
+        return
+      }
+      setConversationList([])
     }
-    const conversationResult = results[0]
-    const settingsResult = results[1]
-    setConversationList(
-      conversationResult.status === 'fulfilled' && Array.isArray(conversationResult.value)
-        ? conversationResult.value
-        : [],
-    )
-    setGlobalAISettings(
-      settingsResult.status === 'fulfilled'
-        ? settingsResult.value
-        : null,
-    )
   }, [refreshMCPOutputCompressionSettings, refreshMCPServerInfo])
 
   const showAlert = useCallback(async (message) => {
