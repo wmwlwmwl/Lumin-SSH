@@ -161,6 +161,10 @@ function getFileManagerNewTabPathMode() {
   return localStorage.getItem('fileManagerNewTabPathMode') || FILE_MANAGER_NEW_TAB_PATH_MODE_INHERIT_CURRENT;
 }
 
+function getFileManagerInitialPathMode() {
+  return localStorage.getItem('fileManagerInitialPathMode') || FILE_MANAGER_NEW_TAB_PATH_MODE_SESSION_INITIAL_PATH;
+}
+
 function createFileManagerTab(path = '') {
   fileManagerTabSequence += 1;
   return {
@@ -1896,14 +1900,23 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
       const rememberedPath = normalizePath(window.__luminFileManagerPaths?.[sessionId]);
       const normalizedInitialPath = normalizePath(initialPath);
-      const shouldPreferInitialPath = !rememberedPath && !!normalizedInitialPath;
+      const initialPathMode = getFileManagerInitialPathMode();
 
-      skipNextTerminalFollowRef.current = shouldPreferInitialPath;
+      skipNextTerminalFollowRef.current = !rememberedPath && initialPathMode !== FILE_MANAGER_NEW_TAB_PATH_MODE_TERMINAL_CWD;
 
       pushPath(rememberedPath);
-      pushPath(normalizedInitialPath);
 
-      if (!rememberedPath && !normalizedInitialPath && followTerminalCwd) {
+      if (initialPathMode === FILE_MANAGER_NEW_TAB_PATH_MODE_ROOT) {
+        pushPath('/');
+      } else if (initialPathMode === FILE_MANAGER_NEW_TAB_PATH_MODE_SESSION_INITIAL_PATH) {
+        pushPath(normalizedInitialPath);
+        try {
+          const cwd = await AppGo.GetTerminalCwd(sessionId);
+          if (!cancelled) {
+            pushPath(cwd);
+          }
+        } catch (_) {}
+      } else if (initialPathMode === FILE_MANAGER_NEW_TAB_PATH_MODE_TERMINAL_CWD) {
         try {
           const cwd = await AppGo.GetTerminalCwd(sessionId);
           if (!cancelled) {
@@ -1947,7 +1960,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     return () => {
       cancelled = true;
     };
-  }, [sessionId, loadDir, initialPath, followTerminalCwd, normalizePath]);
+  }, [sessionId, loadDir, initialPath, normalizePath]);
 
   useEffect(() => {
     if (!followTerminalCwd) return undefined;
@@ -2970,8 +2983,17 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (mode === FILE_MANAGER_NEW_TAB_PATH_MODE_ROOT) {
       return '/';
     }
-    if (mode === FILE_MANAGER_NEW_TAB_PATH_MODE_SESSION_INITIAL_PATH && normalizedInitialPath) {
-      return normalizedInitialPath;
+    if (mode === FILE_MANAGER_NEW_TAB_PATH_MODE_SESSION_INITIAL_PATH) {
+      if (normalizedInitialPath) {
+        return normalizedInitialPath;
+      }
+      try {
+        const cwd = await AppGo.GetTerminalCwd(sessionId);
+        const normalizedCwd = normalizePath(cwd);
+        if (normalizedCwd) {
+          return normalizedCwd;
+        }
+      } catch (_) {}
     }
     if (mode === FILE_MANAGER_NEW_TAB_PATH_MODE_TERMINAL_CWD) {
       try {
