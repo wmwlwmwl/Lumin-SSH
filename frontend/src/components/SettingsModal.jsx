@@ -644,6 +644,7 @@ export default function SettingsModal({
   const [fileManagerFollowTerminalCwd, setFileManagerFollowTerminalCwd] = useState(localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   const [fileManagerCompressedTransfer, setFileManagerCompressedTransfer] = useState(localStorage.getItem('fileManagerCompressedTransfer') !== 'false');
   const [fileManagerAutoOpenTransferQueue, setFileManagerAutoOpenTransferQueue] = useState(localStorage.getItem('fileManagerAutoOpenTransferQueue') !== 'false');
+  const [fileManagerInitialPathMode, setFileManagerInitialPathMode] = useState(localStorage.getItem('fileManagerInitialPathMode') || 'session_initial_path');
   const [fileManagerNewTabPathMode, setFileManagerNewTabPathMode] = useState(localStorage.getItem('fileManagerNewTabPathMode') || 'inherit_current');
   const [fileManagerAskDownloadEveryTime, setFileManagerAskDownloadEveryTime] = useState(localStorage.getItem('fileManagerAskDownloadEveryTime') === 'true');
   const [fileManagerDownloadConflictStrategy, setFileManagerDownloadConflictStrategy] = useState(localStorage.getItem('fileManagerDownloadConflictStrategy') || 'auto_rename');
@@ -729,6 +730,10 @@ export default function SettingsModal({
     setFileManagerAutoOpenTransferQueue(next);
     if (next) localStorage.removeItem('fileManagerAutoOpenTransferQueue');
     else localStorage.setItem('fileManagerAutoOpenTransferQueue', 'false');
+  };
+  const handleFileManagerInitialPathModeChange = (value) => {
+    setFileManagerInitialPathMode(value);
+    localStorage.setItem('fileManagerInitialPathMode', value);
   };
   const handleFileManagerNewTabPathModeChange = (value) => {
     setFileManagerNewTabPathMode(value);
@@ -1391,6 +1396,8 @@ export default function SettingsModal({
                 onToggleFileManagerCompressedTransfer={handleToggleFileManagerCompressedTransfer}
                 fileManagerAutoOpenTransferQueue={fileManagerAutoOpenTransferQueue}
                 onToggleFileManagerAutoOpenTransferQueue={handleToggleFileManagerAutoOpenTransferQueue}
+                fileManagerInitialPathMode={fileManagerInitialPathMode}
+                onFileManagerInitialPathModeChange={handleFileManagerInitialPathModeChange}
                 fileManagerNewTabPathMode={fileManagerNewTabPathMode}
                 onFileManagerNewTabPathModeChange={handleFileManagerNewTabPathModeChange}
                 fileManagerAskDownloadEveryTime={fileManagerAskDownloadEveryTime}
