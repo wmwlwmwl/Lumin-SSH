@@ -1910,6 +1910,9 @@ body.theme-light .batch-operation-bar {
   cursor: pointer;
   transition: var(--transition-fast);
   align-items: center;
+  position: relative;
+  overflow: hidden;
+  transform-origin: top center;
 }
 .file-item:hover { background: var(--surface-hover); }
 .file-item.selected { background: color-mix(in srgb, var(--accent) 15%, var(--surface-base)); }
@@ -1939,6 +1942,38 @@ body.theme-light .batch-operation-bar {
 }
 .file-list:not(:focus-within) .file-item.selected.clipboard-cut {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 46%, transparent);
+}
+.file-item.deleted-placeholder {
+  pointer-events: none;
+  background: rgba(var(--danger-rgb), 0.05);
+}
+.file-item.deleted-placeholder .file-name,
+.file-item.deleted-placeholder .file-size,
+.file-item.deleted-placeholder .file-permission,
+.file-item.deleted-placeholder .file-date,
+.file-item.deleted-placeholder .file-icon {
+  color: var(--danger);
+}
+.file-item.deleted-placeholder .file-name {
+  text-decoration: line-through;
+}
+.file-item.deleted-placeholder .file-actions {
+  opacity: 0;
+}
+.file-item.visual-effect-added,
+.file-item.visual-effect-changed,
+.file-item.visual-effect-removed {
+  z-index: 2;
+}
+.file-item.visual-effect-added {
+  animation: fileItemAddedPulse 3200ms ease-out 1 both;
+}
+.file-item.visual-effect-changed {
+  animation: fileItemChangedPulse 3000ms ease-out 1 both;
+}
+.file-item.visual-effect-removed {
+  animation: fileItemRemovedCollapse 3000ms ease-in 1 both;
+  max-height: var(--file-row-height, 36px);
 }
 .file-item:hover .file-actions { opacity: 1; }
 
@@ -2073,6 +2108,71 @@ body.theme-light .batch-operation-bar {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; } }
+
+@keyframes fileItemAddedPulse {
+  0% {
+    opacity: 0.62;
+    box-shadow: inset 0 0 0 0 rgba(var(--success-rgb), 0), 0 0 0 0 rgba(var(--success-rgb), 0);
+    background: transparent;
+  }
+  38% {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px rgba(var(--success-rgb), 0.92), 0 0 0 1px rgba(var(--success-rgb), 0.22);
+    background: rgba(var(--success-rgb), 0.10);
+  }
+  100% {
+    opacity: 1;
+    box-shadow: inset 0 0 0 0 rgba(var(--success-rgb), 0), 0 0 0 0 rgba(var(--success-rgb), 0);
+    background: transparent;
+  }
+}
+
+@keyframes fileItemChangedPulse {
+  0% {
+    box-shadow: inset 0 0 0 0 rgba(var(--accent-rgb), 0), 0 0 0 0 rgba(var(--accent-rgb), 0);
+    background: transparent;
+  }
+  42% {
+    box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.92), 0 0 0 1px rgba(var(--accent-rgb), 0.18);
+    background: rgba(var(--accent-rgb), 0.10);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgba(var(--accent-rgb), 0), 0 0 0 0 rgba(var(--accent-rgb), 0);
+    background: transparent;
+  }
+}
+
+@keyframes fileItemRemovedCollapse {
+  0% {
+    opacity: 1;
+    max-height: var(--file-row-height, 36px);
+    padding-top: 5px;
+    padding-bottom: 5px;
+    border-bottom-color: rgba(var(--danger-rgb), 0.28);
+    box-shadow: inset 0 0 0 0 rgba(var(--danger-rgb), 0);
+    transform: scaleY(1);
+  }
+  34% {
+    opacity: 1;
+    max-height: var(--file-row-height, 36px);
+    padding-top: 5px;
+    padding-bottom: 5px;
+    background: rgba(var(--danger-rgb), 0.12);
+    border-bottom-color: rgba(var(--danger-rgb), 0.54);
+    box-shadow: inset 0 0 0 1px rgba(var(--danger-rgb), 0.78);
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom-width: 0;
+    background: rgba(var(--danger-rgb), 0.04);
+    box-shadow: inset 0 0 0 1px rgba(var(--danger-rgb), 0);
+    transform: scaleY(0.92);
+  }
+}
 
 @keyframes updateBubbleAttention {
   0%, 100% {

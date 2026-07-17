@@ -616,6 +616,262 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setSelectedPaths([]);
     lastClickedPathRef.current = null;
   }, [currentPath]);
+  const pendingViewRestoreRef = useRef(null);
+  const lastVisibleViewAnchorRef = useRef(null);
+  const pendingVisualEffectsRef = useRef(new Map());
+  const pendingAutoRevealRowKeysRef = useRef([]);
+  const rowEffectTimersRef = useRef(new Map());
+  const tombstoneSequenceRef = useRef(0);
+  const suppressUserScrollTrackingUntilRef = useRef(0);
+  const userHasScrolledInCurrentPathRef = useRef(false);
+  const [activeRowEffects, setActiveRowEffects] = useState({});
+
+  const captureFileListViewAnchor = useCallback(() => {
+    const list = fileListRef.current;
+    if (!list) return lastVisibleViewAnchorRef.current || null;
+    const rootRect = fileManagerRootRef.current?.getBoundingClientRect?.();
+    const canMeasure = !document.hidden && !!rootRect && rootRect.width > 1 && rootRect.height > 1;
+    if (!canMeasure) {
+      return lastVisibleViewAnchorRef.current || {
+        key: '',
+        offset: 0,
+        scrollTop: list.scrollTop,
+      };
+    }
+    const header = list.querySelector('.file-list-header');
+    const viewportTop = header ? header.getBoundingClientRect().bottom : list.getBoundingClientRect().top;
+    const rows = Array.from(list.querySelectorAll('[data-file-row-key]'));
+    const anchorRow = rows.find((row) => row.getBoundingClientRect().bottom > viewportTop + 1);
+    const anchorRect = anchorRow?.getBoundingClientRect?.();
+    const nextAnchor = {
+      key: anchorRow?.dataset?.fileRowKey || '',
+      offset: anchorRect ? anchorRect.top - viewportTop : 0,
+      scrollTop: list.scrollTop,
+    };
+    lastVisibleViewAnchorRef.current = nextAnchor;
+    return nextAnchor;
+  }, []);
+
+  const queueFileListViewRestore = useCallback((anchor = captureFileListViewAnchor()) => {
+    pendingViewRestoreRef.current = anchor;
+  }, [captureFileListViewAnchor]);
+
+  const updateItemsPreservingView = useCallback((updater, anchor = captureFileListViewAnchor()) => {
+    pendingViewRestoreRef.current = anchor;
+    setItems((current) => (typeof updater === 'function' ? updater(current) : updater));
+  }, [captureFileListViewAnchor]);
+
+  React.useLayoutEffect(() => {
+    const pendingRestore = pendingViewRestoreRef.current;
+    if (!pendingRestore) return;
+    pendingViewRestoreRef.current = null;
+    const list = fileListRef.current;
+    if (!list) return;
+    const header = list.querySelector('.file-list-header');
+    const viewportTop = header ? header.getBoundingClientRect().bottom : list.getBoundingClientRect().top;
+    const rows = Array.from(list.querySelectorAll('[data-file-row-key]'));
+    if (pendingRestore.key) {
+      const anchorRow = rows.find((row) => row.dataset?.fileRowKey === pendingRestore.key);
+      if (anchorRow) {
+        const delta = anchorRow.getBoundingClientRect().top - viewportTop - pendingRestore.offset;
+        if (delta !== 0) {
+          list.scrollTop += delta;
+        }
+        captureFileListViewAnchor();
+        return;
+      }
+    }
+    if (typeof pendingRestore.scrollTop === 'number') {
+      list.scrollTop = pendingRestore.scrollTop;
+    }
+    captureFileListViewAnchor();
+  }, [captureFileListViewAnchor, items]);
+
+  const isDeletedPlaceholderItem = useCallback((item) => Boolean(item?.__luminDeletedPlaceholder), []);
+
+  const captureRowHeight = useCallback((rowKey) => {
+    if (!rowKey || !fileListRef.current) return 36;
+    const rows = Array.from(fileListRef.current.querySelectorAll('[data-file-row-key]'));
+    const row = rows.find((entry) => entry.dataset?.fileRowKey === rowKey);
+    return Math.max(28, Math.round(row?.getBoundingClientRect?.().height || row?.offsetHeight || 36));
+  }, []);
+
+  const queueRowEffect = useCallback((logicalKey, rowKey, effect) => {
+    if (!logicalKey || !rowKey || !effect) return;
+    pendingVisualEffectsRef.current.set(logicalKey, { logicalKey, rowKey, effect });
+    if (effect === 'added') {
+      pendingAutoRevealRowKeysRef.current = [
+        ...pendingAutoRevealRowKeysRef.current.filter((key) => key !== rowKey),
+        rowKey,
+      ];
+    }
+  }, []);
+
+  const clearRowEffectTimer = useCallback((rowKey) => {
+    const timer = rowEffectTimersRef.current.get(rowKey);
+    if (timer) {
+      window.clearTimeout(timer);
+      rowEffectTimersRef.current.delete(rowKey);
+    }
+  }, []);
+
+  const clearActiveRowEffect = useCallback((rowKey) => {
+    clearRowEffectTimer(rowKey);
+    setActiveRowEffects((current) => {
+      if (!current[rowKey]) return current;
+      const next = { ...current };
+      delete next[rowKey];
+      return next;
+    });
+  }, [clearRowEffectTimer]);
+
+  const finalizeDeletedPlaceholder = useCallback((rowKey) => {
+    clearRowEffectTimer(rowKey);
+    setActiveRowEffects((current) => {
+      if (!current[rowKey]) return current;
+      const next = { ...current };
+      delete next[rowKey];
+      return next;
+    });
+    setItems((current) => current.filter((entry) => entry.__rowKey !== rowKey));
+  }, [clearRowEffectTimer]);
+
+  const startRowEffect = useCallback((entry) => {
+    if (!entry?.rowKey || !entry?.effect) return;
+    clearRowEffectTimer(entry.rowKey);
+    setActiveRowEffects((current) => (
+      current[entry.rowKey] === entry.effect
+        ? current
+        : { ...current, [entry.rowKey]: entry.effect }
+    ));
+    const duration = entry.effect === 'added' ? 3200 : 3000;
+    const timer = window.setTimeout(() => {
+      if (entry.effect === 'removed') {
+        finalizeDeletedPlaceholder(entry.rowKey);
+      } else {
+        clearActiveRowEffect(entry.rowKey);
+      }
+    }, duration);
+    rowEffectTimersRef.current.set(entry.rowKey, timer);
+  }, [clearActiveRowEffect, clearRowEffectTimer, finalizeDeletedPlaceholder]);
+
+  const isFileManagerActuallyVisible = useCallback(() => {
+    if (!isActive || document.hidden) return false;
+    const root = fileManagerRootRef.current;
+    if (!root) return false;
+    const rect = root.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) return false;
+    const style = window.getComputedStyle(root);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  }, [isActive]);
+
+  const isListNearBottom = useCallback(() => {
+    const list = fileListRef.current;
+    if (!list) return false;
+    return list.scrollHeight - (list.scrollTop + list.clientHeight) <= 8;
+  }, []);
+
+  const isRowVisibleInViewport = useCallback((rowKey) => {
+    if (!rowKey || !fileListRef.current) return false;
+    const list = fileListRef.current;
+    const rows = Array.from(list.querySelectorAll('[data-file-row-key]'));
+    const row = rows.find((entry) => entry.dataset?.fileRowKey === rowKey);
+    if (!row) return false;
+    const header = list.querySelector('.file-list-header');
+    const viewportTop = header ? header.getBoundingClientRect().bottom : list.getBoundingClientRect().top;
+    const viewportBottom = list.getBoundingClientRect().bottom;
+    const rowRect = row.getBoundingClientRect();
+    return rowRect.bottom > viewportTop + 1 && rowRect.top < viewportBottom - 1;
+  }, []);
+
+  const revealRowInViewport = useCallback((rowKey) => {
+    if (!rowKey || !fileListRef.current) return false;
+    const list = fileListRef.current;
+    const rows = Array.from(list.querySelectorAll('[data-file-row-key]'));
+    const row = rows.find((entry) => entry.dataset?.fileRowKey === rowKey);
+    if (!row) return false;
+    const header = list.querySelector('.file-list-header');
+    const viewportTop = header ? header.getBoundingClientRect().bottom : list.getBoundingClientRect().top;
+    const viewportBottom = list.getBoundingClientRect().bottom;
+    const rowRect = row.getBoundingClientRect();
+    if (rowRect.bottom > viewportTop + 1 && rowRect.top < viewportBottom - 1) {
+      return true;
+    }
+    const viewportHeight = Math.max(1, viewportBottom - viewportTop);
+    const targetScrollTop = Math.max(
+      0,
+      list.scrollTop + (rowRect.top - viewportTop) - Math.max(12, (viewportHeight - rowRect.height) / 2),
+    );
+    suppressUserScrollTrackingUntilRef.current = Date.now() + 400;
+    list.scrollTop = targetScrollTop;
+    captureFileListViewAnchor();
+    return true;
+  }, [captureFileListViewAnchor]);
+
+  const flushPendingRowEffects = useCallback(() => {
+    if (!isFileManagerActuallyVisible()) return;
+    if (pendingAutoRevealRowKeysRef.current.length > 0 && (!userHasScrolledInCurrentPathRef.current || isListNearBottom())) {
+      const pendingKeys = [...pendingAutoRevealRowKeysRef.current];
+      for (const rowKey of pendingKeys) {
+        if (isRowVisibleInViewport(rowKey) || revealRowInViewport(rowKey)) {
+          pendingAutoRevealRowKeysRef.current = pendingAutoRevealRowKeysRef.current.filter((key) => key !== rowKey);
+          break;
+        }
+      }
+    }
+    pendingVisualEffectsRef.current.forEach((entry, logicalKey) => {
+      if (!isRowVisibleInViewport(entry.rowKey)) return;
+      pendingVisualEffectsRef.current.delete(logicalKey);
+      startRowEffect(entry);
+    });
+  }, [isFileManagerActuallyVisible, isListNearBottom, isRowVisibleInViewport, revealRowInViewport, startRowEffect]);
+
+  const createDeletedPlaceholder = useCallback((item, logicalPath, rowHeight = captureRowHeight(logicalPath)) => ({
+    ...(item || {}),
+    __luminDeletedPlaceholder: true,
+    __logicalPath: logicalPath,
+    __rowKey: `__deleted__:${logicalPath}:${Date.now()}:${tombstoneSequenceRef.current++}`,
+    __rowHeight: Math.max(28, rowHeight || 36),
+  }), [captureRowHeight]);
+
+  const didItemMetadataChange = useCallback((prevItem, nextItem) => (
+    prevItem?.isDirectory !== nextItem?.isDirectory
+    || Number(prevItem?.size || 0) !== Number(nextItem?.size || 0)
+    || String(prevItem?.permission || '') !== String(nextItem?.permission || '')
+    || String(prevItem?.mode || '') !== String(nextItem?.mode || '')
+    || String(prevItem?.modifyTime || '') !== String(nextItem?.modifyTime || '')
+  ), []);
+
+  useEffect(() => {
+    captureFileListViewAnchor();
+    flushPendingRowEffects();
+  }, [captureFileListViewAnchor, flushPendingRowEffects, items, loading, isActive]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      captureFileListViewAnchor();
+      flushPendingRowEffects();
+    }, 240);
+    return () => {
+      window.clearInterval(timer);
+      rowEffectTimersRef.current.forEach((currentTimer) => window.clearTimeout(currentTimer));
+      rowEffectTimersRef.current.clear();
+      pendingVisualEffectsRef.current.clear();
+    };
+  }, [captureFileListViewAnchor, flushPendingRowEffects]);
+
+  useEffect(() => {
+    lastVisibleViewAnchorRef.current = null;
+    pendingViewRestoreRef.current = null;
+    pendingVisualEffectsRef.current.clear();
+    pendingAutoRevealRowKeysRef.current = [];
+    userHasScrolledInCurrentPathRef.current = false;
+    suppressUserScrollTrackingUntilRef.current = 0;
+    rowEffectTimersRef.current.forEach((currentTimer) => window.clearTimeout(currentTimer));
+    rowEffectTimersRef.current.clear();
+    setActiveRowEffects({});
+  }, [currentPath]);
+
   const [clipboard, setClipboard] = useState(null); // { paths: string[], mode: 'copy'|'cut', srcDir: string }
   const [operationProgress, setOperationProgress] = useState(null);
   // 并发互斥闸门：用 ref 在同步阶段立即生效，避免两个快速事件都读到 stale 的 state 而双双放行
@@ -796,19 +1052,66 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     };
   }, [isActive, sessionGroupId, workbenchState.editorSplitOpen, workbenchState.uploadOpen]);
 
-  const loadDir = useCallback(async (path, silent = false) => {
-    setLoading(true);
+  const loadDir = useCallback(async (path, options = {}) => {
+    const resolvedOptions = typeof options === 'boolean' ? { silent: options } : (options || {});
+    const samePathRefresh = currentPathHydratedRef.current && path === currentPathRef.current;
+    const preserveView = resolvedOptions.preserveView ?? samePathRefresh;
+    const trackDiff = resolvedOptions.trackDiff ?? samePathRefresh;
+    const showLoading = resolvedOptions.showLoading ?? !(preserveView || trackDiff);
+    if (showLoading) {
+      setLoading(true);
+    }
+    if (preserveView && !trackDiff) {
+      queueFileListViewRestore();
+    }
     try {
       const data = await AppGo.ListDir(sessionId, path);
       if (!mountedRef.current) return false;
-      setItems(data || []);
+      if (trackDiff) {
+        updateItemsPreservingView((current) => {
+          const nextItems = Array.isArray(data) ? data : [];
+          const currentVisibleItems = current.filter((entry) => !isDeletedPlaceholderItem(entry));
+          const existingPlaceholders = current.filter((entry) => isDeletedPlaceholderItem(entry));
+          const currentByName = new Map(currentVisibleItems.map((entry) => [entry.name, entry]));
+          const nextByName = new Map(nextItems.map((entry) => [entry.name, entry]));
+
+          nextItems.forEach((entry) => {
+            const logicalPath = joinPath(path, entry.name);
+            const previousEntry = currentByName.get(entry.name);
+            if (!previousEntry) {
+              queueRowEffect(logicalPath, logicalPath, 'added');
+              return;
+            }
+            if (didItemMetadataChange(previousEntry, entry)) {
+              queueRowEffect(logicalPath, logicalPath, 'changed');
+            }
+          });
+
+          const newDeletedPlaceholders = currentVisibleItems
+            .filter((entry) => !nextByName.has(entry.name))
+            .map((entry) => {
+              const logicalPath = joinPath(path, entry.name);
+              const placeholder = createDeletedPlaceholder(entry, logicalPath);
+              queueRowEffect(logicalPath, placeholder.__rowKey, 'removed');
+              return placeholder;
+            });
+
+          const persistedPlaceholders = existingPlaceholders.filter((entry) => !nextByName.has(entry.name));
+          return [...nextItems, ...persistedPlaceholders, ...newDeletedPlaceholders];
+        });
+      } else {
+        setItems(data || []);
+      }
       currentPathHydratedRef.current = true;
       setCurrentPath(path);
-      if (fileListRef.current) fileListRef.current.scrollTop = 0;
+      if (!preserveView && fileListRef.current) {
+        fileListRef.current.scrollTop = 0;
+      }
       return true;
     } catch (err) {
+      pendingViewRestoreRef.current = null;
       if (!mountedRef.current) return false;
-      if (!silent) {
+      if (!resolvedOptions.silent) {
         const msg = String(err).toLowerCase().includes('permission denied')
           ? `${t('权限不足')}: SFTP ${t('仍以')} ${sessionId ? t('原用户') : ''} ${t('身份运行，终端内 sudo 不影响文件管理器')}`
           : `${t('读取目录失败')}: ${err}`;
@@ -818,7 +1121,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [sessionId, addToast, t]);
+  }, [sessionId, addToast, t, queueFileListViewRestore, updateItemsPreservingView, isDeletedPlaceholderItem, didItemMetadataChange, queueRowEffect, createDeletedPlaceholder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1218,7 +1521,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           : item
       )));
       addToast(`${t('上传成功')}: ${name}`, 'success');
-      await loadDir(currentPath);
+      await loadDir(currentPath, { preserveView: true, showLoading: false });
     } catch (err) {
       const isAborted = abortedUploadIdsRef.current.has(queueId) || String(err).toLowerCase().includes('context canceled');
       updateSessionUploadQueue(sessionGroupId, (current) => current.map((item) => (
@@ -1432,7 +1735,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       } else {
         addToast(`${t('上传成功')}: ${completedFiles}${t('项')}`, 'success');
       }
-      await loadDir(currentPath);
+      await loadDir(currentPath, { preserveView: true, showLoading: false });
     } catch (err) {
       if (taskId) {
         await AppGo.AbortChunkedUploadTask(taskId).catch(() => {});
@@ -1784,8 +2087,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     try {
       setOperationProgress({ message: `${t('正在删除')} ${item.name}` });
       await AppGo.DeleteItem(sessionId, remotePath, item.isDirectory);
+      const deletedPlaceholder = createDeletedPlaceholder(item, remotePath);
       setSelectedPaths(prev => prev.filter(p => p !== remotePath));
-      await loadDir(currentPath);
+      if (lastClickedPathRef.current === remotePath) {
+        lastClickedPathRef.current = null;
+      }
+      queueRowEffect(remotePath, deletedPlaceholder.__rowKey, 'removed');
+      updateItemsPreservingView((prev) => prev.map((entry) => (
+        entry.name === item.name ? deletedPlaceholder : entry
+      )));
     } catch (err) {
       addToast(`${t('删除失败')}: ${err}`, 'error');
     } finally {
@@ -1809,8 +2119,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     try {
       setOperationProgress({ message: `${t('正在删除')} ${item.name}` });
       await AppGo.DeleteItemShell(sessionId, remotePath);
+      const deletedPlaceholder = createDeletedPlaceholder(item, remotePath);
       setSelectedPaths(prev => prev.filter(p => p !== remotePath));
-      await loadDir(currentPath);
+      if (lastClickedPathRef.current === remotePath) {
+        lastClickedPathRef.current = null;
+      }
+      queueRowEffect(remotePath, deletedPlaceholder.__rowKey, 'removed');
+      updateItemsPreservingView((prev) => prev.map((entry) => (
+        entry.name === item.name ? deletedPlaceholder : entry
+      )));
     } catch (err) {
       addToast(`${t('删除失败')}: ${err}`, 'error');
     } finally {
@@ -1834,6 +2151,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     let successCount = 0;
     let failCount = 0;
+    const removedPaths = [];
     const total = selectedPaths.length;
     setOperationProgress({ message: t('正在删除中...'), current: 0, total });
     try {
@@ -1844,6 +2162,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         try {
           await AppGo.DeleteItem(sessionId, path, dirSet.has(path));
           successCount++;
+          removedPaths.push(path);
         } catch (err) {
           failCount++;
           console.error('delete item failed:', path, err);
@@ -1855,8 +2174,28 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     if (successCount > 0) addToast(`${t('已删除')} ${successCount} ${t('项')}`, 'success');
     if (failCount > 0) addToast(`${t('删除失败')}: ${failCount} ${t('项')}`, 'error');
+    const deletedPlaceholders = new Map(removedPaths.map((path) => {
+      const existingItem = items.find((entry) => joinPath(currentPath, entry.name) === path);
+      const fallbackName = path.split('/').pop() || '';
+      const placeholder = createDeletedPlaceholder(existingItem || {
+        name: fallbackName,
+        isDirectory: dirSet.has(path),
+        size: 0,
+        permission: '',
+        mode: '',
+        modifyTime: Date.now(),
+      }, path);
+      queueRowEffect(path, placeholder.__rowKey, 'removed');
+      return [path, placeholder];
+    }));
+    if (lastClickedPathRef.current && removedPaths.includes(lastClickedPathRef.current)) {
+      lastClickedPathRef.current = null;
+    }
     setSelectedPaths([]);
-    await loadDir(currentPath);
+    updateItemsPreservingView((prev) => prev.map((entry) => {
+      const logicalPath = joinPath(currentPath, entry.name);
+      return deletedPlaceholders.get(logicalPath) || entry;
+    }));
     fileListRef.current?.focus();
   };
 
@@ -1872,7 +2211,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     if (isCtrl && e.key === 'a') {
       e.preventDefault();
-      setSelectedPaths(sortedItems.map(i => joinPath(currentPath, i.name)));
+      setSelectedPaths(sortedItems.filter((item) => !isDeletedPlaceholderItem(item)).map(i => joinPath(currentPath, i.name)));
       return;
     }
     if (isCtrl && e.key === 'c') {
@@ -1908,12 +2247,17 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     let count = 0;
     // 注意：existing 在循环内会被更新，反映本次粘贴已产生的文件名，避免同批同名互覆盖
     const existing = new Set(items.map(i => i.name));
+    const localPatchedItems = [];
+    let shouldFallbackRefresh = false;
     const total = clipboard.paths.length;
     setOperationProgress({ message: t('正在粘贴中...'), current: 0, total });
     try {
       for (let i = 0; i < total; i++) {
         const srcPath = clipboard.paths[i];
         const name = srcPath.split('/').pop();
+        const sourceItem = clipboard.srcDir === currentPath
+          ? items.find((entry) => entry.name === name)
+          : null;
         let destPath = joinPath(currentPath, name);
         let destName = name;
         if (clipboard.mode === 'copy' && clipboard.srcDir === currentPath) {
@@ -1956,6 +2300,14 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           // 把刚产生的目标名加入 existing，让同批后续迭代可见
           existing.add(destName);
           count++;
+          if (clipboard.mode === 'copy' && sourceItem) {
+            localPatchedItems.push(createLocalItemShell(destName, sourceItem.isDirectory, {
+              ...sourceItem,
+              name: destName,
+            }));
+          } else {
+            shouldFallbackRefresh = true;
+          }
         } catch (err) {
           addToast(`${t('操作失败')}: ${name} - ${err}`, 'error');
         }
@@ -1970,8 +2322,19 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       if (clipboard.mode === 'cut') {
         updateClipboard(null);
       }
+      if (!shouldFallbackRefresh && localPatchedItems.length === count) {
+        localPatchedItems.forEach((localItem) => {
+          const logicalPath = joinPath(currentPath, localItem.name);
+          queueRowEffect(logicalPath, logicalPath, 'added');
+        });
+        updateItemsPreservingView((prev) => localPatchedItems.reduce(
+          (next, localItem) => upsertLocalItem(next, localItem),
+          prev,
+        ));
+      } else {
+        await loadDir(currentPath, { preserveView: true, showLoading: false });
+      }
     }
-    await loadDir(currentPath);
   };
 
   // Create directory
@@ -1982,7 +2345,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     try {
       await AppGo.Mkdir(sessionId, remotePath);
       addToast(`${t('文件夹创建成功')}: ${name}`, 'success');
-      await loadDir(currentPath);
+      queueRowEffect(remotePath, remotePath, 'added');
+      updateItemsPreservingView((prev) => upsertLocalItem(prev, createLocalItemShell(name, true)));
     } catch (err) {
       addToast(`${t('创建失败')}: ${err}`, 'error');
     }
@@ -1996,7 +2360,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     try {
       await AppGo.WriteFile(sessionId, remotePath, '');
       addToast(`${t('文件创建成功')}: ${name}`, 'success');
-      await loadDir(currentPath);
+      queueRowEffect(remotePath, remotePath, 'added');
+      updateItemsPreservingView((prev) => upsertLocalItem(prev, createLocalItemShell(name, false)));
     } catch (err) {
       addToast(`${t('创建失败')}: ${err}`, 'error');
     }
@@ -2006,14 +2371,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const handleCompress = async (item) => {
     const remotePath = joinPath(currentPath, item.name);
     try {
-      setLoading(true);
       addToast(`${t('正在压缩')} ${item.name}...`, 'info');
       await AppGo.CompressItem(sessionId, remotePath);
       addToast(t('压缩成功'), 'success');
-      await loadDir(currentPath);
+      await loadDir(currentPath, { preserveView: true, showLoading: false });
     } catch (err) {
       addToast(`${t('压缩失败')}: ${err}`, 'error');
-      setLoading(false);
     }
   };
 
@@ -2021,14 +2384,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const handleUncompress = async (item) => {
     const remotePath = joinPath(currentPath, item.name);
     try {
-      setLoading(true);
       addToast(`${t('正在解压')} ${item.name}...`, 'info');
       await AppGo.UncompressItem(sessionId, remotePath);
       addToast(t('解压成功'), 'success');
-      await loadDir(currentPath);
+      await loadDir(currentPath, { preserveView: true, showLoading: false });
     } catch (err) {
       addToast(`${t('解压失败')}: ${err}`, 'error');
-      setLoading(false);
     }
   };
 
@@ -2039,17 +2400,33 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   };
 
   const confirmRename = async (refocus = false) => {
-    if (!renamingItem || !renameValue.trim() || renameValue === renamingItem.name) {
+    const nextName = renameValue.trim();
+    if (!renamingItem || !nextName || nextName === renamingItem.name) {
       setRenamingItem(null);
       if (refocus) fileListRef.current?.focus();
       return;
     }
     const oldPath = joinPath(currentPath, renamingItem.name);
-    const newPath = joinPath(currentPath, renameValue);
+    const newPath = joinPath(currentPath, nextName);
     try {
       await AppGo.RenameItem(sessionId, oldPath, newPath);
       addToast(t('重命名成功'), 'success');
-      await loadDir(currentPath);
+      const anchor = captureFileListViewAnchor();
+      if (anchor?.key === oldPath) {
+        anchor.key = newPath;
+      }
+      setSelectedPaths((prev) => prev.map((path) => (path === oldPath ? newPath : path)));
+      if (lastClickedPathRef.current === oldPath) {
+        lastClickedPathRef.current = newPath;
+      }
+      pendingVisualEffectsRef.current.delete(oldPath);
+      clearActiveRowEffect(oldPath);
+      queueRowEffect(newPath, newPath, 'changed');
+      updateItemsPreservingView((prev) => prev.map((entry) => (
+        entry.name === renamingItem.name
+          ? { ...entry, name: nextName, modifyTime: Date.now() }
+          : entry
+      )), anchor);
     } catch (err) {
       addToast(`${t('重命名失败')}: ${err}`, 'error');
     } finally {
@@ -2093,11 +2470,17 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       await AppGo.ChmodFile(sessionId, chmodTarget.path, normalizedMode, recursive);
       addToast(t('权限修改成功'), 'success');
       setChmodTarget(null);
-      await loadDir(currentPath);
+      await loadDir(currentPath, { preserveView: true, showLoading: false });
     } catch (err) {
       addToast(`${t('权限修改失败')}: ${err}`, 'error');
     }
   };
+
+  const handleFileListScroll = useCallback(() => {
+    captureFileListViewAnchor();
+    if (Date.now() < suppressUserScrollTrackingUntilRef.current) return;
+    userHasScrolledInCurrentPathRef.current = true;
+  }, [captureFileListViewAnchor]);
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -2413,7 +2796,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       {/* Content area: file list + optional split editor */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* File List */}
-        <div className="file-list" ref={fileListRef} tabIndex={0} onKeyDown={handleFileListKeyDown} style={{ flex: 1, minWidth: 0 }}>
+        <div className="file-list" ref={fileListRef} tabIndex={0} onKeyDown={handleFileListKeyDown} onScroll={handleFileListScroll} style={{ flex: 1, minWidth: 0 }}>
           <div className="file-list-header">
             <span onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
               {t('名称')} {sortField === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
@@ -2434,6 +2817,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           {currentPath !== '/' && (
             <div
               className="file-item"
+              data-file-row-key="__parent__"
               onDoubleClick={() => {
                 const parent = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/';
                 loadDir(parent);
@@ -2472,11 +2856,14 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           {!loading && sortedItems.map((item) => {
             const isRenaming = renamingItem?.name === item.name;
             const itemPath = joinPath(currentPath, item.name);
+            const rowKey = item.__rowKey || itemPath;
+            const isDeletedPlaceholder = isDeletedPlaceholderItem(item);
             const isSelected = selectedPaths.includes(itemPath);
-            const clipboardMode = clipboard?.paths?.includes(itemPath) ? clipboard.mode : '';
+            const clipboardMode = isDeletedPlaceholder ? '' : (clipboard?.paths?.includes(itemPath) ? clipboard.mode : '');
+            const rowEffect = activeRowEffects[rowKey] || '';
 
             const handleItemClick = (e) => {
-              if (isRenaming) return;
+              if (isRenaming || isDeletedPlaceholder) return;
               // e.detail 为连击次数：1=单击，2=双击。双击时交由 onDoubleClick 处理，
               // 这里直接跳过，避免双击先触发一次选中再触发操作的副作用。
               if ((e.detail || 1) >= 2) return;
@@ -2494,7 +2881,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                 if (lastIdx >= 0 && currentIdx >= 0) {
                   const start = Math.min(lastIdx, currentIdx);
                   const end = Math.max(lastIdx, currentIdx);
-                  setSelectedPaths(sortedItems.slice(start, end + 1).map(i => joinPath(currentPath, i.name)));
+                  setSelectedPaths(sortedItems.slice(start, end + 1).filter((entry) => !isDeletedPlaceholderItem(entry)).map(i => joinPath(currentPath, i.name)));
                 }
               } else {
                 setSelectedPaths([itemPath]);
@@ -2504,10 +2891,13 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
             return (
               <div
-                key={item.name}
-                className={`file-item${isSelected ? ' selected' : ''}${clipboardMode === 'copy' ? ' clipboard-copy' : ''}${clipboardMode === 'cut' ? ' clipboard-cut' : ''}`}
+                key={rowKey}
+                data-file-row-key={rowKey}
+                className={`file-item${isSelected ? ' selected' : ''}${clipboardMode === 'copy' ? ' clipboard-copy' : ''}${clipboardMode === 'cut' ? ' clipboard-cut' : ''}${isDeletedPlaceholder ? ' deleted-placeholder' : ''}${rowEffect ? ` visual-effect visual-effect-${rowEffect}` : ''}`}
+                style={isDeletedPlaceholder ? { '--file-row-height': `${item.__rowHeight || 36}px` } : undefined}
                 onClick={handleItemClick}
                 onDoubleClick={() => {
+                  if (isDeletedPlaceholder) return;
                   // 双击打开/编辑前，把该项设为唯一选中，行为与单资源管理器一致。
                   setSelectedPaths([itemPath]);
                   lastClickedPathRef.current = itemPath;
@@ -2518,6 +2908,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                   }
                 }}
                 onContextMenu={(e) => {
+                  if (isDeletedPlaceholder) return;
                   e.preventDefault();
                   e.stopPropagation();
                   setContextMenu({ pos: { x: e.clientX, y: e.clientY }, item });
@@ -2543,14 +2934,14 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <span className={`file-name ${item.isDirectory ? 'is-dir' : ''}`}>
+                    <span className={`file-name ${item.isDirectory ? 'is-dir' : ''}${isDeletedPlaceholder ? ' is-deleted-placeholder' : ''}`}>
                       {item.name}
                     </span>
                   )}
                 </div>
 
                 <span className="file-size">{item.isDirectory ? '-' : fmtSize(item.size)}</span>
-                <span className="file-permission" onClick={(e) => { e.stopPropagation(); void handleChmod(item); }}>{item.permission || '-'}</span>
+                <span className="file-permission" onClick={(e) => { if (isDeletedPlaceholder) return; e.stopPropagation(); void handleChmod(item); }}>{item.permission || '-'}</span>
                 <span className="file-date">{fmtDate(item.modifyTime)}</span>
 
                 <div className="file-actions">
