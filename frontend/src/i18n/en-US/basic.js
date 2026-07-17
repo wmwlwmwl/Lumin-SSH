@@ -1347,5 +1347,5 @@ export default {
   "正在移动": "Moving",
   "操作失败": "Operation failed",
   "操作完成": "Operation completed",
-  "有操作正在进行，请稍候": "An operation is currently in progress, please wait"
+  "有操作正在进行，请稍候": "An operation is currently in progress, please wait",
 };
