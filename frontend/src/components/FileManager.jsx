@@ -1777,7 +1777,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const remotePath = joinPath(currentPath, item.name);
     const needConfirm = localStorage.getItem('skipFileDeleteConfirm') !== 'true';
     if (needConfirm) {
-      const ok = await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？${t('此操作不可撤销')}`);
+      const ok = await window.luminDialog?.confirm(`${t('确定删除')}${item.name}${t('？此操作不可撤销')}`);
       fileListRef.current?.focus();
       if (!ok) { operationInProgressRef.current = false; return; }
     }
@@ -1802,7 +1802,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const remotePath = joinPath(currentPath, item.name);
     const needConfirm = localStorage.getItem('skipFileDeleteConfirm') !== 'true';
     if (needConfirm) {
-      const ok = await window.luminDialog?.confirm(`${t('确定删除')}${item.name}？(rm -rf) ${t('此操作不可撤销')}`);
+      const ok = await window.luminDialog?.confirm(`${t('确定删除')}${item.name}${t('？(rm -rf) 此操作不可撤销')}`);
       fileListRef.current?.focus();
       if (!ok) { operationInProgressRef.current = false; return; }
     }
@@ -1828,7 +1828,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const dirSet = new Set(items.filter(i => i.isDirectory).map(i => joinPath(currentPath, i.name)));
     const needConfirm = localStorage.getItem('skipFileDeleteConfirm') !== 'true';
     if (needConfirm) {
-      const ok = await window.luminDialog?.confirm(`${t('确定删除所选')} (${selectedPaths.length}${t('项')})？${t('此操作不可撤销')}`);
+      const ok = await window.luminDialog?.confirm(`${t('确定删除所选')} (${selectedPaths.length}${t('项')})${t('？此操作不可撤销')}`);
       fileListRef.current?.focus();
       if (!ok) { operationInProgressRef.current = false; return; }
     }
@@ -1935,7 +1935,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
               continue;
             }
             const ok = await window.luminDialog.confirm(
-              `${t('目标已存在同名项目')} "${name}"，${t('是否覆盖？')}`
+              `${t('目标已存在同名项目')} "${name}"${t('，是否覆盖？')}`
             );
             if (!ok) continue;
           }
@@ -2294,7 +2294,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           <>
             <Tiptop text={t('粘贴')} placement="bottom">
               <button
-                className="btn file-toolbar-outline-btn"
+                className="btn file-toolbar-outline-btn has-count"
                 aria-label={t('粘贴')}
                 onClick={() => {
                   if (operationInProgressRef.current) {
@@ -2305,6 +2305,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                 }}
               >
                 <ClipboardPaste size={14} />
+                <span className="clipboard-count-badge">{clipboard.paths.length}</span>
               </button>
             </Tiptop>
             <Tiptop text={t('取消')} placement="bottom">

@@ -1822,6 +1822,23 @@ body.theme-light .batch-operation-bar {
   height: 14px;
 }
 
+.file-toolbar-outline-btn.has-count {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clipboard-count-badge {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+  letter-spacing: 0;
+}
+
 .path-input {
   flex: 1;
   min-width: 0;
