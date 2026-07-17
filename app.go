@@ -785,6 +785,10 @@ func (a *App) GetPathOwnership(sessionId string, path string) (PathOwnershipInfo
 	return a.sshManager.GetPathOwnership(sessionId, path)
 }
 
+func (a *App) ResolveDirectoryPath(sessionId string, path string) (string, error) {
+	return a.sshManager.ResolveDirectoryPath(sessionId, path)
+}
+
 func (a *App) ChownFile(sessionId string, path string, owner string, group string, recursive bool) error {
 	return a.sshManager.ChownFile(sessionId, path, owner, group, recursive)
 }

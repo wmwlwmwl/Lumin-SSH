@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"runtime/debug"
 	"sort"
@@ -2384,6 +2385,76 @@ func writeStringChunksWithContext(ctx context.Context, writer io.Writer, content
 		offset += written
 	}
 	return ensureContextActive(ctx)
+}
+
+func normalizeRemotePath(input string) string {
+	trimmed := strings.TrimSpace(strings.ReplaceAll(input, "\\", "/"))
+	if trimmed == "" {
+		return "/"
+	}
+	cleaned := pathpkg.Clean(trimmed)
+	if cleaned == "." || cleaned == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		cleaned = "/" + strings.TrimLeft(cleaned, "/")
+	}
+	return cleaned
+}
+
+func remoteParentPath(input string) string {
+	normalized := normalizeRemotePath(input)
+	parent := pathpkg.Dir(normalized)
+	if parent == "." || parent == "" {
+		return "/"
+	}
+	return normalizeRemotePath(parent)
+}
+
+func isRemotePathNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "no such file") || strings.Contains(lower, "not found") || strings.Contains(lower, "does not exist")
+}
+
+func (m *SSHManager) ResolveDirectoryPath(sessionId string, inputPath string) (string, error) {
+	normalizedPath := normalizeRemotePath(inputPath)
+	sftpClient, err := m.getSFTPClient(sessionId)
+	if err != nil {
+		return "", err
+	}
+
+	if info, statErr := sftpClient.Stat(normalizedPath); statErr == nil && info != nil {
+		if info.IsDir() {
+			return normalizedPath, nil
+		}
+		return remoteParentPath(normalizedPath), nil
+	} else if !isRemotePathNotFound(statErr) {
+		return normalizedPath, nil
+	}
+
+	candidate := remoteParentPath(normalizedPath)
+	for candidate != normalizedPath {
+		info, statErr := sftpClient.Stat(candidate)
+		if statErr == nil && info != nil {
+			if info.IsDir() {
+				return candidate, nil
+			}
+			return remoteParentPath(candidate), nil
+		}
+		if !isRemotePathNotFound(statErr) {
+			return candidate, nil
+		}
+		nextCandidate := remoteParentPath(candidate)
+		if nextCandidate == candidate {
+			break
+		}
+		candidate = nextCandidate
+	}
+
+	return "/", nil
 }
 
 func (m *SSHManager) ListDir(sessionId string, path string) ([]map[string]interface{}, error) {

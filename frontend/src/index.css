@@ -2033,7 +2033,15 @@ body.theme-light .batch-operation-bar {
 .file-name.is-dir { color: var(--accent); font-weight: 500; }
 
 .file-size { font-size: var(--text-sm); color: var(--text-tertiary); font-family: var(--font-mono); }
-.file-permission { font-size: var(--text-sm); color: var(--text-tertiary); font-family: var(--font-mono); cursor: pointer; }
+.file-permission {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .file-permission:hover { color: var(--accent); }
 .file-date { font-size: var(--text-sm); color: var(--text-tertiary); }
 .file-actions { opacity: 0; display: flex; gap: var(--space-1); justify-content: flex-end; }
@@ -3775,9 +3783,12 @@ body.theme-light .dashboard-server-editor {
   }
   .file-list-header,
   .file-item {
-    grid-template-columns: minmax(100px, 1fr) 50px 70px 90px;
+    grid-template-columns: minmax(100px, 1fr) 50px 90px 90px;
+    min-width: 330px;
   }
-  .file-permission { display: none; }
+  .file-col-permission {
+    display: none;
+  }
 }
 
 /* ── 通用徽标 ─────────────────────────────────── */

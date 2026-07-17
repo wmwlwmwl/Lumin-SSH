@@ -30,10 +30,10 @@ import {
 const FILE_LIST_ACTIONS_COLUMN_WIDTH = 110;
 const FILE_LIST_NAME_MIN_WIDTH = 120;
 const FILE_LIST_SIZE_MIN_WIDTH = 60;
-const FILE_LIST_PERMISSION_MIN_WIDTH = 85;
+const FILE_LIST_PERMISSION_MIN_WIDTH = 120;
 const FILE_LIST_MODIFIED_MIN_WIDTH = 110;
 const FILE_LIST_SIZE_MAX_WIDTH = 160;
-const FILE_LIST_PERMISSION_MAX_WIDTH = 220;
+const FILE_LIST_PERMISSION_MAX_WIDTH = 420;
 const FILE_LIST_MODIFIED_MAX_WIDTH = 210;
 
 const fileListMeasureCanvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
@@ -458,6 +458,10 @@ function formatIdentityDisplay(name, id) {
   }
   const trimmedName = String(name || '').trim();
   return trimmedName ? `${trimmedName}(${normalizedId})` : normalizedId;
+}
+
+function formatPermissionDisplay(permission) {
+  return String(permission || '-').trim() || '-';
 }
 
 function buildIdentityOptionList(currentId, presets) {
@@ -952,7 +956,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const cellFont = '12px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     const monoFont = '12px "JetBrains Mono", "Fira Code", "Cascadia Code", monospace';
     const sizeTexts = [t('大小'), ...items.map((item) => (item.isDirectory ? '-' : fmtSize(item.size)))];
-    const permissionTexts = [t('权限'), ...items.map((item) => item.permission || '-')];
+    const permissionTexts = [t('权限'), ...items.map((item) => formatPermissionDisplay(item.permission || '-'))];
     const modifiedTexts = [t('修改时间'), ...items.map((item) => fmtDate(item.modifyTime))];
     const sizeWidth = clampFileListColumnWidth(
       Math.max(
@@ -991,7 +995,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     switch (sortField) {
       case 'name': cmp = a.name.localeCompare(b.name); break;
       case 'size': cmp = (a.size || 0) - (b.size || 0); break;
-      case 'permissions': cmp = (a.permission || '').localeCompare(b.permission || ''); break;
+      case 'permissions': cmp = formatPermissionDisplay(a.permission || '-').localeCompare(formatPermissionDisplay(b.permission || '-')); break;
       case 'modified': cmp = new Date(a.modifyTime || 0) - new Date(b.modifyTime || 0); break;
       default: cmp = 0;
     }
@@ -3911,15 +3915,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
               const p = editingPath.trim();
               const normalizedTargetPath = normalizePath(p);
               if (normalizedTargetPath && normalizedTargetPath !== currentPath) {
-                const getPathOwnership = window?.go?.main?.App?.GetPathOwnership;
+                const resolveDirectoryPath = window?.go?.main?.App?.ResolveDirectoryPath;
                 let resolvedDirectoryPath = normalizedTargetPath;
-                if (typeof getPathOwnership === 'function') {
+                if (typeof resolveDirectoryPath === 'function') {
                   try {
-                    const ownership = await getPathOwnership(sessionId, normalizedTargetPath);
-                    const permission = String(ownership?.permission || '');
-                    if (permission && !permission.startsWith('d')) {
-                      resolvedDirectoryPath = getParentPath(normalizedTargetPath);
-                    }
+                    resolvedDirectoryPath = normalizePath(await resolveDirectoryPath(sessionId, normalizedTargetPath)) || normalizedTargetPath;
                   } catch (_) {}
                 }
                 if (resolvedDirectoryPath) {
@@ -4148,19 +4148,19 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         {/* File List */}
         <div className="file-list" ref={fileListRef} tabIndex={0} onKeyDown={handleFileListKeyDown} onScroll={handleFileListScroll} style={{ flex: 1, minWidth: 0 }}>
           <div className="file-list-header">
-            <span onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
+            <span className="file-col-name" onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
               {t('名称')} {sortField === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
             </span>
-            <span onClick={() => handleSort('size')} style={{ cursor: 'pointer' }}>
+            <span className="file-col-size" onClick={() => handleSort('size')} style={{ cursor: 'pointer' }}>
               {t('大小')} {sortField === 'size' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
             </span>
-            <span onClick={() => handleSort('permissions')} style={{ cursor: 'pointer' }}>
+            <span className="file-col-permission" onClick={() => handleSort('permissions')} style={{ cursor: 'pointer' }}>
               {t('权限')} {sortField === 'permissions' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
             </span>
-            <span onClick={() => handleSort('modified')} style={{ cursor: 'pointer' }}>
+            <span className="file-col-modified" onClick={() => handleSort('modified')} style={{ cursor: 'pointer' }}>
               {t('修改时间')} {sortField === 'modified' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
             </span>
-            <span></span>
+            <span className="file-col-actions"></span>
           </div>
 
           {/* Back button */}
@@ -4182,10 +4182,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                 <span className="file-icon"><FolderUp size={16} /></span>
                 <span className="file-name is-dir">..</span>
               </div>
-              <span />
-              <span />
-              <span />
-              <span />
+              <span className="file-col-size" />
+              <span className="file-col-permission" />
+              <span className="file-col-modified" />
+              <span className="file-col-actions" />
             </div>
           )}
 
@@ -4211,6 +4211,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             const isSelected = selectedPaths.includes(itemPath);
             const clipboardMode = isDeletedPlaceholder ? '' : (clipboard?.paths?.includes(itemPath) ? clipboard.mode : '');
             const rowEffect = activeRowEffects[rowKey] || '';
+            const permissionDisplay = formatPermissionDisplay(item.permission || '-');
 
             const handleItemClick = (e) => {
               if (isRenaming || isDeletedPlaceholder) return;
@@ -4297,11 +4298,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                   )}
                 </div>
 
-                <span className="file-size">{item.isDirectory ? '-' : fmtSize(item.size)}</span>
-                <span className="file-permission" onClick={(e) => { if (isDeletedPlaceholder) return; e.stopPropagation(); void handleChmod(item); }}>{item.permission || '-'}</span>
-                <span className="file-date">{fmtDate(item.modifyTime)}</span>
+                <span className="file-size file-col-size">{item.isDirectory ? '-' : fmtSize(item.size)}</span>
+                <span className="file-permission file-col-permission" title={permissionDisplay} onClick={(e) => { if (isDeletedPlaceholder) return; e.stopPropagation(); void handleChmod(item); }}>{permissionDisplay}</span>
+                <span className="file-date file-col-modified">{fmtDate(item.modifyTime)}</span>
 
-                <div className="file-actions">
+                <div className="file-actions file-col-actions">
                   {!item.isDirectory && isEditable(item.name) && (
                     <Tiptop text={t('编辑')}>
                       <button
