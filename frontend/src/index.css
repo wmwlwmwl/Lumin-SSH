@@ -839,8 +839,8 @@ input::-ms-clear {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 4px 8px;
-  background: var(--surface-base);
+  padding: 0;
+  background: var(--surface-raised);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   min-width: 0;
@@ -848,33 +848,35 @@ input::-ms-clear {
 
 .terminal-sub-tab-scroll {
   display: flex;
-  align-items: center;
-  gap: var(--space-1);
+  align-items: stretch;
+  gap: 0;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--terminal-list-scrollbar-thumb, rgba(var(--accent-rgb), 0.32)) transparent;
+  scrollbar-color: var(--terminal-list-scrollbar-thumb, rgba(var(--accent-rgb), 0.52)) color-mix(in srgb, var(--surface-sunken) 78%, transparent);
   overscroll-behavior-x: contain;
 }
 
 .terminal-sub-tab-scroll::-webkit-scrollbar {
-  height: 4px;
+  height: 6px;
 }
 
 .terminal-sub-tab-scroll::-webkit-scrollbar-track {
-  background: transparent;
+  background: color-mix(in srgb, var(--surface-sunken) 78%, transparent);
   border-radius: var(--radius-full);
 }
 
 .terminal-sub-tab-scroll::-webkit-scrollbar-thumb {
-  background: var(--terminal-list-scrollbar-thumb, rgba(var(--accent-rgb), 0.32));
+  background: var(--terminal-list-scrollbar-thumb, rgba(var(--accent-rgb), 0.52));
   border-radius: var(--radius-full);
 }
 
 .terminal-sub-tab-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--terminal-list-scrollbar-thumb-hover, rgba(var(--accent-rgb), 0.58));
+  background: var(--terminal-list-scrollbar-thumb-hover, rgba(var(--accent-rgb), 0.72));
 }
 
 .terminal-sub-tab-scroll.is-dragging,
@@ -885,32 +887,33 @@ input::-ms-clear {
 .terminal-sub-tab-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 0;
   flex-shrink: 0;
   margin-left: auto;
-  padding-left: var(--space-2);
-  border-left: 1px solid var(--border-subtle);
+  padding-left: 0;
 }
 
 .terminal-create-btn {
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
   box-shadow: none;
 }
 
 .terminal-create-btn:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-focus);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-color: var(--border-subtle);
   color: var(--text-primary);
   box-shadow: none;
 }
 
 .terminal-create-btn.active {
-  background: var(--surface-sunken);
-  border-color: var(--border);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--border-subtle);
   color: var(--text-primary);
   box-shadow: inset 0 -2px 0 var(--accent);
 }
@@ -938,44 +941,50 @@ input::-ms-clear {
 .terminal-sub-tab {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  min-height: 26px;
-  padding: 0 8px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
   font-size: var(--text-sm);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   cursor: pointer;
   user-select: none;
   flex-shrink: 0;
   white-space: nowrap;
-  background: var(--surface-overlay);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-tertiary);
+  border: none;
+  border-bottom: 2px solid transparent;
   box-shadow: none;
   transition: var(--transition-fast);
 }
 .terminal-sub-tab:hover {
-  background: var(--surface-hover);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
   color: var(--text-primary);
-  border-color: var(--border);
+  border-color: transparent;
   box-shadow: none;
 }
 .terminal-sub-tab.active {
-  background: var(--surface-sunken);
+  background: transparent;
   color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: inset 0 -2px 0 var(--accent);
-  font-weight: 500;
+  border-color: var(--accent);
+  box-shadow: none;
+  font-weight: 600;
 }
 .terminal-sub-tab-close {
-  margin-left: var(--space-1);
+  margin-left: 2px;
   font-size: var(--text-xs);
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: pointer;
   display: flex;
   align-items: center;
+  border-radius: var(--radius-xs);
   transition: var(--transition);
 }
-.terminal-sub-tab-close:hover { opacity: 1; }
+.terminal-sub-tab-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
 
 .terminal-sub-tab-icon-only {
   width: 28px;
