@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Standaard (indien leeg gelaten, geen groepering)",
   "清空列表": "Duidelijke lijst",
   "复制": "kopiëren",
+  "引用": "Citaat",
   "再次运行": "opnieuw rennen",
   "名称": "naam",
   "大小": "maat",

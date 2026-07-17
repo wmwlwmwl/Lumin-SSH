@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Mặc định (nếu để trống, không nhóm)",
   "清空列表": "Xóa danh sách",
   "复制": "sao chép",
+  "引用": "Trích dẫn",
   "再次运行": "chạy lại",
   "名称": "tên",
   "大小": "kích cỡ",

@@ -314,6 +314,14 @@ function buildAIWorkspaceTerminalPanelKey(sessionId, terminalId) {
   return `${normalizedSessionId}::${normalizedTerminalId}`;
 }
 
+function formatAIQuotedSelection(text) {
+  const normalizedText = typeof text === 'string' ? text.trim() : '';
+  if (!normalizedText) {
+    return '';
+  }
+  return `[引用]>\`${normalizedText}\`\n----\n`;
+}
+
 function resolveAIWorkspaceTerminalBindingByTerminalId(sessions, terminalId) {
   const normalizedTerminalId = typeof terminalId === 'string' ? terminalId.trim() : '';
   if (!normalizedTerminalId) {
@@ -1289,8 +1297,42 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         },
       }));
     };
+
+    const handleQuoteSelectionToAI = (event) => {
+      const selectedText = typeof event?.detail?.text === 'string' ? event.detail.text : '';
+      const quotedText = formatAIQuotedSelection(selectedText);
+      const currentSessionId = activeSessionIdRef.current;
+      if (!currentSessionId || !quotedText) {
+        return;
+      }
+      const session = sessionsRef.current.find((item) => item.id === currentSessionId);
+      if (!session) {
+        return;
+      }
+      const preferredTerminalId = activeTerminalIdRef.current || lastTerminalRef.current[currentSessionId] || '';
+      const activeLayout = preferredTerminalId ? terminalPaneLayoutsRef.current[preferredTerminalId] : null;
+      const resolvedTerminalId = activeLayout?.sessionId === currentSessionId
+        ? (activeLayout.rootTerminalId || preferredTerminalId)
+        : resolveSessionRootTerminalId(session, preferredTerminalId, terminalPaneLayoutsRef.current);
+      if (!resolvedTerminalId) {
+        return;
+      }
+      window.dispatchEvent(new CustomEvent('ai-composer-append', {
+        detail: {
+          sessionId: currentSessionId,
+          terminalId: resolvedTerminalId,
+          text: quotedText,
+          preserveWhitespace: true,
+        },
+      }));
+    };
+
     window.addEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
-    return () => window.removeEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
+    window.addEventListener('ai-quote-selection', handleQuoteSelectionToAI);
+    return () => {
+      window.removeEventListener('ai-terminal-send-to-assistant', handleSendTerminalSelectionToAI);
+      window.removeEventListener('ai-quote-selection', handleQuoteSelectionToAI);
+    };
   }, [markWorkspaceRestoreNavigationOverride, resolveSessionRootTerminalId, setAIPanelVisibility]);
 
   const pingTimerRef = useRef(null);
@@ -4697,9 +4739,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
         <div data-ai-workspace-root="true" style={{ display: activeSessionId !== null ? 'flex' : 'none', flexDirection: 'row', height: '100%', flex: 1, overflow: 'hidden', position: 'relative' }}>
           {aiPanelNode && probePanelPosition === 'right' && (
-            showAIPanel ? (
-              <>
-                {aiPanelNode}
+            <>
+              {aiPanelNode}
+              {showAIPanel ? (
                 <Tiptop text={t('收起 AI 助手面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
                     className={`split-resizer-v${collapseDragIntent === 'ai' ? ' armed' : ''}`}
@@ -4711,19 +4753,19 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                     aria-label={t('收起 AI 助手面板')}
                   />
                 </Tiptop>
-              </>
-            ) : (
-              <Tiptop text={t('打开 AI 助手面板')} placement="bottom">
-                <button
-                  type="button"
-                  className="panel-collapse-strip panel-collapse-strip-vertical panel-collapse-strip-left no-drag"
-                  onClick={() => setAIPanelVisibility(true)}
-                  aria-label={t('打开 AI 助手面板')}
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </Tiptop>
-            )
+              ) : (
+                <Tiptop text={t('打开 AI 助手面板')} placement="bottom">
+                  <button
+                    type="button"
+                    className="panel-collapse-strip panel-collapse-strip-vertical panel-collapse-strip-left no-drag"
+                    onClick={() => setAIPanelVisibility(true)}
+                    aria-label={t('打开 AI 助手面板')}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </Tiptop>
+              )}
+            </>
           )}
           {/* 系统监控探针面板（独立分栏，左侧） */}
           {probePanelNode && probePanelPosition === 'left' && (
@@ -5377,8 +5419,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             )
           )}
           {aiPanelNode && probePanelPosition === 'left' && (
-            showAIPanel ? (
-              <>
+            <>
+              {showAIPanel ? (
                 <Tiptop text={t('收起 AI 助手面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
                     className={`split-resizer-v${collapseDragIntent === 'ai' ? ' armed' : ''}`}
@@ -5390,20 +5432,20 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                     aria-label={t('收起 AI 助手面板')}
                   />
                 </Tiptop>
-                {aiPanelNode}
-              </>
-            ) : (
-              <Tiptop text={t('打开 AI 助手面板')} placement="bottom">
-                <button
-                  type="button"
-                  className="panel-collapse-strip panel-collapse-strip-vertical panel-collapse-strip-right no-drag"
-                  onClick={() => setAIPanelVisibility(true)}
-                  aria-label={t('打开 AI 助手面板')}
-                >
-                  <ChevronLeft size={14} />
-                </button>
-              </Tiptop>
-            )
+              ) : (
+                <Tiptop text={t('打开 AI 助手面板')} placement="bottom">
+                  <button
+                    type="button"
+                    className="panel-collapse-strip panel-collapse-strip-vertical panel-collapse-strip-right no-drag"
+                    onClick={() => setAIPanelVisibility(true)}
+                    aria-label={t('打开 AI 助手面板')}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                </Tiptop>
+              )}
+              {aiPanelNode}
+            </>
           )}
         </div>
       </main>

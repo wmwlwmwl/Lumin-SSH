@@ -1,6 +1,9 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
+import { useTranslation } from '../../../i18n.js'
+import { clampMenuPosition } from '../../../utils/menuPosition.js'
 
 function openExternalLink(event, href) {
   const nextHref = typeof href === 'string' ? href.trim() : ''
@@ -12,6 +15,27 @@ function openExternalLink(event, href) {
     event.preventDefault()
     openUrl(nextHref)
   }
+}
+
+function getSelectedTextWithinContainer(container) {
+  if (!container || typeof window === 'undefined') {
+    return ''
+  }
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return ''
+  }
+  const selectedText = selection.toString().trim()
+  if (!selectedText) {
+    return ''
+  }
+  const range = selection.getRangeAt(0)
+  const startNode = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentNode : range.startContainer
+  const endNode = range.endContainer.nodeType === Node.TEXT_NODE ? range.endContainer.parentNode : range.endContainer
+  if (!startNode || !endNode || !container.contains(startNode) || !container.contains(endNode)) {
+    return ''
+  }
+  return selectedText
 }
 
 const markdownComponents = {
@@ -107,12 +131,75 @@ const markdownComponents = {
   ),
 }
 
-export default function AIChatMarkdown({ text }) {
+export default function AIChatMarkdown({ text, enableQuoteContextMenu = false }) {
+  const { t } = useTranslation()
+  const containerRef = useRef(null)
+  const menuRef = useRef(null)
+  const [contextMenu, setContextMenu] = useState(null)
+
+  const handleQuoteSelection = useCallback(() => {
+    const selectedText = typeof contextMenu?.selectedText === 'string' ? contextMenu.selectedText.trim() : ''
+    if (!selectedText || typeof window === 'undefined') {
+      return
+    }
+    window.dispatchEvent(new CustomEvent('ai-quote-selection', {
+      detail: { text: selectedText },
+    }))
+    setContextMenu(null)
+  }, [contextMenu])
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return undefined
+    }
+    const handlePointerDown = (event) => {
+      const target = event.target
+      if (target instanceof Node && menuRef.current?.contains(target)) {
+        return
+      }
+      setContextMenu(null)
+    }
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    return () => window.removeEventListener('pointerdown', handlePointerDown, true)
+  }, [contextMenu])
+
+  const handleContextMenu = useCallback((event) => {
+    if (!enableQuoteContextMenu) {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    const selectedText = getSelectedTextWithinContainer(containerRef.current)
+    const position = clampMenuPosition(event.clientX, event.clientY, 168, 54)
+    setContextMenu({
+      ...position,
+      selectedText,
+    })
+  }, [enableQuoteContextMenu])
+
   return (
-    <div style={{ minWidth: 0, color: 'var(--text-primary)', fontSize: 13, lineHeight: 1.7, wordBreak: 'break-word' }}>
+    <div
+      ref={containerRef}
+      onContextMenu={handleContextMenu}
+      style={{ minWidth: 0, color: 'var(--text-primary)', fontSize: 13, lineHeight: 1.7, wordBreak: 'break-word', position: 'relative' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={markdownComponents}>
         {text || ''}
       </ReactMarkdown>
+      {contextMenu ? (
+        <div
+          ref={menuRef}
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(event) => {
+            event.stopPropagation()
+          }}>
+          <div
+            className={`context-menu-item${contextMenu.selectedText ? '' : ' disabled'}`}
+            onClick={contextMenu.selectedText ? handleQuoteSelection : undefined}>
+            <span className="item-label">{t('引用')}</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

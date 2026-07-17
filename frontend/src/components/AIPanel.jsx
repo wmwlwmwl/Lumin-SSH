@@ -762,8 +762,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     const handleAppendComposerText = (event) => {
       const targetSessionId = typeof event?.detail?.sessionId === 'string' ? event.detail.sessionId.trim() : ''
       const targetTerminalId = typeof event?.detail?.terminalId === 'string' ? event.detail.terminalId.trim() : ''
-      const appendedText = typeof event?.detail?.text === 'string' ? event.detail.text.trim() : ''
-      if (!appendedText) {
+      const preserveWhitespace = event?.detail?.preserveWhitespace === true
+      const rawAppendedText = typeof event?.detail?.text === 'string' ? event.detail.text : ''
+      const appendedText = preserveWhitespace ? rawAppendedText : rawAppendedText.trim()
+      if (!(preserveWhitespace ? rawAppendedText.trim() : appendedText)) {
         return
       }
       if (targetSessionId !== (sessionId || '').trim() || targetTerminalId !== (terminalId || '').trim()) {

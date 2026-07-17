@@ -241,7 +241,7 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
             <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700 }}>{actionLabel}</div>
           )}
           <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, wordBreak: 'break-all' }}>
-            <AIChatMarkdown text={summary} />
+            <AIChatMarkdown text={summary} enableQuoteContextMenu={true} />
           </div>
         </div>
         {expanded ? (

@@ -410,7 +410,7 @@ export default function AIChatAssistantBodyPane({ text }) {
         }}
       >
         <div ref={contentRef}>
-          <AIChatMarkdown text={displayContent} />
+          <AIChatMarkdown text={displayContent} enableQuoteContextMenu={true} />
         </div>
       </div>
     </div>

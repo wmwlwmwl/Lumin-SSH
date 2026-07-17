@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Default (jika dibiarkan kosong, tidak ada pengelompokan)",
   "清空列表": "Hapus daftar",
   "复制": "menyalin",
+  "引用": "Mengutip",
   "再次运行": "lari lagi",
   "名称": "nama",
   "大小": "ukuran",

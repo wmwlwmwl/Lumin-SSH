@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Implicit (dacă este lăsat necompletat, fără grupare)",
   "清空列表": "Ștergeți lista",
   "复制": "copie",
+  "引用": "Citat",
   "再次运行": "fugi din nou",
   "名称": "nume",
   "大小": "dimensiune",

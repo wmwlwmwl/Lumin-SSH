@@ -41,11 +41,11 @@ export default function AIChatCompletionCard({ title = completionTitleKey, summa
         <div style={{ padding: '12px', background: 'var(--ai-chat-completion-card-header-bg)', display: 'grid', gap: normalizedSummary ? 8 : 0 }}>
           {normalizedSummary ? (
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7, wordBreak: 'break-word' }}>
-              <AIChatMarkdown text={normalizedSummary} />
+              <AIChatMarkdown text={normalizedSummary} enableQuoteContextMenu={true} />
             </div>
           ) : null}
           <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.75, wordBreak: 'break-word' }}>
-            <AIChatMarkdown text={normalizedResult ? t(normalizedResult) : t('任务已完成')} />
+            <AIChatMarkdown text={normalizedResult ? t(normalizedResult) : t('任务已完成')} enableQuoteContextMenu={true} />
           </div>
         </div>
       </div>

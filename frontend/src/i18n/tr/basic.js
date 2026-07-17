@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Varsayılan (boş bırakılırsa gruplandırma yapılmaz)",
   "清空列表": "Listeyi temizle",
   "复制": "kopyala",
+  "引用": "Alıntı",
   "再次运行": "tekrar koş",
   "名称": "isim",
   "大小": "boyut",

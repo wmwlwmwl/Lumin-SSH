@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Par défaut (si laissé vide, pas de regroupement)",
   "清空列表": "Effacer la liste",
   "复制": "copie",
+  "引用": "Citation",
   "再次运行": "courir à nouveau",
   "名称": "nom",
   "大小": "taille",

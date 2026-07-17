@@ -125,6 +125,7 @@ export default {
   "默认（不填则不分组）": "Výchozí (pokud ponecháte prázdné, žádné seskupování)",
   "清空列表": "Přehledný seznam",
   "复制": "kopie",
+  "引用": "Citovat",
   "再次运行": "běžet znovu",
   "名称": "jméno",
   "大小": "velikost",
