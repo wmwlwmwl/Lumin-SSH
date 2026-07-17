@@ -107,19 +107,17 @@ jobs:
         with:
           name: "Lumin SSH Client ${{ github.ref_name }}"
           body: |
-            ## 功能增强
-            - 文件管理器多选与复制/剪切/粘贴
-            - 高性能并发上传（持久 Worker 句柄）
-            - MCP 批量文件传输工具
-            - AI 追问自动批准与任务提示音
-            - AI 助手搜索、工具调用改进
-            - 全局弹窗 Enter 确认 / Esc 取消
-            - 延迟检测优化：防闪烁、多方式（智能/SSH Banner RTT/TCP Dial）
-            - 修复 TUN 模式下不可达服务器误判为在线
-            - 多语言补充与重构
-            - 修复 CWD 容器隔离、ssh-rsa 兼容
-            - 压缩上传预检、同步收敛优化
-            - 修复同步反馈与 AI 状态刷新
+            ## 更新日志
+            - 文件管理器大幅改进：多选、复制/剪切/粘贴、传输队列、进度遮罩、跨终端剪贴板共享
+            - 终端时间戳渲染优化与显示改进
+            - 分组按钮合并为智能切换按钮
+            - 新增快捷切换主题入口
+            - AI 助手右键菜单"引用"、工具改进、加载策略优化
+            - 修复 SSH 异常断开检测与清理
+            - 修复提示音异常
+            - 多语言更新与英文翻译修复
+            - 服务器标签页新增复制密码
+            - 修复 StrictMode 下 mountedRef 失效、剪贴板并发健壮性加固
 
             ## 产物下载
             - Linux 便携版 ([Lumin-V${{ steps.version.outputs.version }}-linux-amd64](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-linux-amd64))：即下即用
@@ -157,11 +155,12 @@ jobs:
 
   build-macos:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: macos-15
             arch: arm64
-          - runner: macos-14
+          - runner: macos-15-intel
             arch: amd64
     runs-on: ${{ matrix.runner }}
     steps:
@@ -188,6 +187,9 @@ jobs:
         run: |
           export PATH=$HOME/go/bin:$PATH
           wails build -clean -o Lumin
+          uname -m
+          file build/bin/Lumin.app/Contents/MacOS/Lumin
+          lipo -archs build/bin/Lumin.app/Contents/MacOS/Lumin
 
       - name: Package .app to .dmg
         run: |
