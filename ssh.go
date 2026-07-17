@@ -51,6 +51,8 @@ const (
 	postAuthSlowNoticeTimeout = 10 * time.Second
 	postAuthChannelTimeout    = 30 * time.Second
 	sftpInitWaitTimeout       = 5 * time.Second
+	sshKeepaliveInterval      = 5 * time.Second
+	sshKeepaliveTimeout       = 10 * time.Second
 )
 
 // PendingHostKey 保存等待用户确认的主机密钥变更信息
@@ -66,6 +68,7 @@ type PendingHostKey struct {
 // 同一服务器的多个终端复用同一 TCP 连接
 type sshClientEntry struct {
 	Client        *ssh.Client
+	NetConn       net.Conn
 	SFTP          *sftp.Client
 	SFTPReady     chan struct{}
 	SFTPReadyOnce sync.Once
@@ -205,6 +208,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 	m.mu.RUnlock()
 
 	var client *ssh.Client
+	var transportConn net.Conn
 	clientCreated := false
 
 	if clientExists {
@@ -411,6 +415,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 
 			// 握手成功
 			client = ssh.NewClient(sshConn, chans, reqs)
+			transportConn = netConn
 			clientCreated = true
 			break
 		}
@@ -420,70 +425,20 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 		if existing, ok := m.clients[connKey]; ok && existing.Client != nil {
 			m.mu.Unlock()
 			// 关闭刚刚新建的连接，改用已存在的连接
+			transportConn.Close()
 			client.Close()
 			client = existing.Client
+			transportConn = existing.NetConn
 			clientCreated = false
 		} else {
-			m.clients[connKey] = &sshClientEntry{Client: client, SFTPReady: make(chan struct{})}
+			m.clients[connKey] = &sshClientEntry{Client: client, NetConn: transportConn, SFTPReady: make(chan struct{})}
 			m.connTerminals[connKey] = []string{}
 			m.mu.Unlock()
 
 			go m.watchClient(connKey, client)
 			go func() {
 				_ = client.Wait()
-				m.mu.Lock()
-				terminalIds := append([]string{}, m.connTerminals[connKey]...)
-				var sftpC *sftp.Client
-				var cli *ssh.Client
-				if entry, ok := m.clients[connKey]; ok {
-					// 校验是否还是同一个 client 实例，避免误删快速重连后的新连接
-					if entry.Client != client {
-						m.mu.Unlock()
-						return // 已被新连接替换，不再清理
-					}
-					sftpC = entry.SFTP
-					cli = entry.Client
-					delete(m.clients, connKey)
-					delete(m.connTerminals, connKey)
-					delete(m.probeDeployed, connKey)
-					delete(m.probeFailed, connKey)
-				}
-				m.mu.Unlock()
-
-				type closeItem struct {
-					stdin   io.WriteCloser
-					session *ssh.Session
-				}
-				// ponytail: 批量锁，减少 N 次 lock/unlock 为 1 次
-				m.mu.Lock()
-				var items []closeItem
-				for _, tid := range terminalIds {
-					if ts, ok := m.sessions[tid]; ok {
-						items = append(items, closeItem{stdin: ts.Stdin, session: ts.Session})
-						delete(m.sessions, tid)
-					}
-				}
-				m.mu.Unlock()
-				for _, tid := range terminalIds {
-					if m.ctx != nil {
-						runtime.EventsEmit(m.ctx, "ssh-disconnected", tid)
-					}
-				}
-
-				for _, item := range items {
-					if item.stdin != nil {
-						item.stdin.Close()
-					}
-					if item.session != nil {
-						item.session.Close()
-					}
-				}
-				if sftpC != nil {
-					sftpC.Close()
-				}
-				if cli != nil {
-					cli.Close()
-				}
+				m.cleanupClientTransport(connKey, client)
 			}()
 		}
 	}
@@ -504,8 +459,8 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 		return m.setupSession(postAuthCtx, client, connKey, sessionId, "", launchCmd, remoteHistoryActive, shellPath, conn.TerminalInitPath)
 	})
 	if err != nil {
-		// setupSession 失败（如 PTY 请求失败）：仅清理本路径新建的 client/sftp，
-		// 复用的共享 client 不能关，否则会级联断开同连接的其他终端
+		// setupSession 失败（如 PTY 请求失败）：仅清理本路径创建的 session；
+		// 新建的 client 已被并发复用时不能关闭，否则会级联断开其他终端。
 		m.mu.Lock()
 		if sd, ok := m.sessions[sessionId]; ok {
 			if sd.Stdin != nil {
@@ -516,12 +471,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			}
 			delete(m.sessions, sessionId)
 		}
-		if clientCreated {
-			if entry, ok := m.clients[connKey]; ok && entry.Client == client {
-				delete(m.clients, connKey)
-				delete(m.connTerminals, connKey)
-			}
-		} else if terminals, ok := m.connTerminals[connKey]; ok {
+		if terminals, ok := m.connTerminals[connKey]; ok {
 			next := terminals[:0]
 			for _, tid := range terminals {
 				if tid != sessionId {
@@ -530,9 +480,21 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			}
 			m.connTerminals[connKey] = next
 		}
-		m.mu.Unlock()
+		closeClient := false
 		if clientCreated {
-			client.Close()
+			if entry, ok := m.clients[connKey]; ok && entry.Client == client && len(m.connTerminals[connKey]) == 0 {
+				if entry.SFTPReady != nil {
+					entry.SFTPReadyOnce.Do(func() { close(entry.SFTPReady) })
+				}
+				delete(m.clients, connKey)
+				delete(m.connTerminals, connKey)
+				closeClient = true
+			}
+		}
+		m.mu.Unlock()
+		if closeClient {
+			_ = transportConn.Close()
+			_ = client.Close()
 		}
 		return err
 	}
@@ -612,6 +574,12 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 		session.Close()
 		return ctx.Err()
 	}
+	entry, ok := m.clients[connKey]
+	if !ok || entry.Client != client {
+		m.mu.Unlock()
+		session.Close()
+		return fmt.Errorf("SSH 连接已关闭")
+	}
 	sd := &SessionData{
 		ConnKey:             connKey,
 		Session:             session,
@@ -631,6 +599,10 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 
 	go m.pipeOutput(sessionId, stdout, historyStream)
 	go m.pipeOutput(sessionId, stderr, nil)
+	go func() {
+		_ = session.Wait()
+		m.disconnectAndNotify(sessionId)
+	}()
 
 	return nil
 }
@@ -648,7 +620,9 @@ func (m *SSHManager) initSFTPClient(sessionId string, connKey string, conn Conne
 	}
 	entry.SFTP = sftpClient
 	entry.SFTPInitErr = err
-	entry.SFTPReadyOnce.Do(func() { close(entry.SFTPReady) })
+	if entry.SFTPReady != nil {
+		entry.SFTPReadyOnce.Do(func() { close(entry.SFTPReady) })
+	}
 	m.mu.Unlock()
 
 	if err != nil && m.ctx != nil {
@@ -664,27 +638,81 @@ func (m *SSHManager) initSFTPClient(sessionId string, connKey string, conn Conne
 }
 
 func (m *SSHManager) watchClient(connKey string, client *ssh.Client) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(sshKeepaliveInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		m.mu.RLock()
-		entry, ok := m.clients[connKey]
-		if !ok || entry.Client != client {
-			m.mu.RUnlock()
+		if !m.checkClientKeepalive(connKey, client, sshKeepaliveTimeout) {
 			return
 		}
-		terminalIds := append([]string{}, m.connTerminals[connKey]...)
+	}
+}
+
+func (m *SSHManager) checkClientKeepalive(connKey string, client *ssh.Client, timeout time.Duration) bool {
+	m.mu.RLock()
+	entry, ok := m.clients[connKey]
+	if !ok || entry.Client != client || entry.NetConn == nil {
 		m.mu.RUnlock()
+		return false
+	}
+	m.mu.RUnlock()
+
+	done := make(chan error, 1)
+	go func() {
 		_, _, err := client.SendRequest("keepalive@lumin-ssh", true, nil)
+		done <- err
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
 		if err == nil {
-			continue
+			m.mu.RLock()
+			current, currentOK := m.clients[connKey]
+			alive := currentOK && current.Client == client
+			m.mu.RUnlock()
+			return alive
 		}
-		for _, tid := range terminalIds {
-			if m.Disconnect(tid) && m.ctx != nil {
-				runtime.EventsEmit(m.ctx, "ssh-disconnected", tid)
-			}
-		}
+	case <-timer.C:
+	}
+	m.cleanupClientTransport(connKey, client)
+	return false
+}
+
+func (m *SSHManager) cleanupClientTransport(connKey string, client *ssh.Client) {
+	m.mu.Lock()
+	entry, ok := m.clients[connKey]
+	if !ok || entry.Client != client {
+		m.mu.Unlock()
 		return
+	}
+	terminalIds := append([]string(nil), m.connTerminals[connKey]...)
+	netConn := entry.NetConn
+	sftpClient := entry.SFTP
+	if entry.SFTPReady != nil {
+		entry.SFTPReadyOnce.Do(func() { close(entry.SFTPReady) })
+	}
+	delete(m.clients, connKey)
+	delete(m.connTerminals, connKey)
+	delete(m.probeDeployed, connKey)
+	delete(m.probeFailed, connKey)
+	m.mu.Unlock()
+
+	if netConn != nil {
+		_ = netConn.Close()
+	}
+	for _, terminalId := range terminalIds {
+		m.disconnectAndNotify(terminalId)
+	}
+	if sftpClient != nil {
+		closeWithTimeout(sftpClient, 3*time.Second)
+	}
+	closeWithTimeout(client, 3*time.Second)
+}
+
+func (m *SSHManager) disconnectAndNotify(sessionId string) {
+	if m.Disconnect(sessionId) && m.ctx != nil {
+		runtime.EventsEmit(m.ctx, "ssh-disconnected", sessionId)
 	}
 }
 
@@ -755,9 +783,6 @@ func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *co
 			}
 		}
 		if err != nil {
-			if m.Disconnect(sessionId) && m.ctx != nil {
-				runtime.EventsEmit(m.ctx, "ssh-disconnected", sessionId)
-			}
 			return
 		}
 	}
@@ -885,12 +910,17 @@ func (m *SSHManager) Disconnect(sessionId string) bool {
 		}
 	}
 
+	var netConnToClose net.Conn
 	var sftpToClose *sftp.Client
 	var clientToClose *ssh.Client
 	if len(m.connTerminals[connKey]) == 0 {
 		if entry, ok := m.clients[connKey]; ok {
+			netConnToClose = entry.NetConn
 			sftpToClose = entry.SFTP
 			clientToClose = entry.Client
+			if entry.SFTPReady != nil {
+				entry.SFTPReadyOnce.Do(func() { close(entry.SFTPReady) })
+			}
 			delete(m.clients, connKey)
 			delete(m.connTerminals, connKey)
 			delete(m.probeDeployed, connKey)
@@ -905,6 +935,9 @@ func (m *SSHManager) Disconnect(sessionId string) bool {
 	}
 	if sshSess != nil {
 		sshSess.Close()
+	}
+	if netConnToClose != nil {
+		_ = netConnToClose.Close()
 	}
 	if sftpToClose != nil {
 		closeWithTimeout(sftpToClose, 3*time.Second)

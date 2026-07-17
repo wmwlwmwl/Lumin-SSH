@@ -8,7 +8,7 @@ import (
 )
 
 type sshOutputTapState struct {
-	mu sync.Mutex
+	mu        sync.Mutex
 	listeners map[string]map[string]chan []byte
 }
 
@@ -53,19 +53,10 @@ func (m *SSHManager) registerSessionOutputTap(sessionID string) (string, <-chan 
 
 func (m *SSHManager) emitSessionOutput(sessionID string, data []byte) {
 	state := getSSHOutputTapState(m)
-	state.mu.Lock()
-	sessionListeners, ok := state.listeners[sessionID]
-	if !ok || len(sessionListeners) == 0 {
-		state.mu.Unlock()
-		return
-	}
-	channels := make([]chan []byte, 0, len(sessionListeners))
-	for _, channel := range sessionListeners {
-		channels = append(channels, channel)
-	}
-	state.mu.Unlock()
 	payload := append([]byte(nil), data...)
-	for _, channel := range channels {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	for _, channel := range state.listeners[sessionID] {
 		select {
 		case channel <- payload:
 		default:
@@ -76,18 +67,13 @@ func (m *SSHManager) emitSessionOutput(sessionID string, data []byte) {
 func (m *SSHManager) closeSessionOutputTaps(sessionID string) {
 	state := getSSHOutputTapState(m)
 	state.mu.Lock()
+	defer state.mu.Unlock()
 	sessionListeners, ok := state.listeners[sessionID]
 	if !ok {
-		state.mu.Unlock()
 		return
 	}
 	delete(state.listeners, sessionID)
-	channels := make([]chan []byte, 0, len(sessionListeners))
 	for _, channel := range sessionListeners {
-		channels = append(channels, channel)
-	}
-	state.mu.Unlock()
-	for _, channel := range channels {
 		close(channel)
 	}
 }
