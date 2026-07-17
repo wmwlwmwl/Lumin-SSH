@@ -27,6 +27,11 @@ import { getResolvedProgramFontPreferences } from '../utils/programFonts.js';
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
+function formatTerminalTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return `[${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}]`;
+}
+
 function getTerminalBufferSnapshotText(term) {
   if (!term?.buffer?.active) {
     return ''
@@ -197,6 +202,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const localEchoRef = useRef(localStorage.getItem('terminalLocalEcho') === 'true');
   const timestampsEnabledRef = useRef(localStorage.getItem('terminalTimestamps') === 'true');
   const [timestampsVisible, setTimestampsVisible] = useState(localStorage.getItem('terminalTimestamps') === 'true');
+  const [alternateBufferActive, setAlternateBufferActive] = useState(false);
+  const alternateBufferActiveRef = useRef(false);
   // Ring buffer 时间戳：用 xterm marker 跟随 scrollback 裁剪，避免 buffer 行号复用后错位
   const TS_POOL = 6000;
   const tsRingRef = useRef(null);
@@ -211,19 +218,16 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     r.entries[i] = { marker, val };
     r.next = (i + 1) % TS_POOL;
   };
-  const tsGet = (line) => {
-    const entries = tsRingRef.current.entries;
-    for (let i = 0; i < entries.length; i += 1) {
-      const entry = entries[i];
-      if (entry?.marker?.line === line) return entry.val;
-    }
-    return undefined;
-  };
-  const tsEnsureLine = (term, line) => {
+  const tsEnsureLine = (term, line, timestampsByLine) => {
+    if (term.buffer.active.type !== 'normal') return '';
+    const existing = timestampsByLine.get(line);
+    if (existing) return existing;
     const currentLine = term.buffer.active.baseY + term.buffer.active.cursorY;
-    const ts = new Date().toLocaleTimeString();
-    tsSet(term.registerMarker(line - currentLine), ts);
-    return ts;
+    const ts = formatTerminalTimestamp();
+    const marker = term.registerMarker(line - currentLine);
+    tsSet(marker, ts);
+    if (marker) timestampsByLine.set(line, ts);
+    return marker ? ts : '';
   };
   const tsClearLine = (line) => {
     const entries = tsRingRef.current.entries;
@@ -240,19 +244,44 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     tsRingRef.current.next = 0;
   };
   const gutterRef = useRef(null);
+  const gutterSyncRAFRef = useRef(null);
   const smartWriteRef = useRef(null);
 
   // ponytail: getTerminalTheme() 每次渲染调用 30+ 次，缓存为 1 次
   const T = useMemo(() => getTerminalTheme(), [themeToggle]);
 
   // ── 时间轴：同步 gutter 到 xterm 视口 ───────────────────────────
+  function scheduleGutterSync() {
+    if (gutterSyncRAFRef.current !== null || !timestampsEnabledRef.current || alternateBufferActiveRef.current) return;
+    gutterSyncRAFRef.current = requestAnimationFrame(() => {
+      gutterSyncRAFRef.current = null;
+      syncGutter();
+    });
+  }
+
   function syncGutter() {
     const gutter = gutterRef.current;
     const term = termRef.current;
-    if (!gutter || !term || !timestampsEnabledRef.current) return;
+    if (!gutter || !term || !timestampsEnabledRef.current || term.buffer.active.type !== 'normal') return;
     const buf = term.buffer.active;
     const rows = term.rows;
     if (!rows || !containerRef.current) return;
+
+    const timestampsByLine = new Map();
+    const ring = tsRingRef.current;
+    for (let offset = 0; offset < ring.entries.length; offset += 1) {
+      const index = (ring.next + offset) % ring.entries.length;
+      const entry = ring.entries[index];
+      const line = entry?.marker?.line;
+      if (!entry || entry.marker.isDisposed || line < 0) {
+        ring.entries[index] = null;
+      } else if (timestampsByLine.has(line)) {
+        entry.marker.dispose?.();
+        ring.entries[index] = null;
+      } else {
+        timestampsByLine.set(line, entry.val);
+      }
+    }
 
     const firstVisible = buf.viewportY; // buffer 中第一个可见行 (ydisp)
 
@@ -281,9 +310,9 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       const isWrapped = bufLine && bufLine.isWrapped;
       let ts = '';
       if (!isEmptyLine && !isWrapped && tsIdx >= 0) {
-        ts = tsGet(tsIdx) || (tsIdx === buf.baseY + buf.cursorY ? tsEnsureLine(term, tsIdx) : '');
+        ts = timestampsByLine.get(tsIdx) || (tsIdx === buf.baseY + buf.cursorY ? tsEnsureLine(term, tsIdx, timestampsByLine) : '');
       }
-      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;box-sizing:border-box">${ts}</div>`;
+      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:var(--text-tertiary);font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;padding:0 4px;box-sizing:border-box">${ts}</div>`;
     }
     gutter.innerHTML = html;
   }
@@ -291,14 +320,14 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   // ── 终端清屏处理：清空视口对应的时间戳 ─────────────────────
   function handleClearScreen() {
     const term = termRef.current;
-    if (!term) return;
+    if (!term || term.buffer.active.type !== 'normal') return;
     const buf = term.buffer.active;
     const rows = term.rows || 24;
     const firstVisible = buf.viewportY;
     for (let i = 0; i < rows; i++) {
       tsClearLine(firstVisible + i);
     }
-    requestAnimationFrame(() => syncGutter());
+    scheduleGutterSync();
   }
 
   // ── 初始化 xterm + WebSocket 终端通道 ────────────────────────────────
@@ -336,21 +365,20 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(containerRef.current);
+    alternateBufferActiveRef.current = false;
+    setAlternateBufferActive(false);
 
     // ── 智能写入：用户手动滚动上时保持位置 ─────────────────────────
     let userPinned = false; // 用户手动往上滚后锁定
-    let scrollRAF = null;
     const onTermScroll = () => {
       const buf = term.buffer.active;
       // 滚到底部时解除锁定
       if (buf.viewportY >= buf.baseY) {
         userPinned = false;
       }
-      // 防抖动：只保留最后一次 rAF 请求
-      if (scrollRAF) cancelAnimationFrame(scrollRAF);
-      scrollRAF = requestAnimationFrame(() => syncGutter());
+      scheduleGutterSync();
     };
-    term.onScroll(onTermScroll);
+    const scrollDisposable = term.onScroll(onTermScroll);
     // 直接监听 xterm 视口 DOM scroll 事件作为更可靠的备选
     const vpEl = containerRef.current.querySelector('.xterm-viewport');
     if (vpEl) {
@@ -358,8 +386,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     }
 
     // ── 每行时间戳追踪：marker 会跟随 xterm scrollback 裁剪同步移动 ──
-    term.onLineFeed(() => {
-      if (!timestampsEnabledRef.current) return;
+    const lineFeedDisposable = term.onLineFeed(() => {
+      if (!timestampsEnabledRef.current || term.buffer.active.type !== 'normal') return;
 
       const buf = term.buffer.active;
       const cursorLine = buf.baseY + buf.cursorY;
@@ -370,9 +398,23 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         if (line && line.isWrapped) { pos--; } else { break; }
       }
       if (pos >= 0) {
-        tsSet(term.registerMarker(pos - cursorLine), new Date().toLocaleTimeString());
+        tsSet(term.registerMarker(pos - cursorLine), formatTerminalTimestamp());
       }
-      requestAnimationFrame(() => syncGutter());
+    });
+    const writeParsedDisposable = term.onWriteParsed(scheduleGutterSync);
+    const bufferChangeDisposable = term.buffer.onBufferChange((buffer) => {
+      const alternate = buffer.type === 'alternate';
+      alternateBufferActiveRef.current = alternate;
+      setAlternateBufferActive(alternate);
+      if (alternate) {
+        if (gutterSyncRAFRef.current !== null) {
+          cancelAnimationFrame(gutterSyncRAFRef.current);
+          gutterSyncRAFRef.current = null;
+        }
+        if (gutterRef.current) gutterRef.current.innerHTML = '';
+      } else {
+        scheduleGutterSync();
+      }
     });
     const wheelHandler = (e) => {
       // 无论向上还是向下滚动，都检查当前位置并更新锁定状态
@@ -581,7 +623,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           predictiveDecoder = new TextDecoder()
           predictiveTextCarry = ''
           smartWrite(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data));
-          requestAnimationFrame(() => syncGutter());
           return;
         }
 
@@ -662,7 +703,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         // 写回经过滤的文本
         const newText = parts.join('');
         smartWrite(newText);
-        requestAnimationFrame(() => syncGutter());
       };
 
       ws.onerror = (e) => console.error('[Terminal] WebSocket error', e);
@@ -743,23 +783,34 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
 
     });
 
-    term.onResize(({ cols, rows }) => {
+    const resizeDisposable = term.onResize(({ cols, rows }) => {
       AppGo.ResizeTerminal(sessionId, cols, rows);
-      requestAnimationFrame(() => syncGutter());
+      scheduleGutterSync();
     });
 
     return () => {
       cancelled = true;
-      if (scrollRAF) cancelAnimationFrame(scrollRAF);
+      scrollDisposable.dispose();
+      lineFeedDisposable.dispose();
+      writeParsedDisposable.dispose();
+      bufferChangeDisposable.dispose();
+      resizeDisposable.dispose();
+      if (gutterSyncRAFRef.current !== null) {
+        cancelAnimationFrame(gutterSyncRAFRef.current);
+        gutterSyncRAFRef.current = null;
+      }
       clearTimeout(fitTimer);
-      tsClear(); // 清理时间戳
-      if (ws) { try { ws.close(); } catch (_) {} }
       if (vpEl) vpEl.removeEventListener('scroll', onTermScroll);
       // 移除 wheel 监听器，避免内存泄漏
       containerRef.current?.removeEventListener('wheel', wheelHandler);
+      if (ws) { try { ws.close(); } catch (_) {} }
+      if (wsRef.current === ws) wsRef.current = null;
+      tsClear(); // 清理时间戳
       if (window.__luminTerminalSnapshots?.[sessionId]) {
         delete window.__luminTerminalSnapshots[sessionId];
       }
+      smartWriteRef.current = null;
+      alternateBufferActiveRef.current = false;
       termRef.current     = null;
       fitAddonRef.current = null;
       try { term.dispose(); } catch (_) {}
@@ -775,7 +826,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         if (fitAddonRef.current) {
           try { fitAddonRef.current.fit(); } catch (_) {}
         }
-        requestAnimationFrame(() => syncGutter());
+        scheduleGutterSync();
       }
     };
     window.addEventListener('terminal-font-size-changed', handleFontSizeChange);
@@ -823,13 +874,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   }, [isActive, sessionId]);
 
   // ── 终端切换回来时，重新 fit ────────────────────────────────────
-  const prevActiveRef = useRef(false);
   useEffect(() => {
     if (!isActive || !termRef.current || !fitAddonRef.current) return;
-    // 仅从非活跃→活跃时才 fit（切换标签页）
-    const justActivated = !prevActiveRef.current && isActive;
-    prevActiveRef.current = isActive;
-    if (!justActivated) return;
     const raf = requestAnimationFrame(() => {
       try {
         const rect = containerRef.current?.getBoundingClientRect();
@@ -924,7 +970,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       if (e.detail === false) {
         if (gutterRef.current) gutterRef.current.innerHTML = '';
       } else {
-        requestAnimationFrame(() => syncGutter());
+        scheduleGutterSync();
       }
     };
     const handleProgramFontSettingsChange = (e) => {
@@ -936,7 +982,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         if (fitAddonRef.current) {
           try { fitAddonRef.current.fit(); } catch (_) {}
         }
-        requestAnimationFrame(() => syncGutter());
+        scheduleGutterSync();
       }
     };
     window.addEventListener('app-shortcuts-changed', handleShortcutsChange);
@@ -1518,7 +1564,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       {/* ── xterm 渲染层 + 时间轴 ── */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div ref={gutterRef} style={{
-          display: timestampsVisible ? 'block' : 'none',
+          display: timestampsVisible && !alternateBufferActive ? 'block' : 'none',
           width: 75,
           flexShrink: 0,
           paddingTop: 0,
