@@ -1338,7 +1338,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   const pingTimerRef = useRef(null);
   const pingInFlightRef = useRef(false);
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  // 在 mount 时显式重置为 true：React StrictMode（仅 dev）会先 mount→unmount→再 mount，
+  // 但 useRef 初始化只执行一次，第二次 mount 时不会重新赋值，导致 mountedRef 残留为 false，
+  // 进而让依赖它的异步回调（如新建终端的 loading 清除）在 dev 下失效。
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // ── 新增主页仪表盘状态 ──────────────────────────────────
   const [isRefreshingPing, setIsRefreshingPing] = useState(false);
