@@ -750,6 +750,7 @@ export default {
   "界面主题": "Tema antarmuka",
   "主题": "tema",
   "选择浅色、深色或跟随系统设置": "Pilih terang, gelap atau ikuti pengaturan sistem",
+  "快捷入口": "Pintu masuk cepat",
   "浅色": "warna terang",
   "深色": "Gelap",
   "强调色": "warna aksen",

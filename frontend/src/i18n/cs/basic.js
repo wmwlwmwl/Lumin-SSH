@@ -750,6 +750,7 @@ export default {
   "界面主题": "Téma rozhraní",
   "主题": "téma",
   "选择浅色、深色或跟随系统设置": "Vyberte světlo, tmu nebo postupujte podle nastavení systému",
+  "快捷入口": "Rychlý vstup",
   "浅色": "světlá barva",
   "深色": "Tmavý",
   "强调色": "akcentní barva",

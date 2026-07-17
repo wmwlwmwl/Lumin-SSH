@@ -28,7 +28,7 @@ import ImportExportDialog from './components/ImportExportDialog.jsx';
 import ExportSelectedDialog from './components/ExportSelectedDialog.jsx';
 import Tiptop from './components/Tiptop.jsx';
 import { restoreAIChatTool } from './components/ai/aiChatBridge.js';
-import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket, Copy } from 'lucide-react';
+import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket, Copy, Sun, Moon } from 'lucide-react';
 import { Z } from './constants/zIndex';
 
 import logoImg from './assets/logo.png';
@@ -787,11 +787,25 @@ export default function App() {
       window.removeEventListener('theme-mode-changed', refreshTerminalTheme);
     };
   }, []);
+  useEffect(() => {
+    const refreshThemeQuickEntry = () => {
+      setQuickThemeMode(localStorage.getItem('themeMode') || 'dark');
+      setShowThemeQuickEntry(localStorage.getItem('showThemeQuickEntry') === 'true');
+    };
+    window.addEventListener('theme-mode-changed', refreshThemeQuickEntry);
+    window.addEventListener('theme-quick-entry-changed', refreshThemeQuickEntry);
+    return () => {
+      window.removeEventListener('theme-mode-changed', refreshThemeQuickEntry);
+      window.removeEventListener('theme-quick-entry-changed', refreshThemeQuickEntry);
+    };
+  }, []);
   const terminalSubTabTheme = useMemo(() => getTerminalTheme(), [terminalThemeToggle]);
   const [aiPanelWidth, setAiPanelWidth] = useState(() => {
     return clampPanelWidth(localStorage.getItem('aiPanelWidth') || '450', AI_PANEL_MIN);
   });
   const [showAIPanel, setShowAIPanel] = useState(localStorage.getItem('showAIPanel') !== 'false');
+  const [quickThemeMode, setQuickThemeMode] = useState(localStorage.getItem('themeMode') || 'dark');
+  const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') === 'true');
 
   const leftSplitWidthRef = useRef(leftSplitWidth);
   const bottomSplitHeightRef = useRef(bottomSplitHeight);
@@ -820,6 +834,21 @@ export default function App() {
     setShowAIPanel(next);
     localStorage.setItem('showAIPanel', String(next));
   }, []);
+  const resolveQuickThemeMode = useCallback((mode) => {
+    if (mode === 'system') {
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    return mode === 'light' ? 'light' : 'dark';
+  }, []);
+  const resolvedQuickThemeMode = resolveQuickThemeMode(quickThemeMode);
+  const handleQuickThemeToggle = useCallback(() => {
+    const nextMode = resolvedQuickThemeMode === 'light' ? 'dark' : 'light';
+    localStorage.setItem('themeMode', nextMode);
+    setQuickThemeMode(nextMode);
+    if (nextMode === 'light') document.body.classList.add('theme-light');
+    else document.body.classList.remove('theme-light');
+    window.dispatchEvent(new CustomEvent('theme-mode-changed'));
+  }, [resolvedQuickThemeMode]);
   const getFileManagerDockPreviewRect = useCallback((target) => {
     if (target !== 'left' && target !== 'bottom') {
       return null;
@@ -4594,6 +4623,76 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           {sessions.length === 0 && <div style={{ flex: 1 }}></div>}
 
           <div className="window-controls">
+            {showThemeQuickEntry && (
+              <Tiptop text={resolvedQuickThemeMode === 'light' ? t('深色') : t('浅色')} placement="bottom">
+                <button
+                  type="button"
+                  className="btn btn-ghost no-drag"
+                  onClick={handleQuickThemeToggle}
+                  aria-label={resolvedQuickThemeMode === 'light' ? t('深色') : t('浅色')}
+                  style={{
+                    position: 'relative',
+                    width: 52,
+                    height: 28,
+                    padding: 3,
+                    borderRadius: 999,
+                    border: '1px solid var(--border)',
+                    background: resolvedQuickThemeMode === 'light' ? 'rgba(250, 204, 21, 0.12)' : 'rgba(99, 102, 241, 0.16)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 0,
+                    overflow: 'hidden',
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: 3,
+                      left: resolvedQuickThemeMode === 'light' ? 3 : 27,
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      background: 'var(--surface-overlay)',
+                      boxShadow: 'var(--shadow-sm)',
+                      transition: 'left 0.2s ease',
+                    }}
+                  />
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'relative',
+                      zIndex: 1,
+                      width: 16,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: resolvedQuickThemeMode === 'light' ? '#f59e0b' : 'var(--text-tertiary)',
+                      transition: 'color 0.2s ease',
+                    }}
+                  >
+                    <Sun size={13} />
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'relative',
+                      zIndex: 1,
+                      width: 16,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: resolvedQuickThemeMode === 'dark' ? '#a78bfa' : 'var(--text-tertiary)',
+                      transition: 'color 0.2s ease',
+                    }}
+                  >
+                    <Moon size={13} />
+                  </span>
+                </button>
+              </Tiptop>
+            )}
             {activeSessionId !== null && sessions.length > 0 && (
               <Tiptop text={showAIPanel ? t('收起 AI 助手面板') : t('打开 AI 助手面板')} placement="bottom">
                 <button

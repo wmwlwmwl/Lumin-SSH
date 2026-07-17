@@ -22,6 +22,7 @@ export default function AppearanceTab({
   terminalTimestamps, onTerminalTimestampsChange,
   terminalColorTheme, onTerminalColorThemeChange,
   themeMode, onThemeChange,
+  showThemeQuickEntry, onToggleThemeQuickEntry,
   probePanelPosition, onProbePanelPositionChange,
   themeAccent, onColorChange,
   useCustomAccent, onToggleAccent,
@@ -252,15 +253,67 @@ export default function AppearanceTab({
       <div>
         <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('界面主题')}</h3>
         <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('主题')}</div>
               <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('选择浅色、深色或跟随系统设置')}</div>
             </div>
-            <div style={{ display: 'flex', background: 'var(--surface-raised)', borderRadius: 'var(--radius-xl)', padding: 4, border: '1px solid var(--border)' }}>
-              <button className={`btn btn-sm ${themeMode === 'light' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onThemeChange('light')} style={{ borderRadius: 'var(--radius-xl)', background: themeMode === 'light' ? 'var(--surface-sunken)' : 'transparent', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sun size={14} />{$t('浅色')}</button>
-              <button className={`btn btn-sm ${themeMode === 'system' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onThemeChange('system')} style={{ borderRadius: 'var(--radius-xl)', background: themeMode === 'system' ? 'var(--surface-sunken)' : 'transparent', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Monitor size={14} />{$t('系统')}</button>
-              <button className={`btn btn-sm ${themeMode === 'dark' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onThemeChange('dark')} style={{ borderRadius: 'var(--radius-xl)', background: themeMode === 'dark' ? 'var(--surface-sunken)' : 'transparent', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Moon size={14} />{$t('深色')}</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={onToggleThemeQuickEntry}
+                aria-pressed={showThemeQuickEntry}
+                aria-label={$t('快捷入口')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  minHeight: 34,
+                  padding: '0 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${showThemeQuickEntry ? 'rgba(var(--accent-rgb), 0.28)' : 'var(--border)'}`,
+                  background: showThemeQuickEntry ? 'rgba(var(--accent-rgb), 0.1)' : 'var(--surface-raised)',
+                  color: showThemeQuickEntry ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  whiteSpace: 'nowrap',
+                  transition: 'var(--transition-fast)',
+                  boxShadow: showThemeQuickEntry ? '0 0 0 1px rgba(var(--accent-rgb), 0.12) inset' : 'none',
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{$t('快捷入口')}</span>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 36,
+                    height: 20,
+                    borderRadius: 999,
+                    background: showThemeQuickEntry ? 'var(--accent)' : 'var(--surface-hover)',
+                    border: '1px solid var(--border)',
+                    position: 'relative',
+                    transition: 'var(--transition-fast)',
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 1,
+                      left: showThemeQuickEntry ? 17 : 1,
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      background: '#fff',
+                      boxShadow: 'var(--shadow-xs)',
+                      transition: 'left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }}
+                  />
+                </span>
+              </button>
+              <div style={{ display: 'flex', background: 'var(--surface-raised)', borderRadius: 'var(--radius-xl)', padding: 4, border: '1px solid var(--border)' }}>
+                <button className={`btn btn-sm ${themeMode === 'light' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onThemeChange('light')} style={{ borderRadius: 'var(--radius-xl)', background: themeMode === 'light' ? 'var(--surface-sunken)' : 'transparent', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sun size={14} />{$t('浅色')}</button>
+                <button className={`btn btn-sm ${themeMode === 'system' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onThemeChange('system')} style={{ borderRadius: 'var(--radius-xl)', background: themeMode === 'system' ? 'var(--surface-sunken)' : 'transparent', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Monitor size={14} />{$t('系统')}</button>
+                <button className={`btn btn-sm ${themeMode === 'dark' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onThemeChange('dark')} style={{ borderRadius: 'var(--radius-xl)', background: themeMode === 'dark' ? 'var(--surface-sunken)' : 'transparent', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Moon size={14} />{$t('深色')}</button>
+              </div>
             </div>
           </div>
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />

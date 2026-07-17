@@ -750,6 +750,7 @@ export default {
   "界面主题": "Schnittstellenthema",
   "主题": "Thema",
   "选择浅色、深色或跟随系统设置": "Wählen Sie hell, dunkel oder folgen Sie den Systemeinstellungen",
+  "快捷入口": "Schneller Einstieg",
   "浅色": "helle Farbe",
   "深色": "Dunkel",
   "强调色": "Akzentfarbe",

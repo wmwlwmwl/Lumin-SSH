@@ -1831,12 +1831,32 @@ body.theme-light .batch-operation-bar {
   gap: 4px;
 }
 
+.file-toolbar-outline-btn.has-count.clipboard-copy {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+
+.file-toolbar-outline-btn.has-count.clipboard-cut {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+}
+
+.file-toolbar-outline-btn.has-count.clipboard-cut:hover {
+  border-color: color-mix(in srgb, var(--warning) 72%, var(--border));
+}
+
 .clipboard-count-badge {
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
   color: var(--accent);
   letter-spacing: 0;
+}
+
+.clipboard-count-badge.clipboard-copy {
+  color: var(--accent);
+}
+
+.clipboard-count-badge.clipboard-cut {
+  color: var(--warning);
 }
 
 .path-input {
@@ -1894,11 +1914,31 @@ body.theme-light .batch-operation-bar {
 .file-item:hover { background: var(--surface-hover); }
 .file-item.selected { background: color-mix(in srgb, var(--accent) 15%, var(--surface-base)); }
 .file-item.selected:hover { background: color-mix(in srgb, var(--accent) 22%, var(--surface-hover)); }
+.file-item.clipboard-copy {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 58%, transparent);
+}
+.file-item.clipboard-copy:hover,
+.file-item.selected.clipboard-copy {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 78%, transparent);
+}
+.file-item.clipboard-cut {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 62%, transparent);
+}
+.file-item.clipboard-cut:hover,
+.file-item.selected.clipboard-cut {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 82%, transparent);
+}
 .file-list:not(:focus-within) .file-item.selected {
   background: color-mix(in srgb, var(--text-tertiary) 8%, var(--surface-base));
 }
 .file-list:not(:focus-within) .file-item.selected:hover {
   background: color-mix(in srgb, var(--text-tertiary) 12%, var(--surface-hover));
+}
+.file-list:not(:focus-within) .file-item.selected.clipboard-copy {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+.file-list:not(:focus-within) .file-item.selected.clipboard-cut {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 46%, transparent);
 }
 .file-item:hover .file-actions { opacity: 1; }
 

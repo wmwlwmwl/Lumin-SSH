@@ -356,6 +356,7 @@ export default function SettingsModal({
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
   const [rememberWindowSize, setRememberWindowSize] = useState(localStorage.getItem('rememberWindowSize') !== 'false');
+  const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') === 'true');
   const [programFonts, setProgramFonts] = useState([]);
   const [programFontSearchQuery, setProgramFontSearchQuery] = useState('');
   const [programFontAssignments, setProgramFontAssignments] = useState(() => getProgramFontAssignmentSnapshot());
@@ -450,6 +451,13 @@ export default function SettingsModal({
     if (applyLight) document.body.classList.add('theme-light');
     else document.body.classList.remove('theme-light');
     window.dispatchEvent(new CustomEvent('theme-mode-changed'));
+  };
+
+  const handleToggleThemeQuickEntry = () => {
+    const next = !showThemeQuickEntry;
+    setShowThemeQuickEntry(next);
+    localStorage.setItem('showThemeQuickEntry', String(next));
+    window.dispatchEvent(new CustomEvent('theme-quick-entry-changed'));
   };
 
   const handleColorChange = (color) => {
@@ -1420,6 +1428,8 @@ export default function SettingsModal({
                 onTerminalColorThemeChange={(key) => { setTerminalColorTheme(key); localStorage.setItem('terminalColorTheme', key); window.dispatchEvent(new CustomEvent('terminal-theme-changed', { detail: key })); }}
                 themeMode={themeMode}
                 onThemeChange={handleThemeChange}
+                showThemeQuickEntry={showThemeQuickEntry}
+                onToggleThemeQuickEntry={handleToggleThemeQuickEntry}
                 probePanelPosition={probePanelPosition}
                 onProbePanelPositionChange={onProbePanelPositionChange}
                 themeAccent={themeAccent}

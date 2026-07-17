@@ -750,6 +750,7 @@ export default {
   "界面主题": "Chủ đề giao diện",
   "主题": "chủ đề",
   "选择浅色、深色或跟随系统设置": "Chọn sáng, tối hoặc làm theo cài đặt hệ thống",
+  "快捷入口": "Vào nhanh",
   "浅色": "màu sáng",
   "深色": "Tối tăm",
   "强调色": "màu nhấn",

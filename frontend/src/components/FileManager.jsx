@@ -2294,7 +2294,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           <>
             <Tiptop text={t('粘贴')} placement="bottom">
               <button
-                className="btn file-toolbar-outline-btn has-count"
+                className={`btn file-toolbar-outline-btn has-count ${clipboard.mode === 'cut' ? 'clipboard-cut' : 'clipboard-copy'}`}
                 aria-label={t('粘贴')}
                 onClick={() => {
                   if (operationInProgressRef.current) {
@@ -2305,7 +2305,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                 }}
               >
                 <ClipboardPaste size={14} />
-                <span className="clipboard-count-badge">{clipboard.paths.length}</span>
+                <span className={`clipboard-count-badge ${clipboard.mode === 'cut' ? 'clipboard-cut' : 'clipboard-copy'}`}>{clipboard.paths.length}</span>
               </button>
             </Tiptop>
             <Tiptop text={t('取消')} placement="bottom">
@@ -2473,6 +2473,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             const isRenaming = renamingItem?.name === item.name;
             const itemPath = joinPath(currentPath, item.name);
             const isSelected = selectedPaths.includes(itemPath);
+            const clipboardMode = clipboard?.paths?.includes(itemPath) ? clipboard.mode : '';
 
             const handleItemClick = (e) => {
               if (isRenaming) return;
@@ -2504,7 +2505,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             return (
               <div
                 key={item.name}
-                className={`file-item${isSelected ? ' selected' : ''}`}
+                className={`file-item${isSelected ? ' selected' : ''}${clipboardMode === 'copy' ? ' clipboard-copy' : ''}${clipboardMode === 'cut' ? ' clipboard-cut' : ''}`}
                 onClick={handleItemClick}
                 onDoubleClick={() => {
                   // 双击打开/编辑前，把该项设为唯一选中，行为与单资源管理器一致。

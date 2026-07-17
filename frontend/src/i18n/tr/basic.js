@@ -750,6 +750,7 @@ export default {
   "界面主题": "Arayüz teması",
   "主题": "tema",
   "选择浅色、深色或跟随系统设置": "Açık, koyu seçin veya sistem ayarlarını takip edin",
+  "快捷入口": "Hızlı giriş",
   "浅色": "açık renk",
   "深色": "Karanlık",
   "强调色": "vurgu rengi",

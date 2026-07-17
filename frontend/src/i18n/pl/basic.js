@@ -750,6 +750,7 @@ export default {
   "界面主题": "Motyw interfejsu",
   "主题": "temat",
   "选择浅色、深色或跟随系统设置": "Wybierz jasny, ciemny lub postępuj zgodnie z ustawieniami systemu",
+  "快捷入口": "Szybkie wejście",
   "浅色": "jasny kolor",
   "深色": "Ciemny",
   "强调色": "kolor akcentujący",

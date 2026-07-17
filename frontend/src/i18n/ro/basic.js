@@ -750,6 +750,7 @@ export default {
   "界面主题": "Tema interfeței",
   "主题": "temă",
   "选择浅色、深色或跟随系统设置": "Alegeți lumina, întuneric sau urmați setările de sistem",
+  "快捷入口": "Intrare rapidă",
   "浅色": "culoare deschisă",
   "深色": "Întuneric",
   "强调色": "culoare de accent",
