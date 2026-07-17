@@ -189,7 +189,7 @@ export default function Dashboard({
                   }}
                   style={{ height: 30, padding: '0 10px', fontSize: 12, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  {allCollapsed ? <FolderOpen size={14} /> : <Folder size={14} />}
+                  {allCollapsed ? <Folder size={14} /> : <FolderOpen size={14} />}
                   <span>{allCollapsed ? t('打开分组') : t('收起分组')}</span>
                 </button>
               )}
