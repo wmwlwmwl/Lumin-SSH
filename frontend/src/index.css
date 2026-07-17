@@ -1916,6 +1916,99 @@ body.theme-light .batch-operation-bar {
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
+  position: relative;
+}
+
+.file-list.is-switching {
+  overflow: hidden;
+}
+
+.file-list-viewport {
+  position: relative;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.file-list-body {
+  min-height: 100%;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  contain: paint;
+}
+
+.file-list-body-live,
+.file-list-body-ghost {
+  transition:
+    transform 420ms cubic-bezier(0.18, 0.88, 0.2, 1),
+    opacity 420ms cubic-bezier(0.18, 0.88, 0.2, 1);
+  transform-origin: center center;
+}
+
+.file-list-body-live {
+  position: relative;
+  z-index: 3;
+}
+
+.file-list-body-ghost {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.file-list-body.is-locked {
+  pointer-events: none;
+}
+
+.file-list-body-live.switch-waiting {
+  opacity: 0;
+  transform: translate3d(0, 0, 0);
+}
+
+.file-list-body-ghost.switch-waiting {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-forward .file-list-body-live.switch-prepare {
+  transform: translate3d(58%, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-forward .file-list-body-ghost.switch-prepare {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-forward .file-list-body-live.switch-entering {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-forward .file-list-body-ghost.switch-entering {
+  transform: translate3d(-58%, 0, 0);
+  opacity: 0;
+}
+
+.file-list.is-switch-backward .file-list-body-live.switch-prepare {
+  transform: translate3d(-58%, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-backward .file-list-body-ghost.switch-prepare {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-backward .file-list-body-live.switch-entering {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.file-list.is-switch-backward .file-list-body-ghost.switch-entering {
+  transform: translate3d(58%, 0, 0);
+  opacity: 0;
 }
 
 .file-list-header {
@@ -3971,6 +4064,46 @@ body.theme-light .dashboard-server-editor {
   .update-bubble,
   .update-bubble-pulse {
     animation: none;
+  }
+  .file-list-body-live.switch-waiting {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  .file-list-body-ghost.switch-waiting {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  .file-list.is-switch-forward .file-list-body-live.switch-prepare {
+    opacity: 1;
+    transform: translate3d(9%, 0, 0);
+  }
+  .file-list.is-switch-forward .file-list-body-ghost.switch-prepare {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  .file-list.is-switch-forward .file-list-body-live.switch-entering {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  .file-list.is-switch-forward .file-list-body-ghost.switch-entering {
+    opacity: 0;
+    transform: translate3d(-9%, 0, 0);
+  }
+  .file-list.is-switch-backward .file-list-body-live.switch-prepare {
+    opacity: 1;
+    transform: translate3d(-9%, 0, 0);
+  }
+  .file-list.is-switch-backward .file-list-body-ghost.switch-prepare {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  .file-list.is-switch-backward .file-list-body-live.switch-entering {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  .file-list.is-switch-backward .file-list-body-ghost.switch-entering {
+    opacity: 0;
+    transform: translate3d(9%, 0, 0);
   }
   * {
     transition-duration: 0.01ms !important;
