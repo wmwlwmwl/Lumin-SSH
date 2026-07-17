@@ -1,6 +1,7 @@
 const WORKBENCH_STATE_KEY = '__luminFileWorkbenchState';
 const UPLOAD_QUEUE_STATE_KEY = '__luminFileUploadQueueState';
 const FILE_MANAGER_WORKSPACE_STATE_KEY = '__luminFileManagerWorkspaceState';
+const FILE_MANAGER_PATH_CACHE_STATE_KEY = '__luminFileManagerPathCacheState';
 const FILE_MANAGER_WORKSPACE_CHANGED_EVENT = 'lumin-file-manager-workspace-changed';
 
 function getRoot() {
@@ -40,6 +41,24 @@ function ensureFileManagerWorkspaceStore() {
   const root = getRoot();
   if (!root[FILE_MANAGER_WORKSPACE_STATE_KEY]) root[FILE_MANAGER_WORKSPACE_STATE_KEY] = {};
   return root[FILE_MANAGER_WORKSPACE_STATE_KEY];
+}
+
+function ensureFileManagerPathCacheStore() {
+  const root = getRoot();
+  if (!root[FILE_MANAGER_PATH_CACHE_STATE_KEY]) root[FILE_MANAGER_PATH_CACHE_STATE_KEY] = {};
+  return root[FILE_MANAGER_PATH_CACHE_STATE_KEY];
+}
+
+function cloneFileManagerPathItems(items) {
+  return Array.isArray(items)
+    ? items
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => ({ ...item }))
+    : [];
+}
+
+function normalizeFileManagerPathCacheKey(path) {
+  return String(path || '').trim() || '/';
 }
 
 function normalizeFileManagerTabPath(path) {
@@ -141,6 +160,32 @@ export function subscribeSessionUploadQueue(sessionGroupId, callback) {
   callback(getSessionUploadQueue(key));
   root.addEventListener(uploadQueueEventName(key), handler);
   return () => root.removeEventListener(uploadQueueEventName(key), handler);
+}
+
+export function getSessionFileManagerPathCache(sessionGroupId) {
+  const store = ensureFileManagerPathCacheStore();
+  const key = normalizeSessionGroupId(sessionGroupId);
+  const current = store[key];
+  return current && typeof current === 'object' ? current : {};
+}
+
+export function getSessionCachedFileManagerPathItems(sessionGroupId, path) {
+  const cache = getSessionFileManagerPathCache(sessionGroupId);
+  const items = cache[normalizeFileManagerPathCacheKey(path)];
+  return Array.isArray(items) ? cloneFileManagerPathItems(items) : null;
+}
+
+export function setSessionCachedFileManagerPathItems(sessionGroupId, path, items) {
+  const store = ensureFileManagerPathCacheStore();
+  const key = normalizeSessionGroupId(sessionGroupId);
+  const pathKey = normalizeFileManagerPathCacheKey(path);
+  const current = getSessionFileManagerPathCache(key);
+  const next = {
+    ...current,
+    [pathKey]: cloneFileManagerPathItems(items),
+  };
+  store[key] = next;
+  return next;
 }
 
 export function getSessionFileManagerWorkspace(sessionId) {
