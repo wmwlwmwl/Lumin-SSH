@@ -356,7 +356,7 @@ export default function SettingsModal({
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
   const [rememberWindowSize, setRememberWindowSize] = useState(localStorage.getItem('rememberWindowSize') !== 'false');
-  const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') === 'true');
+  const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') !== 'false');
   const [programFonts, setProgramFonts] = useState([]);
   const [programFontSearchQuery, setProgramFontSearchQuery] = useState('');
   const [programFontAssignments, setProgramFontAssignments] = useState(() => getProgramFontAssignmentSnapshot());
@@ -644,6 +644,7 @@ export default function SettingsModal({
   const [fileManagerFollowTerminalCwd, setFileManagerFollowTerminalCwd] = useState(localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   const [fileManagerCompressedTransfer, setFileManagerCompressedTransfer] = useState(localStorage.getItem('fileManagerCompressedTransfer') !== 'false');
   const [fileManagerAutoOpenTransferQueue, setFileManagerAutoOpenTransferQueue] = useState(localStorage.getItem('fileManagerAutoOpenTransferQueue') !== 'false');
+  const [fileManagerNewTabPathMode, setFileManagerNewTabPathMode] = useState(localStorage.getItem('fileManagerNewTabPathMode') || 'inherit_current');
   const [fileManagerAskDownloadEveryTime, setFileManagerAskDownloadEveryTime] = useState(localStorage.getItem('fileManagerAskDownloadEveryTime') === 'true');
   const [fileManagerDownloadConflictStrategy, setFileManagerDownloadConflictStrategy] = useState(localStorage.getItem('fileManagerDownloadConflictStrategy') || 'auto_rename');
   const [fileManagerDownloadConflictDiffBySize, setFileManagerDownloadConflictDiffBySize] = useState(localStorage.getItem('fileManagerDownloadConflictDiffBySize') !== 'false');
@@ -728,6 +729,10 @@ export default function SettingsModal({
     setFileManagerAutoOpenTransferQueue(next);
     if (next) localStorage.removeItem('fileManagerAutoOpenTransferQueue');
     else localStorage.setItem('fileManagerAutoOpenTransferQueue', 'false');
+  };
+  const handleFileManagerNewTabPathModeChange = (value) => {
+    setFileManagerNewTabPathMode(value);
+    localStorage.setItem('fileManagerNewTabPathMode', value);
   };
   const handleToggleFileManagerAskDownloadEveryTime = () => {
     const next = !fileManagerAskDownloadEveryTime;
@@ -1386,6 +1391,8 @@ export default function SettingsModal({
                 onToggleFileManagerCompressedTransfer={handleToggleFileManagerCompressedTransfer}
                 fileManagerAutoOpenTransferQueue={fileManagerAutoOpenTransferQueue}
                 onToggleFileManagerAutoOpenTransferQueue={handleToggleFileManagerAutoOpenTransferQueue}
+                fileManagerNewTabPathMode={fileManagerNewTabPathMode}
+                onFileManagerNewTabPathModeChange={handleFileManagerNewTabPathModeChange}
                 fileManagerAskDownloadEveryTime={fileManagerAskDownloadEveryTime}
                 onToggleFileManagerAskDownloadEveryTime={handleToggleFileManagerAskDownloadEveryTime}
                 fileManagerDownloadConflictStrategy={fileManagerDownloadConflictStrategy}

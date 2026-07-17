@@ -10,6 +10,11 @@ import AIChangeReviewWorkbench from './components/ai/AIChangeReviewWorkbench.jsx
 import AIConversationDiffOverlay from './components/ai/AIConversationDiffOverlay.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import { isRecoveryPasswordError, syncWithRecoveryPassword } from './utils/recoveryPasswordSync.js';
+import {
+  getAllSessionFileManagerWorkspaces,
+  remapSessionFileManagerWorkspaces,
+  replaceAllSessionFileManagerWorkspaces,
+} from './utils/fileWorkbench.js';
 import CredentialsModal from './components/CredentialsModal.jsx';
 import Toast from './components/Toast.jsx';
 import CommandHistory from './components/CommandHistory.jsx';
@@ -790,7 +795,7 @@ export default function App() {
   useEffect(() => {
     const refreshThemeQuickEntry = () => {
       setQuickThemeMode(localStorage.getItem('themeMode') || 'dark');
-      setShowThemeQuickEntry(localStorage.getItem('showThemeQuickEntry') === 'true');
+      setShowThemeQuickEntry(localStorage.getItem('showThemeQuickEntry') !== 'false');
     };
     window.addEventListener('theme-mode-changed', refreshThemeQuickEntry);
     window.addEventListener('theme-quick-entry-changed', refreshThemeQuickEntry);
@@ -805,7 +810,7 @@ export default function App() {
   });
   const [showAIPanel, setShowAIPanel] = useState(localStorage.getItem('showAIPanel') !== 'false');
   const [quickThemeMode, setQuickThemeMode] = useState(localStorage.getItem('themeMode') || 'dark');
-  const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') === 'true');
+  const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') !== 'false');
 
   const leftSplitWidthRef = useRef(leftSplitWidth);
   const bottomSplitHeightRef = useRef(bottomSplitHeight);
@@ -2343,9 +2348,15 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             },
           ])
       );
+      const savedTerminalIds = new Set(savedSessions.flatMap((session) => (session.terminals || []).map((terminal) => terminal.id)));
+      const savedFileManagerWorkspaces = Object.fromEntries(
+        Object.entries(snapshot.fileManagerWorkspaces || {})
+          .filter(([terminalId]) => savedTerminalIds.has(terminalId))
+      );
       const initialActiveSessionId = savedSessions.some((session) => session.id === snapshot.activeSessionId)
         ? snapshot.activeSessionId
         : savedSessions[0].id;
+      replaceAllSessionFileManagerWorkspaces(savedFileManagerWorkspaces);
       restoringWorkspaceRef.current = true;
       setRestoringWorkspaceSessionIds(new Set(savedSessions.map((session) => session.id)));
       setSessions(savedSessions);
@@ -2375,6 +2386,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         });
         if (result?.oldToNew) {
           Object.assign(idMap, result.oldToNew);
+          remapSessionFileManagerWorkspaces(result.oldToNew);
           restoredLayouts = remapTerminalPaneLayouts(restoredLayouts, result.oldToNew, savedSession.id);
           const restoredSession = { ...savedSession, status: 'connected', terminals: result.newTerminals };
           const restoredSessionLayouts = Object.fromEntries(
@@ -3332,6 +3344,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       return;
     }
     const sessionIds = new Set(openSessions.map((session) => session.id));
+    const openTerminalIds = new Set(openSessions.flatMap((session) => (session.terminals || []).map((terminal) => terminal.id)));
     const savedLayouts = Object.fromEntries(
       Object.entries(nextLayouts)
         .filter(([, layout]) => sessionIds.has(layout?.sessionId))
@@ -3347,6 +3360,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             })),
           },
         ])
+    );
+    const savedFileManagerWorkspaces = Object.fromEntries(
+      Object.entries(getAllSessionFileManagerWorkspaces())
+        .filter(([terminalId]) => openTerminalIds.has(terminalId))
     );
     const savedActiveSessionId = openSessions.some((session) => session.id === nextActiveSessionId)
       ? nextActiveSessionId
@@ -3388,6 +3405,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         };
       }),
       terminalPaneLayouts: savedLayouts,
+      fileManagerWorkspaces: savedFileManagerWorkspaces,
     });
     window?.go?.main?.App?.SaveWorkspaceState?.(workspaceStatePayload).catch(() => {});
   }, [activeSessionId, activeTerminalId, getSessionWorkspaceTabs, rememberWorkspace, rememberWorkspaceLoaded, resolveSessionRootTerminalId, sessions, terminalPaneLayouts, workspaceRestoreReady]);
@@ -3398,6 +3416,26 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   useEffect(() => {
     persistWorkspaceSnapshot();
+  }, [persistWorkspaceSnapshot]);
+
+  useEffect(() => {
+    let timerId = 0;
+    const handleWorkspaceChange = () => {
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+      timerId = window.setTimeout(() => {
+        timerId = 0;
+        persistWorkspaceSnapshot();
+      }, 120);
+    };
+    window.addEventListener('lumin-file-manager-workspace-changed', handleWorkspaceChange);
+    return () => {
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+      window.removeEventListener('lumin-file-manager-workspace-changed', handleWorkspaceChange);
+    };
   }, [persistWorkspaceSnapshot]);
 
   const terminalSubTabScrollStyle = useMemo(() => ({

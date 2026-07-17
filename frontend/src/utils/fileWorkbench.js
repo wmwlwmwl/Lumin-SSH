@@ -1,5 +1,7 @@
 const WORKBENCH_STATE_KEY = '__luminFileWorkbenchState';
 const UPLOAD_QUEUE_STATE_KEY = '__luminFileUploadQueueState';
+const FILE_MANAGER_WORKSPACE_STATE_KEY = '__luminFileManagerWorkspaceState';
+const FILE_MANAGER_WORKSPACE_CHANGED_EVENT = 'lumin-file-manager-workspace-changed';
 
 function getRoot() {
   if (typeof window !== 'undefined') return window;
@@ -18,6 +20,10 @@ function uploadQueueEventName(sessionGroupId) {
   return `lumin-file-upload-queue:${normalizeSessionGroupId(sessionGroupId)}`;
 }
 
+function fileManagerWorkspaceEventName(sessionId) {
+  return `lumin-file-manager-workspace:${normalizeSessionGroupId(sessionId)}`;
+}
+
 function ensureWorkbenchStore() {
   const root = getRoot();
   if (!root[WORKBENCH_STATE_KEY]) root[WORKBENCH_STATE_KEY] = {};
@@ -28,6 +34,38 @@ function ensureUploadQueueStore() {
   const root = getRoot();
   if (!root[UPLOAD_QUEUE_STATE_KEY]) root[UPLOAD_QUEUE_STATE_KEY] = {};
   return root[UPLOAD_QUEUE_STATE_KEY];
+}
+
+function ensureFileManagerWorkspaceStore() {
+  const root = getRoot();
+  if (!root[FILE_MANAGER_WORKSPACE_STATE_KEY]) root[FILE_MANAGER_WORKSPACE_STATE_KEY] = {};
+  return root[FILE_MANAGER_WORKSPACE_STATE_KEY];
+}
+
+function normalizeFileManagerWorkspaceState(state) {
+  const source = state && typeof state === 'object' ? state : {};
+  const tabs = Array.isArray(source.tabs)
+    ? source.tabs
+      .map((tab) => {
+        if (!tab || typeof tab !== 'object') return null;
+        const id = String(tab.id || '').trim();
+        if (!id) return null;
+        return {
+          id,
+          path: typeof tab.path === 'string' ? tab.path : '',
+          sortField: typeof tab.sortField === 'string' ? tab.sortField : 'name',
+          sortDir: tab.sortDir === 'desc' ? 'desc' : 'asc',
+          selectedPaths: Array.isArray(tab.selectedPaths) ? tab.selectedPaths.filter((item) => typeof item === 'string') : [],
+          scrollTop: Number.isFinite(Number(tab.scrollTop)) ? Number(tab.scrollTop) : 0,
+        };
+      })
+      .filter(Boolean)
+    : [];
+  const activeTabId = typeof source.activeTabId === 'string' ? source.activeTabId.trim() : '';
+  return {
+    activeTabId: tabs.some((tab) => tab.id === activeTabId) ? activeTabId : (tabs[0]?.id || ''),
+    tabs,
+  };
 }
 
 export function getSessionWorkbenchState(sessionGroupId) {
@@ -87,4 +125,73 @@ export function subscribeSessionUploadQueue(sessionGroupId, callback) {
   callback(getSessionUploadQueue(key));
   root.addEventListener(uploadQueueEventName(key), handler);
   return () => root.removeEventListener(uploadQueueEventName(key), handler);
+}
+
+export function getSessionFileManagerWorkspace(sessionId) {
+  const store = ensureFileManagerWorkspaceStore();
+  const key = normalizeSessionGroupId(sessionId);
+  return normalizeFileManagerWorkspaceState(store[key]);
+}
+
+export function setSessionFileManagerWorkspace(sessionId, patch) {
+  const root = getRoot();
+  const store = ensureFileManagerWorkspaceStore();
+  const key = normalizeSessionGroupId(sessionId);
+  const current = getSessionFileManagerWorkspace(key);
+  const nextPatch = typeof patch === 'function' ? patch(current) : patch;
+  const next = normalizeFileManagerWorkspaceState(nextPatch);
+  store[key] = next;
+  root.dispatchEvent(new CustomEvent(fileManagerWorkspaceEventName(key), { detail: next }));
+  root.dispatchEvent(new CustomEvent(FILE_MANAGER_WORKSPACE_CHANGED_EVENT, {
+    detail: { sessionId: key, workspace: next },
+  }));
+  return next;
+}
+
+export function subscribeSessionFileManagerWorkspace(sessionId, callback) {
+  const root = getRoot();
+  const key = normalizeSessionGroupId(sessionId);
+  const handler = (event) => callback(event.detail);
+  callback(getSessionFileManagerWorkspace(key));
+  root.addEventListener(fileManagerWorkspaceEventName(key), handler);
+  return () => root.removeEventListener(fileManagerWorkspaceEventName(key), handler);
+}
+
+export function getAllSessionFileManagerWorkspaces() {
+  const store = ensureFileManagerWorkspaceStore();
+  return Object.fromEntries(
+    Object.entries(store).map(([key, value]) => [key, normalizeFileManagerWorkspaceState(value)]),
+  );
+}
+
+export function replaceAllSessionFileManagerWorkspaces(nextState) {
+  const root = getRoot();
+  const currentStore = ensureFileManagerWorkspaceStore();
+  const previousKeys = Object.keys(currentStore);
+  const normalized = {};
+  Object.entries(nextState && typeof nextState === 'object' ? nextState : {}).forEach(([key, value]) => {
+    normalized[normalizeSessionGroupId(key)] = normalizeFileManagerWorkspaceState(value);
+  });
+  root[FILE_MANAGER_WORKSPACE_STATE_KEY] = normalized;
+  const changedKeys = new Set([...previousKeys, ...Object.keys(normalized)]);
+  changedKeys.forEach((key) => {
+    root.dispatchEvent(new CustomEvent(fileManagerWorkspaceEventName(key), {
+      detail: getSessionFileManagerWorkspace(key),
+    }));
+  });
+  root.dispatchEvent(new CustomEvent(FILE_MANAGER_WORKSPACE_CHANGED_EVENT, {
+    detail: { sessionIds: Array.from(changedKeys), workspaces: normalized },
+  }));
+  return normalized;
+}
+
+export function remapSessionFileManagerWorkspaces(idMap) {
+  const sourceMap = idMap && typeof idMap === 'object' ? idMap : {};
+  const current = getAllSessionFileManagerWorkspaces();
+  const remapped = {};
+  Object.entries(current).forEach(([sessionId, state]) => {
+    const mappedId = normalizeSessionGroupId(sourceMap[sessionId] || sessionId);
+    remapped[mappedId] = normalizeFileManagerWorkspaceState(state);
+  });
+  return replaceAllSessionFileManagerWorkspaces(remapped);
 }

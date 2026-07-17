@@ -21,6 +21,8 @@ export default function FileManagerTab({
   onToggleFileManagerCompressedTransfer,
   fileManagerAutoOpenTransferQueue,
   onToggleFileManagerAutoOpenTransferQueue,
+  fileManagerNewTabPathMode,
+  onFileManagerNewTabPathModeChange,
   fileManagerAskDownloadEveryTime,
   onToggleFileManagerAskDownloadEveryTime,
   fileManagerDownloadConflictStrategy,
@@ -66,6 +68,37 @@ export default function FileManagerTab({
             description={$t('上传或下载新建传输任务后自动展开传输队列面板')}
             action={<ToggleSwitch checked={fileManagerAutoOpenTransferQueue} onChange={onToggleFileManagerAutoOpenTransferQueue} />}
           />
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('新建标签默认路径')}</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('手动新建文件管理器标签时的初始目录来源；如果首选路径不可用，会依次回退到当前标签目录和根目录')}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+              <RadioOption
+                selected={fileManagerNewTabPathMode === 'inherit_current'}
+                label={$t('继承当前标签所在目录')}
+                description={$t('新标签默认打开当前标签所在目录')}
+                onClick={() => onFileManagerNewTabPathModeChange('inherit_current')}
+              />
+              <RadioOption
+                selected={fileManagerNewTabPathMode === 'root'}
+                label={$t('根目录')}
+                description={$t('新标签始终从根目录开始')}
+                onClick={() => onFileManagerNewTabPathModeChange('root')}
+              />
+              <RadioOption
+                selected={fileManagerNewTabPathMode === 'session_initial_path'}
+                label={$t('服务器初始目录')}
+                description={$t('使用当前服务器配置中的文件管理器初始目录')}
+                onClick={() => onFileManagerNewTabPathModeChange('session_initial_path')}
+              />
+              <RadioOption
+                selected={fileManagerNewTabPathMode === 'terminal_cwd'}
+                label={$t('当前终端目录')}
+                description={$t('使用当前终端最近一次上报的工作目录')}
+                onClick={() => onFileManagerNewTabPathModeChange('terminal_cwd')}
+              />
+            </div>
+          </div>
         </div>
       </div>
       <div>
