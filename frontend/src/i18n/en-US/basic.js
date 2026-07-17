@@ -1332,4 +1332,18 @@ export default {
   "已成功导出选择的 {count} 个节点到 {path}": "Successfully exported {count} selected nodes to {path}",
   "取消全选": "Deselect All",
   "运行环境": "Runtime",
+  "正在删除": "Deleting",
+  "正在删除中...": "Deleting...",
+  "确定删除所选": "Are you sure to delete selected items",
+  "已剪切": "Cut",
+  "源目录与目标目录相同，无需移动": "Source and destination directories are the same, no need to move",
+  "正在粘贴中...": "Pasting...",
+  "无法确认覆盖操作，已跳过": "Unable to confirm overwrite, skipping",
+  "目标已存在同名项目": "Destination already contains an item with the same name",
+  "是否覆盖？": "Would you like to overwrite?",
+  "正在复制": "Copying",
+  "正在移动": "Moving",
+  "操作失败": "Operation failed",
+  "操作完成": "Operation completed",
+  "有操作正在进行，请稍候": "An operation is currently in progress, please wait"
 };
