@@ -2465,7 +2465,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         .map((session) => {
           const terminalById = new Map((session.terminals || []).map((term) => [term.id, term]));
           const workspaceTerminalIds = (session.workspaceTabs || []).flatMap((tab) => tab.terminalIds || []);
-          const orderedTerminalIds = Array.from(new Set([...workspaceTerminalIds, ...terminalById.keys(), session.id]));
+          const baseTerminalIds = [...workspaceTerminalIds, ...terminalById.keys()];
+          const orderedTerminalIds = Array.from(new Set(baseTerminalIds.length > 0 ? baseTerminalIds : [session.id]));
           return {
             id: session.id,
             serverId: session.serverId,
