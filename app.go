@@ -1847,6 +1847,14 @@ func (a *App) SetRememberWorkspace(enabled bool) error {
 	return a.configManager.SetRememberWorkspace(enabled)
 }
 
+func (a *App) GetWorkspacePersistenceLevel() string {
+	return a.configManager.GetWorkspacePersistenceLevel()
+}
+
+func (a *App) SetWorkspacePersistenceLevel(level string) error {
+	return a.configManager.SetWorkspacePersistenceLevel(level)
+}
+
 func (a *App) SupportsWebviewGpuDisable() bool {
 	return goruntime.GOOS == "windows"
 }
@@ -2099,6 +2107,14 @@ func (a *App) GetWorkspaceState() string {
 
 func (a *App) SaveWorkspaceState(jsonStr string) error {
 	return a.configManager.SaveWorkspaceState(jsonStr)
+}
+
+func (a *App) GetWorkspaceSessionState(serverId string) string {
+	return a.configManager.GetWorkspaceSessionState(serverId)
+}
+
+func (a *App) SaveWorkspaceSessionState(serverId string, jsonStr string) error {
+	return a.configManager.SaveWorkspaceSessionState(serverId, jsonStr)
 }
 
 func (a *App) ClearWorkspaceState() error {
