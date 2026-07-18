@@ -28,15 +28,14 @@ export function RadioOption({ selected, label, description, onClick }) {
   );
 }
 
-export function AboutLink({ icon, title, desc, url }) {
+export function AboutLink({ icon, title, url }) {
   return (
     <div onClick={() => window.runtime?.BrowserOpenURL(url)} className="about-list-item"
-      style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'all 0.2s' }}>
-      {icon}
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{desc}</span>
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '16px 12px', minHeight: 96, borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'all 0.2s', textAlign: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, color: 'var(--text-secondary)' }}>
+        {icon}
       </div>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{title}</span>
     </div>
   );
 }
