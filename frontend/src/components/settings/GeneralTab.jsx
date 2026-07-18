@@ -1,5 +1,5 @@
 import { t as $t } from '../../i18n.js';
-import { ToggleSwitch } from './SharedComponents';
+import { RadioOption, ToggleSwitch } from './SharedComponents';
 
 export default function GeneralTab({
   language, onLanguageChange, availableLanguages = [],
@@ -9,6 +9,7 @@ export default function GeneralTab({
   windowCloseAction, onWindowCloseActionChange,
   updateUseProxy, onToggleUpdateUseProxy,
   rememberWorkspace, onToggleRememberWorkspace,
+  workspacePersistenceLevel, onWorkspacePersistenceLevelChange,
   supportsWebviewGpuDisable, webviewGpuDisabled, onToggleWebviewGpuDisabled,
 }) {
   return (
@@ -81,6 +82,29 @@ export default function GeneralTab({
             </div>
             <ToggleSwitch checked={rememberWorkspace} onChange={onToggleRememberWorkspace} />
           </div>
+          {rememberWorkspace && (
+            <>
+              <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('持久化级别')}</div>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('选择工作区状态的额外持久化粒度')}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                  <RadioOption
+                    selected={workspacePersistenceLevel !== 'session'}
+                    label={$t('程序')}
+                    description={$t('仅保留当前的程序级工作区恢复行为')}
+                    onClick={() => onWorkspacePersistenceLevelChange('program')}
+                  />
+                  <RadioOption
+                    selected={workspacePersistenceLevel === 'session'}
+                    label={$t('会话')}
+                    description={$t('在保留程序级恢复的同时, 为每个服务器单独保存最近一次会话状态; 重新连接该服务器时优先恢复')}
+                    onClick={() => onWorkspacePersistenceLevelChange('session')}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

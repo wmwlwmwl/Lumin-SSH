@@ -638,6 +638,7 @@ export default function SettingsModal({
   const [windowCloseAction, setWindowCloseAction] = useState(localStorage.getItem('windowCloseAction') || 'ask');
   const [updateUseProxy, setUpdateUseProxy] = useState(localStorage.getItem('updateUseProxy') === 'true');
   const [rememberWorkspace, setRememberWorkspace] = useState(false);
+  const [workspacePersistenceLevel, setWorkspacePersistenceLevel] = useState('program');
   const [supportsWebviewGpuDisable, setSupportsWebviewGpuDisable] = useState(false);
   const [webviewGpuDisabled, setWebviewGpuDisabled] = useState(false);
   const [programDirectory, setProgramDirectory] = useState('');
@@ -699,6 +700,18 @@ export default function SettingsModal({
     } catch (err) {
       setRememberWorkspace(!next);
       addToast($t('记忆工作区设置保存失败') + `: ${err}`, 'error');
+    }
+  };
+  const handleWorkspacePersistenceLevelChange = async (value) => {
+    const next = value === 'session' ? 'session' : 'program';
+    const previous = workspacePersistenceLevel;
+    setWorkspacePersistenceLevel(next);
+    try {
+      await window?.go?.main?.App?.SetWorkspacePersistenceLevel?.(next);
+      window.dispatchEvent(new CustomEvent('workspace-persistence-level-changed', { detail: next }));
+    } catch (err) {
+      setWorkspacePersistenceLevel(previous);
+      addToast($t('工作区持久化级别保存失败') + `: ${err}`, 'error');
     }
   };
   const handleToggleWebviewGpuDisabled = async () => {
@@ -903,6 +916,11 @@ export default function SettingsModal({
     Promise.resolve(window?.go?.main?.App?.GetRememberWorkspace?.())
       .then((enabled) => {
         if (!cancelled && typeof enabled === 'boolean') setRememberWorkspace(enabled);
+      })
+      .catch(() => {});
+    Promise.resolve(window?.go?.main?.App?.GetWorkspacePersistenceLevel?.())
+      .then((level) => {
+        if (!cancelled && typeof level === 'string') setWorkspacePersistenceLevel(level === 'session' ? 'session' : 'program');
       })
       .catch(() => {});
 
@@ -1369,6 +1387,8 @@ export default function SettingsModal({
                 onToggleUpdateUseProxy={handleToggleUpdateUseProxy}
                 rememberWorkspace={rememberWorkspace}
                 onToggleRememberWorkspace={handleToggleRememberWorkspace}
+                workspacePersistenceLevel={workspacePersistenceLevel}
+                onWorkspacePersistenceLevelChange={handleWorkspacePersistenceLevelChange}
                 supportsWebviewGpuDisable={supportsWebviewGpuDisable}
                 webviewGpuDisabled={webviewGpuDisabled}
                 onToggleWebviewGpuDisabled={handleToggleWebviewGpuDisabled}

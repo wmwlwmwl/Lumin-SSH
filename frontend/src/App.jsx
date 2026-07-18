@@ -379,6 +379,41 @@ function mergeRestoredWorkspaceLayouts(currentLayouts, nextRestoredLayouts, rest
   return merged;
 }
 
+function remapSessionFileManagerWorkspaceMap(workspaces, idMap) {
+  const sourceMap = idMap && typeof idMap === 'object' ? idMap : {};
+  const next = {};
+  Object.entries(workspaces || {}).forEach(([terminalId, workspace]) => {
+    next[sourceMap[terminalId] || terminalId] = workspace;
+  });
+  return next;
+}
+
+function normalizeWorkspaceContentTab(value) {
+  return value === 'files' || value === 'process' || value === 'network' || value === 'history'
+    ? value
+    : 'terminal';
+}
+
+function remapSessionWorkspaceLayouts(layouts, idMap, targetSessionId) {
+  const sourceMap = idMap && typeof idMap === 'object' ? idMap : {};
+  const next = {};
+  Object.entries(layouts || {}).forEach(([layoutId, layout]) => {
+    const mappedLayoutId = sourceMap[layoutId] || layoutId;
+    const mappedRootTerminalId = sourceMap[layout?.rootTerminalId || layoutId] || layout?.rootTerminalId || layoutId;
+    next[mappedLayoutId] = {
+      ...layout,
+      sessionId: targetSessionId,
+      rootTerminalId: mappedRootTerminalId,
+      panes: (layout?.panes || []).map((pane) => ({
+        ...pane,
+        terminalId: sourceMap[pane.terminalId] || pane.terminalId,
+        cells: sortTerminalPaneCells(pane.cells),
+      })),
+    };
+  });
+  return next;
+}
+
 export default function App() {
   const { t, lang } = useTranslation();
   const [servers, setServers] = useState([]);
@@ -400,6 +435,7 @@ export default function App() {
   const activeTerminalIdRef = useRef(null);
   useEffect(() => { activeTerminalIdRef.current = activeTerminalId; }, [activeTerminalId]);
   const [rememberWorkspace, setRememberWorkspace] = useState(false);
+  const [workspacePersistenceLevel, setWorkspacePersistenceLevel] = useState('program');
   const [rememberWorkspaceLoaded, setRememberWorkspaceLoaded] = useState(false);
   const [workspaceRestoreReady, setWorkspaceRestoreReady] = useState(false);
   const [terminalPaneLayouts, setTerminalPaneLayouts] = useState({});
@@ -538,6 +574,104 @@ export default function App() {
       workspaceRestoreNavigationOverrideRef.current = true;
     }
   }, []);
+
+  const buildSessionWorkspaceSnapshot = useCallback((session, overrides = {}) => {
+    const nextSession = overrides.session || session;
+    if (!nextSession?.id || !nextSession?.serverId) {
+      return null;
+    }
+    const nextLayouts = overrides.terminalPaneLayouts || terminalPaneLayoutsRef.current;
+    const nextTerminals = Array.isArray(nextSession.terminals) && nextSession.terminals.length > 0
+      ? nextSession.terminals.map((term, index) => ({
+          id: typeof term?.id === 'string' && term.id.trim() ? term.id.trim() : `${nextSession.id}-terminal-${index + 1}`,
+          label: typeof term?.label === 'string' && term.label.trim() ? term.label.trim() : `${t('终端')}${index + 1}`,
+        }))
+      : [{ id: nextSession.id, label: `${t('终端')}1` }];
+    const sessionLayouts = Object.fromEntries(
+      Object.entries(nextLayouts || {})
+        .filter(([, layout]) => layout?.sessionId === nextSession.id)
+        .map(([layoutId, layout]) => [
+          layoutId,
+          {
+            ...layout,
+            sessionId: layout.sessionId,
+            rootTerminalId: layout.rootTerminalId || layoutId,
+            panes: (layout.panes || []).map((pane) => ({
+              ...pane,
+              cells: sortTerminalPaneCells(pane.cells),
+            })),
+          },
+        ]),
+    );
+    const terminalIds = new Set(nextTerminals.map((term) => term.id));
+    const fileManagerWorkspaces = Object.fromEntries(
+      Object.entries(getAllSessionFileManagerWorkspaces()).filter(([terminalId]) => terminalIds.has(terminalId)),
+    );
+    const preferredTerminalId = overrides.activeTerminalId
+      || (activeSessionIdRef.current === nextSession.id ? activeTerminalIdRef.current : lastTerminalRef.current[nextSession.id]);
+    const resolvedActiveTerminalId = resolveSessionRootTerminalId(nextSession, preferredTerminalId, nextLayouts) || nextTerminals[0]?.id || nextSession.id;
+    return {
+      version: 1,
+      sessionId: nextSession.id,
+      serverId: nextSession.serverId,
+      serverName: nextSession.serverName || '',
+      host: nextSession.host || '',
+      activeTerminalId: resolvedActiveTerminalId,
+      contentTab: normalizeWorkspaceContentTab(
+        overrides.contentTab ?? (activeSessionIdRef.current === nextSession.id ? contentTab : 'terminal'),
+      ),
+      terminals: nextTerminals.map((term) => ({ id: term.id, label: term.label })),
+      terminalPaneLayouts: sessionLayouts,
+      fileManagerWorkspaces,
+      savedAt: Date.now(),
+    };
+  }, [contentTab, resolveSessionRootTerminalId, t]);
+
+  const persistServerWorkspaceSessionSnapshot = useCallback((session, overrides = {}) => {
+    if (!rememberWorkspace || workspacePersistenceLevel !== 'session' || !session?.serverId) {
+      return;
+    }
+    const snapshot = buildSessionWorkspaceSnapshot(session, overrides);
+    if (!snapshot) {
+      return;
+    }
+    window?.go?.main?.App?.SaveWorkspaceSessionState?.(session.serverId, JSON.stringify(snapshot)).catch(() => {});
+  }, [buildSessionWorkspaceSnapshot, rememberWorkspace, workspacePersistenceLevel]);
+
+  const loadServerWorkspaceSessionSnapshot = useCallback(async (serverId) => {
+    const raw = await window?.go?.main?.App?.GetWorkspaceSessionState?.(serverId);
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return null;
+      }
+      const terminals = Array.isArray(parsed.terminals)
+        ? parsed.terminals
+          .map((term, index) => ({
+            id: typeof term?.id === 'string' && term.id.trim() ? term.id.trim() : `snapshot-terminal-${index + 1}`,
+            label: typeof term?.label === 'string' && term.label.trim() ? term.label.trim() : `${t('终端')}${index + 1}`,
+          }))
+          .filter((term) => term.id)
+        : [];
+      return {
+        version: Number(parsed.version) || 1,
+        sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId.trim() : '',
+        serverId,
+        serverName: typeof parsed.serverName === 'string' ? parsed.serverName : '',
+        host: typeof parsed.host === 'string' ? parsed.host : '',
+        activeTerminalId: typeof parsed.activeTerminalId === 'string' ? parsed.activeTerminalId.trim() : '',
+        contentTab: normalizeWorkspaceContentTab(typeof parsed.contentTab === 'string' ? parsed.contentTab.trim() : 'terminal'),
+        terminals: terminals.length > 0 ? terminals : [{ id: 'snapshot-root', label: `${t('终端')}1` }],
+        terminalPaneLayouts: parsed.terminalPaneLayouts && typeof parsed.terminalPaneLayouts === 'object' ? parsed.terminalPaneLayouts : {},
+        fileManagerWorkspaces: parsed.fileManagerWorkspaces && typeof parsed.fileManagerWorkspaces === 'object' ? parsed.fileManagerWorkspaces : {},
+      };
+    } catch {
+      return null;
+    }
+  }, [t]);
 
   const renderSessionFileManagers = (s) => getEffectiveTerminals(s).map(t => {
     const isActive = activeSessionId === s.id && activeTerminalId === t.id;
@@ -2083,17 +2217,31 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         setRememberWorkspace(false);
         setRememberWorkspaceLoaded(true);
       });
-    const handler = (event) => {
+    Promise.resolve(window?.go?.main?.App?.GetWorkspacePersistenceLevel?.())
+      .then((level) => {
+        if (cancelled) return;
+        setWorkspacePersistenceLevel(level === 'session' ? 'session' : 'program');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWorkspacePersistenceLevel('program');
+      });
+    const rememberWorkspaceHandler = (event) => {
       if (typeof event?.detail !== 'boolean') {
         return;
       }
       setRememberWorkspace(event.detail);
       setRememberWorkspaceLoaded(true);
     };
-    window.addEventListener('workspace-remember-changed', handler);
+    const workspacePersistenceLevelHandler = (event) => {
+      setWorkspacePersistenceLevel(event?.detail === 'session' ? 'session' : 'program');
+    };
+    window.addEventListener('workspace-remember-changed', rememberWorkspaceHandler);
+    window.addEventListener('workspace-persistence-level-changed', workspacePersistenceLevelHandler);
     return () => {
       cancelled = true;
-      window.removeEventListener('workspace-remember-changed', handler);
+      window.removeEventListener('workspace-remember-changed', rememberWorkspaceHandler);
+      window.removeEventListener('workspace-persistence-level-changed', workspacePersistenceLevelHandler);
     };
   }, []);
 
@@ -2785,7 +2933,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       return;
     }
 
-    // 复用已关闭/失败的同服务器 session，避免 tab 重复
     const closedSession = sessionsRef.current.find((s) => s.serverId === server.id && (s.status === 'closed' || s.status === 'error'));
     if (closedSession) {
       setActiveSessionId(closedSession.id);
@@ -2795,6 +2942,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       return;
     }
 
+    const sessionSnapshot = rememberWorkspace && workspacePersistenceLevel === 'session'
+      ? await loadServerWorkspaceSessionSnapshot(server.id)
+      : null;
+
     const sessionId = `session_${Date.now()}`;
     const newSession = {
       id: sessionId,
@@ -2802,7 +2953,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       serverName: server.name || server.host,
       host: server.host,
       status: 'connecting',
-      terminals: [{ id: sessionId, label: `${t('终端')}1` }],
+      terminals: Array.isArray(sessionSnapshot?.terminals) && sessionSnapshot.terminals.length > 0
+        ? sessionSnapshot.terminals
+        : [{ id: sessionId, label: `${t('终端')}1` }],
     };
 
     const nextSessions = [...sessionsRef.current, newSession];
@@ -2811,29 +2964,73 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setActiveSessionId(sessionId);
     setActiveTerminalId(sessionId);
     setContentTab('terminal');
-    // 显示连接进度卡片
     setConnectingServers((prev) => [...prev, { server, sessionId, startTime: Date.now() }]);
 
     try {
+      if (sessionSnapshot) {
+        const result = await reconnectSession(newSession, undefined, { deferState: true });
+        if (!result) {
+          return;
+        }
+        const restoredSession = { ...newSession, status: 'connected', terminals: result.newTerminals };
+        const restoredLayouts = remapSessionWorkspaceLayouts(sessionSnapshot.terminalPaneLayouts || {}, result.oldToNew, sessionId);
+        const mergedLayouts = { ...terminalPaneLayoutsRef.current, ...restoredLayouts };
+        const currentWorkspaces = { ...getAllSessionFileManagerWorkspaces() };
+        Object.keys(sessionSnapshot.fileManagerWorkspaces || {}).forEach((terminalId) => {
+          delete currentWorkspaces[terminalId];
+        });
+        replaceAllSessionFileManagerWorkspaces({
+          ...currentWorkspaces,
+          ...remapSessionFileManagerWorkspaceMap(sessionSnapshot.fileManagerWorkspaces || {}, result.oldToNew),
+        });
+        sessionsRef.current = sessionsRef.current.map((item) => (
+          item.id === sessionId ? restoredSession : item
+        ));
+        setSessions((prev) => prev.map((item) => (
+          item.id === sessionId ? restoredSession : item
+        )));
+        terminalPaneLayoutsRef.current = mergedLayouts;
+        setTerminalPaneLayouts((prev) => ({ ...prev, ...restoredLayouts }));
+        const preferredTerminalId = result.oldToNew[sessionSnapshot.activeTerminalId] || result.newTerminals[0]?.id || sessionId;
+        const nextActiveTerminalId = resolveSessionRootTerminalId(restoredSession, preferredTerminalId, mergedLayouts) || result.newTerminals[0]?.id || sessionId;
+        const nextContentTab = fileManagerPosition === 'tab'
+          ? normalizeWorkspaceContentTab(sessionSnapshot.contentTab)
+          : (normalizeWorkspaceContentTab(sessionSnapshot.contentTab) === 'files' ? 'terminal' : normalizeWorkspaceContentTab(sessionSnapshot.contentTab));
+        lastTerminalRef.current[sessionId] = nextActiveTerminalId;
+        setActiveTerminalId(nextActiveTerminalId);
+        setContentTab(nextContentTab);
+        persistWorkspaceSnapshotRef.current({
+          sessions: sessionsRef.current,
+          activeSessionId: sessionId,
+          activeTerminalId: nextActiveTerminalId,
+          terminalPaneLayouts: mergedLayouts,
+        });
+        return;
+      }
+
       await AppGo.ConnectSSH(sessionId, server.id);
       setSessions((prev) =>
         prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
       );
       setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-
-      // 连接成功后自动查询 OS 信息并更新 sessions
       await postConnectSetup(sessionId, server.id);
-
-      // 连接成功后加入最近连接列表（仅保留非敏感字段）
     } catch (err) {
       handleConnectError(sessionId, err);
     }
-  }, [handleConnectError, markWorkspaceRestoreNavigationOverride, reconnectSession, resolveSessionRootTerminalId, t]);
+  }, [fileManagerPosition, handleConnectError, loadServerWorkspaceSessionSnapshot, markWorkspaceRestoreNavigationOverride, postConnectSetup, reconnectSession, rememberWorkspace, resolveSessionRootTerminalId, t, workspacePersistenceLevel]);
 
   // ── Close session ──────────────────────────────────────────
   // ponytail: 内部关闭逻辑，不带确认弹窗，供 closeSession 和右键菜单共用
   const forceCloseSession = useCallback((sessionId) => {
     const session = sessionsRef.current.find(s => s.id === sessionId);
+    if (session) {
+      persistServerWorkspaceSessionSnapshot(session, {
+        session,
+        terminalPaneLayouts: terminalPaneLayoutsRef.current,
+        activeTerminalId: activeSessionIdRef.current === sessionId ? activeTerminalIdRef.current : lastTerminalRef.current[sessionId],
+        contentTab: activeSessionIdRef.current === sessionId ? contentTab : 'terminal',
+      });
+    }
     const termIds = session?.terminals ? session.terminals.map(t => t.id) : [sessionId];
     termIds.forEach(id => {
       cancelledConnectionsRef.current.add(id);
@@ -2864,7 +3061,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (connectingServersRef.current.some((s) => s.sessionId === sessionId)) {
       setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
     }
-  }, []);
+  }, [contentTab, persistServerWorkspaceSessionSnapshot]);
 
   const closeSession = useCallback(async (sessionId, e) => {
     e?.stopPropagation();
@@ -2890,6 +3087,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       if (!result?.confirmed) return;
       if (result.checked) localStorage.setItem('skipCloseAllConfirm', 'true');
     }
+    all.forEach((session) => {
+      persistServerWorkspaceSessionSnapshot(session, {
+        session,
+        terminalPaneLayouts: terminalPaneLayoutsRef.current,
+        activeTerminalId: activeSessionIdRef.current === session.id ? activeTerminalIdRef.current : lastTerminalRef.current[session.id],
+        contentTab: activeSessionIdRef.current === session.id ? contentTab : 'terminal',
+      });
+    });
     const allTermIds = all.flatMap(s => s.terminals?.length > 0 ? s.terminals.map(t => t.id) : [s.id]);
     allTermIds.forEach(id => {
       cancelledConnectionsRef.current.add(id);
@@ -2904,7 +3109,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setActiveSessionId(null);
     setActiveTerminalId(null);
     setConnectingServers([]);
-  }, [t]);
+  }, [contentTab, persistServerWorkspaceSessionSnapshot, t]);
 
   // ── 在当前服务器上新建终端标签 ──────────────────────────────
   const openNewTerminal = useCallback(async (sessionId) => {
@@ -2957,6 +3162,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (!session?.terminals) return;
 
     const remaining = (session.terminals || []).filter(t => t.id !== terminalId);
+    if (remaining.length === 0) {
+      persistServerWorkspaceSessionSnapshot(session, {
+        session,
+        terminalPaneLayouts: terminalPaneLayoutsRef.current,
+        activeTerminalId: activeSessionIdRef.current === sessionId ? activeTerminalIdRef.current : lastTerminalRef.current[sessionId],
+        contentTab: activeSessionIdRef.current === sessionId ? contentTab : 'terminal',
+      });
+    }
     AppGo.DisconnectSSH(terminalId).catch(() => {});
 
     setSessions((prev) => {
@@ -2987,7 +3200,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (activeSessionIdRef.current === sessionId && activeTerminalIdRef.current === terminalId) {
       setActiveTerminalId(resolveSessionRootTerminalId({ ...session, terminals: remaining }, lastTerminalRef.current[sessionId]));
     }
-  }, [resolveSessionRootTerminalId, switchToNextSession]);
+  }, [contentTab, persistServerWorkspaceSessionSnapshot, resolveSessionRootTerminalId, switchToNextSession]);
 
   const dispatchTerminalPaneResize = useCallback(() => {
     setTimeout(() => {
@@ -3219,6 +3432,12 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     ids.forEach((id) => AppGo.DisconnectSSH(id).catch(() => {}));
 
     if (remainingTerminals.length === 0) {
+      persistServerWorkspaceSessionSnapshot(session, {
+        session,
+        terminalPaneLayouts: terminalPaneLayoutsRef.current,
+        activeTerminalId: activeSessionIdRef.current === sessionId ? activeTerminalIdRef.current : lastTerminalRef.current[sessionId],
+        contentTab: activeSessionIdRef.current === sessionId ? contentTab : 'terminal',
+      });
       window?.go?.main?.App?.ClearWorkspaceState?.().catch(() => {});
       setSessions((prev) => prev.filter((item) => item.id !== sessionId));
       setMountedSessions((prev) => {
@@ -3244,7 +3463,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       setActiveTerminalId(nextActiveTabId || null);
     }
     dispatchTerminalPaneResize();
-  }, [dispatchTerminalPaneResize, resolveSessionRootTerminalId, switchToNextSession]);
+  }, [contentTab, dispatchTerminalPaneResize, persistServerWorkspaceSessionSnapshot, resolveSessionRootTerminalId, switchToNextSession]);
 
   const closeTerminalPane = useCallback((layoutId, paneId, e) => {
     e?.stopPropagation();
@@ -3413,7 +3632,17 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       fileManagerWorkspaces: savedFileManagerWorkspaces,
     });
     window?.go?.main?.App?.SaveWorkspaceState?.(workspaceStatePayload).catch(() => {});
-  }, [activeSessionId, activeTerminalId, getSessionWorkspaceTabs, rememberWorkspace, rememberWorkspaceLoaded, resolveSessionRootTerminalId, sessions, terminalPaneLayouts, workspaceRestoreReady]);
+    if (workspacePersistenceLevel === 'session') {
+      openSessions.forEach((session) => {
+        persistServerWorkspaceSessionSnapshot(session, {
+          session,
+          terminalPaneLayouts: savedLayouts,
+          activeTerminalId: session.id === savedActiveSessionId ? savedActiveTerminalId : lastTerminalRef.current[session.id],
+          contentTab: session.id === savedActiveSessionId ? contentTab : 'terminal',
+        });
+      });
+    }
+  }, [activeSessionId, activeTerminalId, contentTab, getSessionWorkspaceTabs, persistServerWorkspaceSessionSnapshot, rememberWorkspace, rememberWorkspaceLoaded, resolveSessionRootTerminalId, sessions, terminalPaneLayouts, workspacePersistenceLevel, workspaceRestoreReady]);
 
   useEffect(() => {
     persistWorkspaceSnapshotRef.current = persistWorkspaceSnapshot;

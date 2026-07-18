@@ -92,6 +92,11 @@ type AppSettings struct {
 	RuntimeEnvironment runtimeenv.Settings `json:"runtimeEnvironment,omitempty"`
 }
 
+type WorkspacePrefs struct {
+	RememberWorkspace        bool   `json:"rememberWorkspace"`
+	WorkspacePersistenceLevel string `json:"workspacePersistenceLevel,omitempty"`
+}
+
 type ConfigManager struct {
 	configDir               string
 	connFile                string
@@ -109,6 +114,7 @@ type ConfigManager struct {
 	fileManagerSettingsFile string
 	workspaceStateFile      string
 	workspacePrefsFile      string
+	workspaceSessionStateFile string
 	appSettingsFile         string
 	historyDir              string
 	globalHistFile          string
@@ -150,6 +156,7 @@ func NewConfigManager() *ConfigManager {
 	fileManagerSettingsFile := filepath.Join(dir, "file_manager_settings.json")
 	workspaceStateFile := filepath.Join(dir, "workspace_state.json")
 	workspacePrefsFile := filepath.Join(dir, "workspace_prefs.json")
+	workspaceSessionStateFile := filepath.Join(dir, "workspace_sessions.json")
 	appSettingsFile := filepath.Join(dir, "app_settings.json")
 	historyDir := filepath.Join(dir, "history")
 	if err := os.MkdirAll(historyDir, 0755); err != nil {
@@ -196,6 +203,7 @@ func NewConfigManager() *ConfigManager {
 		fileManagerSettingsFile: fileManagerSettingsFile,
 		workspaceStateFile:      workspaceStateFile,
 		workspacePrefsFile:      workspacePrefsFile,
+		workspaceSessionStateFile: workspaceSessionStateFile,
 		appSettingsFile:         appSettingsFile,
 		historyDir:              historyDir,
 		globalHistFile:          filepath.Join(historyDir, "global.json"),
@@ -720,6 +728,9 @@ func (c *ConfigManager) DeleteConnection(id string) bool {
 	if err := c.saveConnectionsFile(filtered); err != nil {
 		log.Printf("[DeleteConnection] failed to save connections: %v", err)
 	}
+	if err := c.deleteWorkspaceSessionStateLocked(id); err != nil {
+		log.Printf("[DeleteConnection] failed to delete workspace session state: %v", err)
+	}
 	c.bumpSnapshotTime()
 	c.connCacheDirty = true // 标记缓存需要刷新
 
@@ -754,6 +765,21 @@ func (c *ConfigManager) BatchDeleteConnections(ids []string) {
 	}
 	if err := c.saveConnectionsFile(filtered); err != nil {
 		log.Printf("[BatchDeleteConnections] failed to save connections: %v", err)
+	}
+	states := c.getWorkspaceSessionStatesLocked()
+	if len(states) > 0 {
+		changed := false
+		for _, id := range ids {
+			if _, ok := states[id]; ok {
+				delete(states, id)
+				changed = true
+			}
+		}
+		if changed {
+			if err := c.saveWorkspaceSessionStatesLocked(states); err != nil {
+				log.Printf("[BatchDeleteConnections] failed to delete workspace session states: %v", err)
+			}
+		}
 	}
 	c.bumpSnapshotTime()
 	c.connCacheDirty = true
@@ -1472,40 +1498,130 @@ func (c *ConfigManager) SaveParamHistory(jsonStr string) error {
 	return atomicWriteFile(c.paramHistFile, []byte(jsonStr), 0600)
 }
 
-func (c *ConfigManager) GetRememberWorkspace() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+func normalizeWorkspacePersistenceLevel(level string) string {
+	if strings.TrimSpace(level) == "session" {
+		return "session"
+	}
+	return "program"
+}
+
+func (c *ConfigManager) getWorkspacePrefsLocked() WorkspacePrefs {
+	prefs := WorkspacePrefs{WorkspacePersistenceLevel: "program"}
 	data, err := os.ReadFile(c.workspacePrefsFile)
 	if err != nil {
-		return false
+		return prefs
 	}
 	var enabled bool
 	if err := json.Unmarshal(data, &enabled); err == nil {
-		return enabled
+		prefs.RememberWorkspace = enabled
+		return prefs
 	}
-	var payload map[string]bool
+	var payload WorkspacePrefs
 	if err := json.Unmarshal(data, &payload); err == nil {
-		return payload["rememberWorkspace"]
+		prefs.RememberWorkspace = payload.RememberWorkspace
+		prefs.WorkspacePersistenceLevel = normalizeWorkspacePersistenceLevel(payload.WorkspacePersistenceLevel)
+		return prefs
 	}
-	return false
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if enabledValue, ok := raw["rememberWorkspace"].(bool); ok {
+			prefs.RememberWorkspace = enabledValue
+		}
+		if levelValue, ok := raw["workspacePersistenceLevel"].(string); ok {
+			prefs.WorkspacePersistenceLevel = normalizeWorkspacePersistenceLevel(levelValue)
+		}
+	}
+	return prefs
+}
+
+func (c *ConfigManager) saveWorkspacePrefsLocked(prefs WorkspacePrefs) error {
+	prefs.WorkspacePersistenceLevel = normalizeWorkspacePersistenceLevel(prefs.WorkspacePersistenceLevel)
+	data, err := json.Marshal(prefs)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(c.workspacePrefsFile, data, 0600)
+}
+
+func (c *ConfigManager) getWorkspaceSessionStatesLocked() map[string]json.RawMessage {
+	data, err := os.ReadFile(c.workspaceSessionStateFile)
+	if err != nil {
+		return map[string]json.RawMessage{}
+	}
+	var states map[string]json.RawMessage
+	if err := json.Unmarshal(data, &states); err != nil || states == nil {
+		return map[string]json.RawMessage{}
+	}
+	return states
+}
+
+func (c *ConfigManager) saveWorkspaceSessionStatesLocked(states map[string]json.RawMessage) error {
+	if len(states) == 0 {
+		if err := os.Remove(c.workspaceSessionStateFile); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	data, err := json.MarshalIndent(states, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(c.workspaceSessionStateFile, data, 0600)
+}
+
+func (c *ConfigManager) deleteWorkspaceSessionStateLocked(serverId string) error {
+	serverId = strings.TrimSpace(serverId)
+	if serverId == "" {
+		return nil
+	}
+	states := c.getWorkspaceSessionStatesLocked()
+	if len(states) == 0 {
+		return nil
+	}
+	if _, ok := states[serverId]; !ok {
+		return nil
+	}
+	delete(states, serverId)
+	return c.saveWorkspaceSessionStatesLocked(states)
+}
+
+func (c *ConfigManager) GetRememberWorkspace() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.getWorkspacePrefsLocked().RememberWorkspace
+}
+
+func (c *ConfigManager) GetWorkspacePersistenceLevel() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.getWorkspacePrefsLocked().WorkspacePersistenceLevel
 }
 
 func (c *ConfigManager) SetRememberWorkspace(enabled bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	data, err := json.Marshal(enabled)
-	if err != nil {
-		return err
-	}
-	if err := atomicWriteFile(c.workspacePrefsFile, data, 0600); err != nil {
+	prefs := c.getWorkspacePrefsLocked()
+	prefs.RememberWorkspace = enabled
+	if err := c.saveWorkspacePrefsLocked(prefs); err != nil {
 		return err
 	}
 	if !enabled {
 		if err := os.Remove(c.workspaceStateFile); err != nil && !os.IsNotExist(err) {
 			return err
 		}
+		if err := os.Remove(c.workspaceSessionStateFile); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	return nil
+}
+
+func (c *ConfigManager) SetWorkspacePersistenceLevel(level string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	prefs := c.getWorkspacePrefsLocked()
+	prefs.WorkspacePersistenceLevel = normalizeWorkspacePersistenceLevel(level)
+	return c.saveWorkspacePrefsLocked(prefs)
 }
 
 func (c *ConfigManager) GetWorkspaceState() string {
@@ -1532,6 +1648,36 @@ func (c *ConfigManager) SaveWorkspaceState(jsonStr string) error {
 		return fmt.Errorf("invalid workspace state")
 	}
 	return atomicWriteFile(c.workspaceStateFile, []byte(trimmed), 0600)
+}
+
+func (c *ConfigManager) GetWorkspaceSessionState(serverId string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	states := c.getWorkspaceSessionStatesLocked()
+	raw, ok := states[strings.TrimSpace(serverId)]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func (c *ConfigManager) SaveWorkspaceSessionState(serverId string, jsonStr string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	serverId = strings.TrimSpace(serverId)
+	if serverId == "" {
+		return fmt.Errorf("missing serverId")
+	}
+	trimmed := strings.TrimSpace(jsonStr)
+	if trimmed == "" {
+		return c.deleteWorkspaceSessionStateLocked(serverId)
+	}
+	if !json.Valid([]byte(trimmed)) {
+		return fmt.Errorf("invalid workspace session state")
+	}
+	states := c.getWorkspaceSessionStatesLocked()
+	states[serverId] = json.RawMessage(trimmed)
+	return c.saveWorkspaceSessionStatesLocked(states)
 }
 
 func (c *ConfigManager) ClearWorkspaceState() error {
