@@ -18,6 +18,7 @@ var luminExitCodePattern = regexp.MustCompile(`\[Lumin_EXIT_CODE_(\d+)\]`)
 
 const maxInteractiveCapturedOutputBytes = 1 << 20
 const interactiveIdlePollInterval = 200 * time.Millisecond
+const interactiveIdleGraceDuration = 600 * time.Millisecond
 
 func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration) (mcpserver.CommandExecutionResult, error) {
 	result := mcpserver.CommandExecutionResult{
@@ -88,6 +89,38 @@ func (m *SSHManager) ExecuteCommandInTerminal(sessionID string, command string, 
 func (m *SSHManager) waitForInteractiveSessionIdle(sessionID string, control <-chan ai.ToolExecutionAction, reassign <-chan string, outputChannel <-chan []byte, onWaitStart func()) (ai.ToolExecutionAction, bool, string, error) {
 	waitingNotified := false
 	reassignChannel := reassign
+	graceDeadline := time.Time{}
+
+	waitOnce := func(waitDuration time.Duration) (ai.ToolExecutionAction, string, error) {
+		select {
+		case nextSessionID, ok := <-reassignChannel:
+			if !ok {
+				reassignChannel = nil
+				return ai.ToolExecutionActionNone, "", nil
+			}
+			trimmedSessionID := strings.TrimSpace(nextSessionID)
+			if trimmedSessionID == "" || trimmedSessionID == sessionID {
+				return ai.ToolExecutionActionNone, "", nil
+			}
+			return ai.ToolExecutionActionNone, trimmedSessionID, nil
+		case action, ok := <-control:
+			if !ok {
+				return ai.ToolExecutionActionNone, "", nil
+			}
+			if action == ai.ToolExecutionActionTerminate {
+				return ai.ToolExecutionActionTerminate, "", nil
+			}
+			return ai.ToolExecutionActionNone, "", nil
+		case _, ok := <-outputChannel:
+			if !ok {
+				return ai.ToolExecutionActionNone, "", fmt.Errorf("session output unavailable")
+			}
+			return ai.ToolExecutionActionNone, "", nil
+		case <-time.After(waitDuration):
+			return ai.ToolExecutionActionNone, "", nil
+		}
+	}
+
 	for {
 		m.mu.RLock()
 		sessionData, ok := m.sessions[sessionID]
@@ -100,34 +133,40 @@ func (m *SSHManager) waitForInteractiveSessionIdle(sessionID string, control <-c
 			return ai.ToolExecutionActionNone, waitingNotified, "", nil
 		}
 		if !waitingNotified {
+			if graceDeadline.IsZero() {
+				graceDeadline = time.Now().Add(interactiveIdleGraceDuration)
+			}
+			if remaining := time.Until(graceDeadline); remaining > 0 {
+				waitDuration := interactiveIdlePollInterval
+				if remaining < waitDuration {
+					waitDuration = remaining
+				}
+				action, reassignedSessionID, err := waitOnce(waitDuration)
+				if err != nil {
+					return ai.ToolExecutionActionNone, waitingNotified, "", err
+				}
+				if action == ai.ToolExecutionActionTerminate {
+					return ai.ToolExecutionActionTerminate, waitingNotified, "", nil
+				}
+				if reassignedSessionID != "" {
+					return ai.ToolExecutionActionNone, waitingNotified, reassignedSessionID, nil
+				}
+				continue
+			}
 			waitingNotified = true
 			if onWaitStart != nil {
 				onWaitStart()
 			}
 		}
-		select {
-		case nextSessionID, ok := <-reassignChannel:
-			if !ok {
-				reassignChannel = nil
-				continue
-			}
-			trimmedSessionID := strings.TrimSpace(nextSessionID)
-			if trimmedSessionID == "" || trimmedSessionID == sessionID {
-				continue
-			}
-			return ai.ToolExecutionActionNone, waitingNotified, trimmedSessionID, nil
-		case action, ok := <-control:
-			if !ok {
-				continue
-			}
-			if action == ai.ToolExecutionActionTerminate {
-				return ai.ToolExecutionActionTerminate, waitingNotified, "", nil
-			}
-		case _, ok := <-outputChannel:
-			if !ok {
-				return ai.ToolExecutionActionNone, waitingNotified, "", fmt.Errorf("session output unavailable")
-			}
-		case <-time.After(interactiveIdlePollInterval):
+		action, reassignedSessionID, err := waitOnce(interactiveIdlePollInterval)
+		if err != nil {
+			return ai.ToolExecutionActionNone, waitingNotified, "", err
+		}
+		if action == ai.ToolExecutionActionTerminate {
+			return ai.ToolExecutionActionTerminate, waitingNotified, "", nil
+		}
+		if reassignedSessionID != "" {
+			return ai.ToolExecutionActionNone, waitingNotified, reassignedSessionID, nil
 		}
 	}
 }
