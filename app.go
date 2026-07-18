@@ -103,6 +103,10 @@ const githubContributorsAPIURL = "https://github.com/wmwlwmwl/Lumin-SSH/graphs/c
 
 const githubContributorsRefererURL = "https://github.com/wmwlwmwl/Lumin-SSH/graphs/contributors"
 
+const githubContributorsRequestTimeout = 10 * time.Second
+
+const githubContributorsMaxRetries = 5
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
@@ -1460,7 +1464,7 @@ func (a *App) GetProgramDirectory() string {
 	return getProgramDirectory()
 }
 
-func (a *App) GetGitHubContributors() ([]GitHubContributor, error) {
+func getGitHubContributorsOnce(client *http.Client) ([]GitHubContributor, error) {
 	request, err := http.NewRequest(http.MethodGet, githubContributorsAPIURL, nil)
 	if err != nil {
 		return nil, err
@@ -1470,7 +1474,6 @@ func (a *App) GetGitHubContributors() ([]GitHubContributor, error) {
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")
 	request.Header.Set("Referer", githubContributorsRefererURL)
 
-	client := &http.Client{Timeout: 15 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -1489,6 +1492,22 @@ func (a *App) GetGitHubContributors() ([]GitHubContributor, error) {
 		return []GitHubContributor{}, nil
 	}
 	return contributors, nil
+}
+
+func (a *App) GetGitHubContributors() ([]GitHubContributor, error) {
+	client := &http.Client{Timeout: githubContributorsRequestTimeout}
+	var lastErr error
+	for attempt := 0; attempt <= githubContributorsMaxRetries; attempt++ {
+		contributors, err := getGitHubContributorsOnce(client)
+		if err == nil {
+			return contributors, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("github contributors request failed")
+	}
+	return nil, lastErr
 }
 
 func (a *App) ListProgramFonts() ([]ProgramFontInfo, error) {

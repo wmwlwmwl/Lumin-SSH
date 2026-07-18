@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import * as AppGo from '../../../wailsjs/go/main/App.js';
 import { t as $t } from '../../i18n.js';
 import logoImg from '../../assets/logo.png';
-import logoRImg from '../../assets/logo_r.png';
+import logoLightImg from '../../assets/logo_q.png';
+import logoDarkImg from '../../assets/logo_s.png';
 import { Z } from '../../constants/zIndex';
 import { AboutLink } from './SharedComponents';
 
@@ -11,7 +12,6 @@ const CONTRIBUTORS_CACHE_TTL = 10 * 60 * 1000;
 let contributorsCache = {
   data: null,
   expiresAt: 0,
-  inflight: null,
 };
 
 function getFreshContributorsCache() {
@@ -19,6 +19,14 @@ function getFreshContributorsCache() {
     return contributorsCache.data;
   }
   return null;
+}
+
+function getResolvedThemeMode() {
+  const savedTheme = localStorage.getItem('themeMode') || 'dark';
+  if (savedTheme === 'system') {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  return savedTheme === 'light' ? 'light' : 'dark';
 }
 
 function toHighResGitHubAvatar(url) {
@@ -71,26 +79,24 @@ async function loadContributors() {
   if (cached) {
     return cached;
   }
-  if (contributorsCache.inflight) {
-    return contributorsCache.inflight;
+  const payload = await AppGo.GetGitHubContributors();
+  const data = normalizeContributors(payload);
+  if (data.length > 0) {
+    contributorsCache.data = data;
+    contributorsCache.expiresAt = Date.now() + CONTRIBUTORS_CACHE_TTL;
+  } else {
+    contributorsCache.data = null;
+    contributorsCache.expiresAt = 0;
   }
-  contributorsCache.inflight = AppGo.GetGitHubContributors()
-    .then((payload) => {
-      const data = normalizeContributors(payload);
-      contributorsCache.data = data;
-      contributorsCache.expiresAt = Date.now() + CONTRIBUTORS_CACHE_TTL;
-      return data;
-    })
-    .finally(() => {
-      contributorsCache.inflight = null;
-    });
-  return contributorsCache.inflight;
+  return data;
 }
 
 export default function AppTab({ CURRENT_VERSION, BUILD_TIME, updateInfo, checkingUpdate, downloadProgress, onCheckUpdate, onApplyUpdate }) {
   const [contributors, setContributors] = useState(() => getFreshContributorsCache() || []);
   const [contributorsLoading, setContributorsLoading] = useState(() => !getFreshContributorsCache());
   const [showRefreshedLogo, setShowRefreshedLogo] = useState(false);
+  const [resolvedThemeMode, setResolvedThemeMode] = useState(() => getResolvedThemeMode());
+  const logoTransitionImg = resolvedThemeMode === 'light' ? logoLightImg : logoDarkImg;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -98,6 +104,27 @@ export default function AppTab({ CURRENT_VERSION, BUILD_TIME, updateInfo, checki
     }, 260);
     return () => {
       window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshThemeMode = () => {
+      setResolvedThemeMode(getResolvedThemeMode());
+    };
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+    window.addEventListener('theme-mode-changed', refreshThemeMode);
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', refreshThemeMode);
+    } else if (typeof mediaQuery.addListener === 'function') {
+      mediaQuery.addListener(refreshThemeMode);
+    }
+    return () => {
+      window.removeEventListener('theme-mode-changed', refreshThemeMode);
+      if (typeof mediaQuery.removeEventListener === 'function') {
+        mediaQuery.removeEventListener('change', refreshThemeMode);
+      } else if (typeof mediaQuery.removeListener === 'function') {
+        mediaQuery.removeListener(refreshThemeMode);
+      }
     };
   }, []);
 
@@ -165,7 +192,7 @@ export default function AppTab({ CURRENT_VERSION, BUILD_TIME, updateInfo, checki
             }}
           />
           <img
-            src={logoRImg}
+            src={logoTransitionImg}
             alt="Lumin Refresh"
             style={{
               position: 'absolute',
