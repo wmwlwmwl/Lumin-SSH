@@ -1879,7 +1879,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               executeCommand();
             }
           }}
-          placeholder={`${t('输入命令')}(/ ${t('快捷命令')})`}
+          placeholder={t('输入命令(/ 快捷命令), 按Ctrl+回车 或 Shift+回车 换行')}
           style={{
             flex: 1,
             fontSize: 12,
