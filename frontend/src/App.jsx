@@ -5167,49 +5167,100 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             {/* Session Content */}
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
               {/* 左侧/上侧主体容器 */}
-              <div id="session-editor-container" style={{ flex: 1, display: 'flex', flexDirection: fileManagerPosition === 'bottom' ? 'column' : 'row', height: '100%', position: 'relative', overflow: 'hidden' }}>
+              <div id="session-editor-container" style={{ flex: 1, display: 'flex', flexDirection: 'row', height: '100%', position: 'relative', overflow: 'hidden' }}>
                 {/* 主体视口 */}
                 <div id="editor-main-content" style={{ flex: 1, position: 'relative', overflow: 'hidden', order: 1 }}>
-                  {sessions.map((s) => (
-                    <div
-                      key={s.id}
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: activeSessionId === s.id ? 'flex' : 'none',
-                        flexDirection: fileManagerPosition === 'bottom' ? 'column' : 'row',
-                      }}
-                    >
-                    {/* 辅助视口 (分屏模式下的文件管理器，如果是左侧则排在前面) */}
-                    {s.status === 'connected' && fileManagerPosition === 'left' && contentTab !== 'process' && contentTab !== 'network' && mountedSessions.has(s.id) && (
-                      fileManagerCollapsed ? (
-                        <button
-                          type="button"
-                          className="panel-collapse-strip panel-collapse-strip-vertical panel-collapse-strip-left no-drag"
-                          onClick={() => setFileManagerCollapsedPersistent(false)}
-                          aria-label={t('展开文件管理面板')}
-                        >
-                          <ChevronRight size={14} />
-                        </button>
-                      ) : (
-                        <>
-                          <div style={{
-                            width: leftSplitWidth + 'px',
-                            borderRight: '1px solid var(--border)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            minWidth: FILE_MANAGER_LEFT_MIN,
-                            flexShrink: 0,
-                            position: 'relative',
-                            overflow: 'hidden',
-                          }}>
-                            {collapseDragIntent === 'left' && (
+                  {sessions.map((s) => {
+                    const shouldMountFileManager = s.status === 'connected'
+                      && mountedSessions.has(s.id);
+                    const showSplitFileManager = shouldMountFileManager
+                      && contentTab !== 'process'
+                      && contentTab !== 'network'
+                      && fileManagerPosition !== 'tab';
+                    const showTabFileManager = shouldMountFileManager
+                      && fileManagerPosition === 'tab'
+                      && contentTab === 'files';
+                    const showLeftFileManager = showSplitFileManager && fileManagerPosition === 'left' && !fileManagerCollapsed;
+                    const showBottomFileManager = showSplitFileManager && fileManagerPosition === 'bottom' && !fileManagerCollapsed;
+                    const showLeftCollapseStrip = showSplitFileManager && fileManagerPosition === 'left' && fileManagerCollapsed;
+                    const showBottomCollapseStrip = showSplitFileManager && fileManagerPosition === 'bottom' && fileManagerCollapsed;
+                    const showFileManagerPanel = showTabFileManager || showLeftFileManager || showBottomFileManager;
+                    return (
+                      <div
+                        key={s.id}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: activeSessionId === s.id ? 'flex' : 'none',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        {showLeftCollapseStrip && (
+                          <button
+                            type="button"
+                            className="panel-collapse-strip panel-collapse-strip-vertical panel-collapse-strip-left no-drag"
+                            onClick={() => setFileManagerCollapsedPersistent(false)}
+                            aria-label={t('展开文件管理面板')}
+                            style={{ position: 'absolute', left: 0, top: 0, bottom: 0, zIndex: Z.PANEL_BUTTON + 1 }}
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        )}
+                        {showBottomCollapseStrip && (
+                          <button
+                            type="button"
+                            className="panel-collapse-strip panel-collapse-strip-horizontal panel-collapse-strip-bottom no-drag"
+                            onClick={() => setFileManagerCollapsedPersistent(false)}
+                            aria-label={t('展开文件管理面板')}
+                            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: Z.PANEL_BUTTON + 1 }}
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+                        )}
+                        {shouldMountFileManager && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              display: showFileManagerPanel ? 'flex' : 'none',
+                              flexDirection: 'column',
+                              overflow: 'hidden',
+                              background: 'var(--surface-base)',
+                              zIndex: 1,
+                              ...(showLeftFileManager ? {
+                                left: 0,
+                                top: 0,
+                                bottom: 0,
+                                width: `${leftSplitWidth}px`,
+                                minWidth: `${FILE_MANAGER_LEFT_MIN}px`,
+                                borderRight: '1px solid var(--border)',
+                              } : {}),
+                              ...(showBottomFileManager ? {
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                height: `${bottomSplitHeight}px`,
+                                minHeight: `${FILE_MANAGER_BOTTOM_MIN}px`,
+                                borderTop: '1px solid var(--border)',
+                              } : {}),
+                              ...(showTabFileManager ? {
+                                inset: 0,
+                              } : {}),
+                            }}
+                          >
+                            {showLeftFileManager && collapseDragIntent === 'left' && (
                               <div className="panel-collapse-armed-zone panel-collapse-armed-zone-vertical panel-collapse-armed-zone-right">
                                 <ChevronLeft size={14} />
                               </div>
                             )}
+                            {showBottomFileManager && collapseDragIntent === 'bottom' && (
+                              <div className="panel-collapse-armed-zone panel-collapse-armed-zone-horizontal panel-collapse-armed-zone-top">
+                                <ChevronDown size={14} />
+                              </div>
+                            )}
                             {renderSessionFileManagers(s)}
                           </div>
+                        )}
+                        {showLeftFileManager && (
                           <div
                             className={`split-resizer-v${collapseDragIntent === 'left' ? ' armed' : ''}`}
                             onMouseDown={(e) => startDrag(e, 'left')}
@@ -5218,209 +5269,18 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               setFileManagerCollapsedPersistent(true);
                             }}
                             aria-label={t('收起文件管理面板')}
-                            style={{ zIndex: Z.PANEL_BUTTON, marginLeft: '-2px', marginRight: '-2px' }}
-                          />
-                        </>
-                      )
-                    )}
-
-                    {/* 主要视口 (终端/标签页模式下的文件) */}
-                    <div id="terminal-dock-preview-host" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-                      <div style={{ display: (contentTab === 'terminal' || s.status !== 'connected') ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', position: 'relative' }}>
-                        {mountedSessions.has(s.id) && (
-                          isSessionWorkspaceVisible(s) ? (() => {
-                            const isTerminalViewActive = activeSessionId === s.id && (contentTab === 'terminal' || s.status !== 'connected');
-                            const workspaceTabs = getSessionWorkspaceTabs(s);
-                            const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeTerminalId);
-                            const activeLayout = activeWorkspaceTab?.type === 'group' ? terminalPaneLayouts[activeWorkspaceTab.id] : null;
-                            const activeLayoutId = activeLayout?.sessionId === s.id ? activeWorkspaceTab.id : null;
-                            const terminalPlacements = new Map();
-                            if (activeLayoutId) {
-                              terminalPlacements.set(activeLayout.rootTerminalId || activeLayoutId, {
-                                cells: getSessionRootPaneCells(activeLayoutId),
-                                layoutId: activeLayoutId,
-                                paneId: null,
-                                showHeader: false,
-                              });
-                              getSessionPanes(activeLayoutId).forEach((pane) => {
-                                terminalPlacements.set(pane.terminalId, {
-                                  cells: pane.cells,
-                                  layoutId: activeLayoutId,
-                                  paneId: pane.id,
-                                  showHeader: true,
-                                });
-                              });
-                            } else if (activeWorkspaceTab?.type === 'terminal') {
-                              terminalPlacements.set(activeWorkspaceTab.id, {
-                                cells: TERMINAL_PANE_CELL_IDS,
-                                layoutId: null,
-                                paneId: null,
-                                showHeader: false,
-                              });
-                            }
-                            return getEffectiveTerminals(s).map((term) => {
-                              const placement = terminalPlacements.get(term.id);
-                              const isTermVisible = !!placement && isTerminalViewActive;
-                              const isGrouped = !!placement?.layoutId;
-                              return (
-                                <div
-                                  key={term.id}
-                                  style={{
-                                    position: 'absolute',
-                                    ...getTerminalPaneAbsolutePlacement(placement?.cells || TERMINAL_PANE_CELL_IDS),
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    visibility: isTermVisible ? 'visible' : 'hidden',
-                                    pointerEvents: isTermVisible ? 'auto' : 'none',
-                                    contain: isTermVisible ? 'none' : 'strict',
-                                    minWidth: 0,
-                                    minHeight: 0,
-                                    overflow: 'hidden',
-                                    border: isGrouped ? '1px solid var(--border)' : 'none',
-                                    borderRadius: 0,
-                                    background: 'var(--surface-base)',
-                                  }}
-                                >
-                                  {placement?.showHeader && (
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 8,
-                                        minHeight: 32,
-                                        padding: '0 10px',
-                                        borderBottom: '1px solid var(--border-subtle)',
-                                        background: 'var(--surface-raised)',
-                                        color: 'var(--text-secondary)',
-                                        fontSize: 12,
-                                        fontWeight: 600,
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      <Monitor size={12} />
-                                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {term.label}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="btn btn-ghost btn-sm no-drag"
-                                        onClick={(e) => closeTerminalPane(placement.layoutId, placement.paneId, e)}
-                                        aria-label={t('关闭分屏')}
-                                        style={{ minHeight: 24, padding: '0 6px' }}
-                                      >
-                                        <X size={12} />
-                                      </button>
-                                    </div>
-                                  )}
-                                  <div style={{ flex: 1, minHeight: 0 }}>
-                                    <ErrorBoundary label={`终端 ${term.id} 渲染出错`}>
-                                      <Terminal
-                                        sessionId={term.id}
-                                        serverId={s.id}
-                                        historyServerId={s.serverId}
-                                        status={s.status}
-                                        isActive={isTermVisible}
-                                        serverName={s.serverName}
-                                        connectedSessions={connectedSessions}
-                                      />
-                                    </ErrorBoundary>
-                                  </div>
-                                </div>
-                              );
-                            });
-                          })() : (getEffectiveTerminals(s).map((t) => {
-                            const isTermActive = (contentTab === 'terminal' || s.status !== 'connected') && activeTerminalId === t.id;
-                            return (
-                              <div key={t.id} style={{
-                                position: 'absolute', inset: 0,
-                                display: 'flex',
-                                visibility: isTermActive ? 'visible' : 'hidden',
-                                pointerEvents: isTermActive ? 'auto' : 'none',
-                                contain: isTermActive ? 'none' : 'strict',
-                                flexDirection: 'column',
-                              }}>
-                                <ErrorBoundary label={`终端 ${t.id} 渲染出错`}>
-                                  <Terminal
-                                    sessionId={t.id}
-                                    serverId={s.id}
-                                    historyServerId={s.serverId}
-                                    status={s.status}
-                                    isActive={activeSessionId === s.id && activeTerminalId === t.id && (contentTab === 'terminal' || fileManagerPosition !== 'tab')}
-                                    serverName={s.serverName}
-                                    connectedSessions={connectedSessions}
-                                  />
-                                </ErrorBoundary>
-                              </div>
-                            );
-                          }))
-                        )}
-                        {restoringWorkspaceSessionIds.has(s.id) && (
-                          <div
                             style={{
                               position: 'absolute',
-                              inset: 0,
-                              zIndex: Z.COMPONENT_OVERLAY,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 10,
-                              background: 'var(--surface-base)',
-                              color: 'var(--text-secondary)',
-                              fontSize: 13,
-                              pointerEvents: 'none',
+                              left: `${leftSplitWidth - 2}px`,
+                              top: 0,
+                              bottom: 0,
+                              zIndex: Z.PANEL_BUTTON,
+                              marginLeft: 0,
+                              marginRight: 0,
                             }}
-                          >
-                            <RefreshCw size={16} className="spin" />
-                            <span>{t('正在恢复终端工作区…')}</span>
-                          </div>
+                          />
                         )}
-                      </div>
-                      {s.status === 'connected' && fileManagerPosition === 'tab' && mountedSessions.has(s.id) && (
-                        <div style={{ display: contentTab === 'files' ? 'flex' : 'none', height: '100%', flex: 1, flexDirection: 'column' }}>
-                          {renderSessionFileManagers(s)}
-                        </div>
-                      )}
-                      {s.status === 'connected' && mountedSessions.has(s.id) && (
-                        <div style={{ display: contentTab === 'history' ? 'block' : 'none', height: '100%', flex: 1 }}>
-                          <CommandHistory
-                            sessionId={s.id}
-                            historyServerId={s.serverId}
-                            addToast={addToast}
-                          />
-                        </div>
-                      )}
-                      {s.status === 'connected' && mountedSessions.has(s.id) && (
-                        <div style={{ display: contentTab === 'process' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
-                          <ProcessPage
-                            sessionId={s.id}
-                            addToast={addToast}
-                            active={contentTab === 'process' && activeSessionId === s.id}
-                          />
-                        </div>
-                      )}
-                      {s.status === 'connected' && mountedSessions.has(s.id) && (
-                        <div style={{ display: contentTab === 'network' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
-                          <NetworkPage
-                            sessionId={s.id}
-                            active={contentTab === 'network' && activeSessionId === s.id}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 辅助视口 (分屏模式下的文件管理器，如果是底部则排在后面) */}
-                    {s.status === 'connected' && fileManagerPosition === 'bottom' && contentTab !== 'process' && contentTab !== 'network' && mountedSessions.has(s.id) && (
-                      fileManagerCollapsed ? (
-                        <button
-                          type="button"
-                          className="panel-collapse-strip panel-collapse-strip-horizontal panel-collapse-strip-bottom no-drag"
-                          onClick={() => setFileManagerCollapsedPersistent(false)}
-                          aria-label={t('展开文件管理面板')}
-                        >
-                          <ChevronUp size={14} />
-                        </button>
-                      ) : (
-                        <>
+                        {showBottomFileManager && (
                           <div
                             className={`split-resizer-h${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
                             onMouseDown={(e) => startDrag(e, 'bottom')}
@@ -5429,30 +5289,209 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               setFileManagerCollapsedPersistent(true);
                             }}
                             aria-label={t('收起文件管理面板')}
-                            style={{ zIndex: Z.PANEL_BUTTON, marginTop: '-2px', marginBottom: '-2px' }}
+                            style={{
+                              position: 'absolute',
+                              left: 0,
+                              right: 0,
+                              bottom: `${bottomSplitHeight - 2}px`,
+                              zIndex: Z.PANEL_BUTTON,
+                              marginTop: 0,
+                              marginBottom: 0,
+                            }}
                           />
-                          <div style={{
-                            height: bottomSplitHeight + 'px',
-                            borderTop: '1px solid var(--border)',
+                        )}
+                        <div
+                          id="terminal-dock-preview-host"
+                          style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            minHeight: FILE_MANAGER_BOTTOM_MIN,
-                            flexShrink: 0,
-                            position: 'relative',
+                            flex: 1,
+                            minWidth: 0,
+                            minHeight: 0,
                             overflow: 'hidden',
-                          }}>
-                            {collapseDragIntent === 'bottom' && (
-                              <div className="panel-collapse-armed-zone panel-collapse-armed-zone-horizontal panel-collapse-armed-zone-top">
-                                <ChevronDown size={14} />
+                            marginLeft: showLeftFileManager ? `${leftSplitWidth + 4}px` : 0,
+                            marginBottom: showBottomFileManager ? `${bottomSplitHeight + 4}px` : 0,
+                          }}
+                        >
+                          <div style={{ display: (contentTab === 'terminal' || s.status !== 'connected') ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', position: 'relative' }}>
+                            {mountedSessions.has(s.id) && (
+                              isSessionWorkspaceVisible(s) ? (() => {
+                                const isTerminalViewActive = activeSessionId === s.id && (contentTab === 'terminal' || s.status !== 'connected');
+                                const workspaceTabs = getSessionWorkspaceTabs(s);
+                                const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeTerminalId);
+                                const activeLayout = activeWorkspaceTab?.type === 'group' ? terminalPaneLayouts[activeWorkspaceTab.id] : null;
+                                const activeLayoutId = activeLayout?.sessionId === s.id ? activeWorkspaceTab.id : null;
+                                const terminalPlacements = new Map();
+                                if (activeLayoutId) {
+                                  terminalPlacements.set(activeLayout.rootTerminalId || activeLayoutId, {
+                                    cells: getSessionRootPaneCells(activeLayoutId),
+                                    layoutId: activeLayoutId,
+                                    paneId: null,
+                                    showHeader: false,
+                                  });
+                                  getSessionPanes(activeLayoutId).forEach((pane) => {
+                                    terminalPlacements.set(pane.terminalId, {
+                                      cells: pane.cells,
+                                      layoutId: activeLayoutId,
+                                      paneId: pane.id,
+                                      showHeader: true,
+                                    });
+                                  });
+                                } else if (activeWorkspaceTab?.type === 'terminal') {
+                                  terminalPlacements.set(activeWorkspaceTab.id, {
+                                    cells: TERMINAL_PANE_CELL_IDS,
+                                    layoutId: null,
+                                    paneId: null,
+                                    showHeader: false,
+                                  });
+                                }
+                                return getEffectiveTerminals(s).map((term) => {
+                                  const placement = terminalPlacements.get(term.id);
+                                  const isTermVisible = !!placement && isTerminalViewActive;
+                                  const isGrouped = !!placement?.layoutId;
+                                  return (
+                                    <div
+                                      key={term.id}
+                                      style={{
+                                        position: 'absolute',
+                                        ...getTerminalPaneAbsolutePlacement(placement?.cells || TERMINAL_PANE_CELL_IDS),
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        visibility: isTermVisible ? 'visible' : 'hidden',
+                                        pointerEvents: isTermVisible ? 'auto' : 'none',
+                                        contain: isTermVisible ? 'none' : 'strict',
+                                        minWidth: 0,
+                                        minHeight: 0,
+                                        overflow: 'hidden',
+                                        border: isGrouped ? '1px solid var(--border)' : 'none',
+                                        borderRadius: 0,
+                                        background: 'var(--surface-base)',
+                                      }}
+                                    >
+                                      {placement?.showHeader && (
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            minHeight: 32,
+                                            padding: '0 10px',
+                                            borderBottom: '1px solid var(--border-subtle)',
+                                            background: 'var(--surface-raised)',
+                                            color: 'var(--text-secondary)',
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          <Monitor size={12} />
+                                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {term.label}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm no-drag"
+                                            onClick={(e) => closeTerminalPane(placement.layoutId, placement.paneId, e)}
+                                            aria-label={t('关闭分屏')}
+                                            style={{ minHeight: 24, padding: '0 6px' }}
+                                          >
+                                            <X size={12} />
+                                          </button>
+                                        </div>
+                                      )}
+                                      <div style={{ flex: 1, minHeight: 0 }}>
+                                        <ErrorBoundary label={`终端 ${term.id} 渲染出错`}>
+                                          <Terminal
+                                            sessionId={term.id}
+                                            serverId={s.id}
+                                            historyServerId={s.serverId}
+                                            status={s.status}
+                                            isActive={isTermVisible}
+                                            serverName={s.serverName}
+                                            connectedSessions={connectedSessions}
+                                          />
+                                        </ErrorBoundary>
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })() : (getEffectiveTerminals(s).map((t) => {
+                                const isTermActive = (contentTab === 'terminal' || s.status !== 'connected') && activeTerminalId === t.id;
+                                return (
+                                  <div key={t.id} style={{
+                                    position: 'absolute', inset: 0,
+                                    display: 'flex',
+                                    visibility: isTermActive ? 'visible' : 'hidden',
+                                    pointerEvents: isTermActive ? 'auto' : 'none',
+                                    contain: isTermActive ? 'none' : 'strict',
+                                    flexDirection: 'column',
+                                  }}>
+                                    <ErrorBoundary label={`终端 ${t.id} 渲染出错`}>
+                                      <Terminal
+                                        sessionId={t.id}
+                                        serverId={s.id}
+                                        historyServerId={s.serverId}
+                                        status={s.status}
+                                        isActive={activeSessionId === s.id && activeTerminalId === t.id && (contentTab === 'terminal' || fileManagerPosition !== 'tab')}
+                                        serverName={s.serverName}
+                                        connectedSessions={connectedSessions}
+                                      />
+                                    </ErrorBoundary>
+                                  </div>
+                                );
+                              }))
+                            )}
+                            {restoringWorkspaceSessionIds.has(s.id) && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  zIndex: Z.COMPONENT_OVERLAY,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 10,
+                                  background: 'var(--surface-base)',
+                                  color: 'var(--text-secondary)',
+                                  fontSize: 13,
+                                  pointerEvents: 'none',
+                                }}
+                              >
+                                <RefreshCw size={16} className="spin" />
+                                <span>{t('正在恢复终端工作区…')}</span>
                               </div>
                             )}
-                            {renderSessionFileManagers(s)}
                           </div>
-                        </>
-                      )
-                    )}
-                  </div>
-                ))}
+                          {s.status === 'connected' && mountedSessions.has(s.id) && (
+                            <div style={{ display: contentTab === 'history' ? 'block' : 'none', height: '100%', flex: 1 }}>
+                              <CommandHistory
+                                sessionId={s.id}
+                                historyServerId={s.serverId}
+                                addToast={addToast}
+                              />
+                            </div>
+                          )}
+                          {s.status === 'connected' && mountedSessions.has(s.id) && (
+                            <div style={{ display: contentTab === 'process' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
+                              <ProcessPage
+                                sessionId={s.id}
+                                addToast={addToast}
+                                active={contentTab === 'process' && activeSessionId === s.id}
+                              />
+                            </div>
+                          )}
+                          {s.status === 'connected' && mountedSessions.has(s.id) && (
+                            <div style={{ display: contentTab === 'network' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
+                              <NetworkPage
+                                sessionId={s.id}
+                                active={contentTab === 'network' && activeSessionId === s.id}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 {terminalDockDragPreview && terminalDockDragPreview.zones.length > 0 && (
                   <>
                     <div

@@ -919,12 +919,13 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     });
     return parts.length > 0 ? `/${parts.join('/')}` : '/';
   }, []);
-  const [fileManagerWorkspace, setFileManagerWorkspaceState] = useState(() => getSessionFileManagerWorkspace(sessionGroupId));
+  const [fileManagerWorkspace, setFileManagerWorkspaceState] = useState(() => getSessionFileManagerWorkspace(sessionId));
   const [currentPath, setCurrentPath] = useState('/');
   const currentPathRef = useRef(currentPath);
   const currentPathHydratedRef = useRef(false);
   const initializingPathRef = useRef(true);
   const skipNextTerminalFollowRef = useRef(false);
+  const preserveWorkspacePathRef = useRef(false);
   const pendingTabSelectionRestoreRef = useRef(null);
   const activeFileManagerTab = useMemo(() => {
     const tabs = Array.isArray(fileManagerWorkspace?.tabs) ? fileManagerWorkspace.tabs : [];
@@ -1013,11 +1014,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   useEffect(() => () => clearFileListSwitchFrame(), [clearFileListSwitchFrame]);
   useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
   useEffect(() => { activeFileManagerTabIdRef.current = activeFileManagerTab?.id || ''; }, [activeFileManagerTab]);
-  useEffect(() => { setFileManagerWorkspaceState(getSessionFileManagerWorkspace(sessionGroupId)); }, [sessionGroupId]);
+  useEffect(() => { setFileManagerWorkspaceState(getSessionFileManagerWorkspace(sessionId)); }, [sessionId]);
   useEffect(() => {
-    if (!sessionGroupId) return undefined;
-    return subscribeSessionFileManagerWorkspace(sessionGroupId, setFileManagerWorkspaceState);
-  }, [sessionGroupId]);
+    if (!sessionId) return undefined;
+    return subscribeSessionFileManagerWorkspace(sessionId, setFileManagerWorkspaceState);
+  }, [sessionId]);
   const [followTerminalCwd, setFollowTerminalCwd] = useState(() => localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   useEffect(() => {
     const handleChange = (e) => setFollowTerminalCwd(e.detail !== false);
@@ -1028,11 +1029,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (!sessionId || !currentPathHydratedRef.current || !isActive) return;
     window.__luminFileManagerPaths = window.__luminFileManagerPaths || {};
     window.__luminFileManagerPaths[sessionId] = currentPath;
-    window.__luminFileManagerPaths[sessionGroupId] = currentPath;
     window.dispatchEvent(new CustomEvent('ssh-file-manager-path-changed', {
       detail: { sessionId, path: currentPath }
     }));
-  }, [currentPath, isActive, sessionId, sessionGroupId]);
+  }, [currentPath, isActive, sessionId]);
   const [editingPath, setEditingPath] = useState(null);
   const [items, setItems] = useState([]);
   const [sortField, setSortField] = useState('name');  // name, size, permissions, modified
@@ -1115,16 +1115,16 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     return Array.isArray(cachedItems) ? cloneFileManagerItemsForCache(cachedItems) : null;
   }, []);
   const getCachedPathItems = useCallback((path) => (
-    getSessionCachedFileManagerPathItems(sessionGroupId, path)
-  ), [sessionGroupId]);
+    getSessionCachedFileManagerPathItems(sessionId, path)
+  ), [sessionId]);
   const cacheCurrentTabItems = useCallback((tabId, nextItems) => {
     const key = String(tabId || '').trim();
     if (!key) return;
     tabItemsCacheRef.current.set(key, cloneFileManagerItemsForCache(nextItems));
   }, []);
   const cachePathItems = useCallback((path, nextItems) => {
-    setSessionCachedFileManagerPathItems(sessionGroupId, path, nextItems);
-  }, [sessionGroupId]);
+    setSessionCachedFileManagerPathItems(sessionId, path, nextItems);
+  }, [sessionId]);
   const removeCachedTabItems = useCallback((tabId) => {
     const key = String(tabId || '').trim();
     if (!key) return;
@@ -1234,10 +1234,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     return () => cancelAnimationFrame(frame);
   }, [fileManagerWorkspace, syncFileManagerTabOverflowState]);
   const commitFileManagerWorkspace = useCallback((updater) => {
-    const next = setSessionFileManagerWorkspace(sessionGroupId, updater);
+    const next = setSessionFileManagerWorkspace(sessionId, updater);
     setFileManagerWorkspaceState(next);
     return next;
-  }, [sessionGroupId]);
+  }, [sessionId]);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [contextMenu, setContextMenu] = useState(null); // { pos, item }
   const [selectedPaths, setSelectedPaths] = useState([]);
@@ -1286,7 +1286,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           }
           const nextPath = hasExplicitPath
             ? (overrides.path ?? currentPathRef.current)
-            : (currentPathHydratedRef.current ? currentPathRef.current : tab.path);
+            : (currentPathHydratedRef.current && !preserveWorkspacePathRef.current ? currentPathRef.current : tab.path);
           return {
             ...tab,
             path: nextPath,
@@ -1317,7 +1317,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   useEffect(() => {
     if (!isActive || !currentPathHydratedRef.current) return;
     syncCurrentTabToWorkspace({
-      path: currentPath,
+      ...(preserveWorkspacePathRef.current ? {} : { path: currentPath }),
       scrollTop: fileListRef.current?.scrollTop || 0,
       reason: 'currentPath-effect',
     });
@@ -1853,6 +1853,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       : resolvedOptions.transitionDirection === 'forward'
         ? 'forward'
         : (transitionMode === 'directory' && normalizedPath === getParentPath(currentPathRef.current) ? 'backward' : 'forward');
+    const preserveWorkspacePathOnSuccess = resolvedOptions.preserveWorkspacePathOnSuccess === true;
     const shouldAnimateSwitch = transitionMode !== 'none' && !staleWhileRevalidate;
     const switchToken = shouldAnimateSwitch ? beginFileListSwitch(transitionDirection) : 0;
 
@@ -1921,6 +1922,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         displayedTabIdRef.current = targetTabId || displayedTabIdRef.current;
         currentPathHydratedRef.current = true;
         currentPathRef.current = normalizedPath;
+        preserveWorkspacePathRef.current = preserveWorkspacePathOnSuccess;
         setCurrentPath(normalizedPath);
         if (!preserveView && fileListRef.current) {
           fileListRef.current.scrollTop = 0;
@@ -1985,7 +1987,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     initializingPathRef.current = true;
     (async () => {
       try {
-        const existingWorkspace = getSessionFileManagerWorkspace(sessionGroupId);
+        const existingWorkspace = getSessionFileManagerWorkspace(sessionId);
         const existingTab = existingWorkspace.tabs.find((tab) => tab.id === existingWorkspace.activeTabId) || existingWorkspace.tabs[0] || null;
         if (existingTab) {
           skipNextTerminalFollowRef.current = true;
@@ -2015,35 +2017,23 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           if (!ok && !cancelled) {
             pendingTabSelectionRestoreRef.current = { selectedPaths: [], lastClickedPath: null };
             pendingViewRestoreRef.current = { scrollTop: 0 };
-            let resolvedFallbackPath = '/root';
             ok = await loadDir('/root', {
               tabId: existingTab.id,
               silent: true,
               preserveView: false,
               trackDiff: false,
               showLoading: true,
+              preserveWorkspacePathOnSuccess: true,
             });
             if (!ok) {
-              resolvedFallbackPath = '/';
               await loadDir('/', {
                 tabId: existingTab.id,
                 silent: true,
                 preserveView: false,
                 trackDiff: false,
                 showLoading: true,
+                preserveWorkspacePathOnSuccess: true,
               });
-            }
-            const fallbackPath = ok ? resolvedFallbackPath : '/';
-            const nextWorkspace = setSessionFileManagerWorkspace(sessionGroupId, {
-              activeTabId: existingWorkspace.activeTabId,
-              tabs: existingWorkspace.tabs.map((tab) => (
-                tab.id === existingTab.id
-                  ? { ...tab, path: fallbackPath, selectedPaths: [], scrollTop: 0 }
-                  : tab
-              )),
-            });
-            if (!cancelled) {
-              setFileManagerWorkspaceState(nextWorkspace);
             }
           }
           return;
@@ -2059,8 +2049,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         };
 
         const rememberedPath = normalizePath(
-          window.__luminFileManagerPaths?.[sessionGroupId]
-          || window.__luminFileManagerPaths?.[sessionId]
+          window.__luminFileManagerPaths?.[sessionId]
         );
         const normalizedInitialPath = normalizePath(initialPath);
         const initialPathMode = getFileManagerInitialPathMode();
@@ -2102,7 +2091,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           }
           skipNextTerminalFollowRef.current = true;
           const defaultTab = createFileManagerTab(candidate.path);
-          const nextWorkspace = setSessionFileManagerWorkspace(sessionGroupId, {
+          const nextWorkspace = setSessionFileManagerWorkspace(sessionId, {
             activeTabId: defaultTab.id,
             tabs: [defaultTab],
           });
@@ -2114,7 +2103,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
         skipNextTerminalFollowRef.current = true;
         const fallbackTab = createFileManagerTab('/');
-        const nextWorkspace = setSessionFileManagerWorkspace(sessionGroupId, {
+        const nextWorkspace = setSessionFileManagerWorkspace(sessionId, {
           activeTabId: fallbackTab.id,
           tabs: [fallbackTab],
         });
@@ -2129,7 +2118,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       cancelled = true;
       initializingPathRef.current = false;
     };
-  }, [initialPath, isActive, loadDir, normalizePath, sessionGroupId, sessionId]);
+  }, [initialPath, isActive, loadDir, normalizePath, sessionId]);
 
   useEffect(() => {
     if (!followTerminalCwd || !isActive) return undefined;
@@ -2467,12 +2456,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     try {
       const nextItems = await AppGo.ListDir(sessionId, normalizedTargetPath);
       setSessionCachedFileManagerPathItems(
-        sessionGroupId,
+        sessionId,
         normalizedTargetPath,
         Array.isArray(nextItems) ? nextItems : [],
       );
     } catch (_) {}
-  }, [loadDir, normalizePath, sessionGroupId, sessionId]);
+  }, [loadDir, normalizePath, sessionId]);
 
   const uploadNativePaths = useCallback(async (paths) => {
     const localPaths = Array.from(paths || []).map((path) => String(path || '').trim()).filter(Boolean);
