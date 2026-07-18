@@ -207,7 +207,7 @@ function buildDraft(provider) {
     provider: providerDefinition.value,
     cacheStrategy: typeof provider?.cacheStrategy === 'string' && provider.cacheStrategy.trim()
       ? provider.cacheStrategy.trim()
-      : 'model',
+      : '5m',
     baseUrl: typeof provider?.baseUrl === 'string' ? provider.baseUrl : '',
     apiKey: typeof provider?.apiKey === 'string' ? provider.apiKey : '',
     model: resolvedModel,
@@ -696,7 +696,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
         ...prev,
         provider: nextProviderDefinition.value,
         model: nextModel,
-        cacheStrategy: nextProviderDefinition.supportsPromptCacheSettings ? (prev.cacheStrategy || 'model') : 'off',
+        cacheStrategy: prev.cacheStrategy || '5m',
         reasoningEffort: prev.reasoningEffort || nextCapability.reasoningEffort || 'disable',
         enableReasoningEffort: nextCapability.requiredReasoningBudget || nextCapability.requiredReasoningEffort
           ? true
@@ -833,7 +833,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     onSave?.({
       ...draft,
       provider: providerDefinition.value,
-      cacheStrategy: supportsPromptCacheSettings ? (draft.cacheStrategy || 'model') : 'off',
+      cacheStrategy: draft.cacheStrategy || '5m',
       dedicatedWebSearchEnabled: draft.dedicatedWebSearchEnabled,
       dedicatedWebSearchProviderId: draft.dedicatedWebSearchEnabled ? draft.dedicatedWebSearchProviderId : '',
       dedicatedProxyEnabled: draft.dedicatedProxyEnabled,
