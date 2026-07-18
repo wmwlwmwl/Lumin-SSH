@@ -1917,6 +1917,7 @@ body.theme-light .batch-operation-bar {
   -webkit-user-select: none;
   -moz-user-select: none;
   position: relative;
+  --file-list-header-height: 30px;
 }
 
 .file-list.is-switching {
@@ -1927,6 +1928,7 @@ body.theme-light .batch-operation-bar {
   position: relative;
   min-height: 100%;
   overflow: hidden;
+  padding-top: var(--file-list-header-height);
 }
 
 .file-list-body {
@@ -2030,7 +2032,8 @@ body.theme-light .batch-operation-bar {
   background: var(--surface-sunken);
   position: sticky;
   top: 0;
-  z-index: 1;
+  margin-bottom: calc(var(--file-list-header-height) * -1);
+  z-index: 4;
 }
 
 .file-item {

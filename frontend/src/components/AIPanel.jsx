@@ -11,6 +11,7 @@ import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIC
 import { condenseAIConversationContext, createAIConversation, deleteAIConversation, getAIAssistantFirstReply, getAIConversation, listAIConversations, normalizeAIConversationMessageSearchResult, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation, searchAIConversationMessages, subscribeAIConversationChanges } from './ai/aiConversationBridge.js'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.js'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js'
+import { getAIProviderState } from './ai/aiProviderBridge.js'
 import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, updateMCPClientServerTimeout } from './ai/mcpClientBridge.js'
 import { processRemoteFileMentions } from './ai/aiMentions.js'
 import { expandFirstSlashCommandForPrompt } from './ai/aiSlashCommands.js'
@@ -611,6 +612,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const { t } = useTranslation()
   const audioPlayersRef = useRef(new Map())
   const [mcpInfo, setMcpInfo] = useState({ url: '', transport: 'streamable-http', endpoint: '/mcp', instructions: '', logs: '', tools: [] })
+  const [aiProviderState, setAIProviderState] = useState({ currentProviderId: '', providers: [] })
   const [mcpClientServers, setMCPClientServers] = useState([])
   const [mcpClientGlobalConfigPath, setMCPClientGlobalConfigPath] = useState('')
   const [mcpClientGlobalConfigText, setMCPClientGlobalConfigText] = useState('{\n  "mcpServers": {}\n}')
@@ -712,6 +714,19 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
           return
         }
         setGlobalAISettings(null)
+      })
+    void getAIProviderState()
+      .then((value) => {
+        if (!panelMountedRef.current) {
+          return
+        }
+        setAIProviderState(value)
+      })
+      .catch(() => {
+        if (!panelMountedRef.current) {
+          return
+        }
+        setAIProviderState({ currentProviderId: '', providers: [] })
       })
     void refreshMCPServerInfo()
     void refreshMCPOutputCompressionSettings()
@@ -820,6 +835,14 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const isAwaitingTerminalAssignment = panelState.requestPhase === 'awaiting_terminal_assignment'
   const isQueueBlocked = isAIQueueBlocked(runtimePhase) || isStreaming || isAwaitingToolApproval || isToolRunning || isAwaitingCommandAction || isAwaitingTerminalAssignment
   const normalizedGlobalAISettings = useMemo(() => normalizeAIGlobalSettings(globalAISettings), [globalAISettings])
+  const selectedAIProvider = useMemo(() => {
+    const currentProviderId = typeof aiProviderState?.currentProviderId === 'string' ? aiProviderState.currentProviderId.trim() : ''
+    if (!currentProviderId) {
+      return null
+    }
+    return (Array.isArray(aiProviderState?.providers) ? aiProviderState.providers : []).find((item) => item?.id === currentProviderId) || null
+  }, [aiProviderState])
+  const effectiveProviderId = selectedAIProvider?.id || ''
   const effectiveAutoApprovalSettings = useMemo(() => {
     if (!activeConversation) {
       return normalizedGlobalAISettings
@@ -831,7 +854,6 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       deniedCommands: normalizedGlobalAISettings.deniedCommands,
     }
   }, [activeConversation, normalizedGlobalAISettings])
-  const effectiveProviderId = effectiveAutoApprovalSettings.currentProviderId || ''
   const effectiveAutoApprovalEnabled = effectiveAutoApprovalSettings.autoApprovalEnabled
   const shouldPersistProviderSelection = !activeConversation
   const approvalButtonOrder = normalizedGlobalAISettings.approvalButtonOrder
@@ -2176,13 +2198,18 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   }, [panelState.activeConversationId, requestDeleteConfirmation, t])
 
   const handleProviderChange = useCallback(async (providerId) => {
+    const normalizedProviderId = typeof providerId === 'string' ? providerId.trim() : ''
+    setAIProviderState((current) => ({
+      ...current,
+      currentProviderId: normalizedProviderId,
+    }))
     if (activeConversation) {
       const nextConversation = {
         ...activeConversation,
         updatedAt: Date.now(),
         settings: {
           ...activeConversation.settings,
-          currentProviderId: providerId,
+          currentProviderId: normalizedProviderId,
         },
       }
       setPanelState(panelInstanceKey, (current) => ({
@@ -2195,7 +2222,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
 
     const nextSettings = await saveAIGlobalSettings({
       ...(globalAISettings || {}),
-      currentProviderId: providerId,
+      currentProviderId: normalizedProviderId,
     })
     setGlobalAISettings(nextSettings)
   }, [activeConversation, globalAISettings, panelInstanceKey, saveConversationSnapshot, setPanelState])
