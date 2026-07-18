@@ -8,9 +8,6 @@ import { getAIProviderState, isBuiltinAIProvider, normalizeAIProviderState, save
 
 const defaultProviders = []
 const summaryTooltipDelay = 300
-const defaultTokenStoreUrl = 'https://aichatp.callmy.vip/app'
-const defaultTokenStoreTitle = 'Token 中心'
-const tokenStoreBaseDomain = 'callmy.vip'
 const embeddedBrowserAuthMessageTypes = new Set([
   'lumin-builtin-provider-auth',
   'builtin-provider-auth',
@@ -258,8 +255,8 @@ export default function AIProviderSelector({
   const [tooltipTriggerRect, setTooltipTriggerRect] = useState(null)
   const [tokenStoreOpen, setTokenStoreOpen] = useState(false)
   const [tokenStoreLoading, setTokenStoreLoading] = useState(false)
-  const [tokenStoreFrameURL, setTokenStoreFrameURL] = useState(defaultTokenStoreUrl)
-  const [tokenStoreViewTitle, setTokenStoreViewTitle] = useState(defaultTokenStoreTitle)
+  const [tokenStoreFrameURL, setTokenStoreFrameURL] = useState('')
+  const [tokenStoreViewTitle, setTokenStoreViewTitle] = useState('')
   const [embeddedBrowserContext, setEmbeddedBrowserContext] = useState(null)
   const expandLeft = triggerRect ? triggerRect.left + 400 > window.innerWidth - 16 : false
   const tooltipExpandLeft = tooltipTriggerRect ? tooltipTriggerRect.left + 280 > window.innerWidth - 16 : false
@@ -271,15 +268,6 @@ export default function AIProviderSelector({
     () => providerList.find((item) => item.id === effectiveSelectedId) || null,
     [providerList, effectiveSelectedId],
   )
-  const tokenStoreAvailable = useMemo(() => {
-    try {
-      const host = new URL(selectedProvider?.baseUrl || '').hostname
-      return host === tokenStoreBaseDomain || host.endsWith(`.${tokenStoreBaseDomain}`)
-    } catch {
-      return false
-    }
-  }, [selectedProvider])
-
   const providerSummaryRows = [
     { label: t('供应商'), value: selectedProvider?.name || t('选择供应商') },
     { label: t('模型'), value: getProviderModelSummary(t, selectedProvider) },
@@ -540,8 +528,8 @@ export default function AIProviderSelector({
     setSearchValue('')
     setTokenStoreOpen(false)
     setTokenStoreLoading(false)
-    setTokenStoreFrameURL(defaultTokenStoreUrl)
-    setTokenStoreViewTitle(defaultTokenStoreTitle)
+    setTokenStoreFrameURL('')
+    setTokenStoreViewTitle('')
     setEmbeddedBrowserContext(null)
     setTriggerRect(null)
     setTooltipTriggerRect(null)
@@ -601,7 +589,7 @@ export default function AIProviderSelector({
     }
   }, [onCurrentProviderChange])
 
-  const openEmbeddedBrowser = useCallback((url, title = defaultTokenStoreTitle, context = null) => {
+  const openEmbeddedBrowser = useCallback((url, title = '', context = null) => {
     const nextURL = typeof url === 'string' ? url.trim() : ''
     if (!nextURL) {
       return
@@ -613,7 +601,7 @@ export default function AIProviderSelector({
       setEditingState({ open: false, mode: 'edit', provider: null })
     }
     setTokenStoreFrameURL(nextURL)
-    setTokenStoreViewTitle(typeof title === 'string' && title.trim() ? title.trim() : defaultTokenStoreTitle)
+    setTokenStoreViewTitle(typeof title === 'string' && title.trim() ? title.trim() : '')
     setEmbeddedBrowserContext(nextContext)
     setTokenStoreLoading(true)
     setTokenStoreOpen(true)
@@ -968,30 +956,6 @@ export default function AIProviderSelector({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{t('供应商列表')}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {tokenStoreAvailable && (
-                    <button
-                      type="button"
-                      aria-label={t('打开 Token 中心')}
-                      onClick={() => openEmbeddedBrowser(defaultTokenStoreUrl, t('Token 中心'), { kind: 'token_store' })}
-                      style={{
-                        height: 28,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '0 10px',
-                        borderRadius: 8,
-                        border: `1px solid ${tokenStoreOpen ? 'var(--accent-border)' : 'var(--border)'}`,
-                        background: tokenStoreOpen ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
-                        color: tokenStoreOpen ? 'var(--accent)' : 'var(--text-secondary)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        transition: 'var(--transition)',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {t('Token 中心')}
-                    </button>
-                  )}
                   <Tiptop text={t('添加供应商')}>
                     <button
                       type="button"
@@ -1095,7 +1059,7 @@ export default function AIProviderSelector({
             }}
           >
             <div style={{ height: 46, padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{tokenStoreViewTitle || t('Token 中心')}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{tokenStoreViewTitle || t('文档')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   type="button"
@@ -1152,20 +1116,14 @@ export default function AIProviderSelector({
                     }}
                   >
                     <div style={{ fontSize: 24, lineHeight: 1 }}>🌐</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>{t('Token 中心正在加载')}</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text-secondary)' }}>
-                      {t('如果页面长时间没有显示内容,可能需要科学上网后才能正常访问。')}
-                    </div>
-                    <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-tertiary)' }}>
-                      {t('请稍候片刻,系统会在页面加载完成后自动进入 Token 中心。')}
-                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>{t('加载中...')}</div>
                   </div>
                 </div>
               ) : null}
               <iframe
                 ref={iframeRef}
                 src={tokenStoreFrameURL}
-                title={tokenStoreViewTitle || t('Token 中心')}
+                title={tokenStoreViewTitle || t('文档')}
                 referrerPolicy="no-referrer"
                 onLoad={() => setTokenStoreLoading(false)}
                 style={{

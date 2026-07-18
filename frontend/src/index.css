@@ -139,6 +139,14 @@ svg[class*="lucide"] {
   /* ── 布局 ── */
   --topbar-h:  44px;
   --probe-w:   300px;
+
+  /* ── 通用标签态语义变量 ── */
+  --tab-inactive-bg: color-mix(in srgb, var(--surface-overlay) 78%, var(--surface-hover));
+  --tab-inactive-bg-hover: color-mix(in srgb, var(--surface-overlay) 56%, var(--surface-hover));
+  --tab-inactive-border: color-mix(in srgb, var(--border) 82%, var(--surface-hover));
+  --tab-inactive-text: color-mix(in srgb, var(--text-secondary) 88%, var(--text-primary));
+  --tab-active-bg: var(--surface-base);
+  --tab-active-border: color-mix(in srgb, var(--border-subtle) 88%, var(--accent));
 }
 
 /* ── 设计 Token：浅色模式（暖灰色调） ───────────────────────── */
@@ -223,6 +231,13 @@ body.theme-light {
   --shadow-md:  0 4px 10px rgba(28, 25, 23, 0.09);
   --shadow-lg:  0 8px 20px rgba(28, 25, 23, 0.11);
   --shadow-xl:  0 16px 36px rgba(28, 25, 23, 0.15);
+
+  --tab-inactive-bg: color-mix(in srgb, var(--surface-sunken) 72%, var(--surface-overlay));
+  --tab-inactive-bg-hover: color-mix(in srgb, var(--surface-active) 52%, var(--surface-overlay));
+  --tab-inactive-border: color-mix(in srgb, var(--border) 92%, var(--surface-active));
+  --tab-inactive-text: color-mix(in srgb, var(--text-secondary) 90%, var(--text-primary));
+  --tab-active-bg: var(--surface-raised);
+  --tab-active-border: color-mix(in srgb, var(--border-subtle) 82%, var(--accent));
 }
 
 .mention-context-textarea-highlight {
@@ -774,50 +789,59 @@ input::-ms-clear {
 }
 .tab-scroll {
   display: flex;
-  align-items: center;
-  gap: var(--space-1);
+  align-items: stretch;
+  gap: 0;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
   height: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.tab-scroll::-webkit-scrollbar { height: 0; }
+.tab-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 .tab-item {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  height: 30px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
   font-size: var(--text-sm);
-  color: var(--text-secondary);
+  border-radius: 0;
   cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
   white-space: nowrap;
-  transition: var(--transition-fast);
   position: relative;
   max-width: 180px;
-  background: var(--surface-overlay);
-  border: 1px solid var(--border);
-  box-shadow: none;
+  background: var(--tab-inactive-bg);
+  color: var(--tab-inactive-text);
+  border: 1px solid var(--tab-inactive-border);
+  border-bottom: 2px solid transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: var(--transition-fast);
 }
 .tab-item:hover {
-  background: var(--surface-hover);
+  background: var(--tab-inactive-bg-hover);
   color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: none;
+  border-color: var(--border-focus);
+  border-bottom-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .tab-item.active {
-  background: var(--surface-sunken);
+  background: var(--tab-active-bg);
   color: var(--text-primary);
-  border-color: var(--border);
+  border-color: var(--tab-active-border);
+  border-bottom-color: var(--accent);
   box-shadow: inset 0 -2px 0 var(--accent);
-  font-weight: 500;
+  font-weight: 600;
 }
 .tab-item.active::after {
   content: none;
 }
 .tab-close {
+  margin-left: 2px;
   width: 18px;
   height: 18px;
   border-radius: var(--radius-xs);
@@ -825,14 +849,26 @@ input::-ms-clear {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  opacity: 0.55;
   flex-shrink: 0;
   transition: var(--transition);
 }
-.tab-close:hover { background: var(--danger-dim); color: var(--danger); }
+.tab-close:hover { opacity: 1; background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
 
-.tab-reconnect { color: var(--text-muted); transition: var(--transition); }
-.tab-reconnect:hover { color: var(--accent); }
+.tab-reconnect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  opacity: 0.55;
+  transition: var(--transition);
+}
+.tab-reconnect:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
 
 /* ── 终端子标签栏 ───────────────────────────────────────────── */
 .terminal-sub-tab-bar {
@@ -973,24 +1009,24 @@ input::-ms-clear {
   flex-shrink: 0;
   white-space: nowrap;
   position: relative;
-  background: color-mix(in srgb, var(--surface-overlay) 82%, var(--surface-raised));
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
+  background: var(--tab-inactive-bg);
+  color: var(--tab-inactive-text);
+  border: 1px solid var(--tab-inactive-border);
   border-bottom: 2px solid transparent;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
   transition: var(--transition-fast);
 }
 .terminal-sub-tab:hover {
-  background: color-mix(in srgb, var(--surface-overlay) 92%, var(--surface-hover));
+  background: var(--tab-inactive-bg-hover);
   color: var(--text-primary);
   border-color: var(--border);
   border-bottom-color: transparent;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .terminal-sub-tab.active {
-  background: var(--surface-base);
+  background: var(--tab-active-bg);
   color: var(--text-primary);
-  border-color: var(--border-subtle);
+  border-color: var(--tab-active-border);
   border-bottom-color: var(--accent);
   box-shadow: inset 0 -2px 0 var(--accent);
   font-weight: 600;

@@ -645,7 +645,7 @@ export default function FileEditor({
             border: '1px solid ' + C.btnBorder,
             borderRadius: '8px',
             boxShadow: C.contextShadow,
-            zIndex: Z.SEARCH_PANEL,
+            zIndex: Z.FLOATING_EDITOR_MENU,
             padding: '4px 0',
             minWidth: '160px',
             fontFamily: 'var(--font-ui)',
@@ -678,14 +678,15 @@ export default function FileEditor({
 
   // 最小化浮动条
   if (minimized) {
-    return (
+    if (typeof document === 'undefined') return null;
+    return createPortal(
       <div
         onClick={() => setMinimized(false)}
         style={{
           position: 'fixed',
           bottom: 16,
           right: 16,
-          zIndex: Z.EDITOR_TOOLBAR,
+          zIndex: Z.FLOATING_EDITOR,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -697,6 +698,7 @@ export default function FileEditor({
           cursor: 'pointer',
           userSelect: 'none',
           animation: 'fadeIn 0.15s ease',
+          pointerEvents: 'auto',
         }}
       >
         <SquarePen size={14} style={{ flexShrink: 0 }} />
@@ -709,13 +711,14 @@ export default function FileEditor({
           </span>
         )}
         {isModified && <span style={{ fontSize: 11, color: 'var(--warning)' }}>{t('未保存')}</span>}
-      </div>
+      </div>,
+      document.body
     );
   }
 
   if (mode === 'popup') {
-    if (!isActive) return null;
-    return (
+    if (!isActive || typeof document === 'undefined') return null;
+    return createPortal(
       <div
         style={{
           position: 'fixed',
@@ -723,7 +726,7 @@ export default function FileEditor({
           top: popupPos.y,
           width: popupPos.w,
           height: popupPos.h,
-          zIndex: Z.EDITOR_TOOLBAR,
+          zIndex: Z.FLOATING_EDITOR,
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--surface-raised)',
@@ -731,6 +734,7 @@ export default function FileEditor({
           borderRadius: 10,
           boxShadow: 'var(--shadow-md)',
           overflow: 'hidden',
+          pointerEvents: 'auto',
         }}
         onContextMenu={handleContextMenu}
       >
@@ -751,7 +755,8 @@ export default function FileEditor({
             </svg>
           </div>
         </Tiptop>
-      </div>
+      </div>,
+      document.body
     );
   }
 

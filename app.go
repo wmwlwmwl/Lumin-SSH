@@ -80,6 +80,29 @@ type BuiltinProviderRuntimeStatus struct {
 	Ready      bool   `json:"ready"`
 }
 
+type GitHubContributorAuthor struct {
+	Login  string `json:"login"`
+	Avatar string `json:"avatar"`
+	Path   string `json:"path"`
+}
+
+type GitHubContributorWeek struct {
+	W int `json:"w"`
+	A int `json:"a"`
+	D int `json:"d"`
+	C int `json:"c"`
+}
+
+type GitHubContributor struct {
+	Author GitHubContributorAuthor `json:"author"`
+	Total  int                     `json:"total"`
+	Weeks  []GitHubContributorWeek `json:"weeks"`
+}
+
+const githubContributorsAPIURL = "https://github.com/wmwlwmwl/Lumin-SSH/graphs/contributors-data"
+
+const githubContributorsRefererURL = "https://github.com/wmwlwmwl/Lumin-SSH/graphs/contributors"
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
@@ -1435,6 +1458,37 @@ func resolveDownloadTargetPath(remotePath string, defaultDir string, isDirectory
 
 func (a *App) GetProgramDirectory() string {
 	return getProgramDirectory()
+}
+
+func (a *App) GetGitHubContributors() ([]GitHubContributor, error) {
+	request, err := http.NewRequest(http.MethodGet, githubContributorsAPIURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", "Lumin-SSH")
+	request.Header.Set("X-Requested-With", "XMLHttpRequest")
+	request.Header.Set("Referer", githubContributorsRefererURL)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github contributors request failed: %s", response.Status)
+	}
+
+	var contributors []GitHubContributor
+	if err := json.NewDecoder(response.Body).Decode(&contributors); err != nil {
+		return nil, err
+	}
+	if contributors == nil {
+		return []GitHubContributor{}, nil
+	}
+	return contributors, nil
 }
 
 func (a *App) ListProgramFonts() ([]ProgramFontInfo, error) {

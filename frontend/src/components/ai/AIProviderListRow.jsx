@@ -37,9 +37,16 @@ export default function AIProviderListRow({ item, active = false, builtin = fals
   const secondaryLabel = item.model || item.description || 'Compatible'
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect?.()
+        }
+      }}
       style={{
         width: '100%',
         minHeight: 46,
@@ -56,6 +63,7 @@ export default function AIProviderListRow({ item, active = false, builtin = fals
         transition: 'var(--transition)',
         boxSizing: 'border-box',
         overflow: 'hidden',
+        cursor: 'pointer',
       }}
     >
       <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'baseline', gap: 6, overflow: 'hidden' }}>
@@ -80,6 +88,6 @@ export default function AIProviderListRow({ item, active = false, builtin = fals
           <SquarePen size={13} />
         </IconButton>
       </div>
-    </button>
+    </div>
   );
 }

@@ -39,4 +39,6 @@ export const Z = {
 
   // ── Absolute top ──
   SEARCH_PANEL: 10000,
+  FLOATING_EDITOR: 10001,
+  FLOATING_EDITOR_MENU: 10002,
 };

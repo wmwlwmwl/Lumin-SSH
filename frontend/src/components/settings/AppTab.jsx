@@ -1,25 +1,185 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import * as AppGo from '../../../wailsjs/go/main/App.js';
 import { t as $t } from '../../i18n.js';
 import logoImg from '../../assets/logo.png';
+import logoRImg from '../../assets/logo_r.png';
 import { Z } from '../../constants/zIndex';
 import { AboutLink } from './SharedComponents';
 
+const CONTRIBUTORS_CACHE_TTL = 10 * 60 * 1000;
+
+let contributorsCache = {
+  data: null,
+  expiresAt: 0,
+  inflight: null,
+};
+
+function getFreshContributorsCache() {
+  if (Array.isArray(contributorsCache.data) && contributorsCache.data.length > 0 && Date.now() < contributorsCache.expiresAt) {
+    return contributorsCache.data;
+  }
+  return null;
+}
+
+function toHighResGitHubAvatar(url) {
+  const rawValue = typeof url === 'string' ? url.trim() : '';
+  if (!rawValue) {
+    return '';
+  }
+  try {
+    const parsed = new URL(rawValue);
+    parsed.searchParams.delete('s');
+    parsed.searchParams.delete('v');
+    return parsed.toString();
+  } catch {
+    return rawValue;
+  }
+}
+
+function normalizeContributors(payload) {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .map((item) => {
+      const author = item?.author || {};
+      const login = typeof author.login === 'string' ? author.login.trim() : '';
+      const avatar = toHighResGitHubAvatar(typeof author.avatar === 'string' ? author.avatar.trim() : '');
+      const path = typeof author.path === 'string' ? author.path.trim() : '';
+      const total = Number(item?.total) || 0;
+      const weeks = Array.isArray(item?.weeks) ? item.weeks : (Array.isArray(item?.weeeks) ? item.weeeks : []);
+      const additions = weeks.reduce((sum, week) => sum + (Number(week?.a) || 0), 0);
+      const deletions = weeks.reduce((sum, week) => sum + (Number(week?.d) || 0), 0);
+      if (!login || !avatar || !path || total <= 0) {
+        return null;
+      }
+      return {
+        login,
+        avatar,
+        total,
+        additions,
+        deletions,
+        profileUrl: `https://github.com${path}`,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.total - left.total);
+}
+
+async function loadContributors() {
+  const cached = getFreshContributorsCache();
+  if (cached) {
+    return cached;
+  }
+  if (contributorsCache.inflight) {
+    return contributorsCache.inflight;
+  }
+  contributorsCache.inflight = AppGo.GetGitHubContributors()
+    .then((payload) => {
+      const data = normalizeContributors(payload);
+      contributorsCache.data = data;
+      contributorsCache.expiresAt = Date.now() + CONTRIBUTORS_CACHE_TTL;
+      return data;
+    })
+    .finally(() => {
+      contributorsCache.inflight = null;
+    });
+  return contributorsCache.inflight;
+}
+
 export default function AppTab({ CURRENT_VERSION, BUILD_TIME, updateInfo, checkingUpdate, downloadProgress, onCheckUpdate, onApplyUpdate }) {
+  const [contributors, setContributors] = useState(() => getFreshContributorsCache() || []);
+  const [contributorsLoading, setContributorsLoading] = useState(() => !getFreshContributorsCache());
+  const [showRefreshedLogo, setShowRefreshedLogo] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowRefreshedLogo(true);
+    }, 260);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cached = getFreshContributorsCache();
+    if (cached) {
+      setContributors(cached);
+      setContributorsLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setContributorsLoading(true);
+    loadContributors()
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        setContributors(data);
+        setContributorsLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setContributors([]);
+        setContributorsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 24px', gap: 32, maxWidth: 640 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 'none', padding: '16px 24px', gap: 32 }}>
       {/* 顶部布局：图标与标题 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <img
-          src={logoImg}
-          alt="Lumin"
+        <div
           style={{
             width: 96,
             height: 96,
+            position: 'relative',
             borderRadius: 24,
+            overflow: 'hidden',
             boxShadow: 'var(--shadow-sm)',
-            border: '1px solid var(--border-light)'
+            border: '1px solid var(--border-light)',
+            background: 'var(--surface-overlay)',
+            flexShrink: 0,
           }}
-        />
+        >
+          <img
+            src={logoImg}
+            alt="Lumin"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              opacity: showRefreshedLogo ? 0 : 1,
+              transform: showRefreshedLogo ? 'scale(0.9) rotate(-8deg)' : 'scale(1) rotate(0deg)',
+              filter: showRefreshedLogo ? 'blur(8px)' : 'blur(0px)',
+              transition: 'opacity 0.6s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.6s ease',
+            }}
+          />
+          <img
+            src={logoRImg}
+            alt="Lumin Refresh"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              opacity: showRefreshedLogo ? 1 : 0,
+              transform: showRefreshedLogo ? 'scale(1) rotate(0deg)' : 'scale(1.12) rotate(8deg)',
+              filter: showRefreshedLogo ? 'blur(0px)' : 'blur(10px)',
+              transition: 'opacity 0.6s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.6s ease',
+            }}
+          />
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{
             fontSize: 32,
@@ -42,6 +202,34 @@ export default function AppTab({ CURRENT_VERSION, BUILD_TIME, updateInfo, checki
                 {BUILD_TIME}
               </span>
             )}
+            <button
+              onClick={onCheckUpdate}
+              disabled={checkingUpdate}
+              style={{
+                marginLeft: 4,
+                background: 'var(--surface-overlay)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: checkingUpdate ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                transition: 'all 0.2s',
+                opacity: checkingUpdate ? 0.7 : 1,
+                flexShrink: 0
+              }}
+              onMouseEnter={(e) => { if(!checkingUpdate) { e.currentTarget.style.background = 'var(--surface-sunken)'; e.currentTarget.style.color = 'var(--text-secondary)'; } }}
+              onMouseLeave={(e) => { if(!checkingUpdate) { e.currentTarget.style.background = 'var(--surface-overlay)'; e.currentTarget.style.color = 'var(--text-secondary)'; } }}
+            >
+              <svg className={checkingUpdate ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+              {checkingUpdate
+                 ? $t('检查中...')
+                 : $t('检查更新')}
+            </button>
             {(updateInfo?.hasUpdate || downloadProgress >= 0) && (
               <span
                 onClick={onApplyUpdate}
@@ -85,60 +273,76 @@ export default function AppTab({ CURRENT_VERSION, BUILD_TIME, updateInfo, checki
         </div>
       </div>
 
-      <div style={{ marginTop: 0 }}>
-        <button
-          onClick={onCheckUpdate}
-          disabled={checkingUpdate}
-          style={{
-            background: 'var(--surface-overlay)',
-            color: 'var(--text-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '6px 16px',
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: checkingUpdate ? 'not-allowed' : 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            transition: 'all 0.2s',
-            opacity: checkingUpdate ? 0.7 : 1
-          }}
-          onMouseEnter={(e) => { if(!checkingUpdate) { e.currentTarget.style.background = 'var(--surface-sunken)'; e.currentTarget.style.color = 'var(--text-secondary)'; } }}
-          onMouseLeave={(e) => { if(!checkingUpdate) { e.currentTarget.style.background = 'var(--surface-overlay)'; e.currentTarget.style.color = 'var(--text-secondary)'; } }}
-        >
-          <svg className={checkingUpdate ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
-          {checkingUpdate
-             ? $t('检查中...')
-             : $t('检查更新')}
-        </button>
-      </div>
-
-      {/* 列表项 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginTop: 12 }}>
         <AboutLink
-          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M9 15L15 15"></path><path d="M12 12L12 18"></path></svg>}
-          title={$t('反馈问题')} desc={$t('生成预填的 GitHub issue')}
+          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M9 15L15 15"></path><path d="M12 12L12 18"></path></svg>}
+          title={$t('反馈问题')}
           url="https://github.com/wmwlwmwl/Lumin-SSH/issues/new"
         />
-
         <AboutLink
-          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>}
-          title={$t('社区')} desc={$t('参与 GitHub Discussions 讨论')}
-          url="https://github.com/wmwlwmwl/Lumin-SSH/discussions"
-        />
-
-        <AboutLink
-          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>}
-          title={$t('GitHub')} desc={$t('源代码')}
+          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>}
+          title={$t('GitHub')}
           url="https://github.com/wmwlwmwl/Lumin-SSH"
         />
-
         <AboutLink
-          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>}
-          title={$t('更新内容')} desc={$t('查看发布说明')}
+          icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>}
+          title={$t('更新内容')}
           url="https://github.com/wmwlwmwl/Lumin-SSH/releases"
         />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+          {$t('特别鸣谢')}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, padding: 18, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', background: 'var(--surface-base)', alignContent: 'start', maxHeight: 'min(420px, 48vh)', overflowY: 'auto', overflowX: 'hidden' }}>
+          {contributorsLoading
+            ? Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={`contributor-skeleton-${index}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 'var(--radius-md)', background: 'var(--surface-overlay)', border: '1px solid var(--border)' }}
+                >
+                  <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--surface-hover)', flexShrink: 0 }}></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
+                    <div style={{ width: 116, height: 16, borderRadius: 999, background: 'var(--surface-hover)' }}></div>
+                    <div style={{ width: 68, height: 12, borderRadius: 999, background: 'var(--surface-hover)' }}></div>
+                    <div style={{ width: 138, height: 14, borderRadius: 999, background: 'var(--surface-hover)' }}></div>
+                  </div>
+                </div>
+              ))
+            : contributors.map((item) => (
+                <div
+                  key={item.login}
+                  onClick={() => window.runtime?.BrowserOpenURL(item.profileUrl)}
+                  className="about-list-item"
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'all 0.2s', background: 'var(--surface-overlay)', border: '1px solid var(--border)', textAlign: 'left' }}
+                >
+                  <img
+                    src={item.avatar}
+                    alt={item.login}
+                    loading="lazy"
+                    style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-light)', boxShadow: 'var(--shadow-xs)', flexShrink: 0 }}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                      {item.login}
+                    </div>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <line x1="3" y1="12" x2="9" y2="12"></line>
+                        <line x1="15" y1="12" x2="21" y2="12"></line>
+                      </svg>
+                      {item.total}
+                    </div>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+                      <span style={{ color: 'var(--success)', fontWeight: 600 }}>+{item.additions.toLocaleString()} ++</span>
+                      <span style={{ color: 'var(--danger)', fontWeight: 600 }}>-{item.deletions.toLocaleString()} --</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+        </div>
       </div>
     </div>
   );

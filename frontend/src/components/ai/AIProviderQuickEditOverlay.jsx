@@ -198,7 +198,7 @@ function buildDraft(provider) {
   const providerDefinition = getAIProviderDefinition(provider?.provider || 'Compatible')
   const resolvedModel = typeof provider?.model === 'string' && provider.model.trim()
     ? provider.model.trim()
-    : providerDefinition.defaultModel
+    : ''
   const capability = providerDefinition.getModelCapability(resolvedModel)
 
   return {
@@ -207,7 +207,7 @@ function buildDraft(provider) {
     provider: providerDefinition.value,
     cacheStrategy: typeof provider?.cacheStrategy === 'string' && provider.cacheStrategy.trim()
       ? provider.cacheStrategy.trim()
-      : 'model',
+      : '5m',
     baseUrl: typeof provider?.baseUrl === 'string' ? provider.baseUrl : '',
     apiKey: typeof provider?.apiKey === 'string' ? provider.apiKey : '',
     model: resolvedModel,
@@ -325,7 +325,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   const { t, lang } = useTranslation()
   const [draft, setDraft] = useState(buildDraft())
   const [modelQuery, setModelQuery] = useState('')
-  const [modelOptions, setModelOptions] = useState(buildInitialModelOptions(getAIProviderDefinition('Compatible'), 'gpt-5.4'))
+  const [modelOptions, setModelOptions] = useState(buildInitialModelOptions(getAIProviderDefinition('Compatible'), ''))
   const [modelRefreshError, setModelRefreshError] = useState('')
   const [modelRefreshing, setModelRefreshing] = useState(false)
   const [providerMenuOpen, setProviderMenuOpen] = useState(false)
@@ -363,7 +363,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
   )
 
   const modelCapability = useMemo(() => {
-    const baseCapability = providerDefinition.getModelCapability(draft.model || providerDefinition.defaultModel)
+    const baseCapability = providerDefinition.getModelCapability(draft.model || '')
     return buildDisplayModelCapability(draft.provider, baseCapability)
   }, [draft.provider, providerDefinition, draft.model])
 
@@ -507,13 +507,6 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
         : normalizedModels
 
       setModelOptions(nextModels)
-
-      if (!selectedModel && nextModels[0]) {
-        setDraft((prev) => ({
-          ...prev,
-          model: nextModels[0],
-        }))
-      }
 
       return true
     } catch (error) {
@@ -697,13 +690,13 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     }
     const nextProviderDefinition = getAIProviderDefinition(nextProvider)
     setDraft((prev) => {
-      const nextModel = prev.model || nextProviderDefinition.defaultModel
+      const nextModel = typeof prev.model === 'string' ? prev.model.trim() : ''
       const nextCapability = nextProviderDefinition.getModelCapability(nextModel)
       return {
         ...prev,
         provider: nextProviderDefinition.value,
         model: nextModel,
-        cacheStrategy: nextProviderDefinition.supportsPromptCacheSettings ? (prev.cacheStrategy || 'model') : 'off',
+        cacheStrategy: prev.cacheStrategy || '5m',
         reasoningEffort: prev.reasoningEffort || nextCapability.reasoningEffort || 'disable',
         enableReasoningEffort: nextCapability.requiredReasoningBudget || nextCapability.requiredReasoningEffort
           ? true
@@ -712,7 +705,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
         modelMaxThinkingTokens: prev.modelMaxThinkingTokens || nextCapability.maxThinkingTokens || DEFAULT_MAX_THINKING_TOKENS,
       }
     })
-    setModelOptions(buildInitialModelOptions(nextProviderDefinition, draft.model || nextProviderDefinition.defaultModel))
+    setModelOptions(buildInitialModelOptions(nextProviderDefinition, typeof draft.model === 'string' ? draft.model.trim() : ''))
     setModelQuery('')
     setProviderMenuOpen(false)
   }
@@ -840,7 +833,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
     onSave?.({
       ...draft,
       provider: providerDefinition.value,
-      cacheStrategy: supportsPromptCacheSettings ? (draft.cacheStrategy || 'model') : 'off',
+      cacheStrategy: draft.cacheStrategy || '5m',
       dedicatedWebSearchEnabled: draft.dedicatedWebSearchEnabled,
       dedicatedWebSearchProviderId: draft.dedicatedWebSearchEnabled ? draft.dedicatedWebSearchProviderId : '',
       dedicatedProxyEnabled: draft.dedicatedProxyEnabled,
