@@ -1311,18 +1311,18 @@ export default function Terminal({
     }
     const normalizedText = String(rawCommand ?? '').replace(/\r\n?/g, '\n');
     const text = normalizedText.trim();
-    if (!text) {
-      return;
-    }
+    const isBlankSubmit = !text;
     const lineCount = normalizedText.split('\n').length;
-    const finalPayload = multiLineWrapEnabled && lineCount > 1
-      ? buildWrappedMultiLineCommand(normalizedText)
-      : text + '\r';
+    const finalPayload = isBlankSubmit
+      ? '\r'
+      : multiLineWrapEnabled && lineCount > 1
+        ? buildWrappedMultiLineCommand(normalizedText)
+        : text + '\r';
     AppGo.WriteTerminal(sessionId, finalPayload).catch((err) => {
       console.error('WriteTerminal failed:', err);
     });
     termRef.current?.scrollToBottom();
-    if (text.length > 1 && !/^\d+$/.test(text) && !isInteractivePromptText(text) && !awaitingPasswordRef.current) {
+    if (!isBlankSubmit && text.length > 1 && !/^\d+$/.test(text) && !isInteractivePromptText(text) && !awaitingPasswordRef.current) {
       window.dispatchEvent(new CustomEvent('ssh-command-history', {
         detail: { sessionId: serverId, command: text, time: new Date().toISOString(), source: 'input' }
       }));
