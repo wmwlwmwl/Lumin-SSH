@@ -224,6 +224,30 @@ function translateTerminalAssignmentError(message, t) {
   return t(normalizedMessage)
 }
 
+function buildQuotedComposerText(selectedText, currentValue, selectionStart, selectionEnd) {
+  const normalizedSelectedText = typeof selectedText === 'string' ? selectedText.trim() : ''
+  if (!normalizedSelectedText) {
+    return null
+  }
+  const safeCurrentValue = typeof currentValue === 'string' ? currentValue : ''
+  const safeSelectionStart = Number.isFinite(selectionStart) ? selectionStart : safeCurrentValue.length
+  const safeSelectionEnd = Number.isFinite(selectionEnd) ? selectionEnd : safeSelectionStart
+  const prefix = safeCurrentValue.slice(0, safeSelectionStart)
+  const suffix = safeCurrentValue.slice(safeSelectionEnd)
+  const quoteBody = normalizedSelectedText
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join('\n')
+  const separator = '-----'
+  const prefixSpacer = prefix && !prefix.endsWith('\n') ? '\n' : ''
+  const suffixSpacer = suffix && !suffix.startsWith('\n') ? '\n' : ''
+  const insertion = `${prefixSpacer}${quoteBody}\n${separator}\n${suffixSpacer}`
+  return {
+    nextValue: `${prefix}${insertion}${suffix}`,
+    nextCursorPosition: prefix.length + insertion.length - suffixSpacer.length,
+  }
+}
+
 export default function AIComposer({
   onSend,
   onCancel,
@@ -587,6 +611,30 @@ export default function AIComposer({
   }, [activeTerminalAssignmentCandidate, terminalAssignmentCandidates.length, terminalAssignmentOpen])
 
   useEffect(() => () => clearMentionDebounce(), [clearMentionDebounce])
+
+  useEffect(() => {
+    const handleQuoteSelection = (event) => {
+      if (isQueuedSubmissionBlocked) {
+        return
+      }
+      const selectedText = typeof event?.detail?.text === 'string' ? event.detail.text : ''
+      if (!selectedText) {
+        return
+      }
+      const textarea = textareaRef.current
+      const nextSelectionStart = textarea ? (textarea.selectionStart ?? value.length) : value.length
+      const nextSelectionEnd = textarea ? (textarea.selectionEnd ?? nextSelectionStart) : nextSelectionStart
+      const quotedComposerText = buildQuotedComposerText(selectedText, value, nextSelectionStart, nextSelectionEnd)
+      if (!quotedComposerText) {
+        return
+      }
+      setValue(quotedComposerText.nextValue)
+      focusTextAreaAt(quotedComposerText.nextCursorPosition)
+      closeInlineMenus()
+    }
+    window.addEventListener('ai-quote-selection', handleQuoteSelection)
+    return () => window.removeEventListener('ai-quote-selection', handleQuoteSelection)
+  }, [closeInlineMenus, focusTextAreaAt, isQueuedSubmissionBlocked, setValue, value])
 
   const loadSlashCommandSuggestions = useCallback((nextText, nextCursorPosition) => {
     if (isQueuedSubmissionBlocked) {

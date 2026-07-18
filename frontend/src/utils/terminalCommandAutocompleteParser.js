@@ -70,6 +70,21 @@ function splitShellSegments(raw) {
       continue
     }
 
+    if (character === '\n' || character === '\r') {
+      const boundaryEnd = character === '\r' && raw[index + 1] === '\n' ? index + 2 : index + 1
+      segments.push({
+        start: segmentStart,
+        end: index,
+        boundaryEnd,
+        separator: character,
+      })
+      segmentStart = boundaryEnd
+      if (boundaryEnd === index + 2) {
+        index += 1
+      }
+      continue
+    }
+
     if (character === ';' || character === '|') {
       segments.push({
         start: segmentStart,

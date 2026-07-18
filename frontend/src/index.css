@@ -4156,9 +4156,11 @@ body.theme-light .dashboard-server-editor {
 .term-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  min-height: 26px;
-  padding: 4px 8px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
   font-size: 11px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -4182,8 +4184,10 @@ body.theme-light .dashboard-server-editor {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   border-radius: var(--radius-sm);
   transition: var(--transition-fast);
   flex-shrink: 0;
@@ -4242,13 +4246,28 @@ body.theme-light .dashboard-server-editor {
 /* ── 终端底部命令输入栏 ── */
 .term-input-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
   padding: 6px 10px;
   background: var(--term-input-bar-bg);
   border-top: var(--term-input-bar-border);
   flex-shrink: 0;
   position: relative;
+}
+
+.term-input-bar > .tiptop {
+  align-self: flex-end;
+}
+
+.term-command-input {
+  resize: none;
+  min-height: 32px;
+  max-height: 132px;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
 }
 
 /* ── 终端容器 CSS 变量默认值（JS 主题切换时覆盖） ── */

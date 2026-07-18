@@ -97,6 +97,97 @@ function splitTrailingIncompleteEscapeSequence(input) {
   return { complete: input, carry: '' }
 }
 
+function getTextareaAutocompletePopupPosition(textarea, popupWidth = 760, popupHeight = 260) {
+  if (!textarea || typeof window === 'undefined' || typeof document === 'undefined') {
+    return null
+  }
+
+  const style = window.getComputedStyle(textarea)
+  const textareaRect = textarea.getBoundingClientRect()
+  const selectionStart = textarea.selectionStart ?? textarea.value.length
+
+  const mirror = document.createElement('div')
+  const marker = document.createElement('span')
+  const mirroredText = textarea.value.slice(0, selectionStart)
+
+  const mirroredProperties = [
+    'boxSizing',
+    'width',
+    'fontFamily',
+    'fontSize',
+    'fontWeight',
+    'fontStyle',
+    'letterSpacing',
+    'lineHeight',
+    'textTransform',
+    'textIndent',
+    'paddingTop',
+    'paddingRight',
+    'paddingBottom',
+    'paddingLeft',
+    'borderTopWidth',
+    'borderRightWidth',
+    'borderBottomWidth',
+    'borderLeftWidth',
+    'whiteSpace',
+    'wordBreak',
+    'overflowWrap',
+    'tabSize',
+  ]
+
+  mirror.style.position = 'fixed'
+  mirror.style.left = '0'
+  mirror.style.top = '0'
+  mirror.style.visibility = 'hidden'
+  mirror.style.pointerEvents = 'none'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.wordBreak = 'break-word'
+  mirror.style.overflowWrap = 'break-word'
+  mirror.style.overflow = 'hidden'
+
+  mirroredProperties.forEach((property) => {
+    mirror.style[property] = style[property]
+  })
+
+  mirror.textContent = mirroredText
+  marker.textContent = '\u200b'
+  mirror.appendChild(marker)
+  document.body.appendChild(mirror)
+
+  const mirrorRect = mirror.getBoundingClientRect()
+  const markerRect = marker.getBoundingClientRect()
+  const width = Math.min(Math.max(textareaRect.width, 420), window.innerWidth - 16)
+
+  let left = textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft
+  const top = textareaRect.bottom + 8
+  const maxHeight = Math.max(120, window.innerHeight - top - 8)
+
+  if (left + width > window.innerWidth - 8) {
+    left = window.innerWidth - width - 8
+  }
+  if (left < 8) {
+    left = 8
+  }
+
+  document.body.removeChild(mirror)
+
+  return {
+    left,
+    top,
+    width,
+    maxHeight,
+  }
+}
+
+function buildWrappedMultiLineCommand(command) {
+  const source = String(command ?? '').replace(/\r\n?/g, '\n')
+  let marker = '__LUMIN_WRAP_EOF__'
+  while (source.includes(marker)) {
+    marker += '_X'
+  }
+  return `bash <<'${marker}'\n${source}\n${marker}\n`
+}
+
 // 命令栏按钮样式辅助函数
 const btnStyle = (color) => ({
   border: '1px solid var(--border)',
@@ -168,6 +259,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     quickLoaded: false,
   });
   const commandAutocompleteListRef            = useRef(null);
+  const [commandAutocompletePopupPos, setCommandAutocompletePopupPos] = useState(null);
 
   // ── 点击快捷命令弹窗外关闭（document 级 mousedown，不阻塞 click） ──
   useEffect(() => {
@@ -1083,6 +1175,36 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const isClosed     = status === 'closed';
   const statusColor  = isConnected ? 'var(--success)' : isConnecting ? 'var(--warning)' : isError ? 'var(--danger)' : 'var(--text-tertiary)';
   const cmdTrimmed   = cmdInput.trim();
+  const [multiLineWrapEnabled, setMultiLineWrapEnabled] = useState(() => localStorage.getItem('terminalMultiLineWrapEnabled') !== 'false');
+
+  const syncCommandInputHeight = useCallback(() => {
+    const element = cmdInputRef.current
+    if (!element) return
+    element.style.height = '32px'
+    element.style.overflowY = 'hidden'
+    element.scrollTop = 0
+    if (!element.value) {
+      return
+    }
+    const scrollHeight = Math.max(element.scrollHeight, 32)
+    const nextHeight = Math.min(scrollHeight, 132)
+    element.style.height = `${nextHeight}px`
+    if (scrollHeight > 132) {
+      element.style.overflowY = 'auto'
+    }
+  }, [])
+
+  const toggleMultiLineWrap = useCallback(() => {
+    setMultiLineWrapEnabled((previous) => {
+      const next = !previous
+      localStorage.setItem('terminalMultiLineWrapEnabled', next ? 'true' : 'false')
+      return next
+    })
+    requestAnimationFrame(() => {
+      cmdInputRef.current?.focus()
+      syncCommandInputHeight()
+    })
+  }, [syncCommandInputHeight])
 
   // 连接成功时触发一次性涟漪动画
   useEffect(() => {
@@ -1199,19 +1321,27 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   };
 
   const executeCommand = (directCmd) => {
-    const cmd = directCmd || cmdInput;
+    const rawCommand = directCmd ?? cmdInput;
     if (!isConnected) {
       if (isClosed || isError) {
         window.dispatchEvent(new CustomEvent('ssh-reconnect-trigger', { detail: sessionId }));
       }
       return;
     }
-    const text = (cmd ?? '').trim();
-    AppGo.WriteTerminal(sessionId, text + '\r').catch((err) => {
+    const normalizedText = String(rawCommand ?? '').replace(/\r\n?/g, '\n');
+    const text = normalizedText.trim();
+    if (!text) {
+      return;
+    }
+    const lineCount = normalizedText.split('\n').length;
+    const finalPayload = multiLineWrapEnabled && lineCount > 1
+      ? buildWrappedMultiLineCommand(normalizedText)
+      : text + '\r';
+    AppGo.WriteTerminal(sessionId, finalPayload).catch((err) => {
       console.error('WriteTerminal failed:', err);
     });
     termRef.current?.scrollToBottom();
-    if (text && text.length > 1 && !/^\d+$/.test(text) && !isInteractivePromptText(text) && !awaitingPasswordRef.current) {
+    if (text.length > 1 && !/^\d+$/.test(text) && !isInteractivePromptText(text) && !awaitingPasswordRef.current) {
       window.dispatchEvent(new CustomEvent('ssh-command-history', {
         detail: { sessionId: serverId, command: text, time: new Date().toISOString(), source: 'input' }
       }));
@@ -1256,8 +1386,16 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     commandAutocompleteKeyboardNavigationRef.current = false;
     clearCommandAutocompleteDebounce();
     clearCommandAutocompleteBlurTimer();
+    setCommandAutocompletePopupPos(null);
     setCommandAutocomplete(createCommandAutocompleteState());
   }, [clearCommandAutocompleteBlurTimer, clearCommandAutocompleteDebounce]);
+
+  const updateCommandAutocompletePopupPosition = useCallback(() => {
+    const nextPopupPos = getTextareaAutocompletePopupPosition(cmdInputRef.current)
+    if (nextPopupPos) {
+      setCommandAutocompletePopupPos(nextPopupPos)
+    }
+  }, [])
 
   const ensureCommandAutocompleteData = useCallback(async () => {
     const cache = commandAutocompleteDataRef.current;
@@ -1331,6 +1469,8 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       return [];
     }
 
+    updateCommandAutocompletePopupPosition();
+
     const normalizedValue = String(nextValue || '');
     if (!normalizedValue.trim()) {
       closeCommandAutocomplete();
@@ -1387,7 +1527,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       selectedIndex: resolvedItems.length > 0 ? 0 : -1,
     }));
     return resolvedItems;
-  }, [closeCommandAutocomplete, ensureCommandAutocompleteData, sessionId, showCommands, showHistory, terminalCwd]);
+  }, [closeCommandAutocomplete, ensureCommandAutocompleteData, sessionId, showCommands, showHistory, terminalCwd, updateCommandAutocompletePopupPosition]);
 
   const scheduleCommandAutocompleteSuggestions = useCallback((nextValue) => {
     clearCommandAutocompleteDebounce();
@@ -1491,6 +1631,32 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
     clearCommandAutocompleteDebounce();
     clearCommandAutocompleteBlurTimer();
   }, [clearCommandAutocompleteBlurTimer, clearCommandAutocompleteDebounce]);
+
+  useLayoutEffect(() => {
+    syncCommandInputHeight()
+    if (commandAutocomplete.open || commandAutocomplete.loading) {
+      updateCommandAutocompletePopupPosition()
+    }
+  }, [cmdInput, commandAutocomplete.loading, commandAutocomplete.open, syncCommandInputHeight, updateCommandAutocompletePopupPosition])
+
+  useEffect(() => {
+    if (!commandAutocomplete.open && !commandAutocomplete.loading) {
+      return undefined
+    }
+    const handleWindowChange = () => {
+      updateCommandAutocompletePopupPosition()
+    }
+    window.addEventListener('resize', handleWindowChange)
+    window.addEventListener('scroll', handleWindowChange, true)
+    return () => {
+      window.removeEventListener('resize', handleWindowChange)
+      window.removeEventListener('scroll', handleWindowChange, true)
+    }
+  }, [commandAutocomplete.loading, commandAutocomplete.open, updateCommandAutocompletePopupPosition])
+
+  useLayoutEffect(() => {
+    syncCommandInputHeight()
+  }, [cmdInput, syncCommandInputHeight])
 
   useLayoutEffect(() => {
     if (!commandAutocompleteKeyboardNavigationRef.current) {
@@ -1599,10 +1765,12 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       {/* ── 底部命令输入栏 ── */}
       <div className="term-input-bar">
         {/* 命令输入框 */}
-        <input
+        <textarea
           ref={cmdInputRef}
-          className="input"
+          className="input term-command-input"
           value={cmdInput}
+          rows={1}
+          spellCheck={false}
           autoComplete="off"
           onChange={e => {
             const nextValue = e.target.value;
@@ -1614,6 +1782,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           onFocus={() => {
             commandAutocompleteFocusedRef.current = true;
             clearCommandAutocompleteBlurTimer();
+            updateCommandAutocompletePopupPosition();
             if (cmdInput.trim()) {
               scheduleCommandAutocompleteSuggestions(cmdInput);
             }
@@ -1624,6 +1793,19 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             commandAutocompleteBlurTimerRef.current = setTimeout(() => {
               closeCommandAutocomplete();
             }, 120);
+          }}
+          onScroll={() => {
+            if (commandAutocomplete.open || commandAutocomplete.loading) {
+              updateCommandAutocompletePopupPosition();
+            }
+          }}
+          onSelect={() => {
+            if (commandAutocomplete.open || commandAutocomplete.loading) {
+              updateCommandAutocompletePopupPosition();
+            }
+            if (commandAutocompleteFocusedRef.current && cmdInput.trim()) {
+              scheduleCommandAutocompleteSuggestions(cmdInput);
+            }
           }}
           onKeyDown={async (e) => {
             if (commandAutocomplete.open && e.key === 'ArrowDown') {
@@ -1670,6 +1852,15 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
               return;
             }
 
+            if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+              requestAnimationFrame(() => {
+                if (commandAutocompleteFocusedRef.current && cmdInputRef.current) {
+                  updateCommandAutocompletePopupPosition();
+                  void loadCommandAutocompleteSuggestions(cmdInputRef.current.value);
+                }
+              });
+            }
+
             if (e.key === 'Escape') {
               if (commandAutocomplete.open) {
                 e.preventDefault();
@@ -1680,16 +1871,21 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             }
 
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              if (e.shiftKey || e.ctrlKey) {
+                return;
+              }
+              e.preventDefault();
               closeCommandAutocomplete();
               executeCommand();
             }
           }}
-          placeholder={`${t('输入命令')}(/ ${t('快捷命令')})`}
+          placeholder={t('输入命令(/ 快捷命令), 按Ctrl+回车 或 Shift+回车 换行')}
           style={{
             flex: 1,
             fontSize: 12,
             fontFamily: 'var(--font-terminal)',
             padding: '7px 10px',
+            height: 32,
             minHeight: 32,
             background: 'var(--term-input-bg)',
             borderColor: cmdInput ? 'var(--border-focus)' : 'var(--term-btn-border)',
@@ -1745,19 +1941,32 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             <Clipboard size={13} />
           </button>
         </Tiptop>
+
+        <Tiptop text={multiLineWrapEnabled ? t('函数/变量作用域:命令内部') : t('函数/变量作用域:终端会话')}>
+          <button
+            onClick={toggleMultiLineWrap}
+            aria-label={multiLineWrapEnabled ? t('函数/变量作用域:命令内部') : t('函数/变量作用域:终端会话')}
+            className={`term-btn${multiLineWrapEnabled ? ' active' : ''}`}
+            style={{ padding: 0, width: 32, minWidth: 32, justifyContent: 'center' }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700 }}>
+              &gt;_
+            </span>
+          </button>
+        </Tiptop>
       </div>
       </div>
 
-      {(commandAutocomplete.open || commandAutocomplete.loading) && !showHistory && !showCommands && (
+      {(commandAutocomplete.open || commandAutocomplete.loading) && !showHistory && !showCommands && commandAutocompletePopupPos && (
         <div
           className="term-popup"
           onMouseDown={(e) => e.preventDefault()}
           style={{
-            position: 'absolute',
-            left: 8,
-            bottom: 42,
-            width: 'min(760px, calc(100% - 16px))',
-            maxHeight: 260,
+            position: 'fixed',
+            left: commandAutocompletePopupPos.left,
+            top: commandAutocompletePopupPos.top,
+            width: commandAutocompletePopupPos.width,
+            maxHeight: commandAutocompletePopupPos.maxHeight ?? 260,
             display: 'flex',
             flexDirection: 'column',
             zIndex: Z.POPUP,
@@ -1777,7 +1986,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
             <span>{t('命令')}</span>
             <span style={{ color: 'var(--term-muted)', fontFamily: 'var(--font-mono)' }}>Tab</span>
           </div>
-          <div ref={commandAutocompleteListRef} style={{ maxHeight: 220, overflowY: 'auto' }}>
+          <div ref={commandAutocompleteListRef} style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden' }}>
             {commandAutocomplete.loading && commandAutocomplete.items.length === 0 ? (
               <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--term-muted)' }}>
                 {t('正在搜索...')}
@@ -1801,6 +2010,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                   }}
                   style={{
                     width: '100%',
+                    minWidth: 0,
                     display: 'grid',
                     gap: 4,
                     padding: '9px 12px',
@@ -1810,6 +2020,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                     background: isSelected ? 'rgba(59,130,246,0.12)' : 'transparent',
                     color: 'var(--term-input-color)',
                     cursor: 'pointer',
+                    overflow: 'hidden',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
