@@ -603,7 +603,6 @@ export default {
   " 个会话": "rozhovory",
   "已发送": "Odesláno",
   "＋ 添加命令": "+ Přidat příkaz",
-  "Ctrl+S 保存": "Ctrl+S Uložit",
   "点击上方按钮添加命令": "Kliknutím na tlačítko výše přidáte příkaz",
   "分组名称": "Název skupiny",
   "保存名称": "uložit jméno",

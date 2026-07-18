@@ -603,7 +603,6 @@ export default {
   " 个会话": "konuşmalar",
   "已发送": "Gönderilmiş",
   "＋ 添加命令": "+ Komut ekle",
-  "Ctrl+S 保存": "Ctrl+S Kaydet",
   "点击上方按钮添加命令": "Komut eklemek için yukarıdaki düğmeye tıklayın",
   "分组名称": "Grup adı",
   "保存名称": "adı kaydet",

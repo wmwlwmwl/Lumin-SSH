@@ -603,7 +603,6 @@ export default {
   " 个会话": "gesprekken",
   "已发送": "Verstuurd",
   "＋ 添加命令": "+ Commando toevoegen",
-  "Ctrl+S 保存": "Ctrl+S Opslaan",
   "点击上方按钮添加命令": "Klik op de knop hierboven om een ​​opdracht toe te voegen",
   "分组名称": "Groepsnaam",
   "保存名称": "naam opslaan",

@@ -603,7 +603,6 @@ export default {
   " 个会话": "conversatii",
   "已发送": "Trimis",
   "＋ 添加命令": "+ Adăugați comanda",
-  "Ctrl+S 保存": "Ctrl+S Salvare",
   "点击上方按钮添加命令": "Faceți clic pe butonul de mai sus pentru a adăuga o comandă",
   "分组名称": "Numele grupului",
   "保存名称": "salvează numele",

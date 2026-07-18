@@ -18,6 +18,7 @@ import {
 import CredentialsModal from './components/CredentialsModal.jsx';
 import Toast from './components/Toast.jsx';
 import CommandHistory from './components/CommandHistory.jsx';
+import QuickCommands from './components/QuickCommands.jsx';
 import ProcessPage from './components/ProcessPage.jsx';
 import NetworkPage from './components/NetworkPage.jsx';
 import GlobalDialog from './components/GlobalDialog.jsx';
@@ -501,6 +502,10 @@ export default function App() {
     return savedSplitPosition === 'left' || savedSplitPosition === 'bottom' ? savedSplitPosition : 'bottom';
   });
   const [fileManagerCollapsed, setFileManagerCollapsed] = useState(() => localStorage.getItem('fileManagerCollapsed') === 'true');
+  const [showQuickCommands, setShowQuickCommands] = useState(false);
+  const quickCmdsRef = useRef(null);
+  const showQuickCommandsRef = useRef(false);
+  useEffect(() => { showQuickCommandsRef.current = showQuickCommands; }, [showQuickCommands]);
   const [creatingTerminalSessionId, setCreatingTerminalSessionId] = useState(null);
   const creatingTerminalRef = useRef(null);
   
@@ -967,6 +972,17 @@ export default function App() {
     setBottomSplitHeight(h);
     bottomSplitHeightRef.current = h;
   }, []);
+  const handleQuickCommandsOpenChange = useCallback((open) => {
+    if (open) {
+      setShowQuickCommands(true);
+      return;
+    }
+    if (quickCmdsRef.current?.isDirty?.()) {
+      quickCmdsRef.current.showCloseConfirm();
+      return;
+    }
+    setShowQuickCommands(false);
+  }, []);
   const updateProbePanelWidth = useCallback((w) => {
     const next = clampPanelWidth(w, PROBE_PANEL_MIN);
     setProbePanelWidth(next);
@@ -1426,7 +1442,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         } else if (direction === 'bottom') {
           if (shouldCollapse) {
             updateBottomSplitHeight(startHeight);
-            setFileManagerCollapsedPersistent(true);
+            // 快捷命令：拖到极限只回弹高度，不自动关闭（关闭用面板 X）
+            if (!showQuickCommandsRef.current) {
+              setFileManagerCollapsedPersistent(true);
+            }
           } else {
             localStorage.setItem('bottomSplitHeight', bottomSplitHeightRef.current.toString());
           }
@@ -5472,8 +5491,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       && contentTab === 'files';
                     const showLeftFileManager = showSplitFileManager && fileManagerPosition === 'left' && !fileManagerCollapsed;
                     const showBottomFileManager = showSplitFileManager && fileManagerPosition === 'bottom' && !fileManagerCollapsed;
+                    const showBottomQuickCommands = showQuickCommands
+                      && s.status === 'connected'
+                      && activeSessionId === s.id
+                      && contentTab === 'terminal';
+                    const showBottomDockPanel = showBottomFileManager || showBottomQuickCommands;
                     const showLeftCollapseStrip = showSplitFileManager && fileManagerPosition === 'left' && fileManagerCollapsed;
-                    const showBottomCollapseStrip = showSplitFileManager && fileManagerPosition === 'bottom' && fileManagerCollapsed;
+                    const showBottomCollapseStrip = showSplitFileManager && fileManagerPosition === 'bottom' && fileManagerCollapsed && !showBottomQuickCommands;
                     const showFileManagerPanel = showTabFileManager || showLeftFileManager || showBottomFileManager;
                     return (
                       <div
@@ -5542,12 +5566,69 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                                 <ChevronLeft size={14} />
                               </div>
                             )}
-                            {showBottomFileManager && collapseDragIntent === 'bottom' && (
+                            {showBottomFileManager && !showBottomQuickCommands && collapseDragIntent === 'bottom' && (
                               <div className="panel-collapse-armed-zone panel-collapse-armed-zone-horizontal panel-collapse-armed-zone-top">
                                 <ChevronDown size={14} />
                               </div>
                             )}
                             {renderSessionFileManagers(s)}
+                          </div>
+                        )}
+                        {showBottomQuickCommands && (
+                          <div
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              position: 'absolute',
+                              // 左侧文件管理器打开时，命令面板只占右侧，不盖住文件管理器
+                              left: showLeftFileManager ? `${leftSplitWidth + 4}px` : 0,
+                              right: 0,
+                              bottom: 0,
+                              height: `${bottomSplitHeight}px`,
+                              minHeight: `${FILE_MANAGER_BOTTOM_MIN}px`,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              overflow: 'visible',
+                              background: 'var(--surface-base)',
+                              borderTop: '1px solid var(--border)',
+                              // 高于终端区，避免输入栏按钮被拖条拦截
+                              zIndex: Z.PANEL_BUTTON + 4,
+                            }}
+                          >
+                            {/* 拖条放在面板顶部内部，不再与终端「历史/命令」按钮重叠 */}
+                            <div
+                              className={`split-resizer-h${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                startDrag(e, 'bottom');
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                              aria-label={t('调整快捷命令高度')}
+                              style={{
+                                position: 'absolute',
+                                left: 0,
+                                right: 0,
+                                top: -2,
+                                height: 6,
+                                zIndex: 5,
+                                margin: 0,
+                              }}
+                            />
+                            {collapseDragIntent === 'bottom' && (
+                              <div className="panel-collapse-armed-zone panel-collapse-armed-zone-horizontal panel-collapse-armed-zone-top">
+                                <ChevronDown size={14} />
+                              </div>
+                            )}
+                            <QuickCommands
+                              ref={quickCmdsRef}
+                              sessionId={activeTerminalId || s.id}
+                              addToast={addToast}
+                              connectedSessions={connectedSessions}
+                              onClose={() => setShowQuickCommands(false)}
+                            />
                           </div>
                         )}
                         {showLeftFileManager && (
@@ -5563,18 +5644,21 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               position: 'absolute',
                               left: `${leftSplitWidth - 2}px`,
                               top: 0,
-                              bottom: 0,
-                              zIndex: Z.PANEL_BUTTON,
+                              // 底部有命令面板时，竖拖条不要被底部面板盖住
+                              bottom: showBottomQuickCommands ? `${bottomSplitHeight}px` : 0,
+                              zIndex: Z.PANEL_BUTTON + 5,
                               marginLeft: 0,
                               marginRight: 0,
                             }}
                           />
                         )}
-                        {showBottomFileManager && (
+                        {/* 仅文件管理器底部模式用外部分隔条；快捷命令用面板内拖条 */}
+                        {showBottomFileManager && !showBottomQuickCommands && (
                           <div
                             className={`split-resizer-h${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
                             onMouseDown={(e) => startDrag(e, 'bottom')}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               if (shouldIgnoreResizerClick()) return;
                               setFileManagerCollapsedPersistent(true);
                             }}
@@ -5600,7 +5684,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                             minHeight: 0,
                             overflow: 'hidden',
                             marginLeft: showLeftFileManager ? `${leftSplitWidth + 4}px` : 0,
-                            marginBottom: showBottomFileManager ? `${bottomSplitHeight + 4}px` : 0,
+                            marginBottom: showBottomDockPanel ? `${bottomSplitHeight + 4}px` : 0,
                           }}
                         >
                           <div style={{ display: (contentTab === 'terminal' || s.status !== 'connected') ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', position: 'relative' }}>
@@ -5699,6 +5783,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                                             isActive={isTermVisible}
                                             serverName={s.serverName}
                                             connectedSessions={connectedSessions}
+                                            showCommands={showQuickCommands && isTermVisible}
+                                            onQuickCommandsOpenChange={handleQuickCommandsOpenChange}
+                                            quickCmdsRef={quickCmdsRef}
                                           />
                                         </ErrorBoundary>
                                       </div>
@@ -5725,6 +5812,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                                         isActive={activeSessionId === s.id && activeTerminalId === t.id && (contentTab === 'terminal' || fileManagerPosition !== 'tab')}
                                         serverName={s.serverName}
                                         connectedSessions={connectedSessions}
+                                        showCommands={showQuickCommands && activeSessionId === s.id && activeTerminalId === t.id}
+                                        onQuickCommandsOpenChange={handleQuickCommandsOpenChange}
+                                        quickCmdsRef={quickCmdsRef}
                                       />
                                     </ErrorBoundary>
                                   </div>

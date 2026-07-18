@@ -603,7 +603,6 @@ export default {
   " 个会话": "cuộc trò chuyện",
   "已发送": "Đã gửi",
   "＋ 添加命令": "+ Thêm lệnh",
-  "Ctrl+S 保存": "Ctrl+S Lưu",
   "点击上方按钮添加命令": "Bấm vào nút bên trên để thêm lệnh",
   "分组名称": "Tên nhóm",
   "保存名称": "lưu tên",

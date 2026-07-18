@@ -15,7 +15,6 @@ import {
   normalizeQuickCommandItems,
   normalizeRemoteAbsolutePath,
 } from '../utils/terminalCommandAutocomplete.js';
-import QuickCommands from './QuickCommands.jsx';
 import Tiptop from './Tiptop.jsx';
 import '@xterm/xterm/css/xterm.css';
 import { useTranslation } from '../i18n.js';
@@ -208,7 +207,18 @@ const iconBtnStyle = (color) => ({
   transition: 'var(--transition-fast)',
 });
 
-export default function Terminal({ sessionId, serverId, historyServerId, status, isActive, serverName, connectedSessions = [] }) {
+export default function Terminal({
+  sessionId,
+  serverId,
+  historyServerId,
+  status,
+  isActive,
+  serverName,
+  connectedSessions = [],
+  showCommands = false,
+  onQuickCommandsOpenChange,
+  quickCmdsRef,
+}) {
   const { t } = useTranslation();
   const containerRef   = useRef(null);
   const wrapperRef     = useRef(null);
@@ -234,11 +244,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const historyBtnRef                         = useRef(null);
   const historyScrollRef                      = useRef(null);
   const [historyPopupPos, setHistoryPopupPos] = useState(null);
-  const [showCommands, setShowCommands]       = useState(false);
-  const [commandsPopupPos, setCommandsPopupPos] = useState(null);
   const commandsBtnRef                        = useRef(null);
-  const quickCmdsRef                          = useRef(null);
-  const quickCmdsPopupRef                     = useRef(null);
   const historyPopupRef                       = useRef(null);
   const pendingCmdRef                         = useRef('');
   const awaitingPasswordRef                   = useRef(false); // 检测到密码提示后，下一行输入不记入命令历史
@@ -260,23 +266,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   });
   const commandAutocompleteListRef            = useRef(null);
   const [commandAutocompletePopupPos, setCommandAutocompletePopupPos] = useState(null);
-
-  // ── 点击快捷命令弹窗外关闭（document 级 mousedown，不阻塞 click） ──
-  useEffect(() => {
-    if (!showCommands) return;
-    const handler = (e) => {
-      if (quickCmdsPopupRef.current && !quickCmdsPopupRef.current.contains(e.target)) {
-        if (quickCmdsRef.current?.isDirty?.()) {
-          quickCmdsRef.current.showCloseConfirm();
-        } else {
-          setShowCommands(false);
-          setCommandsPopupPos(null);
-        }
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showCommands]);
 
   // ── 点击历史弹窗外关闭（document 级 mousedown） ──
   useEffect(() => {
@@ -1283,7 +1272,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
           bottom: window.innerHeight - rect.top + 4,
         });
       }
-      if (showCommands) { setShowCommands(false); setCommandsPopupPos(null); }
+      // 历史弹窗是浮动层，不再收起底部快捷命令面板
     } else {
       setHistoryPopupPos(null);
     }
@@ -1293,24 +1282,16 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
   const toggleCommands = () => {
     const willShow = !showCommands;
     if (willShow) {
-      const rect = commandsBtnRef.current?.getBoundingClientRect();
-      if (rect) {
-        setCommandsPopupPos({
-          left: Math.max(8, Math.min(rect.right - 680, window.innerWidth - 690)),
-          bottom: window.innerHeight - rect.top + 4,
-        });
-      }
       if (showHistory) { setShowHistory(false); setHistoryPopupPos(null); }
-      setShowCommands(true);
-    } else {
-      // 关闭面板时检查是否有未保存的修改
-      if (quickCmdsRef.current?.isDirty?.()) {
-        quickCmdsRef.current.showCloseConfirm();
-        return; // 让 onClose 回调来关闭
-      }
-      setCommandsPopupPos(null);
-      setShowCommands(false);
+      onQuickCommandsOpenChange?.(true);
+      return;
     }
+    // 关闭面板时检查是否有未保存的修改
+    if (quickCmdsRef.current?.isDirty?.()) {
+      quickCmdsRef.current.showCloseConfirm();
+      return; // 让 onClose 回调来关闭
+    }
+    onQuickCommandsOpenChange?.(false);
   };
 
   const selectHistoryCmd = (cmd) => {
@@ -1896,7 +1877,12 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         <Tiptop text={t('历史指令')}>
           <button
             ref={historyBtnRef}
-            onClick={toggleHistory}
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleHistory();
+            }}
             aria-label={t('历史指令')}
             className={`term-btn${showHistory ? ' active' : ''}`}
           >
@@ -1909,7 +1895,12 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
         <Tiptop text={t('快捷命令')}>
           <button
             ref={commandsBtnRef}
-            onClick={toggleCommands}
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleCommands();
+            }}
             aria-label={t('快捷命令')}
             className={`term-btn${showCommands ? ' active' : ''}`}
           >
@@ -2217,20 +2208,6 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
                 </button>
               </div>
             </div>
-          </div>
-      )}
-
-      {/* ── 快捷命令弹窗（fixed 定位，不受 overflow:hidden 裁剪） ── */}
-      {showCommands && commandsPopupPos && (
-        <div ref={quickCmdsPopupRef} className="term-popup" style={{
-            left: commandsPopupPos.left,
-            bottom: commandsPopupPos.bottom,
-            width: 680,
-            height: 420,
-            zIndex: Z.POPUP,
-            overflow: 'hidden',
-          }}>
-            <QuickCommands ref={quickCmdsRef} sessionId={sessionId} addToast={() => {}} connectedSessions={connectedSessions} onClose={() => { setShowCommands(false); setCommandsPopupPos(null); }} />
           </div>
       )}
 

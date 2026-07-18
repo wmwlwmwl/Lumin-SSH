@@ -603,7 +603,6 @@ export default {
   " 个会话": "conversazioni",
   "已发送": "Inviato",
   "＋ 添加命令": "+ Aggiungi comando",
-  "Ctrl+S 保存": "Ctrl+S Salva",
   "点击上方按钮添加命令": "Fare clic sul pulsante in alto per aggiungere un comando",
   "分组名称": "Nome del gruppo",
   "保存名称": "salva nome",

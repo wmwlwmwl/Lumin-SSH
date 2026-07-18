@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { Folder, FolderPlus, Zap, Save, Pencil, Trash2, Rocket, SquarePen } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Folder, FolderPlus, Zap, Save, Pencil, Trash2, Rocket, SquarePen, X } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import { useTranslation } from '../i18n.js';
 import Tiptop from './Tiptop.jsx';
-import { getModKey } from '../utils/platform.js';
 import { Z } from '../constants/zIndex';
 import { getTerminalTheme } from '../utils/theme.js';
 
@@ -246,8 +246,11 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
   const [selectedPath, setSelectedPath] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [sendTarget, setSendTarget] = useState('current'); // 'current' | 'all'
-  const [quickCmd, setQuickCmd] = useState('');
-  const [quickAddCR, setQuickAddCR] = useState(true);
+  // 命令编辑器（悬浮页，替代原底部快速命令栏）
+  const [showCmdEditor, setShowCmdEditor] = useState(false);
+  const [cmdEditorText, setCmdEditorText] = useState('');
+  const [cmdEditorAddCR, setCmdEditorAddCR] = useState(true);
+  const [cmdEditorShowOpts, setCmdEditorShowOpts] = useState(false);
 
   // 编辑/添加对话框
   const [dialog, setDialog] = useState(null); // { type:'add'|'edit', groupPath?, item? }
@@ -393,13 +396,16 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
 
   // 选中项变化时同步本地编辑状态
   useEffect(() => {
-    if (selectedItem?.type === 'group') {
-      setEditGroupName(selectedItem.name || '');
-    } else if (selectedItem && !selectedItem.children) {
-      setEditCmdName(selectedItem.name || '');
-      setEditCmdText(selectedItem.command || '');
+    if (!selectedPath) return;
+    const { item } = resolvePath(commands, selectedPath);
+    if (!item) return;
+    if (item.type === 'group') {
+      setEditGroupName(item.name || '');
+    } else if (!item.children) {
+      setEditCmdName(item.name || '');
+      setEditCmdText(item.command || '');
     }
-  }, [selectedPath]);
+  }, [selectedPath, commands]);
 
   // 组件卸载时自动保存未持久化的编辑
   const commandsRef = useRef(commands);
@@ -423,8 +429,9 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
       setHistoryDropdown(null);
       setHistorySearch('');
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    // 用 click 捕获，避免 mousedown 阶段干扰面板内其它控件
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
   }, [historyDropdown]);
 
   // ── 持久化到文件（保存 + 重新加载，确保双向一致）──
@@ -776,6 +783,9 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
       const list = cloneAlongPath(commands, selectedPath);
       const r = resolvePath(list, selectedPath);
       r.parent[r.idx] = { ...r.parent[r.idx], ...newItem };
+      setEditCmdName(newItem.name);
+      setEditCmdText(newItem.command);
+      setDirty(false);
       save(list);
     }
     setDialog(null);
@@ -826,11 +836,12 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
     }
   };
 
-  // ── 发送临时命令（不保存） ──────────────────────────
-  const sendQuick = () => {
-    const cmd = quickCmd.trim();
-    if (!cmd) return;
-    const finalCmd = quickAddCR ? cmd + '\r' : cmd;
+  // ── 命令编辑器：发送临时命令（不保存） ────────────────
+  const sendEditorCommand = () => {
+    const cmd = cmdEditorText.replace(/\r\n?/g, '\n');
+    const text = cmd.trim();
+    if (!text) return;
+    const finalCmd = cmdEditorAddCR ? (text + '\r') : text;
     if (sendTarget === 'all' && connectedSessions.length > 0) {
       connectedSessions.forEach(s => AppGo.WriteTerminal(s.id, finalCmd).catch((err) => {
         console.error('WriteTerminal failed:', err);
@@ -842,7 +853,6 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
       });
       if (addToast) addToast(t('已发送'), 'info', 1500);
     }
-    setQuickCmd('');
   };
 
   // ── 插入参数按钮 ────────────────────────────────────
@@ -879,7 +889,10 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.popupBg, fontFamily: 'var(--font-ui)' }}>
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.popupBg, fontFamily: 'var(--font-ui)', overflow: 'hidden' }}
+    >
       {/* ── 工具栏 ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
@@ -904,12 +917,142 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
           className="btn btn-secondary btn-sm"
           onClick={() => { closeContextMenu(); setDialog({ type: 'addGroup', contextPath: '', parentList: commands }); setDlgName(''); setDlgCmd(''); setDlgAddCR(true); }}
         ><FolderPlus size={14} /> {t('添加分组')}</button>
+        <button
+          type="button"
+          className={`btn btn-secondary btn-sm${showCmdEditor ? ' active' : ''}`}
+          aria-pressed={showCmdEditor}
+          onClick={() => {
+            closeContextMenu();
+            setShowCmdEditor((v) => !v);
+            setCmdEditorShowOpts(false);
+          }}
+          style={showCmdEditor ? {
+            color: 'var(--text-primary)',
+            background: 'var(--surface-active)',
+            borderColor: 'var(--accent)',
+          } : undefined}
+        >{t('命令编辑器')}</button>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 10, color: C.mutedColor }}>{t('Ctrl+S 保存')}</span>
+        {onClose && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              if (dirty) {
+                setConfirmUnsaved({ close: true });
+                return;
+              }
+              onClose();
+            }}
+            aria-label={t('关闭')}
+            style={{ padding: '2px 6px' }}
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
 
-      {/* ── 主体：左右分栏 ── */}
+      {/* ── 主体：左右分栏 / 命令编辑器 ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        {showCmdEditor ? (
+          /* 内嵌命令编辑器（占满面板，不居中弹窗） */
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+            <div style={{ padding: 12, flex: 1, minHeight: 0, display: 'flex' }}>
+              <textarea
+                value={cmdEditorText}
+                onChange={(e) => setCmdEditorText(e.target.value)}
+                autoFocus
+                spellCheck={false}
+                placeholder={t('在此输入要发送的命令…')}
+                style={{
+                  ...inputStyle,
+                  flex: 1,
+                  width: '100%',
+                  minHeight: 0,
+                  resize: 'none',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setShowCmdEditor(false);
+                    setCmdEditorShowOpts(false);
+                  }
+                }}
+              />
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 12px',
+              borderTop: '1px solid var(--border-subtle)',
+              flexShrink: 0,
+              position: 'relative',
+            }}>
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setCmdEditorShowOpts((v) => !v)}
+                >{t('选项')}</button>
+                {cmdEditorShowOpts && (
+                  <div
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      bottom: 'calc(100% + 6px)',
+                      zIndex: 2,
+                      minWidth: 180,
+                      padding: '8px 10px',
+                      background: C.popupBg,
+                      border: '1px solid ' + C.btnBorder,
+                      borderRadius: 6,
+                      boxShadow: 'var(--shadow-md)',
+                    }}
+                  >
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      fontSize: 12, color: C.inputColor, cursor: 'pointer',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={cmdEditorAddCR}
+                        onChange={(e) => setCmdEditorAddCR(e.target.checked)}
+                        style={{ accentColor: 'var(--success)' }}
+                      />
+                      {t('末尾添加回车符CR')}
+                    </label>
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: C.mutedColor }}>{t('发送到')}</span>
+              <select
+                value={sendTarget}
+                onChange={(e) => setSendTarget(e.target.value)}
+                style={{
+                  fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                  background: C.inputBg, border: '1px solid ' + C.btnBorder,
+                  color: C.inputColor, outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="current">{t('当前会话')}</option>
+                {connectedSessions.length > 1 && (
+                  <option value="all">{t('全部会话')} ({connectedSessions.length})</option>
+                )}
+              </select>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={sendEditorCommand}
+                disabled={!cmdEditorText.trim()}
+              ><Rocket size={14} /> {t('发送')}</button>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* ── 左侧树形列表 ── */}
         <div
           ref={treeRef}
@@ -983,10 +1126,10 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
         </div>
 
         {/* ── 右侧编辑器 ── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
           {/* 选中了分组 → 显示分组信息 */}
           {selectedItem && selectedItem.type === 'group' ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px 14px', gap: 10 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px 14px', gap: 10, minHeight: 0, overflow: 'auto' }}>
               <div>
                 <label style={{ fontSize: 11, color: C.statusBarColor, display: 'block', marginBottom: 4 }}>{t('分组名称')}</label>
                 <input
@@ -1022,273 +1165,273 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
               </div>
             </div>
           ) : selectedItem ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px 14px', gap: 10 }}>
-              {/* 选中了命令 → 显示编辑器 */}
-              {/* 名称 */}
-              <div>
-                <label style={{ fontSize: 11, color: C.statusBarColor, display: 'block', marginBottom: 4 }}>{t('名称')}</label>
-                <input
-                  type="text"
-                  value={editCmdName}
-                  onChange={(e) => { setEditCmdName(e.target.value); setDirty(true); }}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* 命令 */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <label style={{ fontSize: 11, color: C.statusBarColor }}>{t('命令')}</label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {[1,2,3,4,5].map(n => (
-                      <Tiptop key={n} text={t('插入参数 p#') + n}>
-                        <button
-                          onClick={() => {
-                            setEditCmdText(prev => prev + `[p#${n} ${t('参数')}${n}]`);
-                            setDirty(true);
-                          }}
-                          aria-label={t('插入参数 p#') + n}
-                          style={{
-                            background: 'transparent', border: '1px solid ' + C.btnBorder, borderRadius: 3,
-                            color: C.statusBarColor, fontSize: 10, cursor: 'pointer', padding: '1px 5px',
-                          }}
-                        >{t('参数')}{n}</button>
-                      </Tiptop>
-                    ))}
-                  </div>
-                </div>
-                <textarea
-                  value={editCmdText}
-                  onChange={(e) => { setEditCmdText(e.target.value); setDirty(true); }}
-                  onKeyDown={(e) => {
-                    if (getModKey(e) && e.key === 's') {
-                      e.preventDefault();
-                      commitCmdEdit();
-                      save(commands);
-                      setDirty(false);
-                      if (addToast) addToast(t('已保存'), 'success', 1500);
-                    }
-                  }}
-                  style={{
-                    ...inputStyle, resize: 'none', height: 72,
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
-                    lineHeight: 1.5, minHeight: 60,
-                  }}
-                />
-
-                {/* 参数预览 */}
-                {extractParams(editCmdText).length > 0 && (
-                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Zap size={12} />
-                    {t('含')} {extractParams(editCmdText).length} {t('个动态参数：')} {extractParams(editCmdText).map(p => `[p#${p.num}${p.label ? ' ' + p.label : ''}]`).join(', ')}
-                  </div>
-                )}
-              </div>
-
-              {/* 底部工具栏（FinalShell 风格：命令预览 + 参数区 + 发送） */}
+            /* 选中命令：内容可滚，发送栏固定在底部（不随滚动悬浮） */
+            <div style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              minHeight: 0, overflow: 'hidden',
+            }}>
               <div style={{
-                display: 'flex', flexDirection: 'column',
-                borderTop: '1px solid var(--border-subtle)',
-                paddingTop: 8, marginTop: 'auto',
-                flexShrink: 0,
+                flex: 1, minHeight: 0, overflow: 'auto',
+                padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8,
               }}>
-                {/* 第一行：命令名 + 命令预览 + 编辑按钮 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <span className="badge">
-                    {editCmdName}
-                  </span>
-                  <span style={{ flex: 1, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.inputColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {editCmdText || ''}
-                  </span>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => { const committed = commitCmdEdit(); save(committed || commands); setDirty(false); if (addToast) addToast(t('已保存'), 'success', 1500); }}
-                  >{t('保存')}</button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setDialog({ type: 'edit' });
-                      setDlgName(editCmdName || '');
-                      setDlgCmd(editCmdText || '');
-                      setDlgAddCR(selectedItem.addCR !== false);
-                    }}
-                  >{t('编辑')}</button>
-                </div>
+              {/* 第一行：命令名徽章 + 命令预览 + 编辑 */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+                padding: '8px 10px',
+                background: C.inputBg,
+                border: '1px solid ' + C.btnBorder,
+                borderRadius: 6,
+              }}>
+                <span className="badge" style={{ flexShrink: 0 }}>
+                  {editCmdName || selectedItem.name || t('未命名命令')}
+                </span>
+                <span
+                  style={{
+                    flex: 1, minWidth: 0,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 12,
+                    color: C.inputColor,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={editCmdText || selectedItem.command || ''}
+                >
+                  {editCmdText || selectedItem.command || ''}
+                </span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => {
+                    setDialog({ type: 'edit' });
+                    setDlgName(editCmdName || selectedItem.name || '');
+                    setDlgCmd(editCmdText || selectedItem.command || '');
+                    setDlgAddCR(selectedItem.addCR !== false);
+                  }}
+                ><SquarePen size={13} /> {t('编辑')}</button>
+              </div>
 
-                {/* 第二行：参数输入区（有参数时才显示） */}
-                {(() => {
-                  const params = extractParams(editCmdText || '');
-                  if (params.length === 0) return null;
-                  const cmdKey = editCmdText;
+              {/* 第二行：参数输入（标签在框外，输入框 + 历史） */}
+              {(() => {
+                const params = extractParams(editCmdText || selectedItem.command || '');
+                if (params.length === 0) {
                   return (
-                    <div style={{ marginBottom: 6, overflowX: 'auto', overflowY: 'visible' }}>
-                      {/* 参数行：标签名在外面，输入框 + 历史按钮 */}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap' }}>
-                        {params.map(p => {
-                          const isOpen = historyDropdown?.cmdKey === cmdKey && historyDropdown.paramNum === p.num;
-                          const histList = (paramHistory[cmdKey]?.[p.num]) || [];
-                          return (
-                            <div key={p.num} style={{ position: 'relative' }}>
-                              {/* 标签名（FinalShell 风格：在框外面） */}
-                              <span style={{ fontSize: 11, color: C.statusBarColor, display: 'block', marginBottom: 2 }}>
-                                {p.label || `p#${p.num}`}
-                              </span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <Tiptop text={t('参数 ') + (p.label || '#' + p.num)}>
+                    <div style={{ flex: 1, minHeight: 12 }} />
+                  );
+                }
+                const cmdKey = editCmdText || selectedItem.command || '';
+                return (
+                  <div style={{ overflowX: 'auto', overflowY: 'visible', flexShrink: 0, paddingBottom: 4 }}>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      {params.map(p => {
+                        const isOpen = historyDropdown?.cmdKey === cmdKey && historyDropdown.paramNum === p.num;
+                        const histList = (paramHistory[cmdKey]?.[p.num]) || [];
+                        return (
+                          <div key={p.num} style={{ position: 'relative', flexShrink: 0 }}>
+                            <span style={{
+                              fontSize: 12, fontWeight: 600,
+                              color: 'var(--text-primary, ' + C.inputColor + ')',
+                              display: 'block', marginBottom: 4,
+                            }}>
+                              {p.label || `${t('参数')}${p.num}`}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <input
+                                type="text"
+                                value={paramValues[p.num] || ''}
+                                onChange={e => setParamValues(prev => ({ ...prev, [p.num]: e.target.value }))}
+                                onKeyDown={e => { if (e.key === 'Enter') doExecute(selectedItem); }}
+                                placeholder={p.label || `p#${p.num}`}
+                                style={{
+                                  ...inputStyle, width: 120,
+                                  fontSize: 12, padding: '5px 8px',
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                  color: 'var(--text-primary, ' + C.inputColor + ')',
+                                  border: '1px solid var(--border, ' + C.btnBorder + ')',
+                                  background: 'var(--surface-raised, ' + C.inputBg + ')',
+                                }}
+                              />
+                              <button
+                                type="button"
+                                data-history-dropdown="true"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (isOpen) {
+                                    setHistoryDropdown(null);
+                                    setHistorySearch('');
+                                  } else {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setHistoryDropdown({
+                                      cmdKey,
+                                      paramNum: p.num,
+                                      left: Math.max(8, Math.min(rect.left, window.innerWidth - 220)),
+                                      top: Math.min(rect.bottom + 4, window.innerHeight - 240),
+                                    });
+                                    setHistorySearch('');
+                                  }
+                                }}
+                                style={{
+                                  background: isOpen ? 'var(--surface-active)' : 'var(--surface-raised)',
+                                  border: '1px solid var(--border, ' + C.btnBorder + ')',
+                                  color: 'var(--accent)',
+                                  borderRadius: 4,
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: '5px 10px',
+                                  whiteSpace: 'nowrap',
+                                  lineHeight: 1.2,
+                                  position: 'relative',
+                                  zIndex: 2,
+                                }}
+                              >{t('历史')}</button>
+                            </div>
+                            {isOpen && createPortal(
+                              <div
+                                data-history-dropdown="true"
+                                onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
+                                onClick={e => e.stopPropagation()}
+                                style={{
+                                  position: 'fixed',
+                                  left: historyDropdown.left ?? 0,
+                                  top: historyDropdown.top ?? 0,
+                                  zIndex: Z.MENU,
+                                  minWidth: 200, maxHeight: 220, display: 'flex', flexDirection: 'column',
+                                  background: 'var(--surface-raised, ' + C.popupBg + ')',
+                                  border: '1px solid var(--border, ' + C.btnBorder + ')',
+                                  borderRadius: 6,
+                                  boxShadow: 'var(--shadow-md)',
+                                }}
+                              >
+                                <div style={{ padding: 6, flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
                                   <input
                                     type="text"
-                                    value={paramValues[p.num] || ''}
-                                    onChange={e => setParamValues(prev => ({ ...prev, [p.num]: e.target.value }))}
-                                    onKeyDown={e => { if (e.key === 'Enter') doExecute(selectedItem); }}
+                                    autoFocus
+                                    value={historySearch}
+                                    onChange={e => setHistorySearch(e.target.value)}
+                                    placeholder={t('搜索历史...')}
                                     style={{
-                                      ...inputStyle, width: 100,
-                                      fontSize: 11, padding: '3px 6px',
-                                      fontFamily: "'JetBrains Mono', monospace",
+                                      ...inputStyle, width: '100%', boxSizing: 'border-box',
+                                      fontSize: 12, padding: '5px 8px',
+                                      borderRadius: 4,
+                                      color: C.inputColor,
+                                    }}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Escape') { setHistoryDropdown(null); setHistorySearch(''); }
                                     }}
                                   />
-                                </Tiptop>
-                                <button
-                                  onClick={() => {
-                                    if (isOpen) { setHistoryDropdown(null); setHistorySearch(''); }
-                                    else setHistoryDropdown({ cmdKey, paramNum: p.num });
-                                  }}
-                                  data-history-dropdown="true"
-                                  style={{
-                                    background: 'transparent', border: '1px solid ' + C.btnBorder,
-                                    color: 'var(--accent)', borderRadius: 2,
-                                    fontSize: 10, cursor: 'pointer', padding: '1px 7px',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >{t('历史')}</button>
-                              </div>
-                              {/* 历史下拉列表（向上弹出） */}
-                              {isOpen && (
-                                <div
-                                  data-history-dropdown="true"
-                                  onMouseDown={e => e.stopPropagation()}
-                                  style={{
-                                    position: 'absolute', bottom: '100%', left: 0, zIndex: Z.POPUP,
-                                    minWidth: 180, maxHeight: 200, display: 'flex', flexDirection: 'column',
-                                    background: C.popupBg, border: '1px solid ' + C.btnBorder,
-                                    borderRadius: 4, boxShadow: 'var(--shadow-md)',
-                                    marginBottom: 2,
-                                  }}
-                                >
-                                  {/* 搜索框 */}
-                                  <div style={{ padding: 4, flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
-                                    <input
-                                      type="text"
-                                      autoFocus
-                                      value={historySearch}
-                                      onChange={e => setHistorySearch(e.target.value)}
-                                      placeholder={t('搜索历史...')}
-                                      style={{
-                                        ...inputStyle, width: '100%', boxSizing: 'border-box',
-                                        fontSize: 10, padding: '3px 6px',
-                                        borderRadius: 3,
-                                      }}
-                                      onKeyDown={e => {
-                                        if (e.key === 'Escape') { setHistoryDropdown(null); setHistorySearch(''); }
-                                      }}
-                                    />
-                                  </div>
-                                  {/* 清空列表 */}
-                                  <div
-                                    onClick={() => {
-                                      const pHist = { ...paramHistory, [cmdKey]: { ...(paramHistory[cmdKey] || {}) } };
-                                      if (pHist[cmdKey][p.num]) {
-                                        pHist[cmdKey][p.num] = [];
-                                        setParamHistory(pHist);
-                                        AppGo.SaveParamHistory(JSON.stringify(pHist)).catch(() => {});
-                                      }
-                                      setHistoryDropdown(null);
-                                      setHistorySearch('');
-                                    }}
-                                    style={{
-                                      padding: '4px 10px', fontSize: 11, color: 'var(--danger)',
-                                      cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
-                                      flexShrink: 0,
-                                    }}
-                                  >{t('清空列表')}</div>
-                                  {/* 历史值列表（带搜索过滤） */}
-                                  <div style={{ flex: 1, overflowY: 'auto' }}>
-                                    {(() => {
-                                      const filtered = historySearch
-                                        ? histList.filter(v => v.toLowerCase().includes(historySearch.toLowerCase()))
-                                        : histList;
-                                      return filtered.length === 0 ? (
-                                        <div style={{ padding: '6px 10px', fontSize: 11, color: C.btnMuted }}>
-                                          {historySearch ? t('无匹配结果') : t('暂无历史')}
-                                        </div>
-                                      ) : filtered.map((val, i) => (
-                                        <div
-                                          key={i}
-                                          onClick={() => {
-                                            setParamValues(prev => ({ ...prev, [p.num]: val }));
-                                            setHistoryDropdown(null);
-                                            setHistorySearch('');
-                                          }}
-                                          style={{
-                                            padding: '4px 10px', fontSize: 11,
-                                            color: C.inputColor, cursor: 'pointer',
-                                            fontFamily: "'JetBrains Mono', monospace",
-                                            borderBottom: '1px solid var(--border-subtle)',
-                                          }}
-                                          onMouseEnter={e => e.target.style.background = 'var(--surface-hover)'}
-                                          onMouseLeave={e => e.target.style.background = 'transparent'}
-                                        >{val}</div>
-                                      ));
-                                    })()}
-                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                                <div
+                                  onClick={() => {
+                                    const pHist = { ...paramHistory, [cmdKey]: { ...(paramHistory[cmdKey] || {}) } };
+                                    if (pHist[cmdKey][p.num]) {
+                                      pHist[cmdKey][p.num] = [];
+                                      setParamHistory(pHist);
+                                      AppGo.SaveParamHistory(JSON.stringify(pHist)).catch(() => {});
+                                    }
+                                    setHistoryDropdown(null);
+                                    setHistorySearch('');
+                                  }}
+                                  style={{
+                                    padding: '6px 12px', fontSize: 12, color: 'var(--danger)',
+                                    cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)',
+                                    flexShrink: 0, fontWeight: 600,
+                                  }}
+                                >{t('清空列表')}</div>
+                                <div style={{ flex: 1, overflowY: 'auto' }}>
+                                  {(() => {
+                                    const filtered = historySearch
+                                      ? histList.filter(v => v.toLowerCase().includes(historySearch.toLowerCase()))
+                                      : histList;
+                                    return filtered.length === 0 ? (
+                                      <div style={{ padding: '8px 12px', fontSize: 12, color: C.mutedColor }}>
+                                        {historySearch ? t('无匹配结果') : t('暂无历史')}
+                                      </div>
+                                    ) : filtered.map((val, i) => (
+                                      <div
+                                        key={i}
+                                        onClick={() => {
+                                          setParamValues(prev => ({ ...prev, [p.num]: val }));
+                                          setHistoryDropdown(null);
+                                          setHistorySearch('');
+                                        }}
+                                        style={{
+                                          padding: '7px 12px', fontSize: 12,
+                                          color: C.inputColor, cursor: 'pointer',
+                                          fontFamily: "'JetBrains Mono', monospace",
+                                          borderBottom: '1px solid var(--border-subtle)',
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-hover)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                      >{val}</div>
+                                    ));
+                                  })()}
+                                </div>
+                              </div>,
+                              document.body
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })()}
-
-                {/* 第三行：CR选项 + 发送 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4, borderTop: '1px solid var(--border-subtle)' }}>
-                  <label style={{ fontSize: 11, color: C.statusBarColor, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedItem.addCR !== false}
-                      onChange={(e) => {
-                        const list = structuredClone(commands);
-                        const r = resolvePath(list, selectedPath);
-                        r.parent[r.idx].addCR = e.target.checked;
-                        save(list);
-                      }}
-                      style={{ accentColor: 'var(--success)' }}
-                    />
-                    {t('末尾添加回车符CR')}
-                  </label>
-                  <div style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: C.mutedColor }}>{t('发送到')}</span>
-                    <select
-                      value={sendTarget}
-                      onChange={(e) => setSendTarget(e.target.value)}
-                      style={{
-                        fontSize: 11, padding: '2px 6px', borderRadius: 3,
-                        background: C.inputBg, border: '1px solid ' + C.btnBorder,
-                        color: C.inputColor, outline: 'none', cursor: 'pointer',
-                      }}
-                    >
-                      <option value="current">{t('当前会话')}</option>
-                      {connectedSessions.length > 1 && (
-                        <option value="all">{t('全部会话')} ({connectedSessions.length})</option>
-                      )}
-                    </select>
                   </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => doExecute(selectedItem)}
-                  ><Rocket size={14} /> {t('发送')}</button>
+                );
+              })()}
+
+              </div>
+
+              {/* 第三行：CR + 发送目标 + 发送（固定在右侧底部，不随内容滚动） */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+                padding: '8px 12px',
+                borderTop: '1px solid var(--border-subtle)',
+                background: C.popupBg,
+              }}>
+                <label style={{ fontSize: 11, color: C.statusBarColor, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedItem.addCR !== false}
+                    onChange={(e) => {
+                      const list = structuredClone(commands);
+                      const r = resolvePath(list, selectedPath);
+                      r.parent[r.idx].addCR = e.target.checked;
+                      save(list);
+                    }}
+                    style={{ accentColor: 'var(--success)' }}
+                  />
+                  {t('末尾添加回车符CR')}
+                </label>
+                <div style={{ flex: 1 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: C.mutedColor }}>{t('发送到')}</span>
+                  <select
+                    value={sendTarget}
+                    onChange={(e) => setSendTarget(e.target.value)}
+                    style={{
+                      fontSize: 11, padding: '2px 6px', borderRadius: 3,
+                      background: C.inputBg, border: '1px solid ' + C.btnBorder,
+                      color: C.inputColor, outline: 'none', cursor: 'pointer',
+                    }}
+                  >
+                    <option value="current">{t('当前会话')}</option>
+                    {connectedSessions.length > 1 && (
+                      <option value="all">{t('全部会话')} ({connectedSessions.length})</option>
+                    )}
+                  </select>
                 </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => doExecute(selectedItem)}
+                ><Rocket size={14} /> {t('发送')}</button>
               </div>
             </div>
           ) : (
@@ -1299,49 +1442,8 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
             </div>
           )}
         </div>
-      </div>
-
-      {/* ── 底部快速命令栏（不保存，直接发送） ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        borderTop: '1px solid var(--border-subtle)',
-        padding: '5px 10px', background: C.inputBg, flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 11, color: C.statusBarColor, whiteSpace: 'nowrap' }}>{t('快速命令')}</span>
-        <input
-          type="text"
-          value={quickCmd}
-          onChange={e => setQuickCmd(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') sendQuick(); }}
-          placeholder={t('输入临时命令直接发送（不保存）...')}
-          style={{ flex: 1, ...inputStyle, fontSize: 11, padding: '4px 8px' }}
-        />
-        <label style={{ fontSize: 11, color: C.statusBarColor, display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={quickAddCR} onChange={e => setQuickAddCR(e.target.checked)} style={{ margin: 0, cursor: 'pointer' }} />
-          {t('回车')}
-        </label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 11, color: C.mutedColor }}>→</span>
-          <select
-            value={sendTarget}
-            onChange={(e) => setSendTarget(e.target.value)}
-            style={{
-              fontSize: 11, padding: '2px 6px', borderRadius: 3,
-              background: C.inputBg, border: '1px solid ' + C.btnBorder,
-              color: C.inputColor, outline: 'none', cursor: 'pointer',
-            }}
-          >
-            <option value="current">{t('当前')}</option>
-            {connectedSessions.length > 1 && (
-              <option value="all">{t('全部')} ({connectedSessions.length})</option>
-            )}
-          </select>
-        </div>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={sendQuick}
-          disabled={!quickCmd.trim()}
-        ><Rocket size={14} /> {t('发送')}</button>
+          </>
+        )}
       </div>
 
       {/* ── 右键上下文菜单 ── */}
@@ -1471,9 +1573,6 @@ const QuickCommands = forwardRef(function QuickCommands({ sessionId, addToast, c
               <textarea
                 value={dlgCmd}
                 onChange={e => setDlgCmd(e.target.value)}
-                onKeyDown={e => {
-                  if (getModKey(e) && e.key === 's') { e.preventDefault(); handleDlgSave(); }
-                }}
                 rows={3}
                 style={{ ...inputStyle, resize: 'vertical', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, lineHeight: 1.5, minHeight: 70 }}
                 placeholder={t('如：free -m')}

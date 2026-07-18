@@ -539,6 +539,12 @@ body.theme-light .update-bubble {
   color: var(--text-primary);
   border-color: var(--border-focus);
 }
+.btn-secondary.active,
+.btn-secondary.active:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+  border-color: var(--accent);
+}
 
 .btn-ghost {
   background: transparent;
