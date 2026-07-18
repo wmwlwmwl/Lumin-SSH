@@ -38,6 +38,8 @@ import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folde
 import { Z } from './constants/zIndex';
 
 import logoImg from './assets/logo.png';
+import logoLightImg from './assets/logo_q.png';
+import logoDarkImg from './assets/logo_s.png';
 
 function withAlpha(color, alpha, fallback) {
   if (typeof color !== 'string') {
@@ -958,6 +960,7 @@ export default function App() {
   const [showAIPanel, setShowAIPanel] = useState(localStorage.getItem('showAIPanel') !== 'false');
   const [quickThemeMode, setQuickThemeMode] = useState(localStorage.getItem('themeMode') || 'dark');
   const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') !== 'false');
+  const [showTopbarRefreshedLogo, setShowTopbarRefreshedLogo] = useState(false);
 
   const leftSplitWidthRef = useRef(leftSplitWidth);
   const bottomSplitHeightRef = useRef(bottomSplitHeight);
@@ -1004,6 +1007,7 @@ export default function App() {
     return mode === 'light' ? 'light' : 'dark';
   }, []);
   const resolvedQuickThemeMode = resolveQuickThemeMode(quickThemeMode);
+  const topbarLogoTransitionImg = resolvedQuickThemeMode === 'light' ? logoLightImg : logoDarkImg;
   const handleQuickThemeToggle = useCallback(() => {
     const nextMode = resolvedQuickThemeMode === 'light' ? 'dark' : 'light';
     localStorage.setItem('themeMode', nextMode);
@@ -1012,6 +1016,14 @@ export default function App() {
     else document.body.classList.remove('theme-light');
     window.dispatchEvent(new CustomEvent('theme-mode-changed'));
   }, [resolvedQuickThemeMode]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowTopbarRefreshedLogo(true);
+    }, 260);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
   const getFileManagerDockPreviewRect = useCallback((target) => {
     if (target !== 'left' && target !== 'bottom') {
       return null;
@@ -4940,7 +4952,47 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       <div className="topbar">
         <div className="topbar-content">
           <div className="topbar-logo" onClick={() => { markWorkspaceRestoreNavigationOverride(); setActiveSessionId(null); setActiveTerminalId(null); setShowSettings(false); }}>
-            <img src={logoImg} alt="Lumin SSH" />
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                position: 'relative',
+                borderRadius: 'var(--radius-xs)',
+                overflow: 'hidden',
+                flexShrink: 0,
+              }}
+            >
+              <img
+                src={logoImg}
+                alt="Lumin SSH"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: showTopbarRefreshedLogo ? 0 : 1,
+                  transform: showTopbarRefreshedLogo ? 'scale(0.9) rotate(-8deg)' : 'scale(1) rotate(0deg)',
+                  filter: showTopbarRefreshedLogo ? 'blur(8px)' : 'blur(0px)',
+                  transition: 'opacity 0.6s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.6s ease',
+                }}
+              />
+              <img
+                src={topbarLogoTransitionImg}
+                alt="Lumin Theme Logo"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: showTopbarRefreshedLogo ? 1 : 0,
+                  transform: showTopbarRefreshedLogo ? 'scale(1) rotate(0deg)' : 'scale(1.12) rotate(8deg)',
+                  filter: showTopbarRefreshedLogo ? 'blur(0px)' : 'blur(10px)',
+                  transition: 'opacity 0.6s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.6s ease',
+                }}
+              />
+            </div>
             <div className="topbar-title">Lumin</div>
           </div>
           
