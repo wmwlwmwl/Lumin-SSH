@@ -6,7 +6,7 @@ import {
   formatRate,
   formatTransferTotal,
 } from './probeFormatting.js';
-import { BarChart3, Cpu, HardDrive, Globe, ClipboardList, Clipboard, Search, Check, Monitor, EyeOff, Eye, RefreshCw, MemoryStick, ArrowLeftRight } from 'lucide-react';
+import { BarChart3, Cpu, HardDrive, Globe, ClipboardList, Clipboard, Search, Check, Monitor, EyeOff, Eye, RefreshCw, MemoryStick, ArrowLeftRight, Gauge } from 'lucide-react';
 import Tiptop from './Tiptop.jsx';
 import { Z } from '../constants/zIndex';
 import { useTranslation } from '../i18n.js';
@@ -93,15 +93,19 @@ const SectionHeader = React.memo(function SectionHeader({ icon, title, badge, ac
   );
 });
 
-const MetricCard = React.memo(function MetricCard({ label, value, sub, color, icon }) {
+const MetricCard = React.memo(function MetricCard({ label, value, sub, color, icon, progress = null }) {
+  const hasProgress = progress !== null;
   return (
     <div className="probe-metric-card">
-      <div className="probe-metric-top">
-        <span className="probe-metric-icon" style={{ color }}>{icon}</span>
-        <span className="probe-metric-label" title={label}>{label}</span>
+      <div className="probe-metric-main">
+        <div className="probe-metric-top">
+          <span className="probe-metric-icon" style={{ color }}>{icon}</span>
+          <span className="probe-metric-label" title={label}>{label}</span>
+        </div>
+        {sub ? <div className="probe-metric-sub" title={sub}>{sub}</div> : null}
       </div>
       <div className="probe-metric-value" style={{ color }}>{value}</div>
-      {sub ? <div className="probe-metric-sub" title={sub}>{sub}</div> : null}
+      {hasProgress ? <div className="probe-metric-bar"><ProgressBar value={progress} color={color} /></div> : null}
     </div>
   );
 });
@@ -214,19 +218,12 @@ function HealthOverview({ t, cpuAvg, memPct, diskPct, info, coreCount }) {
   const loadPct = coreCount > 0 ? clampPct((info.load1 || 0) / coreCount * 100) : 0;
   return (
     <>
-      <Card className="probe-peak-card">
-        <div className="probe-peak-label">{t('系统负载')}</div>
-        <div className="probe-peak-value" style={{ color: pctColor(loadPct, 70, 100) }}>{loadPct.toFixed(0)}%</div>
-        <ProgressBar value={loadPct} color={pctColor(loadPct, 70, 100)} />
-        <div className="probe-peak-sub" title={`1m ${info.load1?.toFixed(2) || '0.00'} · 5m ${info.load5?.toFixed(2) || '0.00'} · 15m ${info.load15?.toFixed(2) || '0.00'}`}>
-          1m {info.load1?.toFixed(2) || '0.00'} · 5m {info.load5?.toFixed(2) || '0.00'} · 15m {info.load15?.toFixed(2) || '0.00'}
-        </div>
-      </Card>
       <div className="probe-overview-grid">
-        <MetricCard label="CPU" value={`${cpuAvg}%`} sub={t('平均占用')} color={pctColor(cpuAvg, 50, 80)} icon={<Cpu size={13} />} />
-        <MetricCard label={t('内存')} value={`${memPct}%`} sub={`${fmem(info.memUsed)} / ${fmem(info.memTotal)}`} color={pctColor(memPct, 60, 85)} icon={<MemoryStick size={13} />} />
-        <MetricCard label={t('磁盘')} value={`${Math.round(diskPct)}%`} sub={`${fdisk(info.diskUsed)} / ${fdisk(info.diskTotal)}`} color={pctColor(diskPct, 70, 90)} icon={<HardDrive size={13} />} />
-        <MetricCard label={t('网络')} value={fspeed(netSpeed)} sub={`${t('上传')} ${fspeed(info.netUp)} · ${t('下载')} ${fspeed(info.netDown)}`} color="var(--accent)" icon={<Globe size={13} />} />
+        <MetricCard label={t('系统负载')} value={`${loadPct.toFixed(0)}%`} sub={`1m ${info.load1?.toFixed(2) || '0.00'} · 5m ${info.load5?.toFixed(2) || '0.00'} · 15m ${info.load15?.toFixed(2) || '0.00'}`} color={pctColor(loadPct, 70, 100)} icon={<Gauge size={13} />} progress={loadPct} />
+        <MetricCard label="CPU" value={`${cpuAvg}%`} sub={t('平均占用')} color={pctColor(cpuAvg, 50, 80)} icon={<Cpu size={13} />} progress={cpuAvg} />
+        <MetricCard label={t('内存')} value={`${memPct}%`} sub={`${fmem(info.memUsed)} / ${fmem(info.memTotal)}`} color={pctColor(memPct, 60, 85)} icon={<MemoryStick size={13} />} progress={memPct} />
+        <MetricCard label={t('磁盘')} value={`${Math.round(diskPct)}%`} sub={`${fdisk(info.diskUsed)} / ${fdisk(info.diskTotal)}`} color={pctColor(diskPct, 70, 90)} icon={<HardDrive size={13} />} progress={diskPct} />
+        <MetricCard label={t('网络')} value={fspeed(netSpeed)} sub={`↑ ${fspeed(info.netUp)} · ↓ ${fspeed(info.netDown)}`} color="var(--accent)" icon={<Globe size={13} />} />
       </div>
     </>
   );

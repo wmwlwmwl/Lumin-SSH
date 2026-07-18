@@ -314,7 +314,7 @@ export default function Terminal({ sessionId, serverId, historyServerId, status,
       if (!isEmptyLine && !isWrapped && tsIdx >= 0) {
         ts = timestampsByLine.get(tsIdx) || (tsIdx === buf.baseY + buf.cursorY ? tsEnsureLine(term, tsIdx, timestampsByLine) : '');
       }
-      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:var(--term-muted);font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;padding:0 4px;box-sizing:border-box">${ts}</div>`;
+      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:var(--term-status-color);font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;padding:0 4px;box-sizing:border-box">${ts}</div>`;
     }
     gutter.innerHTML = html;
   }

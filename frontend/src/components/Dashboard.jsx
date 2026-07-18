@@ -174,7 +174,7 @@ export default function Dashboard({
                   aria-label={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')}
                   style={hideSensitive ? { background: 'var(--warning-dim)', color: 'var(--warning)', border: '1px solid var(--warning)' } : {}}
                 >
-                  {hideSensitive ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {hideSensitive ? <Eye size={14} /> : <EyeOff size={14} />}
                 </button>
               </Tiptop>
               {hasVisibleGroupHeaders && (

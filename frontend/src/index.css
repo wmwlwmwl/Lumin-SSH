@@ -1751,27 +1751,28 @@ body.theme-light .batch-operation-bar {
 }
 
 .probe-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .probe-metric-card {
   min-width: 0;
-  padding: 9px 10px;
-  border-radius: 11px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-overlay) 82%, var(--surface-raised));
+  border: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
 }
-.probe-metric-top { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; min-width: 0; }
+.probe-metric-main { min-width: 0; }
+.probe-metric-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .probe-metric-icon { display: inline-flex; flex-shrink: 0; }
 .probe-metric-label { font-size: 11.5px; color: var(--text-tertiary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.probe-metric-value { font-size: 17px; line-height: 1.15; font-family: var(--font-mono); font-weight: 800; font-variant-numeric: tabular-nums; }
-.probe-metric-sub { margin-top: 3px; font-size: 10.5px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.probe-peak-card { padding: 14px 16px; }
-.probe-peak-label { font-size: 12px; color: var(--text-tertiary); font-weight: 700; margin-bottom: 4px; }
-.probe-peak-value { font-size: 30px; line-height: 1.05; font-family: var(--font-mono); font-weight: 800; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
-.probe-peak-sub { margin-top: 7px; font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
+.probe-metric-value { font-size: 16px; line-height: 1.15; font-family: var(--font-mono); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.probe-metric-sub { margin-top: 2px; font-size: 10.5px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.probe-metric-bar { grid-column: 1 / -1; margin-top: -1px; }
 .probe-sparkline { width: 100%; display: block; margin-bottom: 8px; }
 .probe-sparkline-empty { width: 100%; }
 .probe-muted-line { font-size: 11.5px; color: var(--text-tertiary); margin: 0 0 8px; word-break: break-all; line-height: 1.35; }
