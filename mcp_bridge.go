@@ -211,6 +211,13 @@ func (p mcpSessionProvider) ListConnectedSessions() ([]mcpserver.SessionDescript
 	return newMCPHost(p.app).ListSessionDescriptors()
 }
 
+func (p mcpSessionProvider) GetWorkspaceState() string {
+	if p.app == nil || p.app.configManager == nil {
+		return ""
+	}
+	return p.app.GetWorkspaceState()
+}
+
 func (a *App) ListConnectedSessions() ([]mcpserver.ConnectedSession, error) {
 	return mcpserver.NewService(mcpSessionProvider{app: a}).ListConnectedSessions()
 }
@@ -228,6 +235,13 @@ func (h mcpHost) RegistryKey() any {
 		return nil
 	}
 	return h.app
+}
+
+func (h mcpHost) GetWorkspaceState() string {
+	if h.app == nil || h.app.configManager == nil {
+		return ""
+	}
+	return h.app.GetWorkspaceState()
 }
 
 func (h mcpHost) ListSessionDescriptors() ([]mcpserver.SessionDescriptor, error) {

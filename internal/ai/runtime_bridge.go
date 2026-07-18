@@ -23,6 +23,7 @@ import (
 
 type SessionProviderDelegate interface {
 	ListConnectedSessions() ([]mcpserver.SessionDescriptor, error)
+	GetWorkspaceState() string
 }
 
 type SSHDelegate interface {
@@ -381,6 +382,13 @@ func (p mcpSessionProvider) ListConnectedSessions() ([]mcpserver.SessionDescript
 		return []mcpserver.SessionDescriptor{}, nil
 	}
 	return p.app.sessionProvider.ListConnectedSessions()
+}
+
+func (p mcpSessionProvider) GetWorkspaceState() string {
+	if p.app == nil || p.app.sessionProvider == nil {
+		return ""
+	}
+	return p.app.sessionProvider.GetWorkspaceState()
 }
 
 type mcpCommandProvider struct {

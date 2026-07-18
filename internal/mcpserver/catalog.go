@@ -38,6 +38,7 @@ func NewCatalog(service *Service, fileProvider FileProvider, commandProvider Com
 func (c *Catalog) List() []ToolDefinition {
 	return []ToolDefinition{
 		listConnectedSessionsToolDefinition(),
+		getWorkPathToolDefinition(),
 		listFilesToolDefinition(),
 		readFileToolDefinition(),
 		writeToFileToolDefinition(),
@@ -65,6 +66,8 @@ func (c *Catalog) CallWithContext(ctx context.Context, name string, arguments ma
 	switch name {
 	case "list_connected_sessions":
 		return clone.callListConnectedSessions(arguments)
+	case "get_work_path":
+		return clone.callGetWorkPath(arguments)
 	case "list_files":
 		return clone.callListFiles(arguments)
 	case "read_file":

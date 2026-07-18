@@ -63,6 +63,8 @@ type App struct {
 	aiToolExecutions          map[string]*ai.ToolExecutionState
 	aiSkipNextAutoReqMu       sync.Mutex
 	aiSkipNextAutomaticReqMap map[string]bool
+	liveWorkspaceStateMu      sync.RWMutex
+	liveWorkspaceState        string
 }
 
 // wsEntry 包装一个 WebSocket 连接及其独立写锁。
@@ -2101,7 +2103,36 @@ func (a *App) CancelBuiltinProviderInitialization(providerID string) error {
 	return nil
 }
 
+func (a *App) GetLiveWorkspaceState() string {
+	if a == nil {
+		return ""
+	}
+	a.liveWorkspaceStateMu.RLock()
+	defer a.liveWorkspaceStateMu.RUnlock()
+	return a.liveWorkspaceState
+}
+
+func (a *App) SetLiveWorkspaceState(jsonStr string) error {
+	if a == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(jsonStr)
+	if trimmed != "" && !json.Valid([]byte(trimmed)) {
+		return fmt.Errorf("invalid live workspace state")
+	}
+	a.liveWorkspaceStateMu.Lock()
+	a.liveWorkspaceState = trimmed
+	a.liveWorkspaceStateMu.Unlock()
+	return nil
+}
+
 func (a *App) GetWorkspaceState() string {
+	if liveState := a.GetLiveWorkspaceState(); liveState != "" {
+		return liveState
+	}
+	if a == nil || a.configManager == nil {
+		return ""
+	}
 	return a.configManager.GetWorkspaceState()
 }
 

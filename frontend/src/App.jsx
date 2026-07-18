@@ -3554,16 +3554,16 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     const clearSnapshot = () => {
       window?.go?.main?.App?.ClearWorkspaceState?.().catch(() => {});
     };
-    if (!rememberWorkspace) {
-      clearSnapshot();
-      return;
-    }
+    const setLiveSnapshot = (payload) => {
+      window?.go?.main?.App?.SetLiveWorkspaceState?.(payload).catch(() => {});
+    };
     const nextSessions = overrides.sessions || sessionsRef.current;
     const nextActiveSessionId = overrides.activeSessionId ?? activeSessionIdRef.current;
     const nextActiveTerminalId = overrides.activeTerminalId ?? activeTerminalIdRef.current;
     const nextLayouts = overrides.terminalPaneLayouts || terminalPaneLayoutsRef.current;
     const openSessions = nextSessions.filter((session) => session.status !== 'closed' && session.status !== 'error');
     if (openSessions.length === 0) {
+      setLiveSnapshot('');
       clearSnapshot();
       return;
     }
@@ -3631,6 +3631,11 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       terminalPaneLayouts: savedLayouts,
       fileManagerWorkspaces: savedFileManagerWorkspaces,
     });
+    setLiveSnapshot(workspaceStatePayload);
+    if (!rememberWorkspace) {
+      clearSnapshot();
+      return;
+    }
     window?.go?.main?.App?.SaveWorkspaceState?.(workspaceStatePayload).catch(() => {});
     if (workspacePersistenceLevel === 'session') {
       openSessions.forEach((session) => {

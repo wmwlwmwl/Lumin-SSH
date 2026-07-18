@@ -2,6 +2,10 @@ package mcp
 
 import "luminssh-go/internal/mcpserver"
 
+type activeFileManagerWorkspaceStateProvider interface {
+	GetWorkspaceState() string
+}
+
 type SessionProvider struct {
 	host Host
 }
@@ -15,4 +19,11 @@ func (p SessionProvider) ListConnectedSessions() ([]mcpserver.SessionDescriptor,
 		return []mcpserver.SessionDescriptor{}, nil
 	}
 	return p.host.ListSessionDescriptors()
+}
+
+func (p SessionProvider) GetWorkspaceState() string {
+	if provider, ok := p.host.(activeFileManagerWorkspaceStateProvider); ok {
+		return provider.GetWorkspaceState()
+	}
+	return ""
 }

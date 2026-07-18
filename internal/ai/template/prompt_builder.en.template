@@ -105,6 +105,8 @@ Formatting rules:
 - Use only normal tool tags and normal parameter tags.
 
 Execution defaults:
+- When the current work directory, current path, current directory, or any instruction that depends on the current work path is needed, call `get_work_path` first and treat its returned path as the authoritative work path.
+- Unless the user explicitly asks for the terminal shell's current cwd, do not use the terminal prompt, do not run `pwd`, and do not treat inferred shell cwd as the default source of work-path truth.
 - When the target is this AI panel terminal, use the current terminal session_id ${session_id} by default.
 - When the target is the current AI panel terminal, explicitly set shellType to the terminal's actual shell.
 - Only supported shellType values may be used: zsh, powershell, or cmd.

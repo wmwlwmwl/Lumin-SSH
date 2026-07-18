@@ -1,3 +1,4 @@
+import { getLanguage } from '../../i18n.js'
 import { isValidRemoteAbsolutePath } from './aiMentions.js'
 
 function normalizeFilePaths(paths) {
@@ -19,32 +20,30 @@ function formatUserTimeZone(now) {
 }
 
 function buildExecutionContextLines(snapshot) {
+  const isChinese = String(getLanguage() || '').toLowerCase().startsWith('zh')
   const lines = []
-  lines.push('# 当前终端会话')
+  lines.push(isChinese ? '# 当前终端会话' : '# Current terminal session')
   if (snapshot.sessionId) {
-    lines.push(`会话ID:${snapshot.sessionId}`)
+    lines.push(`${isChinese ? '会话ID' : 'Session ID'}:${snapshot.sessionId}`)
   }
   if (snapshot.terminalId) {
-    lines.push(`终端ID:${snapshot.terminalId}`)
+    lines.push(`${isChinese ? '终端ID' : 'Terminal ID'}:${snapshot.terminalId}`)
   }
-  lines.push('')
-  lines.push('# 当前目录')
-  lines.push(snapshot.currentPath || '/')
   if (snapshot.openFilePaths.length > 0) {
     lines.push('')
-    lines.push('# 当前打开文件')
+    lines.push(isChinese ? '# 当前打开文件' : '# Currently open files')
     snapshot.openFilePaths.forEach((filePath) => {
       lines.push(filePath)
     })
   }
   if (snapshot.activeFilePath) {
     lines.push('')
-    lines.push('# 当前活动文件')
+    lines.push(isChinese ? '# 当前活动文件' : '# Current active file')
     lines.push(snapshot.activeFilePath)
   }
   lines.push('')
-  lines.push('# 当前时间')
-  lines.push(`UTC时间:${snapshot.currentTimeISO}`)
+  lines.push(isChinese ? '# 当前时间' : '# Current time')
+  lines.push(`${isChinese ? 'UTC时间' : 'UTC time'}:${snapshot.currentTimeISO}`)
   return lines
 }
 

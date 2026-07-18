@@ -76,6 +76,7 @@ const (
 
 var aiSupportedToolNames = []string{
 	"list_connected_sessions",
+	"get_work_path",
 	"list_files",
 	"read_file",
 	"write_to_file",
@@ -93,6 +94,7 @@ var aiSupportedToolNames = []string{
 
 var aiAlwaysAutoApprovedToolNames = map[string]struct{}{
 	"list_connected_sessions": {},
+	"get_work_path":           {},
 	"live_search":             {},
 }
 
