@@ -124,6 +124,30 @@ function normalizeFollowUpQuestions(question, questions, suggestions) {
   return normalizeLegacySuggestions(question, suggestions)
 }
 
+function buildFollowUpSessionIdentity(requestId, questions) {
+  const normalizedRequestId = typeof requestId === 'string' ? requestId.trim() : ''
+  const normalizedQuestions = Array.isArray(questions)
+    ? questions.map((item) => ({
+        id: typeof item?.id === 'string' ? item.id : '',
+        text: typeof item?.text === 'string' ? item.text : '',
+        type: typeof item?.type === 'string' ? item.type : '',
+        options: Array.isArray(item?.options)
+          ? item.options.map((option) => ({
+              id: typeof option?.id === 'string' ? option.id : '',
+              answer: typeof option?.answer === 'string' ? option.answer : '',
+              mode: typeof option?.mode === 'string' ? option.mode : '',
+              disabled: option?.disabled === true,
+              recommended: option?.recommended === true,
+            }))
+          : [],
+      }))
+    : []
+  return JSON.stringify({
+    requestId: normalizedRequestId,
+    questions: normalizedQuestions,
+  })
+}
+
 function buildFollowUpReadableText(questions, answers) {
   return questions
     .map((question) => {
@@ -239,12 +263,18 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
     () => normalizeFollowUpQuestions(question, questions, suggestions),
     [question, questions, suggestions],
   )
+  const followUpSessionIdentity = useMemo(
+    () => buildFollowUpSessionIdentity(requestId, normalizedQuestions),
+    [normalizedQuestions, requestId],
+  )
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [isFrozen, setIsFrozen] = useState(false)
   const [transitionDirection, setTransitionDirection] = useState('next')
   const [transitionTick, setTransitionTick] = useState(0)
+  const currentQuestionIndexRef = useRef(0)
+  const answersRef = useRef({})
   const submittingRef = useRef(false)
   const freezeTimeoutRef = useRef(0)
 
@@ -267,6 +297,8 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
   }, [clearFreezeTimeout])
 
   useEffect(() => {
+    currentQuestionIndexRef.current = 0
+    answersRef.current = {}
     setCurrentQuestionIndex(0)
     setAnswers({})
     setSubmitting(false)
@@ -275,7 +307,7 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
     clearFreezeTimeout()
     setTransitionDirection('next')
     setTransitionTick(0)
-  }, [clearFreezeTimeout, question, questions, requestId, suggestions])
+  }, [clearFreezeTimeout, followUpSessionIdentity])
 
   useEffect(() => () => clearFreezeTimeout(), [clearFreezeTimeout])
 
@@ -309,6 +341,8 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
         setSubmitting(false)
         return false
       }
+      answersRef.current = {}
+      currentQuestionIndexRef.current = 0
       setAnswers({})
       setCurrentQuestionIndex(0)
       setTransitionDirection('next')
@@ -327,18 +361,23 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
       return
     }
     const nextAnswers = {
-      ...answers,
+      ...(answersRef.current || {}),
       [questionItem.id]: [optionId],
     }
+    answersRef.current = nextAnswers
     setAnswers(nextAnswers)
-    if (currentQuestionIndex === normalizedQuestions.length - 1) {
+    if (currentQuestionIndexRef.current === normalizedQuestions.length - 1) {
       await submitResponse(nextAnswers)
       return
     }
     setTransitionDirection('next')
     setTransitionTick((current) => current + 1)
-    setCurrentQuestionIndex((current) => Math.min(normalizedQuestions.length - 1, current + 1))
-  }, [answers, currentQuestionIndex, isFrozen, normalizedQuestions.length, submitResponse, submitting])
+    setCurrentQuestionIndex((current) => {
+      const nextIndex = Math.min(normalizedQuestions.length - 1, current + 1)
+      currentQuestionIndexRef.current = nextIndex
+      return nextIndex
+    })
+  }, [isFrozen, normalizedQuestions.length, submitResponse, submitting])
 
   const handleMultipleToggle = useCallback((questionItem, optionId) => {
     if (!questionItem || submitting || isFrozen) {
@@ -347,10 +386,12 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
     setAnswers((current) => {
       const existing = current[questionItem.id] || []
       const checked = existing.includes(optionId)
-      return {
+      const nextAnswers = {
         ...current,
         [questionItem.id]: checked ? existing.filter((item) => item !== optionId) : [...existing, optionId],
       }
+      answersRef.current = nextAnswers
+      return nextAnswers
     })
   }, [isFrozen, submitting])
 
@@ -360,7 +401,11 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
     }
     setTransitionDirection('prev')
     setTransitionTick((current) => current + 1)
-    setCurrentQuestionIndex((current) => Math.max(0, current - 1))
+    setCurrentQuestionIndex((current) => {
+      const nextIndex = Math.max(0, current - 1)
+      currentQuestionIndexRef.current = nextIndex
+      return nextIndex
+    })
   }, [canGoPrevious, isFrozen, submitting])
 
   const handleGoNext = useCallback(async () => {
@@ -368,16 +413,20 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
       return
     }
     if (isLastQuestion) {
-      await submitResponse(answers)
+      await submitResponse(answersRef.current || {})
       return
     }
     setTransitionDirection('next')
     setTransitionTick((current) => current + 1)
-    setCurrentQuestionIndex((current) => Math.min(normalizedQuestions.length - 1, current + 1))
+    setCurrentQuestionIndex((current) => {
+      const nextIndex = Math.min(normalizedQuestions.length - 1, current + 1)
+      currentQuestionIndexRef.current = nextIndex
+      return nextIndex
+    })
     if (currentQuestion.type === 'multiple') {
       startFreeze(FREEZE_AFTER_MULTI_NEXT_MS)
     }
-  }, [answers, canGoNext, currentQuestion, isFrozen, isLastQuestion, normalizedQuestions.length, startFreeze, submitResponse, submitting])
+  }, [canGoNext, currentQuestion, isFrozen, isLastQuestion, normalizedQuestions.length, startFreeze, submitResponse, submitting])
 
   if (!currentQuestion) {
     return null

@@ -29,6 +29,9 @@ Soft Rules (follow when possible):
   - Reading only one known file at a time when multiple related files have already been identified
   - Editing only one independent file per turn when multiple independent edits are fully determined
   - Leaving available child tool slots unused when other suitable immediate actions are already known
+- When the user's preference is not yet clear, briefly clarify meaningful ambiguities rather than guessing.
+- If the user explicitly asks for fewer questions, says to just do it, rejects clarifications, or otherwise shows an execution-first preference, adapt within the current task: for local, low-risk, reversible choices, pick the safest reasonable default and continue instead of repeatedly asking follow-up questions.
+- Return to clarification only when the ambiguity is high-impact, destructive, irreversible, security-sensitive, permission-sensitive, remote-target-sensitive, cost-sensitive, or would materially change the result.
 
 # Tool Call Format
 

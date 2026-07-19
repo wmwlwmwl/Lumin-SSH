@@ -5,6 +5,7 @@ import AIProviderListRow from './AIProviderListRow.jsx'
 import AIProviderQuickEditOverlay from './AIProviderQuickEditOverlay.jsx'
 import Tiptop from '../Tiptop.jsx'
 import { getAIProviderState, isBuiltinAIProvider, normalizeAIProviderState, saveAIProviderState } from './aiProviderBridge.js'
+import { getAIProviderDefinition } from './providers/index.js'
 
 const defaultProviders = []
 const summaryTooltipDelay = 300
@@ -42,6 +43,47 @@ function getReasoningEffortLabel(t, value) {
     return ''
   }
   return t(reasoningEffortLabelKeys[nextValue] || nextValue)
+}
+
+const DEFAULT_EFFORT_REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh']
+
+function supportsUnifiedEffortReasoning(providerValue) {
+  return providerValue === 'Compatible' || providerValue === 'Responses' || providerValue === 'Messages'
+}
+
+function buildDisplayModelCapability(providerValue, capability) {
+  if (!supportsUnifiedEffortReasoning(providerValue)) {
+    return capability
+  }
+  return {
+    ...(capability || {}),
+    supportsReasoningBinary: false,
+    supportsReasoningBudget: false,
+    requiredReasoningBudget: false,
+    supportsReasoningEffort: [...DEFAULT_EFFORT_REASONING_OPTIONS],
+    requiredReasoningEffort: false,
+    reasoningMode: 'effort',
+    reasoningEffort: typeof capability?.reasoningEffort === 'string' && capability.reasoningEffort.trim()
+      ? capability.reasoningEffort.trim().toLowerCase()
+      : 'medium',
+    maxTokens: 0,
+    maxThinkingTokens: 0,
+  }
+}
+
+function buildReasoningOptions(capability) {
+  if (capability?.reasoningMode !== 'effort') {
+    return []
+  }
+  const supportedValues = Array.isArray(capability?.supportsReasoningEffort)
+    ? capability.supportsReasoningEffort
+      .filter((value) => typeof value === 'string' && value.trim())
+      .map((value) => value.trim().toLowerCase())
+    : []
+  const nextOptions = capability?.requiredReasoningEffort
+    ? supportedValues
+    : ['disable', ...supportedValues.filter((value) => value !== 'disable')]
+  return [...new Set(nextOptions)]
 }
 
 function getProviderModelSummary(t, provider) {
@@ -244,6 +286,7 @@ export default function AIProviderSelector({
   const iframeRef = useRef(null)
   const tooltipTimerRef = useRef(null)
   const [open, setOpen] = useState(false)
+  const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [providerList, setProviderList] = useState(sortProviders(providers))
   const [persistedCurrentProviderId, setPersistedCurrentProviderId] = useState(providers[0]?.id || '')
@@ -268,6 +311,43 @@ export default function AIProviderSelector({
     () => providerList.find((item) => item.id === effectiveSelectedId) || null,
     [providerList, effectiveSelectedId],
   )
+  const quickReasoningConfig = useMemo(() => {
+    if (!selectedProvider) {
+      return { visible: false, options: [], currentValue: 'disable', currentLabel: '' }
+    }
+    const providerValue = typeof selectedProvider.provider === 'string' && selectedProvider.provider.trim() ? selectedProvider.provider.trim() : 'Compatible'
+    const providerDefinition = getAIProviderDefinition(providerValue)
+    const capability = buildDisplayModelCapability(providerDefinition.value, providerDefinition.getModelCapability(selectedProvider.model || ''))
+    let options = buildReasoningOptions(capability)
+    const storedValue = typeof selectedProvider.reasoningEffort === 'string' ? selectedProvider.reasoningEffort.trim().toLowerCase() : ''
+    const defaultValue = typeof capability?.reasoningEffort === 'string' ? capability.reasoningEffort.trim().toLowerCase() : ''
+    if (storedValue && storedValue !== 'disable' && !options.includes(storedValue)) {
+      options = [...options, storedValue]
+    }
+    if (defaultValue && defaultValue !== 'disable' && !options.includes(defaultValue)) {
+      options = [...options, defaultValue]
+    }
+    if (capability?.reasoningMode !== 'effort' || options.length <= 1) {
+      return { visible: false, options: [], currentValue: 'disable', currentLabel: '' }
+    }
+    let currentValue = storedValue && options.includes(storedValue) ? storedValue : ''
+    if (!currentValue) {
+      currentValue = capability?.requiredReasoningEffort
+        ? (defaultValue || options[0] || 'disable')
+        : (selectedProvider.enableReasoningEffort === true
+          ? (defaultValue || options.find((value) => value !== 'disable') || options[0] || 'disable')
+          : (options.includes('disable') ? 'disable' : (defaultValue || options[0] || 'disable')))
+    }
+    if (selectedProvider.enableReasoningEffort !== true && options.includes('disable') && !capability?.requiredReasoningEffort) {
+      currentValue = 'disable'
+    }
+    return {
+      visible: true,
+      options,
+      currentValue,
+      currentLabel: getReasoningEffortLabel(t, currentValue) || t('无'),
+    }
+  }, [selectedProvider, t])
   const providerSummaryRows = [
     { label: t('供应商'), value: selectedProvider?.name || t('选择供应商') },
     { label: t('模型'), value: getProviderModelSummary(t, selectedProvider) },
@@ -285,7 +365,7 @@ export default function AIProviderSelector({
   }, [])
 
   const handleTriggerMouseEnter = useCallback(() => {
-    if (open || editingState.open) {
+    if (open || editingState.open || reasoningMenuOpen) {
       return
     }
     const rect = containerRef.current?.getBoundingClientRect()
@@ -299,7 +379,7 @@ export default function AIProviderSelector({
       setTooltipVisible(true)
       tooltipTimerRef.current = null
     }, summaryTooltipDelay)
-  }, [editingState.open, open])
+  }, [editingState.open, open, reasoningMenuOpen])
 
   const filteredProviders = useMemo(() => {
     const keyword = searchValue.trim().toLowerCase()
@@ -422,28 +502,29 @@ export default function AIProviderSelector({
   }, [tooltipVisible])
 
   useEffect(() => {
-    if (open || editingState.open) {
+    if (open || editingState.open || reasoningMenuOpen) {
       closeTooltip()
     }
-  }, [closeTooltip, editingState.open, open])
+  }, [closeTooltip, editingState.open, open, reasoningMenuOpen])
 
   useEffect(() => {
-    if (!open || editingState.open) {
+    if ((!open && !reasoningMenuOpen) || editingState.open) {
       return undefined
     }
 
     const handlePointerDown = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false)
+        setReasoningMenuOpen(false)
       }
     }
 
     window.addEventListener('pointerdown', handlePointerDown)
     return () => window.removeEventListener('pointerdown', handlePointerDown)
-  }, [open, editingState.open])
+  }, [editingState.open, open, reasoningMenuOpen])
 
   useEffect(() => {
-    if (!editingState.open && !open && !tokenStoreOpen) {
+    if (!editingState.open && !open && !reasoningMenuOpen && !tokenStoreOpen) {
       setTriggerRect(null)
       setWorkspaceBounds(null)
       return undefined
@@ -519,12 +600,13 @@ export default function AIProviderSelector({
       window.removeEventListener('resize', updatePanelBounds)
       window.removeEventListener('scroll', updatePanelBounds, true)
     }
-  }, [editingState.open, open, tokenStoreOpen])
+  }, [editingState.open, open, reasoningMenuOpen, tokenStoreOpen])
 
   useEffect(() => {
     let cancelled = false
     closeTooltip()
     setOpen(false)
+    setReasoningMenuOpen(false)
     setSearchValue('')
     setTokenStoreOpen(false)
     setTokenStoreLoading(false)
@@ -624,6 +706,31 @@ export default function AIProviderSelector({
     }
     await notifySelectionChange(providerId)
   }
+
+  const handleQuickReasoningSelect = useCallback(async (nextValue) => {
+    if (!selectedProvider) {
+      return
+    }
+    const normalizedValue = typeof nextValue === 'string' ? nextValue.trim().toLowerCase() : 'disable'
+    const nextProviders = providerList.map((item) => (
+      item.id === selectedProvider.id
+        ? {
+            ...item,
+            reasoningEffort: normalizedValue || 'disable',
+            enableReasoningEffort: normalizedValue !== 'disable',
+            modelMaxTokens: 0,
+            modelMaxThinkingTokens: 0,
+            updatedAt: Date.now(),
+          }
+        : item
+    ))
+    const normalizedState = normalizeAIProviderState({
+      currentProviderId: getPersistedSelectionId(nextProviders, persistedCurrentProviderId || effectiveSelectedId || selectedProvider.id),
+      providers: nextProviders,
+    })
+    await persistRegistryState(normalizedState.providers, normalizedState.currentProviderId)
+    setReasoningMenuOpen(false)
+  }, [effectiveSelectedId, getPersistedSelectionId, persistRegistryState, persistedCurrentProviderId, providerList, selectedProvider])
 
   const handleSaveProvider = async (draft) => {
     const savedProvider = {
@@ -830,35 +937,117 @@ export default function AIProviderSelector({
 
   return (
     <>
-      <div ref={containerRef} style={{ position: 'relative', flexShrink: 0, overflow: 'visible', zIndex: open ? 40 : 'auto' }}>
-        <button
-          type="button"
-          onClick={() => {
-            closeTooltip()
-            setOpen((prev) => !prev)
-          }}
-          onMouseEnter={handleTriggerMouseEnter}
-          onMouseLeave={closeTooltip}
-          onFocus={handleTriggerMouseEnter}
-          onBlur={closeTooltip}
-          style={{
-            height: 28,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '0 10px',
-            borderRadius: 8,
-            border: `1px solid ${open ? 'var(--accent-border)' : 'var(--border)'}`,
-            background: open ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
-            color: 'var(--text-primary)',
-            fontSize: 12,
-            fontWeight: 500,
-            transition: 'var(--transition)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span>{selectedProvider?.name || t('选择供应商')}</span>
-        </button>
+      <div ref={containerRef} style={{ position: 'relative', flexShrink: 0, overflow: 'visible', zIndex: open || reasoningMenuOpen ? 40 : 'auto' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'stretch' }}>
+          <button
+            type="button"
+            onClick={() => {
+              closeTooltip()
+              setReasoningMenuOpen(false)
+              setOpen((prev) => !prev)
+            }}
+            onMouseEnter={handleTriggerMouseEnter}
+            onMouseLeave={closeTooltip}
+            onFocus={handleTriggerMouseEnter}
+            onBlur={closeTooltip}
+            style={{
+              height: 28,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '0 10px',
+              borderRadius: quickReasoningConfig.visible ? '8px 0 0 8px' : 8,
+              border: `1px solid ${open ? 'var(--accent-border)' : 'var(--border)'}`,
+              background: open ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 500,
+              transition: 'var(--transition)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>{selectedProvider?.name || t('选择供应商')}</span>
+          </button>
+          {quickReasoningConfig.visible ? (
+            <div style={{ position: 'relative', marginLeft: -1 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTooltip()
+                  setOpen(false)
+                  setReasoningMenuOpen((prev) => !prev)
+                }}
+                onMouseEnter={handleTriggerMouseEnter}
+                onMouseLeave={closeTooltip}
+                onFocus={handleTriggerMouseEnter}
+                onBlur={closeTooltip}
+                style={{
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '0 10px',
+                  borderRadius: '0 8px 8px 0',
+                  border: `1px solid ${reasoningMenuOpen ? 'var(--accent-border)' : 'var(--border)'}`,
+                  background: reasoningMenuOpen ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+                  color: reasoningMenuOpen ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  transition: 'var(--transition)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>{quickReasoningConfig.currentLabel}</span>
+              </button>
+              {reasoningMenuOpen && triggerRect ? (
+                <div
+                  style={{
+                    position: 'fixed',
+                    right: Math.max(16, window.innerWidth - triggerRect.right),
+                    bottom: window.innerHeight - triggerRect.top + 8,
+                    minWidth: 92,
+                    padding: 4,
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-overlay)',
+                    boxShadow: 'var(--shadow-xl)',
+                    display: 'grid',
+                    gap: 2,
+                    zIndex: 10002,
+                  }}>
+                  {quickReasoningConfig.options.map((option) => {
+                    const active = option === quickReasoningConfig.currentValue
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => void handleQuickReasoningSelect(option)}
+                        style={{
+                          minHeight: 30,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          padding: '0 10px',
+                          border: 'none',
+                          borderRadius: 8,
+                          background: active ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+                          color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontSize: 12,
+                          fontWeight: active ? 700 : 500,
+                          textAlign: 'left',
+                          transition: 'var(--transition)',
+                        }}
+                      >
+                        <span>{getReasoningEffortLabel(t, option) || t('无')}</span>
+                        {active ? <span style={{ color: 'var(--accent)', fontSize: 12 }}>✓</span> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
         {tooltipVisible && tooltipTriggerRect && !open && !editingState.open ? (
           <div
