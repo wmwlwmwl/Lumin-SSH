@@ -536,7 +536,7 @@ func (c *ConfigManager) newSFTPStorage() (RemoteStorage, int, error) {
 
 // BackupToSFTP 备份到 SFTP
 func (c *ConfigManager) BackupToSFTP() (map[string]interface{}, error) {
-	return c.backupTo(c.newSFTPStorage)
+	return c.backupTo("sftp", c.newSFTPStorage)
 }
 
 // ListSFTPBackups 列出 SFTP 备份
@@ -546,14 +546,14 @@ func (c *ConfigManager) ListSFTPBackups() ([]map[string]interface{}, error) {
 
 // SyncFromSFTP 手动合并同步
 func (c *ConfigManager) SyncFromSFTP() (map[string]interface{}, error) {
-	return c.syncFrom(c.newSFTPStorage)
+	return c.syncFrom("sftp", c.newSFTPStorage)
 }
 
 func (c *ConfigManager) RestoreFromSFTPFile(filename string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newSFTPStorage, filename, c.GetRecoveryPassword())
+	return c.restoreFrom("sftp", c.newSFTPStorage, filename, c.GetRecoveryPassword())
 }
 
 // RestoreFromSFTPFileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
 func (c *ConfigManager) RestoreFromSFTPFileWithPassword(filename string, password string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newSFTPStorage, filename, password)
+	return c.restoreFrom("sftp", c.newSFTPStorage, filename, password)
 }

@@ -1738,7 +1738,24 @@ func (a *App) GetLastSyncTime() int64 {
 	if a == nil || a.configManager == nil {
 		return 0
 	}
-	return a.configManager.loadLastSyncTime()
+	return a.configManager.loadLastSyncTimeMax()
+}
+
+// GetSyncTombstoneStats 返回本地同步删除记录条数。
+func (a *App) GetSyncTombstoneStats() SyncTombstoneStats {
+	if a == nil || a.configManager == nil {
+		return SyncTombstoneStats{}
+	}
+	return a.configManager.GetSyncTombstoneStats()
+}
+
+// PruneSyncTombstones 按天数清理删除记录并上传到已配置云端。
+// days <= 0 表示清理全部。
+func (a *App) PruneSyncTombstones(days int) (SyncTombstonePruneResult, error) {
+	if a == nil || a.configManager == nil {
+		return SyncTombstonePruneResult{}, fmt.Errorf("配置未初始化")
+	}
+	return a.configManager.PruneSyncTombstones(days)
 }
 
 func (a *App) SetAutoSyncEnabled(enabled bool) error {

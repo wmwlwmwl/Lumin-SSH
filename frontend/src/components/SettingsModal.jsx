@@ -282,6 +282,8 @@ export default function SettingsModal({
   const [loadingBackups, setLoadingBackups] = useState(false);
   const [testResult, setTestResult] = useState(null); // null | 'ok' | 'fail'
   const [lastSyncTime, setLastSyncTime] = useState(0);
+  const [syncTombstoneStats, setSyncTombstoneStats] = useState({ connections: 0, credentials: 0 });
+  const [pruningTombstones, setPruningTombstones] = useState(false);
 
   // Recovery password (for cloud backup restore fallback)
   const [hasRecoveryPassword, setHasRecoveryPassword] = useState(false);
@@ -306,6 +308,22 @@ export default function SettingsModal({
       if (Number.isSafeInteger(value) && value > 0) setLastSyncTime(value);
     } catch (_) {}
   }, []);
+
+  const refreshSyncTombstoneStats = useCallback(async () => {
+    try {
+      const stats = await AppGo.GetSyncTombstoneStats();
+      const connections = Number(stats?.connections || 0);
+      const credentials = Number(stats?.credentials || 0);
+      setSyncTombstoneStats({
+        connections: Number.isSafeInteger(connections) && connections > 0 ? connections : 0,
+        credentials: Number.isSafeInteger(credentials) && credentials > 0 ? credentials : 0,
+      });
+    } catch (_) {}
+  }, []);
+
+  const refreshSyncMeta = useCallback(async () => {
+    await Promise.all([refreshLastSyncTime(), refreshSyncTombstoneStats()]);
+  }, [refreshLastSyncTime, refreshSyncTombstoneStats]);
 
   // Sync provider selection
   const [syncProvider, setSyncProvider] = useState('webdav');
@@ -895,7 +913,7 @@ export default function SettingsModal({
       }
     });
 
-    void refreshLastSyncTime();
+    void refreshSyncMeta();
 
     // Load sync mode
     AppGo.GetSyncMode()
@@ -968,12 +986,12 @@ export default function SettingsModal({
     ]);
 
     return () => { cancelled = true; };
-  }, [refreshLastSyncTime]);
+  }, [refreshSyncMeta]);
 
   useEffect(() => {
-    const unbind = EventsOn('sync-completed', () => { void refreshLastSyncTime(); });
+    const unbind = EventsOn('sync-completed', () => { void refreshSyncMeta(); });
     return () => { if (unbind) unbind(); };
-  }, [refreshLastSyncTime]);
+  }, [refreshSyncMeta]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1043,13 +1061,13 @@ export default function SettingsModal({
         s.setEditing(false);
         try {
           const res = await p.sync();
-          await refreshLastSyncTime();
+          await refreshSyncMeta();
           addToast(`${p.name} ${$t('同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
           onRestored?.();
         } catch (_) {
           try {
             const data = await p.backup();
-            await refreshLastSyncTime();
+            await refreshSyncMeta();
             addToast(`${p.name} ${$t('配置已保存，已上传')} ${data.count} ${$t('个服务器')}`, 'success');
           } catch (e) {
             addToast(`${p.name} ${$t('配置已保存，但同步失败，可稍后手动上传')}`, 'warning');
@@ -1224,7 +1242,7 @@ export default function SettingsModal({
       } else {
         await p.sync();
       }
-      await refreshLastSyncTime();
+      await refreshSyncMeta();
       addToast($t('恢复成功'), 'success');
       onRestored?.();
       setConfirmRestore(false);
@@ -1266,7 +1284,7 @@ export default function SettingsModal({
         t: $t,
       });
       if (cancelled) return;
-      await refreshLastSyncTime();
+      await refreshSyncMeta();
       addToast(`${$t('合并同步成功！本地')} ${res.localCount} ${$t('个 + 云端')} ${res.remoteCount} ${$t('个 =')} ${res.mergedCount} ${$t('个')}`, 'success');
       onRestored?.();
     } catch (err) {
@@ -1289,6 +1307,36 @@ export default function SettingsModal({
   const handleTerminalColorThemeChange = (key) => { setTerminalColorTheme(key); localStorage.setItem('terminalColorTheme', key); window.dispatchEvent(new CustomEvent('terminal-theme-changed', { detail: key })); };
   const handleSyncModeChange = async (mode) => { setSyncMode(mode); try { await AppGo.SetSyncMode(mode); } catch (_) {} };
   const handleAutoSyncEnabledChange = async (enabled) => { setAutoSyncEnabled(enabled); try { await AppGo.SetAutoSyncEnabled(enabled); } catch (_) {} };
+  const handlePruneSyncTombstones = async (days) => {
+    const total = (syncTombstoneStats?.connections || 0) + (syncTombstoneStats?.credentials || 0);
+    if (total <= 0) return;
+    const dayNum = Number(days);
+    const label = dayNum > 0 ? `${$t('清理超过')} ${dayNum} ${$t('天的删除记录')}` : $t('清理全部删除记录');
+    const action = await window.luminDialog?.choice?.(
+      $t('将清理本地并上传到已配置云端，避免下次同步再次合并回来。确定？'),
+      label,
+      [
+        { label: $t('清理删除记录'), value: 'clear', primary: true },
+        { label: $t('取消'), value: 'cancel', secondary: true },
+      ]
+    );
+    if (action !== 'clear') return;
+    setPruningTombstones(true);
+    try {
+      const res = await AppGo.PruneSyncTombstones(Number.isFinite(dayNum) ? dayNum : 0);
+      await refreshSyncMeta();
+      const removed = Number(res?.removedConnections || 0) + Number(res?.removedCredentials || 0);
+      if (removed <= 0) {
+        addToast($t('没有可清理的删除记录'), 'info');
+      } else {
+        addToast(`${$t('已清理删除记录')} ${removed}${$t('条')}`, 'success');
+      }
+    } catch (e) {
+      addToast($t('清理删除记录失败') + ': ' + e, 'error');
+    } finally {
+      setPruningTombstones(false);
+    }
+  };
 
   const changeRecoveryPassword = async (password) => {
     setRecoveryPasswordChanging(true);
@@ -1308,7 +1356,7 @@ export default function SettingsModal({
         if (action !== 'reset') return;
         await AppGo.ResetRecoveryPassword(password);
       }
-      await refreshLastSyncTime();
+      await refreshSyncMeta();
       setHasRecoveryPassword(!!password.trim());
       setRecoveryPasswordEditing(false);
       setRecoveryPasswordInput('');
@@ -1556,6 +1604,9 @@ export default function SettingsModal({
                 onSaveSFTP={handleSaveSFTP}
                 setSftpForm={setSftpForm}
                 lastSyncTime={lastSyncTime}
+                syncTombstoneStats={syncTombstoneStats}
+                onPruneSyncTombstones={handlePruneSyncTombstones}
+                pruningTombstones={pruningTombstones}
                 syncing={syncing}
                 onSync={handleSync}
                 loadingBackups={loadingBackups}

@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,41 +94,42 @@ type AppSettings struct {
 }
 
 type WorkspacePrefs struct {
-	RememberWorkspace        bool   `json:"rememberWorkspace"`
+	RememberWorkspace         bool   `json:"rememberWorkspace"`
 	WorkspacePersistenceLevel string `json:"workspacePersistenceLevel,omitempty"`
 }
 
 type ConfigManager struct {
-	configDir               string
-	connFile                string
-	credFile                string
-	davFile                 string
-	key                     []byte
-	gcm                     cipher.AEAD // ponytail: 缓存 GCM cipher，避免每次 encrypt/decrypt 重建
-	syncModeFile            string
-	autoSyncEnabledFile     string
-	syncTimeFile            string // 本地快照时间戳文件
-	lastSyncFile            string // 上次同步时间戳文件（仅在同步完成时更新）
-	recoveryPasswordFile    string // 恢复密码（加密存储）
-	quickCmdFile            string
-	paramHistFile           string
-	fileManagerSettingsFile string
-	workspaceStateFile      string
-	workspacePrefsFile      string
+	configDir                 string
+	connFile                  string
+	credFile                  string
+	davFile                   string
+	key                       []byte
+	gcm                       cipher.AEAD // ponytail: 缓存 GCM cipher，避免每次 encrypt/decrypt 重建
+	syncModeFile              string
+	autoSyncEnabledFile       string
+	syncTimeFile              string // 本地快照时间戳文件
+	lastSyncFile              string // 上次同步时间戳文件（仅在同步完成时更新）
+	tombstoneFile             string // 同步删除墓碑（连接/凭据）
+	recoveryPasswordFile      string // 恢复密码（加密存储）
+	quickCmdFile              string
+	paramHistFile             string
+	fileManagerSettingsFile   string
+	workspaceStateFile        string
+	workspacePrefsFile        string
 	workspaceSessionStateFile string
-	appSettingsFile         string
-	historyDir              string
-	globalHistFile          string
-	mu                      sync.RWMutex
-	connCache               []Connection // 缓存连接列表
-	connCacheDirty          bool         // 缓存是否需要刷新
-	credCache               []Credential // 缓存凭据列表
-	credCacheDirty          bool         // 凭据缓存是否需要刷新
-	syncRunning             atomic.Bool  // AutoSync 并发去重
-	wailsCtx                context.Context
-	syncEventForTest        func(string, map[string]interface{})
-	syncProvidersForTest    func() ([]providerEntry, []providerFailure)
-	allSyncProvidersForTest func() ([]providerEntry, []providerFailure)
+	appSettingsFile           string
+	historyDir                string
+	globalHistFile            string
+	mu                        sync.RWMutex
+	connCache                 []Connection // 缓存连接列表
+	connCacheDirty            bool         // 缓存是否需要刷新
+	credCache                 []Credential // 缓存凭据列表
+	credCacheDirty            bool         // 凭据缓存是否需要刷新
+	syncRunning               atomic.Bool  // AutoSync 并发去重
+	wailsCtx                  context.Context
+	syncEventForTest          func(string, map[string]interface{})
+	syncProvidersForTest      func() ([]providerEntry, []providerFailure)
+	allSyncProvidersForTest   func() ([]providerEntry, []providerFailure)
 }
 
 func NewConfigManager() *ConfigManager {
@@ -187,26 +189,27 @@ func NewConfigManager() *ConfigManager {
 	}
 
 	return &ConfigManager{
-		configDir:               dir,
-		connFile:                connFile,
-		credFile:                credFile,
-		davFile:                 davFile,
-		key:                     key,
-		gcm:                     gcm,
-		syncModeFile:            filepath.Join(dir, "sync_mode.json"),
-		autoSyncEnabledFile:     filepath.Join(dir, "auto_sync_enabled.json"),
-		syncTimeFile:            filepath.Join(dir, "snapshot_time"),
-		lastSyncFile:            filepath.Join(dir, "last_sync_time"),
-		recoveryPasswordFile:    filepath.Join(dir, "recovery_password"),
-		quickCmdFile:            quickCmdFile,
-		paramHistFile:           paramHistFile,
-		fileManagerSettingsFile: fileManagerSettingsFile,
-		workspaceStateFile:      workspaceStateFile,
-		workspacePrefsFile:      workspacePrefsFile,
+		configDir:                 dir,
+		connFile:                  connFile,
+		credFile:                  credFile,
+		davFile:                   davFile,
+		key:                       key,
+		gcm:                       gcm,
+		syncModeFile:              filepath.Join(dir, "sync_mode.json"),
+		autoSyncEnabledFile:       filepath.Join(dir, "auto_sync_enabled.json"),
+		syncTimeFile:              filepath.Join(dir, "snapshot_time"),
+		lastSyncFile:              filepath.Join(dir, "last_sync_time"),
+		tombstoneFile:             filepath.Join(dir, "sync_tombstones.json"),
+		recoveryPasswordFile:      filepath.Join(dir, "recovery_password"),
+		quickCmdFile:              quickCmdFile,
+		paramHistFile:             paramHistFile,
+		fileManagerSettingsFile:   fileManagerSettingsFile,
+		workspaceStateFile:        workspaceStateFile,
+		workspacePrefsFile:        workspacePrefsFile,
 		workspaceSessionStateFile: workspaceSessionStateFile,
-		appSettingsFile:         appSettingsFile,
-		historyDir:              historyDir,
-		globalHistFile:          filepath.Join(historyDir, "global.json"),
+		appSettingsFile:           appSettingsFile,
+		historyDir:                historyDir,
+		globalHistFile:            filepath.Join(historyDir, "global.json"),
 	}
 }
 
@@ -520,6 +523,8 @@ func (c *ConfigManager) SaveConnection(conn Connection, noSync bool) Connection 
 	if err := c.saveConnectionsFile(conns); err != nil {
 		log.Printf("[SaveConnection] failed to save connections: %v", err)
 	}
+	// 同 id 重新保存视为复活：清掉旧墓碑，避免被同步再压回去
+	c.clearConnectionTombstonesLocked([]string{conn.ID})
 	c.connCacheDirty = true // 标记缓存需要刷新
 	if noSync {
 		// ponytail: 连接前仅写盘不触发同步，等 OS 更新后一起同步，避免两次上传
@@ -616,20 +621,334 @@ func (c *ConfigManager) bumpSnapshotTime() int64 {
 	return now
 }
 
-// loadLastSyncTime 读取上次同步时间戳（仅在同步完成时更新，不受本地改动影响）
-func (c *ConfigManager) loadLastSyncTime() int64 {
+// loadLastSyncTimeMap 读取各同步后端的上次同步时间。
+// 兼容旧版纯数字文件：仅归属到当前同步模式对应后端，避免跨后端误判删除。
+func (c *ConfigManager) loadLastSyncTimeMap() map[string]int64 {
 	data, err := os.ReadFile(c.lastSyncFile)
 	if err != nil {
-		return 0
+		return map[string]int64{}
 	}
-	var t int64
-	fmt.Sscanf(string(data), "%d", &t)
-	return t
+	raw := strings.TrimSpace(string(data))
+	if raw == "" {
+		return map[string]int64{}
+	}
+	var asMap map[string]int64
+	if err := json.Unmarshal([]byte(raw), &asMap); err == nil && asMap != nil {
+		return asMap
+	}
+	// 旧版全局数字时间戳无法区分后端；直接丢弃，避免 R2 的 lastSync 污染 WebDAV 删除判定。
+	// 首次同步后会改写为 {"provider": ts} 格式。
+	return map[string]int64{}
 }
 
-// saveLastSyncTime 保存上次同步时间戳
-func (c *ConfigManager) saveLastSyncTime(t int64) {
-	atomicWriteFile(c.lastSyncFile, []byte(fmt.Sprintf("%d", t)), 0600)
+// loadLastSyncTime 读取指定后端的上次同步时间；从未同步过该后端则返回 0。
+func (c *ConfigManager) loadLastSyncTime(provider string) int64 {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return 0
+	}
+	return c.loadLastSyncTimeMap()[provider]
+}
+
+// loadLastSyncTimeMin 取多个后端中最小的上次同步时间；任一为 0 则返回 0（更保守，少误删）。
+func (c *ConfigManager) loadLastSyncTimeMin(providers ...string) int64 {
+	if len(providers) == 0 {
+		return 0
+	}
+	m := c.loadLastSyncTimeMap()
+	var min int64
+	for i, p := range providers {
+		p = strings.TrimSpace(p)
+		t := m[p]
+		if t <= 0 {
+			return 0
+		}
+		if i == 0 || t < min {
+			min = t
+		}
+	}
+	return min
+}
+
+// loadLastSyncTimeMax 取所有已记录后端中最大的上次同步时间，供 UI 展示。
+func (c *ConfigManager) loadLastSyncTimeMax() int64 {
+	m := c.loadLastSyncTimeMap()
+	var max int64
+	for _, t := range m {
+		if t > max {
+			max = t
+		}
+	}
+	return max
+}
+
+// saveLastSyncTime 保存指定后端的上次同步时间戳。
+func (c *ConfigManager) saveLastSyncTime(provider string, t int64) {
+	provider = strings.TrimSpace(provider)
+	if provider == "" || t <= 0 {
+		return
+	}
+	m := c.loadLastSyncTimeMap()
+	m[provider] = t
+	data, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	atomicWriteFile(c.lastSyncFile, data, 0600)
+}
+
+// saveLastSyncTimes 批量写入多个后端的同一同步完成时间。
+func (c *ConfigManager) saveLastSyncTimes(providers []string, t int64) {
+	if t <= 0 || len(providers) == 0 {
+		return
+	}
+	m := c.loadLastSyncTimeMap()
+	changed := false
+	for _, p := range providers {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		m[p] = t
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	atomicWriteFile(c.lastSyncFile, data, 0600)
+}
+
+// SyncTombstone 同步删除墓碑：明确记录「某 id 在 deleted_at 被删」，跨后端/设备传播删除意图。
+type SyncTombstone struct {
+	ID        string `json:"id"`
+	DeletedAt int64  `json:"deleted_at"`
+}
+
+type syncTombstoneStore struct {
+	Connections []SyncTombstone `json:"connections,omitempty"`
+	Credentials []SyncTombstone `json:"credentials,omitempty"`
+}
+
+func (c *ConfigManager) loadTombstoneStore() syncTombstoneStore {
+	var store syncTombstoneStore
+	if c == nil || c.tombstoneFile == "" {
+		return store
+	}
+	data, err := os.ReadFile(c.tombstoneFile)
+	if err != nil {
+		return store
+	}
+	_ = json.Unmarshal(data, &store)
+	if store.Connections == nil {
+		store.Connections = []SyncTombstone{}
+	}
+	if store.Credentials == nil {
+		store.Credentials = []SyncTombstone{}
+	}
+	return store
+}
+
+func (c *ConfigManager) saveTombstoneStore(store syncTombstoneStore) error {
+	if c == nil || c.tombstoneFile == "" {
+		return nil
+	}
+	if store.Connections == nil {
+		store.Connections = []SyncTombstone{}
+	}
+	if store.Credentials == nil {
+		store.Credentials = []SyncTombstone{}
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(c.tombstoneFile, data, 0600)
+}
+
+func tombstoneMap(list []SyncTombstone) map[string]int64 {
+	m := make(map[string]int64, len(list))
+	for _, t := range list {
+		id := strings.TrimSpace(t.ID)
+		if id == "" || t.DeletedAt <= 0 {
+			continue
+		}
+		if prev, ok := m[id]; !ok || t.DeletedAt > prev {
+			m[id] = t.DeletedAt
+		}
+	}
+	return m
+}
+
+func tombstonesFromMap(m map[string]int64) []SyncTombstone {
+	if len(m) == 0 {
+		return []SyncTombstone{}
+	}
+	out := make([]SyncTombstone, 0, len(m))
+	for id, at := range m {
+		out = append(out, SyncTombstone{ID: id, DeletedAt: at})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].DeletedAt != out[j].DeletedAt {
+			return out[i].DeletedAt > out[j].DeletedAt
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func mergeTombstoneMaps(a, b map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(a)+len(b))
+	for id, at := range a {
+		out[id] = at
+	}
+	for id, at := range b {
+		if prev, ok := out[id]; !ok || at > prev {
+			out[id] = at
+		}
+	}
+	return out
+}
+
+func (c *ConfigManager) addConnectionTombstonesLocked(ids []string, deletedAt int64) {
+	if deletedAt <= 0 || len(ids) == 0 {
+		return
+	}
+	store := c.loadTombstoneStore()
+	m := tombstoneMap(store.Connections)
+	changed := false
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if prev, ok := m[id]; !ok || deletedAt > prev {
+			m[id] = deletedAt
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	store.Connections = tombstonesFromMap(m)
+	if err := c.saveTombstoneStore(store); err != nil {
+		log.Printf("[tombstone] save connections failed: %v", err)
+	}
+}
+
+func (c *ConfigManager) addCredentialTombstonesLocked(ids []string, deletedAt int64) {
+	if deletedAt <= 0 || len(ids) == 0 {
+		return
+	}
+	store := c.loadTombstoneStore()
+	m := tombstoneMap(store.Credentials)
+	changed := false
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if prev, ok := m[id]; !ok || deletedAt > prev {
+			m[id] = deletedAt
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	store.Credentials = tombstonesFromMap(m)
+	if err := c.saveTombstoneStore(store); err != nil {
+		log.Printf("[tombstone] save credentials failed: %v", err)
+	}
+}
+
+func (c *ConfigManager) clearConnectionTombstonesLocked(ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	store := c.loadTombstoneStore()
+	m := tombstoneMap(store.Connections)
+	changed := false
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if _, ok := m[id]; ok {
+			delete(m, id)
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	store.Connections = tombstonesFromMap(m)
+	_ = c.saveTombstoneStore(store)
+}
+
+func (c *ConfigManager) clearCredentialTombstonesLocked(ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	store := c.loadTombstoneStore()
+	m := tombstoneMap(store.Credentials)
+	changed := false
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if _, ok := m[id]; ok {
+			delete(m, id)
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	store.Credentials = tombstonesFromMap(m)
+	_ = c.saveTombstoneStore(store)
+}
+
+// SyncTombstoneStats 同步删除记录条数（供设置页展示）。
+type SyncTombstoneStats struct {
+	Connections int `json:"connections"`
+	Credentials int `json:"credentials"`
+}
+
+// SyncTombstonePruneResult 按天数清理墓碑的结果。
+type SyncTombstonePruneResult struct {
+	RemovedConnections   int `json:"removedConnections"`
+	RemovedCredentials   int `json:"removedCredentials"`
+	RemainingConnections int `json:"remainingConnections"`
+	RemainingCredentials int `json:"remainingCredentials"`
+	Uploaded             int `json:"uploaded"`
+}
+
+// GetSyncTombstoneStats 返回本地墓碑条数。
+func (c *ConfigManager) GetSyncTombstoneStats() SyncTombstoneStats {
+	store := c.loadTombstoneStore()
+	return SyncTombstoneStats{
+		Connections: len(tombstoneMap(store.Connections)),
+		Credentials: len(tombstoneMap(store.Credentials)),
+	}
+}
+
+// pruneTombstonesOlderThan 去掉 deleted_at 早于 cutoff 的墓碑；days<=0 表示全部清理。
+func pruneTombstonesOlderThan(list []SyncTombstone, cutoff int64, clearAll bool) (kept []SyncTombstone, removed int) {
+	if len(list) == 0 {
+		return []SyncTombstone{}, 0
+	}
+	kept = make([]SyncTombstone, 0, len(list))
+	for _, t := range list {
+		id := strings.TrimSpace(t.ID)
+		if id == "" || t.DeletedAt <= 0 {
+			continue
+		}
+		if clearAll || t.DeletedAt < cutoff {
+			removed++
+			continue
+		}
+		kept = append(kept, SyncTombstone{ID: id, DeletedAt: t.DeletedAt})
+	}
+	return tombstonesFromMap(tombstoneMap(kept)), removed
 }
 
 // SetConnectionGroup 仅更新服务器的分组字段，不影响密码等敏感数据
@@ -719,15 +1038,22 @@ func (c *ConfigManager) DeleteConnection(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	conns := c.getConnectionsLocked()
-	filtered := []Connection{}
+	filtered := make([]Connection, 0, len(conns))
+	found := false
 	for _, conn := range conns {
 		if conn.ID != id {
 			filtered = append(filtered, conn)
+			continue
 		}
+		found = true
+	}
+	if !found {
+		return false
 	}
 	if err := c.saveConnectionsFile(filtered); err != nil {
 		log.Printf("[DeleteConnection] failed to save connections: %v", err)
 	}
+	c.addConnectionTombstonesLocked([]string{id}, time.Now().UnixMilli())
 	if err := c.deleteWorkspaceSessionStateLocked(id); err != nil {
 		log.Printf("[DeleteConnection] failed to delete workspace session state: %v", err)
 	}
@@ -766,6 +1092,16 @@ func (c *ConfigManager) BatchDeleteConnections(ids []string) {
 	if err := c.saveConnectionsFile(filtered); err != nil {
 		log.Printf("[BatchDeleteConnections] failed to save connections: %v", err)
 	}
+	removed := make([]string, 0, len(ids))
+	for _, id := range ids {
+		for _, conn := range conns {
+			if conn.ID == id {
+				removed = append(removed, id)
+				break
+			}
+		}
+	}
+	c.addConnectionTombstonesLocked(removed, time.Now().UnixMilli())
 	states := c.getWorkspaceSessionStatesLocked()
 	if len(states) > 0 {
 		changed := false
@@ -910,6 +1246,7 @@ func (c *ConfigManager) SaveCredential(cred Credential) Credential {
 	if err := c.saveCredentialsFile(creds); err != nil {
 		log.Printf("[SaveCredential] failed to save credentials: %v", err)
 	}
+	c.clearCredentialTombstonesLocked([]string{cred.ID})
 	c.credCacheDirty = true
 	c.bumpSnapshotTime()
 	go c.AutoSync()
@@ -941,6 +1278,7 @@ func (c *ConfigManager) DeleteCredential(id string) error {
 	if err := c.saveCredentialsFile(filtered); err != nil {
 		log.Printf("[DeleteCredential] failed to save credentials: %v", err)
 	}
+	c.addCredentialTombstonesLocked([]string{id}, time.Now().UnixMilli())
 	c.credCacheDirty = true
 	c.bumpSnapshotTime()
 	go c.AutoSync()
@@ -1215,7 +1553,7 @@ func (c *ConfigManager) newWebdavStorage() (RemoteStorage, int, error) {
 
 // BackupToWebdav 备份到 WebDAV
 func (c *ConfigManager) BackupToWebdav() (map[string]interface{}, error) {
-	return c.backupTo(c.newWebdavStorage)
+	return c.backupTo("webdav", c.newWebdavStorage)
 }
 
 // ListWebdavBackups 列出 WebDAV 备份
@@ -1225,16 +1563,16 @@ func (c *ConfigManager) ListWebdavBackups() ([]map[string]interface{}, error) {
 
 // SyncFromWebdav 手动合并同步
 func (c *ConfigManager) SyncFromWebdav() (map[string]interface{}, error) {
-	return c.syncFrom(c.newWebdavStorage)
+	return c.syncFrom("webdav", c.newWebdavStorage)
 }
 
 func (c *ConfigManager) RestoreFromWebdavFile(filename string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newWebdavStorage, filename, c.GetRecoveryPassword())
+	return c.restoreFrom("webdav", c.newWebdavStorage, filename, c.GetRecoveryPassword())
 }
 
 // RestoreFromWebdavFileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
 func (c *ConfigManager) RestoreFromWebdavFileWithPassword(filename string, password string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newWebdavStorage, filename, password)
+	return c.restoreFrom("webdav", c.newWebdavStorage, filename, password)
 }
 
 // ─── 同步模式配置 ─────────────────────────────────────────
@@ -1735,6 +2073,11 @@ func (c *ConfigManager) SaveGlobalCommandHistory(jsonStr string) error {
 
 // CleanupOrphanedHistory 清理已不存在的连接的历史文件
 func (c *ConfigManager) CleanupOrphanedHistory() {
+	// 安全阀：historyDir 必须是独立子目录。测试/误配若指向 configDir，
+	// 会把 sync_tombstones.json 等配置文件当成「孤儿历史」删掉。
+	if c == nil || c.historyDir == "" || c.configDir == "" || filepath.Clean(c.historyDir) == filepath.Clean(c.configDir) {
+		return
+	}
 	conns := c.GetConnections()
 	active := make(map[string]bool)
 	for _, conn := range conns {

@@ -108,10 +108,14 @@ export default function SyncTab({
   r2Form, setR2Field, r2Configured, r2Editing, setR2Editing, r2Loading, r2Testing, r2TestResult, onR2Test, onR2Save,
   ftpForm, setFTPField, ftpConfigured, ftpEditing, setFtpEditing, ftpLoading, ftpTesting, ftpTestResult, onTestFTP, onSaveFTP,
   sftpForm, setSFTPField, sftpConfigured, sftpEditing, setSftpEditing, sftpLoading, sftpTesting, sftpTestResult, onTestSFTP, onSaveSFTP, setSftpForm,
-  lastSyncTime, syncing, onSync, loadingBackups, restoring, onRestore, isAnyConfigured, addToast,
+  lastSyncTime, syncTombstoneStats, onPruneSyncTombstones, pruningTombstones, syncing, onSync, loadingBackups, restoring, onRestore, isAnyConfigured, addToast,
   hasRecoveryPassword, recoveryPasswordEditing, setRecoveryPasswordEditing, recoveryPasswordInput, setRecoveryPasswordInput, recoveryPasswordChanging, onSaveRecoveryPassword, onClearRecoveryPassword
 }) {
   const formattedLastSyncTime = formatSyncTime(lastSyncTime);
+  const tombstoneConnections = Number(syncTombstoneStats?.connections || 0);
+  const tombstoneCredentials = Number(syncTombstoneStats?.credentials || 0);
+  const tombstoneTotal = tombstoneConnections + tombstoneCredentials;
+  const [tombstoneDays, setTombstoneDays] = React.useState(30);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
@@ -464,6 +468,46 @@ export default function SyncTab({
         )}
 
         {formattedLastSyncTime && <div style={{ fontSize: 12, color: 'var(--success)', marginBottom: 12 }}>{$t('上次同步')}: {formattedLastSyncTime}</div>}
+
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10,
+          padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
+          background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 12, marginBottom: 16
+        }}>
+          <div>
+            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{$t('删除记录')}</span>
+            <span style={{ marginLeft: 10 }}>{$t('连接')} {Number.isFinite(tombstoneConnections) ? tombstoneConnections : 0}</span>
+            <span style={{ marginLeft: 10 }}>{$t('凭据')} {Number.isFinite(tombstoneCredentials) ? tombstoneCredentials : 0}</span>
+            <div style={{ marginTop: 4, color: 'var(--text-tertiary)' }}>{$t('用于多设备同步删除，一般无需处理。')}</div>
+          </div>
+          {tombstoneTotal > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span>{$t('清理超过')}</span>
+              <select
+                className="input"
+                value={tombstoneDays}
+                disabled={pruningTombstones || syncing || loadingBackups || restoring}
+                onChange={(e) => setTombstoneDays(Number(e.target.value))}
+                style={{ width: 90, height: 30, fontSize: 12, padding: '0 8px' }}
+              >
+                <option value={7}>7</option>
+                <option value={30}>30</option>
+                <option value={90}>90</option>
+                <option value={180}>180</option>
+                <option value={0}>{$t('全部')}</option>
+              </select>
+              <span>{$t('天的删除记录')}</span>
+              <button
+                className="btn btn-ghost"
+                onClick={() => onPruneSyncTombstones?.(tombstoneDays)}
+                disabled={pruningTombstones || syncing || loadingBackups || restoring}
+                style={{ fontSize: 12, color: 'var(--warning)' }}
+              >
+                {pruningTombstones ? $t('同步中...') : $t('清理删除记录')}
+              </button>
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', gap: 12 }}>
           <button className="btn btn-secondary" onClick={onSync} disabled={syncing || loadingBackups || restoring}>

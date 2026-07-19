@@ -67,6 +67,10 @@ func testSyncManager(t *testing.T) *ConfigManager {
 	if err != nil {
 		t.Fatal(err)
 	}
+	historyDir := filepath.Join(dir, "history")
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	return &ConfigManager{
 		configDir:            dir,
 		connFile:             filepath.Join(dir, "connections.json"),
@@ -74,11 +78,14 @@ func testSyncManager(t *testing.T) *ConfigManager {
 		quickCmdFile:         filepath.Join(dir, "quick_commands.json"),
 		syncTimeFile:         filepath.Join(dir, "snapshot_time"),
 		lastSyncFile:         filepath.Join(dir, "last_sync_time"),
+		tombstoneFile:        filepath.Join(dir, "sync_tombstones.json"),
 		recoveryPasswordFile: filepath.Join(dir, "recovery_password"),
 		syncModeFile:         filepath.Join(dir, "sync_mode.json"),
-		historyDir:           dir,
-		key:                  key,
-		gcm:                  gcm,
+		// 必须与生产一致：history 子目录。若 historyDir==configDir，
+		// CleanupOrphanedHistory 会把 sync_tombstones.json 等配置文件当孤儿历史删掉。
+		historyDir: historyDir,
+		key:        key,
+		gcm:        gcm,
 	}
 }
 
@@ -114,7 +121,7 @@ func TestFetchLatestBackupStrictlyFailsOnNewest(t *testing.T) {
 
 func TestChangeRecoveryPasswordWithoutProvidersOnlyPersistsLocally(t *testing.T) {
 	cm := testSyncManager(t)
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) { return nil, nil }
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) { return nil, nil }
 	if err := cm.ChangeRecoveryPassword("仅本地密码"); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +144,7 @@ func TestChangeRecoveryPasswordWrongPasswordWritesNothing(t *testing.T) {
 	s := &memoryStorage{files: map[string][]byte{
 		"connections_backup_20260102_000000.000_+0000.lumin2": encryptedSnapshot(t, "第三个密码", "remote"),
 	}}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: s}}, nil
 	}
 	err := cm.ChangeRecoveryPassword("新密码")
@@ -167,7 +174,7 @@ func TestChangeRecoveryPasswordDoesNotClassifyNonPasswordError(t *testing.T) {
 	s := &memoryStorage{files: map[string][]byte{}, readErr: map[string]error{}, writeErr: nil}
 	s.readErr["connections_backup_20260101_000000.000_+0000.lumin2"] = networkErr
 	s.files["connections_backup_20260101_000000.000_+0000.lumin2"] = encryptedSnapshot(t, "旧密码", "remote")
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: s}}, nil
 	}
 	err := cm.ChangeRecoveryPassword("新密码")
@@ -186,7 +193,7 @@ func TestChangeRecoveryPasswordAllFailsClosed(t *testing.T) {
 	}
 	first := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "旧密码", "one")}}
 	second := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "错误", "two")}}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: first}, {provider: "r2", storage: second}}, nil
 	}
 	if err := cm.ChangeRecoveryPassword("新密码"); err == nil {
@@ -209,7 +216,7 @@ func TestChangeRecoveryPasswordRollsBackUploadsWhenLocalPersistFails(t *testing.
 		t.Fatal(err)
 	}
 	s := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "旧密码", "one")}}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: s}}, nil
 	}
 	if err := cm.ChangeRecoveryPassword("新密码"); err == nil {
@@ -237,7 +244,7 @@ func TestChangeRecoveryPasswordRollsBackUploadsWhenPasswordPersistFails(t *testi
 	s := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "旧密码", "one")}}
 	// 本地密码文件被故意破坏后无法读取旧密码，因此让远端同时接受候选新密码完成纯读取预检。
 	s.files["connections_backup_20260101_000000.000_+0000.lumin2"] = encryptedSnapshot(t, "新密码", "one")
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: s}}, nil
 	}
 	if err := cm.ChangeRecoveryPassword("新密码"); err == nil {
@@ -354,7 +361,7 @@ func TestAutoSyncProviderEmitsStatusAfterUploadingLocalChanges(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cm.saveLastSyncTime(15)
+	cm.saveLastSyncTime("webdav", 15)
 	remote := cm.localSyncSnapshot()
 	remote.Connections = []Connection{{ID: "server", Host: "old", ProxyMode: "direct", LastModified: 10}}
 	if err := cm.SetRecoveryPassword("密码"); err != nil {
@@ -373,14 +380,14 @@ func TestAutoSyncProviderEmitsStatusAfterUploadingLocalChanges(t *testing.T) {
 		}
 	}
 
-	if err := cm.autoSyncProvider(storage, 0); err != nil {
+	if err := cm.autoSyncProvider(storage, 0, "webdav"); err != nil {
 		t.Fatal(err)
 	}
 	if len(statusEvents) != 1 || statusEvents[0]["action"] != "upload" {
 		t.Fatalf("本地变更上传成功后必须发送一次状态事件：%v", statusEvents)
 	}
-	if len(completedEvents) != 1 || completedEvents[0]["timestamp"] != cm.loadLastSyncTime() {
-		t.Fatalf("同步完成时间必须持久化并广播：events=%v persisted=%d", completedEvents, cm.loadLastSyncTime())
+	if len(completedEvents) != 1 || completedEvents[0]["timestamp"] != cm.loadLastSyncTime("webdav") {
+		t.Fatalf("同步完成时间必须持久化并广播：events=%v persisted=%d", completedEvents, cm.loadLastSyncTime("webdav"))
 	}
 }
 
@@ -410,14 +417,14 @@ func TestAutoSyncProviderKeepsNoChangeSilent(t *testing.T) {
 		}
 	}
 
-	if err := cm.autoSyncProvider(storage, 0); err != nil {
+	if err := cm.autoSyncProvider(storage, 0, "webdav"); err != nil {
 		t.Fatal(err)
 	}
 	if statusCount != 0 {
 		t.Fatalf("两端一致时不应发送完成提示，得到 %d 次", statusCount)
 	}
-	if completedCount != 1 || cm.loadLastSyncTime() <= 0 {
-		t.Fatalf("两端一致也应记录一次同步完成：events=%d persisted=%d", completedCount, cm.loadLastSyncTime())
+	if completedCount != 1 || cm.loadLastSyncTime("webdav") <= 0 {
+		t.Fatalf("两端一致也应记录一次同步完成：events=%d persisted=%d", completedCount, cm.loadLastSyncTime("webdav"))
 	}
 }
 
@@ -434,11 +441,11 @@ func TestAutoSyncProviderRecordsFirstEmptyRemoteUpload(t *testing.T) {
 		}
 	}
 
-	if err := cm.autoSyncProvider(storage, 0); err != nil {
+	if err := cm.autoSyncProvider(storage, 0, "webdav"); err != nil {
 		t.Fatal(err)
 	}
-	if len(storage.writes) != 1 || statusCount != 1 || completedCount != 1 || cm.loadLastSyncTime() <= 0 {
-		t.Fatalf("首次上传应记录并通知同步完成：writes=%v status=%d completed=%d persisted=%d", storage.writes, statusCount, completedCount, cm.loadLastSyncTime())
+	if len(storage.writes) != 1 || statusCount != 1 || completedCount != 1 || cm.loadLastSyncTime("webdav") <= 0 {
+		t.Fatalf("首次上传应记录并通知同步完成：writes=%v status=%d completed=%d persisted=%d", storage.writes, statusCount, completedCount, cm.loadLastSyncTime("webdav"))
 	}
 }
 
@@ -448,7 +455,7 @@ func TestGetLastSyncTimeReturnsPersistedValue(t *testing.T) {
 	if got := app.GetLastSyncTime(); got != 0 {
 		t.Fatalf("未同步时应返回 0，得到 %d", got)
 	}
-	cm.saveLastSyncTime(123456789)
+	cm.saveLastSyncTime("webdav", 123456789)
 	if got := app.GetLastSyncTime(); got != 123456789 {
 		t.Fatalf("应返回持久化时间，得到 %d", got)
 	}
@@ -544,7 +551,7 @@ func TestSyncAllProvidersPropagatesDeletionIntoFinal(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cm.saveLastSyncTime(200)
+	cm.saveLastSyncTime("webdav", 200)
 	remote := &SyncSnapshot{Connections: []Connection{}, SnapshotTime: 300}
 	storage := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSyncSnapshot(t, "密码", remote)}}
 	result, err := cm.syncAllProviders([]providerEntry{{provider: "webdav", storage: storage}}, "密码")
@@ -595,7 +602,7 @@ func TestResetRecoveryPasswordUsesLocalSnapshotAndPreservesOldBackups(t *testing
 	}
 	oldName := "connections_backup_20260101_000000.000_+0000.lumin2"
 	s := &memoryStorage{files: map[string][]byte{oldName: encryptedSnapshot(t, "未知密码", "remote")}}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: s}}, nil
 	}
 	if err := cm.ResetRecoveryPassword("新密码"); err != nil {
@@ -620,7 +627,7 @@ func TestResetRecoveryPasswordRollsBackAllUploadsOnLaterFailure(t *testing.T) {
 	cm := testSyncManager(t)
 	first := &memoryStorage{files: map[string][]byte{}}
 	second := &memoryStorage{files: map[string][]byte{}, writeErr: errors.New("上传失败")}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: first}, {provider: "r2", storage: second}}, nil
 	}
 	if err := cm.ResetRecoveryPassword("新密码"); err == nil {
@@ -640,7 +647,7 @@ func TestResetRecoveryPasswordRollsBackWhenPasswordPersistFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &memoryStorage{files: map[string][]byte{}}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: s}}, nil
 	}
 	if err := cm.ResetRecoveryPassword("新密码"); err == nil {
@@ -653,7 +660,7 @@ func TestResetRecoveryPasswordRollsBackWhenPasswordPersistFails(t *testing.T) {
 
 func TestResetRecoveryPasswordWithoutProvidersAndWhitespace(t *testing.T) {
 	cm := testSyncManager(t)
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) { return nil, nil }
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) { return nil, nil }
 	if err := cm.ResetRecoveryPassword("仅本地密码"); err != nil {
 		t.Fatal(err)
 	}
@@ -688,7 +695,7 @@ func TestChangeRecoveryPasswordPersistsAfterSuccessfulUploads(t *testing.T) {
 	}
 	first := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "旧密码", "one")}}
 	second := &memoryStorage{files: map[string][]byte{"connections_backup_20260101_000000.000_+0000.lumin2": encryptedSnapshot(t, "旧密码", "two")}}
-	cm.allSyncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
 		return []providerEntry{{provider: "webdav", storage: first}, {provider: "r2", storage: second}}, nil
 	}
 	if err := cm.ChangeRecoveryPassword("新密码"); err != nil {
@@ -704,5 +711,353 @@ func TestChangeRecoveryPasswordPersistsAfterSuccessfulUploads(t *testing.T) {
 		if _, err := cm.decryptAndParseSnapshot(string(s.files[s.writes[0]]), nil, "新密码"); err != nil {
 			t.Fatalf("新快照应使用新密码：%v", err)
 		}
+	}
+}
+
+func TestSwitchProviderDoesNotDeleteLocalOnlyByForeignLastSync(t *testing.T) {
+	cm := testSyncManager(t)
+	// 模拟长期用 R2 同步后 lastSync 已很高；本地有 R2 上新增的节点。
+	local := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "shared", Host: "shared.example", Port: 22, Username: "root", LastModified: 100},
+			{ID: "r2-only-a", Host: "a.example", Port: 22, Username: "root", LastModified: 150},
+			{ID: "r2-only-b", Host: "b.example", Port: 22, Username: "root", LastModified: 160},
+		},
+		Credentials: []Credential{
+			{ID: "cred-shared", Name: "shared", LastModified: 100},
+			{ID: "cred-r2", Name: "r2", LastModified: 160},
+		},
+		QuickCommands: "[]",
+		SnapshotTime:  200,
+	}
+	if err := cm.persistSyncSnapshot(local); err != nil {
+		t.Fatal(err)
+	}
+	cm.saveLastSyncTime("r2", 1000) // 仅 R2 同步过；WebDAV 从未同步
+
+	// WebDAV 仍是旧快照：缺 r2-only 节点
+	webdavRemote := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "shared", Host: "shared.example", Port: 22, Username: "root", LastModified: 100},
+		},
+		Credentials: []Credential{
+			{ID: "cred-shared", Name: "shared", LastModified: 100},
+		},
+		HasCredentials: true,
+		SnapshotTime:   100,
+	}
+	storage := &memoryStorage{files: map[string][]byte{
+		"connections_backup_20260101_000000.000_+0000.json": mustJSON(t, webdavRemote),
+	}}
+
+	if _, err := cm.syncFromProvider(storage, 0, "", "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	got := cm.GetConnections()
+	ids := map[string]bool{}
+	for _, c := range got {
+		ids[c.ID] = true
+	}
+	for _, id := range []string{"shared", "r2-only-a", "r2-only-b"} {
+		if !ids[id] {
+			t.Fatalf("切回 WebDAV 不得删除仅存在于 R2/本地的节点 %s；got=%+v", id, got)
+		}
+	}
+	if cm.loadLastSyncTime("webdav") <= 0 {
+		t.Fatal("WebDAV 同步完成后应记录本后端 lastSync")
+	}
+	if cm.loadLastSyncTime("r2") != 1000 {
+		t.Fatalf("不得覆盖其他后端 lastSync：%d", cm.loadLastSyncTime("r2"))
+	}
+}
+
+func mustJSON(t *testing.T, v interface{}) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestLegacyGlobalLastSyncTimeIsIgnored(t *testing.T) {
+	cm := testSyncManager(t)
+	if err := os.WriteFile(cm.lastSyncFile, []byte("999999"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := cm.loadLastSyncTime("webdav"); got != 0 {
+		t.Fatalf("旧版全局 lastSync 不得归属到任意后端，got=%d", got)
+	}
+	if got := cm.loadLastSyncTime("r2"); got != 0 {
+		t.Fatalf("旧版全局 lastSync 不得归属到任意后端，got=%d", got)
+	}
+	cm.saveLastSyncTime("webdav", 42)
+	if got := cm.loadLastSyncTime("webdav"); got != 42 {
+		t.Fatalf("got %d", got)
+	}
+	if got := cm.loadLastSyncTime("r2"); got != 0 {
+		t.Fatalf("r2 should stay 0, got %d", got)
+	}
+}
+
+func TestTombstonePropagatesExplicitDeleteAcrossProviders(t *testing.T) {
+	// 设备1 用 WebDAV 删了 server1；设备2 本地仍有 server1。
+	// 设备2 首次合 WebDAV 时若没有墓碑会把 server1 救回去；
+	// 有墓碑后应删除并上传带 tombstone 的快照。
+	cm := testSyncManager(t)
+	local := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "server1", Host: "s1.example", Port: 22, Username: "root", LastModified: 100},
+			{ID: "server2", Host: "s2.example", Port: 22, Username: "root", LastModified: 100},
+		},
+		Credentials:   []Credential{},
+		QuickCommands: "[]",
+		SnapshotTime:  100,
+	}
+	if err := cm.persistSyncSnapshot(local); err != nil {
+		t.Fatal(err)
+	}
+	// WebDAV 远端：已删 server1，并带墓碑
+	remote := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "server2", Host: "s2.example", Port: 22, Username: "root", LastModified: 100},
+		},
+		DeletedConnections: []SyncTombstone{
+			{ID: "server1", DeletedAt: 500},
+		},
+		HasCredentials:        true,
+		HasDeletedConnections: true,
+		SnapshotTime:          500,
+	}
+	storage := &memoryStorage{files: map[string][]byte{
+		"connections_backup_20260101_000000.000_+0000.json": mustJSON(t, remote),
+	}}
+	if _, err := cm.syncFromProvider(storage, 0, "", "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	got := cm.GetConnections()
+	for _, c := range got {
+		if c.ID == "server1" {
+			t.Fatalf("远端墓碑应删除本地 server1：%+v", got)
+		}
+	}
+	if len(got) != 1 || got[0].ID != "server2" {
+		t.Fatalf("应只剩 server2：%+v", got)
+	}
+	store := cm.loadTombstoneStore()
+	if tombstoneMap(store.Connections)["server1"] != 500 {
+		t.Fatalf("本地应保留 server1 墓碑：%+v", store.Connections)
+	}
+	// 上传的快照也应带墓碑
+	if len(storage.writes) == 0 {
+		t.Fatal("合并结果与远端不同应上传")
+	}
+	var uploaded SyncSnapshot
+	if err := json.Unmarshal(storage.files[storage.writes[0]], &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if tombstoneMap(uploaded.DeletedConnections)["server1"] != 500 {
+		t.Fatalf("上传快照必须携带 server1 墓碑：%+v", uploaded.DeletedConnections)
+	}
+}
+
+func TestLocalDeleteWritesTombstoneAndPushesDelete(t *testing.T) {
+	cm := testSyncManager(t)
+	if err := cm.persistSyncSnapshot(&SyncSnapshot{
+		Connections: []Connection{
+			{ID: "keep", Host: "k.example", Port: 22, Username: "root", LastModified: 10},
+			{ID: "drop", Host: "d.example", Port: 22, Username: "root", LastModified: 10},
+		},
+		QuickCommands: "[]",
+		SnapshotTime:  10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !cm.DeleteConnection("drop") {
+		t.Fatal("delete failed")
+	}
+	store := cm.loadTombstoneStore()
+	if _, ok := tombstoneMap(store.Connections)["drop"]; !ok {
+		t.Fatalf("删除后应写入墓碑：%+v", store.Connections)
+	}
+	// 远端仍有 drop；同步后应删掉远端并上传墓碑
+	remote := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "keep", Host: "k.example", Port: 22, Username: "root", LastModified: 10},
+			{ID: "drop", Host: "d.example", Port: 22, Username: "root", LastModified: 10},
+		},
+		SnapshotTime: 10,
+	}
+	storage := &memoryStorage{files: map[string][]byte{
+		"connections_backup_20260101_000000.000_+0000.json": mustJSON(t, remote),
+	}}
+	if _, err := cm.syncFromProvider(storage, 0, "", "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	if ids := cm.GetConnections(); len(ids) != 1 || ids[0].ID != "keep" {
+		t.Fatalf("本地 tombstone 应继续压制远端 drop：%+v", ids)
+	}
+	if len(storage.writes) == 0 {
+		t.Fatal("应上传带 tombstone 的合并结果")
+	}
+	var uploaded SyncSnapshot
+	if err := json.Unmarshal(storage.files[storage.writes[0]], &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tombstoneMap(uploaded.DeletedConnections)["drop"]; !ok {
+		t.Fatalf("上传应包含 drop 墓碑：%+v", uploaded.DeletedConnections)
+	}
+	for _, c := range uploaded.Connections {
+		if c.ID == "drop" {
+			t.Fatalf("上传不得复活 drop：%+v", uploaded.Connections)
+		}
+	}
+}
+
+func TestRecreateAfterDeleteClearsTombstone(t *testing.T) {
+	cm := testSyncManager(t)
+	// 本地墓碑 drop@100；远端又有 LastModified=200 的同 id → 应复活并清墓碑
+	if err := cm.persistSyncSnapshot(&SyncSnapshot{
+		Connections:        []Connection{},
+		DeletedConnections: []SyncTombstone{{ID: "drop", DeletedAt: 100}},
+		QuickCommands:      "[]",
+		SnapshotTime:       100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	remote := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "drop", Host: "new.example", Port: 22, Username: "root", LastModified: 200},
+		},
+		SnapshotTime: 200,
+	}
+	storage := &memoryStorage{files: map[string][]byte{
+		"connections_backup_20260101_000000.000_+0000.json": mustJSON(t, remote),
+	}}
+	if _, err := cm.syncFromProvider(storage, 0, "", "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	got := cm.GetConnections()
+	if len(got) != 1 || got[0].ID != "drop" || got[0].LastModified != 200 {
+		t.Fatalf("新于墓碑的节点应复活：%+v", got)
+	}
+	if _, ok := tombstoneMap(cm.loadTombstoneStore().Connections)["drop"]; ok {
+		t.Fatalf("复活后应清除墓碑：%+v", cm.loadTombstoneStore().Connections)
+	}
+}
+
+func TestHostPortDedupWritesTombstoneForDroppedID(t *testing.T) {
+	cm := testSyncManager(t)
+	// 本地新 id-B；远端旧 id-A 同一 host:port:user → 去重保留 B，A 必须进墓碑
+	local := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "id-B", Host: "1.2.3.4", Port: 22, Username: "root", LastModified: 200},
+		},
+		QuickCommands: "[]",
+		SnapshotTime:  200,
+	}
+	if err := cm.persistSyncSnapshot(local); err != nil {
+		t.Fatal(err)
+	}
+	remote := &SyncSnapshot{
+		Connections: []Connection{
+			{ID: "id-A", Host: "1.2.3.4", Port: 22, Username: "root", LastModified: 100},
+		},
+		SnapshotTime: 100,
+	}
+	storage := &memoryStorage{files: map[string][]byte{
+		"connections_backup_20260101_000000.000_+0000.json": mustJSON(t, remote),
+	}}
+	if _, err := cm.syncFromProvider(storage, 0, "", "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	got := cm.GetConnections()
+	if len(got) != 1 || got[0].ID != "id-B" {
+		t.Fatalf("应只保留 id-B：%+v", got)
+	}
+	tombs := tombstoneMap(cm.loadTombstoneStore().Connections)
+	if tombs["id-A"] <= 100 {
+		t.Fatalf("被挤掉的 id-A 应有 deleted_at>100 的墓碑：%+v", cm.loadTombstoneStore().Connections)
+	}
+	if len(storage.writes) == 0 {
+		t.Fatal("去重后应上传带墓碑的合并结果")
+	}
+	// 再同步：用上一轮上传的完整快照（含 id-B + id-A 墓碑），id-A 不得复活
+	latest := storage.writes[len(storage.writes)-1]
+	storage2 := &memoryStorage{files: map[string][]byte{
+		latest: append([]byte(nil), storage.files[latest]...),
+	}}
+	if _, err := cm.syncFromProvider(storage2, 0, "", "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	got = cm.GetConnections()
+	for _, c := range got {
+		if c.ID == "id-A" {
+			t.Fatalf("有墓碑后 id-A 不得复活：%+v", got)
+		}
+	}
+	if len(got) != 1 || got[0].ID != "id-B" {
+		t.Fatalf("第二次同步仍应只有 id-B：%+v", got)
+	}
+}
+
+func TestPruneSyncTombstonesByDaysUploadsRemaining(t *testing.T) {
+	cm := testSyncManager(t)
+	now := time.Now().UnixMilli()
+	oldAt := now - 40*24*60*60*1000
+	newAt := now - 5*24*60*60*1000
+	// 先落连接快照，再写墓碑，避免 persistSyncSnapshot 用空墓碑覆盖
+	if err := cm.persistSyncSnapshot(&SyncSnapshot{
+		Connections:   []Connection{{ID: "keep", Host: "k", Port: 22, Username: "root", LastModified: now}},
+		QuickCommands: "[]",
+		SnapshotTime:  now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.saveTombstoneStore(syncTombstoneStore{
+		Connections: []SyncTombstone{
+			{ID: "old", DeletedAt: oldAt},
+			{ID: "new", DeletedAt: newAt},
+		},
+		Credentials: []SyncTombstone{
+			{ID: "cred-old", DeletedAt: oldAt},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	storage := &memoryStorage{files: map[string][]byte{}}
+	// 清理上传跟当前同步模式走（getSyncProviders），不是全部已配置后端
+	cm.syncProvidersForTest = func() ([]providerEntry, []providerFailure) {
+		return []providerEntry{{provider: "webdav", storage: storage}}, nil
+	}
+	res, err := cm.PruneSyncTombstones(30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RemovedConnections != 1 || res.RemovedCredentials != 1 {
+		t.Fatalf("应清理 1 连接 + 1 凭据：%+v", res)
+	}
+	if res.RemainingConnections != 1 || res.RemainingCredentials != 0 {
+		t.Fatalf("应保留 5 天内的 new：%+v", res)
+	}
+	if res.Uploaded != 1 || len(storage.writes) != 1 {
+		t.Fatalf("清理后应上传到云端：uploaded=%d writes=%v", res.Uploaded, storage.writes)
+	}
+	store := cm.loadTombstoneStore()
+	if _, ok := tombstoneMap(store.Connections)["old"]; ok {
+		t.Fatal("old 墓碑应已清理")
+	}
+	if tombstoneMap(store.Connections)["new"] != newAt {
+		t.Fatalf("new 墓碑应保留：%+v", store.Connections)
+	}
+	var uploaded SyncSnapshot
+	if err := json.Unmarshal(storage.files[storage.writes[0]], &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tombstoneMap(uploaded.DeletedConnections)["old"]; ok {
+		t.Fatalf("上传快照不得再带 old 墓碑：%+v", uploaded.DeletedConnections)
+	}
+	if tombstoneMap(uploaded.DeletedConnections)["new"] != newAt {
+		t.Fatalf("上传快照应保留 new 墓碑：%+v", uploaded.DeletedConnections)
 	}
 }

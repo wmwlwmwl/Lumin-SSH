@@ -669,7 +669,7 @@ func (c *ConfigManager) newFTPStorage() (RemoteStorage, int, error) {
 
 // BackupToFTP 备份到 FTP
 func (c *ConfigManager) BackupToFTP() (map[string]interface{}, error) {
-	return c.backupTo(c.newFTPStorage)
+	return c.backupTo("ftp", c.newFTPStorage)
 }
 
 // ListFTPBackups 列出 FTP 备份
@@ -679,14 +679,14 @@ func (c *ConfigManager) ListFTPBackups() ([]map[string]interface{}, error) {
 
 // SyncFromFTP 手动合并同步
 func (c *ConfigManager) SyncFromFTP() (map[string]interface{}, error) {
-	return c.syncFrom(c.newFTPStorage)
+	return c.syncFrom("ftp", c.newFTPStorage)
 }
 
 func (c *ConfigManager) RestoreFromFTPFile(filename string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newFTPStorage, filename, c.GetRecoveryPassword())
+	return c.restoreFrom("ftp", c.newFTPStorage, filename, c.GetRecoveryPassword())
 }
 
 // RestoreFromFTPFileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
 func (c *ConfigManager) RestoreFromFTPFileWithPassword(filename string, password string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newFTPStorage, filename, password)
+	return c.restoreFrom("ftp", c.newFTPStorage, filename, password)
 }

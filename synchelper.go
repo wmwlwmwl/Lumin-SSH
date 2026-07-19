@@ -53,18 +53,22 @@ type storageCloser interface {
 
 // SyncSnapshot 同步快照，包含连接和快捷命令等所有可同步数据
 type SyncSnapshot struct {
-	Connections         []Connection           `json:"connections"`
-	Credentials         []Credential           `json:"credentials"`
-	QuickCommands       string                 `json:"quick_commands"`
-	AIProviders         []ai.AIProviderProfile `json:"ai_providers"`
-	AIGlobalSettings    *ai.AIGlobalSettings   `json:"ai_global_settings"`
-	ProxyNodes          []ai.AIProxyNode       `json:"proxy_nodes"`
-	SnapshotTime        int64                  `json:"snapshot_time,omitempty"` // 快照总时间戳（Unix 毫秒），用于判断同步方向
-	HasCredentials      bool                   `json:"-"`
-	HasQuickCommands    bool                   `json:"-"`
-	HasAIProviders      bool                   `json:"-"`
-	HasAIGlobalSettings bool                   `json:"-"`
-	HasProxyNodes       bool                   `json:"-"`
+	Connections           []Connection           `json:"connections"`
+	Credentials           []Credential           `json:"credentials"`
+	QuickCommands         string                 `json:"quick_commands"`
+	AIProviders           []ai.AIProviderProfile `json:"ai_providers"`
+	AIGlobalSettings      *ai.AIGlobalSettings   `json:"ai_global_settings"`
+	ProxyNodes            []ai.AIProxyNode       `json:"proxy_nodes"`
+	DeletedConnections    []SyncTombstone        `json:"deleted_connections,omitempty"`
+	DeletedCredentials    []SyncTombstone        `json:"deleted_credentials,omitempty"`
+	SnapshotTime          int64                  `json:"snapshot_time,omitempty"` // 快照总时间戳（Unix 毫秒），用于判断同步方向
+	HasCredentials        bool                   `json:"-"`
+	HasQuickCommands      bool                   `json:"-"`
+	HasAIProviders        bool                   `json:"-"`
+	HasAIGlobalSettings   bool                   `json:"-"`
+	HasProxyNodes         bool                   `json:"-"`
+	HasDeletedConnections bool                   `json:"-"`
+	HasDeletedCredentials bool                   `json:"-"`
 }
 
 func (s *SyncSnapshot) UnmarshalJSON(data []byte) error {
@@ -83,6 +87,8 @@ func (s *SyncSnapshot) UnmarshalJSON(data []byte) error {
 	_, s.HasAIProviders = raw["ai_providers"]
 	_, s.HasAIGlobalSettings = raw["ai_global_settings"]
 	_, s.HasProxyNodes = raw["proxy_nodes"]
+	_, s.HasDeletedConnections = raw["deleted_connections"]
+	_, s.HasDeletedCredentials = raw["deleted_credentials"]
 	return nil
 }
 
@@ -158,6 +164,9 @@ func connsEqual(a, b []Connection) bool {
 
 // snapshotEqual 比较本地快照和远端快照是否一致
 func snapshotEqual(s1, s2 *SyncSnapshot) bool {
+	if s1 == nil || s2 == nil {
+		return s1 == nil && s2 == nil
+	}
 	if !connsEqual(s1.Connections, s2.Connections) {
 		return false
 	}
@@ -174,6 +183,13 @@ func snapshotEqual(s1, s2 *SyncSnapshot) bool {
 		return false
 	}
 	if !aiProxyNodesEqual(s1.ProxyNodes, s2.ProxyNodes) {
+		return false
+	}
+	// 墓碑必须参与比较：否则 all 模式「只合并到新删除记录」会被当成无变化而跳过上传
+	if !tombstonesEqual(s1.DeletedConnections, s2.DeletedConnections) {
+		return false
+	}
+	if !tombstonesEqual(s1.DeletedCredentials, s2.DeletedCredentials) {
 		return false
 	}
 	return true
@@ -448,6 +464,21 @@ func isNoBackupError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "云端没有备份文件")
 }
 
+// isUnreadableBackupContentError 备份文件已读到但内容损坏/截断（非密码错、非网络错）。
+// 改密/关加密时跳过该端远端合并，避免坏文件卡死。
+func isUnreadableBackupContentError(err error) bool {
+	if err == nil || errors.Is(err, errRecoveryPassword) || errors.Is(err, errRecoveryPasswordResetRequired) {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "LUMIN2 Base64 无效") ||
+		strings.Contains(msg, "LUMIN2 数据长度不足") ||
+		strings.Contains(msg, "缺少 LUMIN2 前缀") ||
+		strings.Contains(msg, "不支持的 LUMIN2 版本") ||
+		strings.Contains(msg, "LUMIN2 迭代次数无效") ||
+		strings.Contains(msg, "解析最新备份") && (strings.Contains(msg, "LUMIN2") || strings.Contains(msg, "invalid") || strings.Contains(msg, "截断"))
+}
+
 func onlyNoBackupErrors(errs []string) bool {
 	if len(errs) == 0 {
 		return false
@@ -513,19 +544,24 @@ func (c *ConfigManager) backupConnections(s RemoteStorage, maxBackups int) (map[
 }
 
 func (c *ConfigManager) localSyncSnapshot() *SyncSnapshot {
+	store := c.loadTombstoneStore()
 	return &SyncSnapshot{
-		Connections:         c.GetConnections(),
-		Credentials:         c.GetCredentials(),
-		QuickCommands:       c.loadRawFile(c.quickCmdFile),
-		AIProviders:         c.GetAIProviderRegistry().Providers,
-		AIGlobalSettings:    c.localAIGlobalSettingsForSync(),
-		ProxyNodes:          c.GetAIProxyNodes(),
-		SnapshotTime:        c.loadSnapshotTime(),
-		HasCredentials:      true,
-		HasQuickCommands:    true,
-		HasAIProviders:      true,
-		HasAIGlobalSettings: true,
-		HasProxyNodes:       true,
+		Connections:           c.GetConnections(),
+		Credentials:           c.GetCredentials(),
+		QuickCommands:         c.loadRawFile(c.quickCmdFile),
+		AIProviders:           c.GetAIProviderRegistry().Providers,
+		AIGlobalSettings:      c.localAIGlobalSettingsForSync(),
+		ProxyNodes:            c.GetAIProxyNodes(),
+		DeletedConnections:    store.Connections,
+		DeletedCredentials:    store.Credentials,
+		SnapshotTime:          c.loadSnapshotTime(),
+		HasCredentials:        true,
+		HasQuickCommands:      true,
+		HasAIProviders:        true,
+		HasAIGlobalSettings:   true,
+		HasProxyNodes:         true,
+		HasDeletedConnections: true,
+		HasDeletedCredentials: true,
 	}
 }
 
@@ -632,16 +668,20 @@ func (c *ConfigManager) listBackupFiles(s RemoteStorage) ([]map[string]interface
 // ─── 同步入口 ─────────────────────────────────────────────
 
 // syncFromProvider 手动合并同步：下载远端 → 合并连接+命令 → 保存本地 → 条件上传
-func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int, password string) (map[string]interface{}, error) {
+func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int, password string, provider string) (map[string]interface{}, error) {
 	remoteSnap, err := c.fetchLatestBackup(s, password)
 	if err != nil {
 		return nil, err
 	}
 
-	// 合并连接（重叠按 LastModified 取最新，单侧独有按 lastSyncTime 判断删除）
+	// 合并连接（重叠按 LastModified 取最新，单侧独有按 lastSyncTime 判断删除；墓碑传播真删）
 	localConns := c.GetConnections()
-	lastSyncTime := c.loadLastSyncTime()
-	deduped := c.mergeWithDeletionPropagation(localConns, remoteSnap.Connections, lastSyncTime)
+	lastSyncTime := c.loadLastSyncTime(provider)
+	localTombs := c.loadTombstoneStore()
+	mergedConnTombs := mergeConnectionTombstones(localTombs.Connections, remoteSnap.DeletedConnections)
+	mergedCredTombs := mergeCredentialTombstones(localTombs.Credentials, remoteSnap.DeletedCredentials)
+	deduped, dedupTombs := c.mergeWithDeletionPropagation(localConns, remoteSnap.Connections, lastSyncTime, mergedConnTombs)
+	mergedConnTombs = pruneConnectionTombstones(mergeConnectionTombstones(mergedConnTombs, dedupTombs), deduped)
 	// 加锁保存并失效缓存（saveConnectionsFile 要求调用方持有 c.mu）
 	c.mu.Lock()
 	if err := c.saveConnectionsFile(deduped); err != nil {
@@ -654,12 +694,18 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int, passwo
 	var mergedCreds []Credential
 	if remoteSnap.HasCredentials {
 		localCreds := c.getCredentialsLocked()
-		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime)
+		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime, mergedCredTombs)
+		mergedCredTombs = pruneCredentialTombstones(mergedCredTombs, mergedCreds)
 		if err := c.saveCredentialsFile(mergedCreds); err != nil {
 			c.mu.Unlock()
 			return nil, fmt.Errorf("保存凭据失败: %w", err)
 		}
 		c.credCacheDirty = true
+	} else {
+		mergedCredTombs = pruneCredentialTombstones(mergedCredTombs, c.getCredentialsLocked())
+	}
+	if err := c.saveTombstoneStore(syncTombstoneStore{Connections: mergedConnTombs, Credentials: mergedCredTombs}); err != nil {
+		log.Printf("[syncFromProvider] save tombstones: %v", err)
 	}
 	c.mu.Unlock()
 	c.CleanupOrphanedHistory() // 清理已不存在的连接的历史文件
@@ -706,7 +752,9 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int, passwo
 		(mergedCreds != nil && !credsEqual(mergedCreds, remoteSnap.Credentials)) ||
 		(remoteSnap.HasAIProviders && !aiProvidersEqual(mergedAIProviders, remoteSnap.AIProviders)) ||
 		(remoteSnap.HasAIGlobalSettings && !aiGlobalSettingsEqual(&mergedAIGlobalSettings, remoteSnap.AIGlobalSettings)) ||
-		(remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, remoteSnap.ProxyNodes))
+		(remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, remoteSnap.ProxyNodes)) ||
+		!tombstonesEqual(mergedConnTombs, remoteSnap.DeletedConnections) ||
+		!tombstonesEqual(mergedCredTombs, remoteSnap.DeletedCredentials)
 	if changed {
 		c.bumpSnapshotTime() // 手动同步后更新总时间戳，确保下次自动同步方向正确
 		br, berr := c.uploadSnapshot(s, c.localSyncSnapshot(), password, maxBackups)
@@ -719,7 +767,7 @@ func (c *ConfigManager) syncFromProvider(s RemoteStorage, maxBackups int, passwo
 			return nil, fmt.Errorf("清理旧备份失败: %w", err)
 		}
 	}
-	c.recordSyncCompleted()
+	c.recordSyncCompleted(provider)
 
 	return map[string]interface{}{
 		"success":     true,
@@ -745,44 +793,6 @@ func latestSnapshotHasItem(itemUpdatedAt int64, snaps []*SyncSnapshot, hasField 
 		}
 	}
 	return latest == nil || contains(latest)
-}
-
-func filterRemoteDeletedConnections(conns []Connection, snaps []*SyncSnapshot) []Connection {
-	out := conns[:0]
-	for _, conn := range conns {
-		if latestSnapshotHasItem(conn.LastModified, snaps, func(*SyncSnapshot) bool { return true }, func(snap *SyncSnapshot) bool { return connectionInSnapshot(snap.Connections, conn.ID) }) {
-			out = append(out, conn)
-		}
-	}
-	return out
-}
-
-func connectionInSnapshot(conns []Connection, id string) bool {
-	for _, conn := range conns {
-		if conn.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func filterRemoteDeletedCredentials(creds []Credential, snaps []*SyncSnapshot) []Credential {
-	out := creds[:0]
-	for _, cred := range creds {
-		if latestSnapshotHasItem(cred.LastModified, snaps, func(snap *SyncSnapshot) bool { return snap.HasCredentials }, func(snap *SyncSnapshot) bool { return credentialInSnapshot(snap.Credentials, cred.ID) }) {
-			out = append(out, cred)
-		}
-	}
-	return out
-}
-
-func credentialInSnapshot(creds []Credential, id string) bool {
-	for _, cred := range creds {
-		if cred.ID == id {
-			return true
-		}
-	}
-	return false
 }
 
 func filterRemoteDeletedAIProviders(providers []ai.AIProviderProfile, snaps []*SyncSnapshot) []ai.AIProviderProfile {
@@ -893,7 +903,12 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 		}
 	}()
 
-	lastSyncTime := c.loadLastSyncTime()
+	providerNames := make([]string, 0, len(entries))
+	for _, p := range entries {
+		providerNames = append(providerNames, p.provider)
+	}
+	// 多后端合并时取最小 lastSync：任一后端从未同步过则返回 0，避免误删本地新增
+	lastSyncTime := c.loadLastSyncTimeMin(providerNames...)
 	localConns := c.GetConnections()
 	localCreds := c.GetCredentials()
 	localQuickCmds := c.loadRawFile(c.quickCmdFile)
@@ -903,6 +918,8 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 
 	remoteConns := []Connection{}
 	var remoteCreds []Credential
+	var remoteConnTombs []SyncTombstone
+	var remoteCredTombs []SyncTombstone
 	remoteQuickCmds := ""
 	var remoteAIProviders []ai.AIProviderProfile
 	var remoteAIGlobalSettings ai.AIGlobalSettings
@@ -933,10 +950,20 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 		downloaded++
 		remoteSnaps = append(remoteSnaps, remoteSnap)
 		providerSnaps = append(providerSnaps, providerSnapshot{providerEntry: p, snapshot: remoteSnap})
-		remoteConns = c.mergeWithDeletionPropagation(remoteConns, remoteSnap.Connections, -1)
+		var remoteDedupTombs []SyncTombstone
+		remoteConns, remoteDedupTombs = c.mergeWithDeletionPropagation(remoteConns, remoteSnap.Connections, -1, remoteSnap.DeletedConnections)
+		if remoteSnap.HasDeletedConnections {
+			remoteConnTombs = mergeConnectionTombstones(remoteConnTombs, remoteSnap.DeletedConnections)
+		}
+		if len(remoteDedupTombs) > 0 {
+			remoteConnTombs = mergeConnectionTombstones(remoteConnTombs, remoteDedupTombs)
+		}
 		if remoteSnap.HasCredentials {
 			remoteHasCreds = true
-			remoteCreds = c.mergeCredentials(remoteCreds, remoteSnap.Credentials, -1)
+			remoteCreds = c.mergeCredentials(remoteCreds, remoteSnap.Credentials, -1, remoteSnap.DeletedCredentials)
+		}
+		if remoteSnap.HasDeletedCredentials {
+			remoteCredTombs = mergeCredentialTombstones(remoteCredTombs, remoteSnap.DeletedCredentials)
 		}
 		if remoteSnap.HasQuickCommands {
 			remoteHasQuick = true
@@ -958,20 +985,30 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 		}
 	}
 
-	remoteConns = filterRemoteDeletedConnections(remoteConns, remoteSnaps)
-	remoteCreds = filterRemoteDeletedCredentials(remoteCreds, remoteSnaps)
+	// 连接/凭据删除已由墓碑负责；不再用 snapshot_time 启发式二次过滤，避免与墓碑语义冲突。
+	// 快捷命令 / AI / 代理仍无墓碑，保留旧过滤。
 	remoteQuickCmds = c.filterRemoteDeletedQuickCommands(remoteQuickCmds, remoteSnaps)
 	remoteAIProviders = filterRemoteDeletedAIProviders(remoteAIProviders, remoteSnaps)
 	remoteProxyNodes = filterRemoteDeletedAIProxyNodes(remoteProxyNodes, remoteSnaps)
 
+	localTombs := c.loadTombstoneStore()
+	mergedConnTombs := mergeConnectionTombstones(localTombs.Connections, remoteConnTombs)
+	mergedCredTombs := mergeCredentialTombstones(localTombs.Credentials, remoteCredTombs)
+	var dedupTombs []SyncTombstone
 	mergedConns := localConns
 	if downloaded > 0 {
-		mergedConns = c.mergeWithDeletionPropagation(localConns, remoteConns, lastSyncTime)
+		mergedConns, dedupTombs = c.mergeWithDeletionPropagation(localConns, remoteConns, lastSyncTime, mergedConnTombs)
+	} else {
+		mergedConns, dedupTombs = c.mergeWithDeletionPropagation(localConns, nil, lastSyncTime, mergedConnTombs)
 	}
 	mergedCreds := localCreds
 	if remoteHasCreds {
-		mergedCreds = c.mergeCredentials(localCreds, remoteCreds, lastSyncTime)
+		mergedCreds = c.mergeCredentials(localCreds, remoteCreds, lastSyncTime, mergedCredTombs)
+	} else {
+		mergedCreds = c.mergeCredentials(localCreds, nil, lastSyncTime, mergedCredTombs)
 	}
+	mergedConnTombs = pruneConnectionTombstones(mergeConnectionTombstones(mergedConnTombs, dedupTombs), mergedConns)
+	mergedCredTombs = pruneCredentialTombstones(mergedCredTombs, mergedCreds)
 	mergedQuickCmds := localQuickCmds
 	if remoteHasQuick {
 		mergedQuickCmds = c.mergeQuickCommands(localQuickCmds, remoteQuickCmds, lastSyncTime)
@@ -992,8 +1029,6 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 		mergedProxyNodes = c.mergeAIProxyNodes(localProxyNodes, remoteProxyNodes, lastSyncTime)
 	}
 	if downloaded > 0 {
-		mergedConns = filterRemoteDeletedConnections(mergedConns, remoteSnaps)
-		mergedCreds = filterRemoteDeletedCredentials(mergedCreds, remoteSnaps)
 		mergedQuickCmds = c.filterRemoteDeletedQuickCommands(mergedQuickCmds, remoteSnaps)
 		mergedAIProviders = filterRemoteDeletedAIProviders(mergedAIProviders, remoteSnaps)
 		mergedProxyNodes = filterRemoteDeletedAIProxyNodes(mergedProxyNodes, remoteSnaps)
@@ -1004,18 +1039,22 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 		finalAIGlobalSettings = &mergedAIGlobalSettings
 	}
 	final := &SyncSnapshot{
-		Connections:         mergedConns,
-		Credentials:         mergedCreds,
-		QuickCommands:       mergedQuickCmds,
-		AIProviders:         mergedAIProviders,
-		AIGlobalSettings:    finalAIGlobalSettings,
-		ProxyNodes:          mergedProxyNodes,
-		SnapshotTime:        c.loadSnapshotTime(),
-		HasCredentials:      true,
-		HasQuickCommands:    true,
-		HasAIProviders:      true,
-		HasAIGlobalSettings: true,
-		HasProxyNodes:       true,
+		Connections:           mergedConns,
+		Credentials:           mergedCreds,
+		QuickCommands:         mergedQuickCmds,
+		AIProviders:           mergedAIProviders,
+		AIGlobalSettings:      finalAIGlobalSettings,
+		ProxyNodes:            mergedProxyNodes,
+		DeletedConnections:    mergedConnTombs,
+		DeletedCredentials:    mergedCredTombs,
+		SnapshotTime:          c.loadSnapshotTime(),
+		HasCredentials:        true,
+		HasQuickCommands:      true,
+		HasAIProviders:        true,
+		HasAIGlobalSettings:   true,
+		HasProxyNodes:         true,
+		HasDeletedConnections: true,
+		HasDeletedCredentials: true,
 	}
 	local := c.localSyncSnapshot()
 	localChanged := !snapshotEqual(final, local)
@@ -1027,7 +1066,7 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 	}
 	cloudChanged := len(uploadTargets) > 0
 	if !localChanged && !cloudChanged {
-		c.recordSyncCompleted()
+		c.recordSyncCompleted(providerNames...)
 		return map[string]interface{}{"success": true, "action": "skip", "localCount": len(localConns), "remoteCount": downloaded, "mergedCount": len(mergedConns), "uploaded": 0, "skipped": true}, nil
 	}
 
@@ -1061,7 +1100,7 @@ func (c *ConfigManager) syncAllProviders(entries []providerEntry, password strin
 		}
 	}
 	c.CleanupOrphanedHistory()
-	c.recordSyncCompleted()
+	c.recordSyncCompleted(providerNames...)
 	action := "merge"
 	if !localChanged {
 		action = "upload"
@@ -1089,9 +1128,14 @@ func (c *ConfigManager) emitSyncEvent(event string, data map[string]interface{})
 	}
 }
 
-func (c *ConfigManager) recordSyncCompleted() int64 {
+// recordSyncCompleted 记录指定后端的同步完成时间；多后端时批量写入同一时间戳。
+func (c *ConfigManager) recordSyncCompleted(providers ...string) int64 {
 	timestamp := time.Now().UnixMilli()
-	c.saveLastSyncTime(timestamp)
+	if len(providers) == 1 {
+		c.saveLastSyncTime(providers[0], timestamp)
+	} else if len(providers) > 1 {
+		c.saveLastSyncTimes(providers, timestamp)
+	}
 	c.emitSyncEvent("sync-completed", map[string]interface{}{"timestamp": timestamp})
 	return timestamp
 }
@@ -1099,7 +1143,7 @@ func (c *ConfigManager) recordSyncCompleted() int64 {
 // autoSyncProvider 自动同步：
 // - 所有方向：重叠连接/快捷命令按 per-item last_modified 取最新，单侧独有按 lastSyncTime 判断删除
 // - 无变化 → 静默跳过
-func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error {
+func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int, provider string) error {
 	remoteSnap, err := c.fetchLatestBackup(s, c.GetRecoveryPassword())
 	if err != nil {
 		if !isNoBackupError(err) {
@@ -1108,7 +1152,7 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 		if _, berr := c.backupConnections(s, maxBackups); berr != nil {
 			return fmt.Errorf("云端访问失败: %w", berr)
 		}
-		c.recordSyncCompleted()
+		c.recordSyncCompleted(provider)
 		c.emitSyncEvent("sync-status", map[string]interface{}{
 			"action": "upload",
 			"reason": "no_remote_backup",
@@ -1118,21 +1162,26 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 
 	localSnapTime := c.loadSnapshotTime()
 	remoteSnapTime := remoteSnap.SnapshotTime
-	lastSyncTime := c.loadLastSyncTime()
+	lastSyncTime := c.loadLastSyncTime(provider)
 
 	localConns := c.GetConnections()
 
-	// 连接合并：重叠按 LastModified 取最新，单侧独有按 lastSyncTime 判断删除
-	merged := c.mergeWithDeletionPropagation(localConns, remoteSnap.Connections, lastSyncTime)
+	// 连接合并：重叠按 LastModified 取最新，单侧独有按 lastSyncTime 判断删除；墓碑传播真删
+	localTombs := c.loadTombstoneStore()
+	mergedConnTombs := mergeConnectionTombstones(localTombs.Connections, remoteSnap.DeletedConnections)
+	mergedCredTombs := mergeCredentialTombstones(localTombs.Credentials, remoteSnap.DeletedCredentials)
+	merged, dedupTombs := c.mergeWithDeletionPropagation(localConns, remoteSnap.Connections, lastSyncTime, mergedConnTombs)
+	mergedConnTombs = pruneConnectionTombstones(mergeConnectionTombstones(mergedConnTombs, dedupTombs), merged)
 
 	// 凭据合并
 	var mergedCreds []Credential
 	localCreds := c.GetCredentials()
 	if remoteSnap.HasCredentials {
-		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime)
+		mergedCreds = c.mergeCredentials(localCreds, remoteSnap.Credentials, lastSyncTime, mergedCredTombs)
 	} else {
-		mergedCreds = localCreds
+		mergedCreds = c.mergeCredentials(localCreds, nil, lastSyncTime, mergedCredTombs)
 	}
+	mergedCredTombs = pruneCredentialTombstones(mergedCredTombs, mergedCreds)
 
 	// 快捷命令合并：重叠按 last_modified 取最新，单侧独有按 lastSyncTime 判断删除
 	localQuickCmds := c.loadRawFile(c.quickCmdFile)
@@ -1169,7 +1218,8 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	aiProvidersChanged := remoteSnap.HasAIProviders && !aiProvidersEqual(mergedAIProviders, localAIProviders)
 	aiGlobalSettingsChanged := remoteSnap.HasAIGlobalSettings && !aiGlobalSettingsEqual(mergedAIGlobalSettingsPtr, localAIGlobalSettings)
 	proxyNodesChanged := remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, localProxyNodes)
-	localChanged := !connsEqual(merged, localConns) || quickChanged || credsChanged || aiProvidersChanged || aiGlobalSettingsChanged || proxyNodesChanged
+	tombLocalChanged := !tombstonesEqual(mergedConnTombs, localTombs.Connections) || !tombstonesEqual(mergedCredTombs, localTombs.Credentials)
+	localChanged := !connsEqual(merged, localConns) || quickChanged || credsChanged || aiProvidersChanged || aiGlobalSettingsChanged || proxyNodesChanged || tombLocalChanged
 
 	// 云端有变化 → 需要上传
 	cloudQuickChanged := remoteSnap.HasQuickCommands && !quickCmdsEqual(mergedQuickCmds, remoteSnap.QuickCommands)
@@ -1181,11 +1231,12 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	}
 	cloudProxyNodesChanged := remoteSnap.HasProxyNodes && !aiProxyNodesEqual(mergedProxyNodes, remoteSnap.ProxyNodes)
 	cloudConnsChanged := !connsEqual(merged, remoteSnap.Connections)
-	cloudChanged := cloudConnsChanged || cloudQuickChanged || cloudCredsChanged || cloudAIProvidersChanged || cloudAIGlobalSettingsChanged || cloudProxyNodesChanged
+	cloudTombChanged := !tombstonesEqual(mergedConnTombs, remoteSnap.DeletedConnections) || !tombstonesEqual(mergedCredTombs, remoteSnap.DeletedCredentials)
+	cloudChanged := cloudConnsChanged || cloudQuickChanged || cloudCredsChanged || cloudAIProvidersChanged || cloudAIGlobalSettingsChanged || cloudProxyNodesChanged || cloudTombChanged
 
 	// 无变化 → 静默跳过
 	if !localChanged && !cloudChanged {
-		c.recordSyncCompleted()
+		c.recordSyncCompleted(provider)
 		return nil
 	}
 
@@ -1204,7 +1255,10 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 			log.Printf("[autoSyncProvider] save: %v", err)
 		}
 		c.connCacheDirty = true
-		if credsChanged {
+		if err := c.saveTombstoneStore(syncTombstoneStore{Connections: mergedConnTombs, Credentials: mergedCredTombs}); err != nil {
+			log.Printf("[autoSyncProvider] save tombstones: %v", err)
+		}
+		if credsChanged || tombLocalChanged {
 			if err := c.saveCredentialsFile(mergedCreds); err != nil {
 				log.Printf("[autoSyncProvider] save creds: %v", err)
 			}
@@ -1254,7 +1308,7 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	if !syncTimeUpdated && remoteSnapTime > localSnapTime {
 		atomicWriteFile(c.syncTimeFile, []byte(fmt.Sprintf("%d", remoteSnapTime)), 0600)
 	}
-	c.recordSyncCompleted()
+	c.recordSyncCompleted(provider)
 
 	c.emitSyncEvent("sync-status", map[string]interface{}{
 		"action":       action,
@@ -1268,14 +1322,35 @@ func (c *ConfigManager) autoSyncProvider(s RemoteStorage, maxBackups int) error 
 	return nil
 }
 
+// dedupTombstoneAt 给 host 去重挤掉的 id 生成 deleted_at：必须严格大于双方 LastModified，
+// 否则 shouldDrop / 对端旧节点可能再次把被挤掉的 id 当新增加回来。
+func dedupTombstoneAt(a, b int64) int64 {
+	at := time.Now().UnixMilli()
+	if a > b {
+		b = a
+	}
+	if at <= b {
+		return b + 1
+	}
+	return at
+}
+
 // mergeWithDeletionPropagation 合并本地和云端连接：
 // 1. 重叠连接（两边都有）→ 按 per-connection LastModified 取最新
 // 2. 单侧独有 → LastModified > lastSyncTime 则保留（新增），否则删除
-func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []Connection, lastSyncTime int64) []Connection {
-	localMap := make(map[string]Connection, len(localConns))
-	for _, lc := range localConns {
-		localMap[lc.ID] = lc
+// 3. 若 tombstones 中 deleted_at 新于节点 LastModified，则删除（跨后端/设备真删）
+// 4. host:port+username 去重挤掉的 id → 写入 dedupTombs，避免对端再复活
+// 返回值 dedupTombs 需并入调用方的连接墓碑列表。
+func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []Connection, lastSyncTime int64, tombstones ...[]SyncTombstone) (mergedOut []Connection, dedupTombs []SyncTombstone) {
+	deleted := map[string]int64{}
+	for _, list := range tombstones {
+		deleted = mergeTombstoneMaps(deleted, tombstoneMap(list))
 	}
+	shouldDrop := func(id string, lm int64) bool {
+		at, ok := deleted[id]
+		return ok && at > lm
+	}
+
 	remoteMap := make(map[string]Connection, len(remoteConns))
 	for _, rc := range remoteConns {
 		remoteMap[rc.ID] = rc
@@ -1290,14 +1365,16 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 			continue
 		}
 		if rc, hasRemote := remoteMap[lc.ID]; hasRemote {
-			if lc.LastModified >= rc.LastModified {
-				merged = append(merged, lc)
-			} else {
-				merged = append(merged, rc)
+			chosen := lc
+			if rc.LastModified > lc.LastModified {
+				chosen = rc
+			}
+			if !shouldDrop(chosen.ID, chosen.LastModified) {
+				merged = append(merged, chosen)
 			}
 			added[lc.ID] = true
 		} else {
-			if lc.LastModified > lastSyncTime {
+			if lc.LastModified > lastSyncTime && !shouldDrop(lc.ID, lc.LastModified) {
 				merged = append(merged, lc)
 			}
 			added[lc.ID] = true
@@ -1306,7 +1383,7 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 	// 远程独有（按远程原始顺序）
 	for _, rc := range remoteConns {
 		if !added[rc.ID] {
-			if rc.LastModified > lastSyncTime {
+			if rc.LastModified > lastSyncTime && !shouldDrop(rc.ID, rc.LastModified) {
 				merged = append(merged, rc)
 			}
 			added[rc.ID] = true
@@ -1315,6 +1392,7 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 
 	// host:port+username 去重（按 LastModified 保留最新的）。
 	// 业务上同一账号同一入口视为同一节点，避免多端新增产生重复节点。
+	// 被挤掉的 id 记墓碑，否则对端仍带着旧 id 时会在下一轮合并中复活。
 	type hpKey struct {
 		host string
 		port int
@@ -1325,19 +1403,34 @@ func (c *ConfigManager) mergeWithDeletionPropagation(localConns, remoteConns []C
 	for _, v := range merged {
 		key := hpKey{v.Host, v.Port, v.Username}
 		if idx, ok := hostPortMap[key]; ok {
-			if v.LastModified > deduped[idx].LastModified {
+			kept := deduped[idx]
+			if v.LastModified > kept.LastModified {
+				if kept.ID != "" && kept.ID != v.ID {
+					dedupTombs = append(dedupTombs, SyncTombstone{ID: kept.ID, DeletedAt: dedupTombstoneAt(kept.LastModified, v.LastModified)})
+				}
 				deduped[idx] = v
+			} else if v.ID != "" && v.ID != kept.ID {
+				dedupTombs = append(dedupTombs, SyncTombstone{ID: v.ID, DeletedAt: dedupTombstoneAt(v.LastModified, kept.LastModified)})
 			}
 		} else {
 			hostPortMap[key] = len(deduped)
 			deduped = append(deduped, v)
 		}
 	}
-	return deduped
+	return deduped, dedupTombs
 }
 
 // mergeCredentials 合并本地和云端凭据，逻辑与 mergeWithDeletionPropagation 一致
-func (c *ConfigManager) mergeCredentials(localCreds, remoteCreds []Credential, lastSyncTime int64) []Credential {
+func (c *ConfigManager) mergeCredentials(localCreds, remoteCreds []Credential, lastSyncTime int64, tombstones ...[]SyncTombstone) []Credential {
+	deleted := map[string]int64{}
+	for _, list := range tombstones {
+		deleted = mergeTombstoneMaps(deleted, tombstoneMap(list))
+	}
+	shouldDrop := func(id string, lm int64) bool {
+		at, ok := deleted[id]
+		return ok && at > lm
+	}
+
 	localMap := make(map[string]Credential, len(localCreds))
 	for _, lc := range localCreds {
 		localMap[lc.ID] = lc
@@ -1355,14 +1448,16 @@ func (c *ConfigManager) mergeCredentials(localCreds, remoteCreds []Credential, l
 			continue
 		}
 		if rc, hasRemote := remoteMap[lc.ID]; hasRemote {
-			if lc.LastModified >= rc.LastModified {
-				merged = append(merged, lc)
-			} else {
-				merged = append(merged, rc)
+			chosen := lc
+			if rc.LastModified > lc.LastModified {
+				chosen = rc
+			}
+			if !shouldDrop(chosen.ID, chosen.LastModified) {
+				merged = append(merged, chosen)
 			}
 			added[lc.ID] = true
 		} else {
-			if lc.LastModified > lastSyncTime {
+			if lc.LastModified > lastSyncTime && !shouldDrop(lc.ID, lc.LastModified) {
 				merged = append(merged, lc)
 			}
 			added[lc.ID] = true
@@ -1370,13 +1465,56 @@ func (c *ConfigManager) mergeCredentials(localCreds, remoteCreds []Credential, l
 	}
 	for _, rc := range remoteCreds {
 		if !added[rc.ID] {
-			if rc.LastModified > lastSyncTime {
+			if rc.LastModified > lastSyncTime && !shouldDrop(rc.ID, rc.LastModified) {
 				merged = append(merged, rc)
 			}
 			added[rc.ID] = true
 		}
 	}
 	return merged
+}
+
+func tombstonesEqual(a, b []SyncTombstone) bool {
+	return reflect.DeepEqual(tombstoneMap(a), tombstoneMap(b))
+}
+
+func mergeTombstoneLists(local, remote []SyncTombstone) []SyncTombstone {
+	return tombstonesFromMap(mergeTombstoneMaps(tombstoneMap(local), tombstoneMap(remote)))
+}
+
+func mergeConnectionTombstones(local, remote []SyncTombstone) []SyncTombstone {
+	return mergeTombstoneLists(local, remote)
+}
+
+func mergeCredentialTombstones(local, remote []SyncTombstone) []SyncTombstone {
+	return mergeTombstoneLists(local, remote)
+}
+
+// pruneTombstonesByAlive 去掉「仍存在且 LastModified >= deleted_at」对应的墓碑（节点被重建/恢复后旧墓碑失效）。
+func pruneTombstonesByAlive(tombs []SyncTombstone, alive map[string]int64) []SyncTombstone {
+	m := tombstoneMap(tombs)
+	for id, at := range m {
+		if lm, ok := alive[id]; ok && lm >= at {
+			delete(m, id)
+		}
+	}
+	return tombstonesFromMap(m)
+}
+
+func pruneConnectionTombstones(tombs []SyncTombstone, conns []Connection) []SyncTombstone {
+	alive := make(map[string]int64, len(conns))
+	for _, c := range conns {
+		alive[c.ID] = c.LastModified
+	}
+	return pruneTombstonesByAlive(tombs, alive)
+}
+
+func pruneCredentialTombstones(tombs []SyncTombstone, creds []Credential) []SyncTombstone {
+	alive := make(map[string]int64, len(creds))
+	for _, c := range creds {
+		alive[c.ID] = c.LastModified
+	}
+	return pruneTombstonesByAlive(tombs, alive)
 }
 
 func (c *ConfigManager) mergeAIProviders(localProviders, remoteProviders []ai.AIProviderProfile, lastSyncTime int64) []ai.AIProviderProfile {
@@ -1449,6 +1587,69 @@ func (c *ConfigManager) mergeAIProxyNodes(localNodes, remoteNodes []ai.AIProxyNo
 		}
 	}
 	return merged
+}
+
+// PruneSyncTombstones 按天数清理本地删除记录，并上传到当前同步模式对应的后端，避免下次同步又从云端并回来。
+// days <= 0：清理全部；days > 0：清理 deleted_at 早于「现在 - days 天」的记录。
+// 自动同步模式为 all 时推全部已配置后端；为 r2/webdav 等时只推该后端。
+func (c *ConfigManager) PruneSyncTombstones(days int) (SyncTombstonePruneResult, error) {
+	var result SyncTombstonePruneResult
+	store := c.loadTombstoneStore()
+	beforeConn := len(tombstoneMap(store.Connections))
+	beforeCred := len(tombstoneMap(store.Credentials))
+
+	clearAll := days <= 0
+	var cutoff int64
+	if !clearAll {
+		cutoff = time.Now().Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
+	}
+	var removedConn, removedCred int
+	store.Connections, removedConn = pruneTombstonesOlderThan(store.Connections, cutoff, clearAll)
+	store.Credentials, removedCred = pruneTombstonesOlderThan(store.Credentials, cutoff, clearAll)
+	result.RemovedConnections = removedConn
+	result.RemovedCredentials = removedCred
+	result.RemainingConnections = len(tombstoneMap(store.Connections))
+	result.RemainingCredentials = len(tombstoneMap(store.Credentials))
+
+	if removedConn == 0 && removedCred == 0 {
+		// 没有变化时仍返回当前条数，方便前端刷新
+		if result.RemainingConnections == 0 {
+			result.RemainingConnections = beforeConn
+		}
+		if result.RemainingCredentials == 0 {
+			result.RemainingCredentials = beforeCred
+		}
+		return result, nil
+	}
+	if err := c.saveTombstoneStore(store); err != nil {
+		return result, fmt.Errorf("保存删除记录失败：%w", err)
+	}
+
+	// 只推当前同步模式对应的后端：选 R2 就只上 R2，不会去碰已配置但未选用的 FTP/WebDAV。
+	// 模式为 all 时再推全部；单个后端失败不整单回滚（本地已清完），汇总错误返回。
+	providers, failures := c.getSyncProviders()
+	defer closeProviders(providers)
+	password := c.GetRecoveryPassword()
+	c.bumpSnapshotTime()
+	var uploadErrs []error
+	for _, failure := range failures {
+		uploadErrs = append(uploadErrs, fmt.Errorf("%s: %w", failure.provider, failure.err))
+	}
+	for _, p := range providers {
+		if _, err := c.uploadSnapshot(p.storage, c.localSyncSnapshot(), password, p.maxBackups); err != nil {
+			uploadErrs = append(uploadErrs, fmt.Errorf("%s 上传失败：%w", p.provider, err))
+			continue
+		}
+		result.Uploaded++
+		c.recordSyncCompleted(p.provider)
+	}
+	if len(uploadErrs) > 0 {
+		if result.Uploaded == 0 {
+			return result, fmt.Errorf("清理后上传失败：%w", errors.Join(uploadErrs...))
+		}
+		return result, fmt.Errorf("已清理并上传 %d 个目标，部分失败：%w", result.Uploaded, errors.Join(uploadErrs...))
+	}
+	return result, nil
 }
 
 func mergeAIGlobalSettings(localSettings ai.AIGlobalSettings, remoteSettings *ai.AIGlobalSettings) ai.AIGlobalSettings {
@@ -1582,13 +1783,15 @@ func (c *ConfigManager) SyncWithRecoveryPassword(password string) (map[string]in
 		return c.syncAllProviders(providers, password, true)
 	}
 	defer closeProviders(providers)
-	return c.syncFromProvider(providers[0].storage, providers[0].maxBackups, password)
+	return c.syncFromProvider(providers[0].storage, providers[0].maxBackups, password, providers[0].provider)
 }
 
-// ChangeRecoveryPassword 对所有目标预检成功后，以新密码各上传一次合并快照，最后持久化密码。
+// ChangeRecoveryPassword 对当前同步模式目标预检成功后，以新密码各上传一次合并快照，最后持久化密码。
+// 空密码表示关闭加密（改明文）。未选用的后端（如配了 FTP 但模式是 WebDAV）不会参与。
+// 某后端最新备份损坏/不可读时跳过该端合并，仍尽量用本机+可读端合并后回写，避免单端坏文件卡死关加密。
 func (c *ConfigManager) ChangeRecoveryPassword(newPassword string) error {
 	newPassword = normalizeRecoveryPassword(newPassword)
-	providers, failures := c.getAllConfiguredSyncProviders()
+	providers, failures := c.getSyncProviders()
 	if err := providerFailuresError(failures); err != nil {
 		closeProviders(providers)
 		return err
@@ -1614,6 +1817,11 @@ func (c *ConfigManager) ChangeRecoveryPassword(newPassword string) error {
 			continue
 		}
 		if oldErr != nil {
+			// 传输/网络错误仍失败；备份内容损坏（截断、Base64 坏）跳过该端，避免关加密被坏文件卡住
+			if isUnreadableBackupContentError(oldErr) {
+				log.Printf("[ChangeRecoveryPassword] %s 预检跳过损坏备份：%v", p.provider, oldErr)
+				continue
+			}
 			return fmt.Errorf("%s 预检失败：%w", p.provider, oldErr)
 		}
 		remoteSnaps = append(remoteSnaps, snap)
@@ -1627,10 +1835,10 @@ func (c *ConfigManager) ChangeRecoveryPassword(newPassword string) error {
 	return c.uploadRecoveryPasswordSnapshot(providers, merged, newPassword, true)
 }
 
-// ResetRecoveryPassword 放弃读取云端，以本机快照覆盖所有已配置同步目标。
+// ResetRecoveryPassword 放弃读取云端，以本机快照覆盖当前同步模式目标。
 func (c *ConfigManager) ResetRecoveryPassword(newPassword string) error {
 	newPassword = normalizeRecoveryPassword(newPassword)
-	providers, failures := c.getAllConfiguredSyncProviders()
+	providers, failures := c.getSyncProviders()
 	if err := providerFailuresError(failures); err != nil {
 		closeProviders(providers)
 		return err
@@ -1673,7 +1881,11 @@ func (c *ConfigManager) uploadRecoveryPasswordSnapshot(providers []providerEntry
 		rollbackUploadedSnapshots(uploaded)
 		return fmt.Errorf("保存恢复密码失败：%w", err)
 	}
-	c.recordSyncCompleted()
+	names := make([]string, 0, len(providers))
+	for _, p := range providers {
+		names = append(names, p.provider)
+	}
+	c.recordSyncCompleted(names...)
 	return nil
 }
 
@@ -1705,9 +1917,14 @@ func closeProviders(providers []providerEntry) {
 }
 
 func mergeSnapshot(c *ConfigManager, dst, src *SyncSnapshot) {
-	dst.Connections = c.mergeWithDeletionPropagation(dst.Connections, src.Connections, -1)
+	dst.DeletedConnections = mergeConnectionTombstones(dst.DeletedConnections, src.DeletedConnections)
+	dst.DeletedCredentials = mergeCredentialTombstones(dst.DeletedCredentials, src.DeletedCredentials)
+	var dedupTombs []SyncTombstone
+	dst.Connections, dedupTombs = c.mergeWithDeletionPropagation(dst.Connections, src.Connections, -1, dst.DeletedConnections)
+	dst.DeletedConnections = pruneConnectionTombstones(mergeConnectionTombstones(dst.DeletedConnections, dedupTombs), dst.Connections)
 	if src.HasCredentials {
-		dst.Credentials = c.mergeCredentials(dst.Credentials, src.Credentials, -1)
+		dst.Credentials = c.mergeCredentials(dst.Credentials, src.Credentials, -1, dst.DeletedCredentials)
+		dst.DeletedCredentials = pruneCredentialTombstones(dst.DeletedCredentials, dst.Credentials)
 	}
 	if src.HasQuickCommands {
 		dst.QuickCommands = c.mergeQuickCommands(dst.QuickCommands, src.QuickCommands, -1)
@@ -1741,6 +1958,13 @@ func (c *ConfigManager) persistSyncSnapshot(snap *SyncSnapshot) error {
 	if err := atomicWriteFile(c.quickCmdFile, []byte(snap.QuickCommands), 0600); err != nil {
 		c.mu.Unlock()
 		return fmt.Errorf("保存快捷命令失败：%w", err)
+	}
+	if err := c.saveTombstoneStore(syncTombstoneStore{
+		Connections: pruneConnectionTombstones(snap.DeletedConnections, snap.Connections),
+		Credentials: pruneCredentialTombstones(snap.DeletedCredentials, snap.Credentials),
+	}); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("保存同步墓碑失败：%w", err)
 	}
 	c.connCacheDirty, c.credCacheDirty = true, true
 	c.mu.Unlock()
@@ -1809,7 +2033,7 @@ func (c *ConfigManager) AutoSync() {
 				if attempt > 0 {
 					time.Sleep(time.Duration(1<<uint(attempt)) * time.Second) // 2s, 4s, 8s
 				}
-				lastErr = c.autoSyncProvider(p.storage, p.maxBackups)
+				lastErr = c.autoSyncProvider(p.storage, p.maxBackups, p.provider)
 				if lastErr == nil {
 					return
 				}
@@ -1852,7 +2076,7 @@ func (c *ConfigManager) RetrySync() string {
 			if cl, ok := p.storage.(storageCloser); ok {
 				defer cl.Close()
 			}
-			if err := c.autoSyncProvider(p.storage, p.maxBackups); err != nil {
+			if err := c.autoSyncProvider(p.storage, p.maxBackups, p.provider); err != nil {
 				errs = append(errs, fmt.Sprintf("%T: %v", p.storage, err))
 			}
 		}()
@@ -2157,6 +2381,12 @@ func (c *ConfigManager) restoreSnapshotToLocal(snap *SyncSnapshot) {
 		}
 		c.credCacheDirty = true
 	}
+	if err := c.saveTombstoneStore(syncTombstoneStore{
+		Connections: pruneConnectionTombstones(snap.DeletedConnections, snap.Connections),
+		Credentials: pruneCredentialTombstones(snap.DeletedCredentials, snap.Credentials),
+	}); err != nil {
+		log.Printf("[restoreSnapshotToLocal] failed to save tombstones: %v", err)
+	}
 	c.mu.Unlock()
 	if snap.HasQuickCommands {
 		if err := atomicWriteFile(c.quickCmdFile, []byte(snap.QuickCommands), 0600); err != nil {
@@ -2184,7 +2414,7 @@ func (c *ConfigManager) restoreSnapshotToLocal(snap *SyncSnapshot) {
 // 读取远端文件 → 解密解析快照 → 写回本地。
 // 统一用 filepath.Base 防止路径穿越。
 // extraKey 通常为恢复密码派生密钥，可为 nil。
-func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, maxBackups int, password string) error {
+func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, maxBackups int, password string, provider string) error {
 	filename = filepath.Base(filename) // 防止路径穿越
 	data, err := s.ReadFile(filename)
 	if err != nil {
@@ -2198,11 +2428,11 @@ func (c *ConfigManager) restoreFromProvider(s RemoteStorage, filename string, ma
 	markSnapshotRestored(snap, restoreTime)
 	c.restoreSnapshotToLocal(snap)
 	atomicWriteFile(c.syncTimeFile, []byte(fmt.Sprintf("%d", restoreTime)), 0600)
-	c.saveLastSyncTime(restoreTime - 1)
+	c.saveLastSyncTime(provider, restoreTime-1)
 	if _, err := c.backupConnections(s, maxBackups); err != nil {
 		return err
 	}
-	c.recordSyncCompleted()
+	c.recordSyncCompleted(provider)
 	return nil
 }
 
@@ -2220,7 +2450,7 @@ func restoreResult(err error) (map[string]interface{}, error) {
 // 样板代码，统一处理 storageCloser 释放。
 
 // backupTo 创建存储、备份、关闭连接
-func (c *ConfigManager) backupTo(storageFn func() (RemoteStorage, int, error)) (map[string]interface{}, error) {
+func (c *ConfigManager) backupTo(provider string, storageFn func() (RemoteStorage, int, error)) (map[string]interface{}, error) {
 	s, max, err := storageFn()
 	if err != nil {
 		return nil, err
@@ -2232,7 +2462,7 @@ func (c *ConfigManager) backupTo(storageFn func() (RemoteStorage, int, error)) (
 	if err != nil {
 		return nil, err
 	}
-	c.recordSyncCompleted()
+	c.recordSyncCompleted(provider)
 	return result, nil
 }
 
@@ -2249,7 +2479,7 @@ func (c *ConfigManager) listBackupsFrom(storageFn func() (RemoteStorage, int, er
 }
 
 // syncFrom 创建存储、同步、关闭连接
-func (c *ConfigManager) syncFrom(storageFn func() (RemoteStorage, int, error)) (map[string]interface{}, error) {
+func (c *ConfigManager) syncFrom(provider string, storageFn func() (RemoteStorage, int, error)) (map[string]interface{}, error) {
 	s, max, err := storageFn()
 	if err != nil {
 		return nil, err
@@ -2257,12 +2487,12 @@ func (c *ConfigManager) syncFrom(storageFn func() (RemoteStorage, int, error)) (
 	if cl, ok := s.(storageCloser); ok {
 		defer cl.Close()
 	}
-	return c.syncFromProvider(s, max, c.GetRecoveryPassword())
+	return c.syncFromProvider(s, max, c.GetRecoveryPassword(), provider)
 }
 
 // restoreFrom 创建存储、恢复、关闭连接。
 // password 为空时仅尝试明文和旧版云端派生密钥；非空时用于 .lumin2 或旧 hex 解密。
-func (c *ConfigManager) restoreFrom(storageFn func() (RemoteStorage, int, error), filename string, password string) (map[string]interface{}, error) {
+func (c *ConfigManager) restoreFrom(provider string, storageFn func() (RemoteStorage, int, error), filename string, password string) (map[string]interface{}, error) {
 	s, max, err := storageFn()
 	if err != nil {
 		return nil, err
@@ -2270,5 +2500,5 @@ func (c *ConfigManager) restoreFrom(storageFn func() (RemoteStorage, int, error)
 	if cl, ok := s.(storageCloser); ok {
 		defer cl.Close()
 	}
-	return restoreResult(c.restoreFromProvider(s, filename, max, password))
+	return restoreResult(c.restoreFromProvider(s, filename, max, password, provider))
 }

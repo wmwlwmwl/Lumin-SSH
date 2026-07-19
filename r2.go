@@ -258,7 +258,7 @@ func (c *ConfigManager) newR2Storage() (RemoteStorage, int, error) {
 
 // BackupToR2 备份到 R2
 func (c *ConfigManager) BackupToR2() (map[string]interface{}, error) {
-	return c.backupTo(c.newR2Storage)
+	return c.backupTo("r2", c.newR2Storage)
 }
 
 // ListR2Backups 列出 R2 备份
@@ -268,14 +268,14 @@ func (c *ConfigManager) ListR2Backups() ([]map[string]interface{}, error) {
 
 // SyncFromR2 手动合并同步
 func (c *ConfigManager) SyncFromR2() (map[string]interface{}, error) {
-	return c.syncFrom(c.newR2Storage)
+	return c.syncFrom("r2", c.newR2Storage)
 }
 
 func (c *ConfigManager) RestoreFromR2File(objectKey string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newR2Storage, objectKey, c.GetRecoveryPassword())
+	return c.restoreFrom("r2", c.newR2Storage, objectKey, c.GetRecoveryPassword())
 }
 
 // RestoreFromR2FileWithPassword 用用户输入的密码恢复（恢复失败时的兜底入口）。
 func (c *ConfigManager) RestoreFromR2FileWithPassword(objectKey string, password string) (map[string]interface{}, error) {
-	return c.restoreFrom(c.newR2Storage, objectKey, password)
+	return c.restoreFrom("r2", c.newR2Storage, objectKey, password)
 }
