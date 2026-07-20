@@ -77,24 +77,47 @@ function normalizeFileManagerTabPath(path) {
   return parts.length > 0 ? `/${parts.join('/')}` : '/';
 }
 
+function sortFileManagerTabs(tabs) {
+  const systemPinnedTabs = [];
+  const pinnedTabs = [];
+  const normalTabs = [];
+  (Array.isArray(tabs) ? tabs : []).forEach((tab) => {
+    if (!tab || typeof tab !== 'object') return;
+    if (tab.systemPinned === true) {
+      systemPinnedTabs.push(tab);
+      return;
+    }
+    if (tab.pinned === true) {
+      pinnedTabs.push(tab);
+      return;
+    }
+    normalTabs.push(tab);
+  });
+  return [...systemPinnedTabs, ...pinnedTabs, ...normalTabs];
+}
+
 function normalizeFileManagerWorkspaceState(state) {
   const source = state && typeof state === 'object' ? state : {};
   const tabs = Array.isArray(source.tabs)
-    ? source.tabs
-      .map((tab) => {
-        if (!tab || typeof tab !== 'object') return null;
-        const id = String(tab.id || '').trim();
-        if (!id) return null;
-        return {
-          id,
-          path: normalizeFileManagerTabPath(tab.path),
-          sortField: typeof tab.sortField === 'string' ? tab.sortField : 'name',
-          sortDir: tab.sortDir === 'desc' ? 'desc' : 'asc',
-          selectedPaths: Array.isArray(tab.selectedPaths) ? tab.selectedPaths.filter((item) => typeof item === 'string') : [],
-          scrollTop: Number.isFinite(Number(tab.scrollTop)) ? Number(tab.scrollTop) : 0,
-        };
-      })
-      .filter(Boolean)
+    ? sortFileManagerTabs(
+      source.tabs
+        .map((tab) => {
+          if (!tab || typeof tab !== 'object') return null;
+          const id = String(tab.id || '').trim();
+          if (!id) return null;
+          return {
+            id,
+            path: normalizeFileManagerTabPath(tab.path),
+            sortField: typeof tab.sortField === 'string' ? tab.sortField : 'name',
+            sortDir: tab.sortDir === 'desc' ? 'desc' : 'asc',
+            selectedPaths: Array.isArray(tab.selectedPaths) ? tab.selectedPaths.filter((item) => typeof item === 'string') : [],
+            scrollTop: Number.isFinite(Number(tab.scrollTop)) ? Number(tab.scrollTop) : 0,
+            pinned: tab.pinned === true || tab.systemPinned === true,
+            systemPinned: tab.systemPinned === true,
+          };
+        })
+        .filter(Boolean)
+    )
     : [];
   const activeTabId = typeof source.activeTabId === 'string' ? source.activeTabId.trim() : '';
   return {

@@ -668,6 +668,7 @@ export default function SettingsModal({
   const [fileManagerFollowTerminalCwd, setFileManagerFollowTerminalCwd] = useState(localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   const [fileManagerCompressedTransfer, setFileManagerCompressedTransfer] = useState(localStorage.getItem('fileManagerCompressedTransfer') !== 'false');
   const [fileManagerAutoOpenTransferQueue, setFileManagerAutoOpenTransferQueue] = useState(localStorage.getItem('fileManagerAutoOpenTransferQueue') !== 'false');
+  const [fileManagerShowTabIcons, setFileManagerShowTabIcons] = useState(localStorage.getItem('fileManagerShowTabIcons') !== 'false');
   const [fileManagerInitialPathMode, setFileManagerInitialPathMode] = useState(localStorage.getItem('fileManagerInitialPathMode') || 'session_initial_path');
   const [fileManagerNewTabPathMode, setFileManagerNewTabPathMode] = useState(localStorage.getItem('fileManagerNewTabPathMode') || 'inherit_current');
   const [fileManagerAskDownloadEveryTime, setFileManagerAskDownloadEveryTime] = useState(localStorage.getItem('fileManagerAskDownloadEveryTime') === 'true');
@@ -772,6 +773,13 @@ export default function SettingsModal({
     setFileManagerAutoOpenTransferQueue(next);
     if (next) localStorage.removeItem('fileManagerAutoOpenTransferQueue');
     else localStorage.setItem('fileManagerAutoOpenTransferQueue', 'false');
+  };
+  const handleToggleFileManagerShowTabIcons = () => {
+    const next = !fileManagerShowTabIcons;
+    setFileManagerShowTabIcons(next);
+    if (next) localStorage.removeItem('fileManagerShowTabIcons');
+    else localStorage.setItem('fileManagerShowTabIcons', 'false');
+    window.dispatchEvent(new CustomEvent('file-manager-show-tab-icons-changed', { detail: next }));
   };
   const handleFileManagerInitialPathModeChange = (value) => {
     setFileManagerInitialPathMode(value);
@@ -1520,6 +1528,8 @@ export default function SettingsModal({
                 onToggleFileManagerCompressedTransfer={handleToggleFileManagerCompressedTransfer}
                 fileManagerAutoOpenTransferQueue={fileManagerAutoOpenTransferQueue}
                 onToggleFileManagerAutoOpenTransferQueue={handleToggleFileManagerAutoOpenTransferQueue}
+                fileManagerShowTabIcons={fileManagerShowTabIcons}
+                onToggleFileManagerShowTabIcons={handleToggleFileManagerShowTabIcons}
                 fileManagerInitialPathMode={fileManagerInitialPathMode}
                 onFileManagerInitialPathModeChange={handleFileManagerInitialPathModeChange}
                 fileManagerNewTabPathMode={fileManagerNewTabPathMode}
