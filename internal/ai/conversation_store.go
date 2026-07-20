@@ -147,7 +147,7 @@ func normalizeAIConversationTaskSettings(settings AIConversationTaskSettings) AI
 	settings.AllowedCommands = normalizeAIStringList(settings.AllowedCommands)
 	settings.DeniedCommands = normalizeAIStringList(settings.DeniedCommands)
 	settings.AlwaysAllowExecuteAllCommands = containsAICommandWildcard(settings.AllowedCommands)
-	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute || settings.AlwaysAllowExecuteReadOnly
+	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute
 	return settings
 }
 

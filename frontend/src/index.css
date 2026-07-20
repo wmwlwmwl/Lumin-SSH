@@ -3411,6 +3411,8 @@ body.theme-light .editor-field-shell.editor-field-shell-shine::after {
 .toast-success .toast-icon { color: var(--success); }
 .toast-error { background: var(--surface-overlay); border: 1px solid var(--danger); border-left: 4px solid var(--danger); color: var(--text-primary); }
 .toast-error .toast-icon { color: var(--danger); }
+.toast-warning { background: var(--surface-overlay); border: 1px solid var(--warning); border-left: 4px solid var(--warning); color: var(--text-primary); }
+.toast-warning .toast-icon { color: var(--warning); }
 .toast-info { background: var(--surface-overlay); border: 1px solid var(--accent); border-left: 4px solid var(--accent); color: var(--text-primary); }
 .toast-info .toast-icon { color: var(--accent); }
 

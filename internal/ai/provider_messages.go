@@ -189,6 +189,9 @@ func (a *App) requestMessagesAIChatRound(ctx context.Context, requestID string, 
 	if apiKey := strings.TrimSpace(profile.APIKey); apiKey != "" {
 		req.Header.Set("x-api-key", apiKey)
 	}
+	if payload.IsDemon {
+		req.Header.Set("isdemon", "true")
+	}
 	if promptCacheStrategy != "off" {
 		req.Header.Set("anthropic-beta", anthropicPromptCachingBetaHeader)
 	}

@@ -215,6 +215,9 @@ const TERMINAL_THEMES = {
 
 // 检测 App 浅色/深色模式
 export function getAppThemeMode() {
+  if (typeof window !== 'undefined' && window.__luminForceDarkTheme === true) {
+    return 'dark';
+  }
   const mode = localStorage.getItem('themeMode') || 'dark';
   if (mode === 'system') {
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';

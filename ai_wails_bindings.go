@@ -235,6 +235,10 @@ func (b *AIBindings) ValidateAIProviderWebSearch(jsonStr string) ai.AIProviderWe
 	return b.runtime().ValidateAIProviderWebSearch(jsonStr)
 }
 
+func (b *AIBindings) GetAIProviderTokenGroup(jsonStr string) (string, error) {
+	return b.runtime().GetAIProviderTokenGroup(jsonStr)
+}
+
 func (b *AIBindings) RequestAIProviderModels(baseURL string, apiKey string) ([]string, error) {
 	return b.runtime().RequestAIProviderModels(baseURL, apiKey)
 }

@@ -961,6 +961,9 @@ export default function App() {
   const [quickThemeMode, setQuickThemeMode] = useState(localStorage.getItem('themeMode') || 'dark');
   const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') !== 'false');
   const [showTopbarRefreshedLogo, setShowTopbarRefreshedLogo] = useState(false);
+  const [aiPanelDevilModes, setAIPanelDevilModes] = useState({});
+  const activeAIPanelKey = useMemo(() => buildAIWorkspaceTerminalPanelKey(activeSessionId, activeTerminalId), [activeSessionId, activeTerminalId]);
+  const activeAIDevilMode = activeAIPanelKey ? aiPanelDevilModes[activeAIPanelKey] === true : false;
 
   const leftSplitWidthRef = useRef(leftSplitWidth);
   const bottomSplitHeightRef = useRef(bottomSplitHeight);
@@ -1006,16 +1009,19 @@ export default function App() {
     }
     return mode === 'light' ? 'light' : 'dark';
   }, []);
-  const resolvedQuickThemeMode = resolveQuickThemeMode(quickThemeMode);
+  const resolvedQuickThemeMode = activeAIDevilMode ? 'dark' : resolveQuickThemeMode(quickThemeMode);
   const topbarLogoTransitionImg = resolvedQuickThemeMode === 'light' ? logoLightImg : logoDarkImg;
   const handleQuickThemeToggle = useCallback(() => {
+    if (activeAIDevilMode) {
+      return;
+    }
     const nextMode = resolvedQuickThemeMode === 'light' ? 'dark' : 'light';
     localStorage.setItem('themeMode', nextMode);
     setQuickThemeMode(nextMode);
     if (nextMode === 'light') document.body.classList.add('theme-light');
     else document.body.classList.remove('theme-light');
     window.dispatchEvent(new CustomEvent('theme-mode-changed'));
-  }, [resolvedQuickThemeMode]);
+  }, [activeAIDevilMode, resolvedQuickThemeMode]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setShowTopbarRefreshedLogo(true);
@@ -1630,6 +1636,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   // ── 初始化全局主题 ──────────────────────────────────────
   useEffect(() => {
     const applyTheme = () => {
+      if (activeAIDevilMode) {
+        window.__luminForceDarkTheme = true;
+        document.body.classList.remove('theme-light');
+        window.dispatchEvent(new CustomEvent('theme-mode-changed'));
+        return;
+      }
+      window.__luminForceDarkTheme = false;
       const savedTheme = localStorage.getItem('themeMode') || 'dark';
       const isSystemLight = window.matchMedia('(prefers-color-scheme: light)').matches;
       const applyLight = savedTheme === 'light' || (savedTheme === 'system' && isSystemLight);
@@ -1639,7 +1652,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     };
     applyTheme();
 
-    // 自定义强调色初始化
     const useCustomAccent = localStorage.getItem('useCustomAccent') === 'true';
     const themeAccent = localStorage.getItem('themeAccent');
     if (useCustomAccent && themeAccent) {
@@ -1647,11 +1659,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       document.body.style.setProperty('--accent-rgb', hexToRgb(themeAccent));
     }
 
-    // 系统主题变化时自动跟随
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     mq.addEventListener('change', applyTheme);
     return () => mq.removeEventListener('change', applyTheme);
-  }, []);
+  }, [activeAIDevilMode]);
 
   // ── 自动检测更新机制 ────────────────────────────────────
   const { checkUpdate, applyUpdate, downloadProgress } = useUpdateChecker({
@@ -4151,6 +4162,18 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 sessionId={s.id}
                 terminalId={t.id}
                 sessionTerminals={getEffectiveTerminals(s)}
+                addToast={addToast}
+                onDevilModeChange={(enabled) => {
+                  const panelKey = buildAIWorkspaceTerminalPanelKey(s.id, t.id);
+                  if (!panelKey) {
+                    return;
+                  }
+                  setAIPanelDevilModes((prev) => (
+                    prev[panelKey] === enabled
+                      ? prev
+                      : { ...prev, [panelKey]: enabled }
+                  ));
+                }}
               />
             </div>
           );
@@ -5080,7 +5103,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           {sessions.length === 0 && <div style={{ flex: 1 }}></div>}
 
           <div className="window-controls">
-            {showThemeQuickEntry && (
+            {showThemeQuickEntry && !activeAIDevilMode && (
               <Tiptop text={resolvedQuickThemeMode === 'light' ? t('深色') : t('浅色')} placement="bottom">
                 <button
                   type="button"
@@ -6182,6 +6205,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             setProbePanelPosition(val);
             localStorage.setItem('probePanelPosition', val);
           }}
+          forceDarkTheme={activeAIDevilMode}
         />
       )}
 

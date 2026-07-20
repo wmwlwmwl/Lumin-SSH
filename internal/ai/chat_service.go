@@ -30,6 +30,7 @@ type AIChatRequestPayload struct {
 	AutoApprove              bool                   `json:"autoApprove"`
 	SkipNextAutomaticRequest bool                   `json:"skipNextAutomaticRequest"`
 	AssistantFirstReplyText  string                 `json:"assistantFirstReplyText,omitempty"`
+	IsDemon                  bool                   `json:"isDemon,omitempty"`
 	Messages                 []AIChatRequestMessage `json:"messages"`
 }
 
@@ -1102,13 +1103,13 @@ func getAIExecuteCommandDecision(settings AIConversationTaskSettings, command st
 	if !isAIAutoApprovalEffectivelyEnabled(settings) {
 		return aiApprovalDecisionAskUser
 	}
+	if !settings.AlwaysAllowExecute {
+		return aiApprovalDecisionAskUser
+	}
 
 	deniedCommands := normalizeAICommandList(settings.DeniedCommands)
 	if strings.TrimSpace(rawIsMutating) != "1" && settings.AlwaysAllowExecuteReadOnly {
 		return getAICommandDecision(command, []string{"*"}, deniedCommands)
-	}
-	if !settings.AlwaysAllowExecute {
-		return aiApprovalDecisionAskUser
 	}
 
 	allowedCommands := normalizeAICommandList(settings.AllowedCommands)
@@ -1122,12 +1123,6 @@ func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiPars
 	}
 	if isAIMCPClientToolAlwaysAllowed(tool) {
 		return aiApprovalDecisionAutoApprove
-	}
-	if toolName == "ask_followup_question" {
-		if settings.AlwaysAllowFollowupQuestions {
-			return aiApprovalDecisionAutoApprove
-		}
-		return aiApprovalDecisionAskUser
 	}
 	if !isAIAutoApprovalEffectivelyEnabled(settings) {
 		return aiApprovalDecisionAskUser

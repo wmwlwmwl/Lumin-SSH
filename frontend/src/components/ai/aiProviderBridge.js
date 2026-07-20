@@ -246,6 +246,15 @@ export async function getAIProviderState() {
   }
 }
 
+export async function getAIProviderTokenGroup(provider) {
+  const bridge = getAppBridge()
+  if (!bridge?.GetAIProviderTokenGroup) {
+    throw new Error(t('Token 分组查询能力未就绪'))
+  }
+  const normalizedProvider = normalizeProvider(provider || {}, 0)
+  return bridge.GetAIProviderTokenGroup(JSON.stringify(normalizedProvider))
+}
+
 export async function saveAIProviderState(state) {
   const normalizedState = normalizeAIProviderState(state)
   const bridge = getAppBridge()

@@ -43,7 +43,6 @@ type AIGlobalSettings struct {
 	AlwaysAllowMcp                      bool             `json:"alwaysAllowMcp"`
 	AlwaysAllowModeSwitch               bool             `json:"alwaysAllowModeSwitch"`
 	AlwaysAllowSubtasks                 bool             `json:"alwaysAllowSubtasks"`
-	AlwaysAllowFollowupQuestions        bool             `json:"alwaysAllowFollowupQuestions"`
 	SoundEnabled                        bool             `json:"soundEnabled"`
 	SoundVolume                         float64          `json:"soundVolume,omitempty"`
 	MCPEnabled                          bool             `json:"mcpEnabled"`

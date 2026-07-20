@@ -11,7 +11,7 @@ import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIC
 import { condenseAIConversationContext, createAIConversation, deleteAIConversation, getAIAssistantFirstReply, getAIConversation, listAIConversations, normalizeAIConversationMessageSearchResult, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation, searchAIConversationMessages, subscribeAIConversationChanges } from './ai/aiConversationBridge.js'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.js'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings } from './ai/aiGlobalSettingsBridge.js'
-import { getAIProviderState } from './ai/aiProviderBridge.js'
+import { getAIProviderState, getAIProviderTokenGroup } from './ai/aiProviderBridge.js'
 import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, updateMCPClientServerTimeout } from './ai/mcpClientBridge.js'
 import { processRemoteFileMentions } from './ai/aiMentions.js'
 import { expandFirstSlashCommandForPrompt } from './ai/aiSlashCommands.js'
@@ -608,7 +608,7 @@ function resolveAIEventSound(payload, fallbackSound = '', allowPayloadOverride =
   return typeof fallbackSound === 'string' ? fallbackSound.trim() : ''
 }
 
-export default function AIPanel({ width, side, terminalId = 'global', sessionId = '', sessionTerminals = [] }) {
+export default function AIPanel({ width, side, terminalId = 'global', sessionId = '', sessionTerminals = [], onDevilModeChange, addToast }) {
   const { t } = useTranslation()
   const audioPlayersRef = useRef(new Map())
   const [mcpInfo, setMcpInfo] = useState({ url: '', transport: 'streamable-http', endpoint: '/mcp', instructions: '', logs: '', tools: [] })
@@ -619,6 +619,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const [showSettingsPanel, setShowSettingsPanel] = useState(false)
   const [popupDismissVersion, setPopupDismissVersion] = useState(0)
   const [activeSettingsTab, setActiveSettingsTab] = useState('')
+  const [isDevilMode, setIsDevilMode] = useState(false)
   const [conversationList, setConversationList] = useState([])
   const [globalAISettings, setGlobalAISettings] = useState(null)
   const [terminalOutputLineLimit, setTerminalOutputLineLimit] = useState(500)
@@ -846,6 +847,50 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     () => (Array.isArray(aiProviderState?.providers) ? aiProviderState.providers : []),
     [aiProviderState],
   )
+  const canToggleAIMode = useMemo(() => {
+    const rawBaseURL = typeof selectedAIProvider?.baseUrl === 'string' ? selectedAIProvider.baseUrl.trim() : ''
+    if (!rawBaseURL) {
+      return false
+    }
+    const candidates = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(rawBaseURL) ? [rawBaseURL] : [rawBaseURL, `https://${rawBaseURL}`]
+    return candidates.some((item) => {
+      try {
+        return new URL(item).hostname.toLowerCase() === 'newapi.callmy.vip'
+      } catch {
+        return false
+      }
+    })
+  }, [selectedAIProvider])
+  useEffect(() => {
+    if (!canToggleAIMode) {
+      setIsDevilMode(false)
+    }
+  }, [canToggleAIMode])
+  useEffect(() => {
+    onDevilModeChange?.(canToggleAIMode ? isDevilMode : false)
+  }, [canToggleAIMode, isDevilMode, onDevilModeChange])
+  const handleToggleDevilMode = useCallback(async () => {
+    if (isDevilMode) {
+      setIsDevilMode(false)
+      return
+    }
+    try {
+      const tokenGroup = await getAIProviderTokenGroup(selectedAIProvider || {})
+      const normalizedTokenGroup = typeof tokenGroup === 'string' ? tokenGroup.replace(/\s+/g, '') : ''
+      if (!normalizedTokenGroup.includes('支持破限')) {
+        addToast?.(t('当前供应商渠道不支持恶魔模式'), 'warning', 2400)
+        return
+      }
+      setIsDevilMode(true)
+    } catch (error) {
+      const errorText = error instanceof Error ? error.message.trim() : ''
+      if (errorText === t('Token 分组查询能力未就绪')) {
+        addToast?.(errorText, 'warning', 2400)
+        return
+      }
+      addToast?.(t('当前Token分组校验失败,无法进入恶魔模式'), 'warning', 2400)
+    }
+  }, [addToast, isDevilMode, selectedAIProvider, t])
   const resolveFirstAvailableProviderId = useCallback((providers = []) => {
     return typeof providers[0]?.id === 'string' ? providers[0].id.trim() : ''
   }, [])
@@ -1213,6 +1258,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       })
       .catch(() => {})
   }, [showSettingsPanel])
+
 
   useEffect(() => {
     const unbind = EventsOn('ai-chat-stream', (payload) => {
@@ -2629,6 +2675,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         autoApprove: effectiveAutoApprovalEnabled,
         skipNextAutomaticRequest: Boolean(panelState.skipNextAutomaticRequest),
         assistantFirstReplyText: assistantFirstReplyText || undefined,
+        isDemon: Boolean(isDevilMode),
         messages: requestMessages,
       })
       return true
@@ -2674,7 +2721,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, panelInstanceKey)
       return false
     }
-  }, [activeConversation, aiProviderState, availableAIProviders, buildConversationWithProviderId, composerEditState, composerImages, effectiveAutoApprovalEnabled, getAIAssistantFirstReply, globalAISettings, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, resolveAvailableProviderId, saveConversationSnapshot, setPanelState, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
+  }, [activeConversation, aiProviderState, availableAIProviders, buildConversationWithProviderId, composerEditState, composerImages, effectiveAutoApprovalEnabled, getAIAssistantFirstReply, globalAISettings, isDevilMode, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, resolveAvailableProviderId, saveConversationSnapshot, setPanelState, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
 
   const handleFollowupResponse = useCallback(async (payload) => {
     if (!payload || typeof payload !== 'object') {
@@ -2788,6 +2835,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         sessionId: terminalId,
         autoApprove: effectiveAutoApprovalEnabled,
         skipNextAutomaticRequest: false,
+        isDemon: Boolean(isDevilMode),
         messages: requestMessages,
       })
       return true
@@ -2834,7 +2882,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, panelInstanceKey)
       return false
     }
-  }, [activeConversation, effectiveAutoApprovalEnabled, panelInstanceKey, requestConversationSmoothScrollToBottom, saveConversationSnapshot, setPanelState, terminalId])
+  }, [activeConversation, effectiveAutoApprovalEnabled, isDevilMode, panelInstanceKey, requestConversationSmoothScrollToBottom, saveConversationSnapshot, setPanelState, terminalId])
 
   const handleConversationUserMessage = useCallback(async (payload) => {
     if (payload && typeof payload === 'object' && payload.kind === 'followup-response') {
@@ -2966,6 +3014,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         autoApprove: effectiveAutoApprovalEnabled,
         skipNextAutomaticRequest: Boolean(panelState.skipNextAutomaticRequest),
         assistantFirstReplyText: assistantFirstReplyText || undefined,
+        isDemon: Boolean(isDevilMode),
         messages: requestMessages,
       })
       return true
@@ -3011,7 +3060,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, panelInstanceKey)
       return false
     }
-  }, [activeConversation, effectiveAutoApprovalEnabled, isQueueBlocked, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, saveConversationSnapshot, setPanelState, terminalId, truncateConversationAfterMessage])
+  }, [activeConversation, effectiveAutoApprovalEnabled, isDevilMode, isQueueBlocked, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, saveConversationSnapshot, setPanelState, terminalId, truncateConversationAfterMessage])
 
   const handleEditUserMessage = useCallback((messageId, text, images = []) => {
     if (!activeConversation) {
@@ -3146,6 +3195,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         sessionId: terminalId,
         autoApprove: effectiveAutoApprovalEnabled,
         skipNextAutomaticRequest: false,
+        isDemon: Boolean(isDevilMode),
         messages: requestMessages,
       })
       return true
@@ -3193,7 +3243,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, targetPanelKey)
       return false
     }
-  }, [effectiveAutoApprovalEnabled, effectiveProviderId, panelInstanceKey, requestConversationSmoothScrollToBottom, saveConversationSnapshot, setPanelState, terminalId])
+  }, [effectiveAutoApprovalEnabled, effectiveProviderId, isDevilMode, panelInstanceKey, requestConversationSmoothScrollToBottom, saveConversationSnapshot, setPanelState, terminalId])
 
   const handleCancelMessage = useCallback(async () => {
     if (!panelState.activeRequestId) {
@@ -3496,7 +3546,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     } else if (conversationList.length === 0) {
       content = (
         <div style={{ minHeight: 'calc(100% - 53px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.8 }}>
-          {t('当前还没有对话.点击下方发送消息后,将自动创建一条新对话.')}
+          <div style={{ maxWidth: '80%', display: 'grid', gap: 2 }}>
+            <div>{t('当前还没有对话.点击下方发送消息后')}</div>
+            <div>{t('将自动创建一条新对话.')}</div>
+          </div>
         </div>
       )
     } else {
@@ -3634,17 +3687,18 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         {content}
       </div>
     )
-  }, [conversationList, getLanguage, globalSearchLoading, globalSearchOpen, globalSearchQuery, globalSearchResults, handleDeleteConversation, handleOpenConversation, handleOpenConversationFolder, handleOpenGlobalSearch, handleSelectGlobalSearchResult, hoveredConversationActionKey, normalizedGlobalSearchQuery, panelState.activeConversationId, resetGlobalSearchState, t])
+  }, [conversationList, getLanguage, globalSearchLoading, globalSearchOpen, globalSearchQuery, globalSearchResults, handleDeleteConversation, handleOpenConversation, handleOpenConversationFolder, handleOpenGlobalSearch, handleSelectGlobalSearchResult, hoveredConversationActionKey, isDevilMode, normalizedGlobalSearchQuery, panelState.activeConversationId, resetGlobalSearchState, t])
 
   return (
     <div
       data-ai-panel-root="true"
+      data-ai-devil-mode={isDevilMode ? 'true' : 'false'}
       style={{
         width,
         minWidth: width,
         height: '100%',
         minHeight: 0,
-        background: 'var(--surface-raised)',
+        background: isDevilMode ? 'rgba(10, 0, 2, 0.96)' : 'var(--surface-raised)',
         flexShrink: 0,
         borderRight: side === 'right' ? '1px solid var(--border)' : 'none',
         borderLeft: side === 'left' ? '1px solid var(--border)' : 'none',
@@ -3654,12 +3708,38 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         overflow: 'hidden',
         position: 'relative',
         fontFamily: 'var(--font-ai-panel)',
+        ...(isDevilMode ? {
+          '--surface-raised': 'rgba(17, 2, 4, 0.84)',
+          '--surface-base': 'rgba(8, 1, 2, 0.90)',
+          '--surface-overlay': 'rgba(18, 2, 4, 0.90)',
+          '--surface-sunken': 'rgba(10, 1, 2, 0.96)',
+          '--text-primary': '#fff5f5',
+          '--text-secondary': 'rgba(255, 112, 112, 0.92)',
+          '--text-tertiary': 'rgba(255, 82, 82, 0.72)',
+          '--border': 'rgba(255, 68, 68, 0.22)',
+          '--border-subtle': 'rgba(255, 56, 56, 0.16)',
+          '--accent': '#ff3b3b',
+          '--accent-rgb': '255, 59, 59',
+          '--accent-border': 'rgba(255, 72, 72, 0.46)',
+          backgroundImage: [
+            'radial-gradient(circle at 50% 72%, rgba(140, 0, 20, 0.34) 0%, rgba(140, 0, 20, 0.12) 20%, transparent 46%)',
+            'radial-gradient(circle at 50% 8%, rgba(255, 0, 51, 0.16) 0%, transparent 24%)',
+            'radial-gradient(circle at 0% 0%, rgba(255, 0, 32, 0.12) 0%, transparent 18%)',
+            'radial-gradient(circle at 100% 0%, rgba(255, 0, 32, 0.12) 0%, transparent 18%)',
+            'repeating-linear-gradient(135deg, rgba(255, 0, 38, 0.035) 0 1px, transparent 1px 26px)',
+            'linear-gradient(180deg, rgba(22, 0, 3, 0.96) 0%, rgba(8, 0, 1, 0.99) 100%)',
+          ].join(', '),
+          boxShadow: 'inset 0 0 0 1px rgba(255, 56, 56, 0.14), inset 0 0 60px rgba(255, 0, 38, 0.08)',
+        } : {}),
       }}
     >
       <AIPanelHeader
         showSettingsPanel={showSettingsPanel}
         onToggleSettings={handleToggleSettingsPanel}
         onGoHome={handleGoHome}
+        showModeToggle={canToggleAIMode}
+        isDevilMode={isDevilMode}
+        onToggleMode={handleToggleDevilMode}
         onOpenConversationSearch={handleOpenConversationSearch}
         onOpenConversationDiff={handleOpenConversationDiff}
         showConversationSearchButton={Boolean(activeConversation)}
