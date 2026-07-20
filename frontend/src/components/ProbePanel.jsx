@@ -6,7 +6,7 @@ import {
   formatRate,
   formatTransferTotal,
 } from './probeFormatting.js';
-import { BarChart3, Cpu, HardDrive, Globe, ClipboardList, Clipboard, Search, Check, Monitor, EyeOff, Eye, RefreshCw, MemoryStick, ArrowLeftRight, Gauge } from 'lucide-react';
+import { BarChart3, Cpu, HardDrive, Globe, ClipboardList, Clipboard, Search, Check, Monitor, EyeOff, Eye, RefreshCw, MemoryStick, ArrowLeftRight, Gauge, GripVertical } from 'lucide-react';
 import Tiptop from './Tiptop.jsx';
 import { Z } from '../constants/zIndex';
 import { useTranslation } from '../i18n.js';
@@ -15,6 +15,49 @@ const HISTORY_SIZE = 30;
 const clampPct = (value) => Math.min(Math.max(Number(value) || 0, 0), 100);
 const pctColor = (pct, warn = 60, danger = 85) => pct >= danger ? 'var(--danger)' : pct >= warn ? 'var(--warning)' : 'var(--success)';
 const createEmptyHist = () => ({ cpu: Array(HISTORY_SIZE).fill(0), up: Array(HISTORY_SIZE).fill(0), down: Array(HISTORY_SIZE).fill(0) });
+const PROBE_CARD_ORDER_KEY = 'probePanelCardOrder';
+const PROBE_CARD_ORDER_CHANGED_EVENT = 'probeCardOrderChanged';
+const PROBE_CARD_LONG_PRESS_MS = 0;
+const DEFAULT_PROBE_CARD_ORDER = ['overview', 'cpu', 'memory', 'network', 'disk', 'process'];
+
+const normalizeProbeCardOrder = (value) => {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const next = [];
+  source.forEach((item) => {
+    if (DEFAULT_PROBE_CARD_ORDER.includes(item) && !seen.has(item)) {
+      seen.add(item);
+      next.push(item);
+    }
+  });
+  DEFAULT_PROBE_CARD_ORDER.forEach((item) => {
+    if (!seen.has(item)) next.push(item);
+  });
+  return next;
+};
+
+const readProbeCardOrder = () => {
+  try {
+    return normalizeProbeCardOrder(JSON.parse(localStorage.getItem(PROBE_CARD_ORDER_KEY) || '[]'));
+  } catch (_) {
+    return [...DEFAULT_PROBE_CARD_ORDER];
+  }
+};
+
+const persistProbeCardOrder = (order) => {
+  const next = normalizeProbeCardOrder(order);
+  localStorage.setItem(PROBE_CARD_ORDER_KEY, JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent(PROBE_CARD_ORDER_CHANGED_EVENT, { detail: next }));
+};
+
+const reorderProbeCard = (order, activeId, targetId, position) => {
+  if (!activeId || !targetId || activeId === targetId) return order;
+  const next = order.filter((item) => item !== activeId);
+  const targetIndex = next.indexOf(targetId);
+  if (targetIndex === -1) return order;
+  next.splice(position === 'after' ? targetIndex + 1 : targetIndex, 0, activeId);
+  return next;
+};
 
 // ── Sparkline SVG ──────────────────────────────────────────────────────────
 const Sparkline = React.memo(function Sparkline({ data, series, height = 42 }) {
@@ -82,11 +125,25 @@ const Card = React.memo(function Card({ children, className = '', style }) {
   return <div className={`probe-card ${className}`} style={style}>{children}</div>;
 });
 
-const SectionHeader = React.memo(function SectionHeader({ icon, title, badge, action }) {
+const SectionHeader = React.memo(function SectionHeader({ icon, title, badge, action, dragHandleProps = null }) {
   return (
     <div className="probe-section-header">
-      <span className="probe-section-icon">{icon}</span>
-      <span className="probe-section-title">{title}</span>
+      <div
+        className={`probe-section-handle${dragHandleProps ? ' probe-section-handle-sortable' : ''}${dragHandleProps?.pressing ? ' is-pressing' : ''}${dragHandleProps?.dragReady ? ' is-ready' : ''}${dragHandleProps?.dragging ? ' is-dragging' : ''}`}
+        draggable={dragHandleProps?.draggable || false}
+        onPointerDown={dragHandleProps?.onPointerDown}
+        onPointerMove={dragHandleProps?.onPointerMove}
+        onPointerUp={dragHandleProps?.onPointerUp}
+        onPointerLeave={dragHandleProps?.onPointerLeave}
+        onPointerCancel={dragHandleProps?.onPointerCancel}
+        onDragStart={dragHandleProps?.onDragStart}
+        onDragEnd={dragHandleProps?.onDragEnd}
+      >
+        <span className="probe-section-icon">{icon}</span>
+        <span className="probe-section-title">{title}</span>
+        <span className="probe-section-spacer" />
+        <span className="probe-section-handle-hint" aria-hidden="true"><GripVertical size={13} /></span>
+      </div>
       {badge ? <span className="probe-section-badge">{badge}</span> : null}
       {action}
     </div>
@@ -213,11 +270,12 @@ function ProbeHeader({ t, info, displayIP, hideIP, setHideIP, addToast }) {
   );
 }
 
-function HealthOverview({ t, cpuAvg, memPct, diskPct, info, coreCount }) {
+function HealthOverview({ t, cpuAvg, memPct, diskPct, info, coreCount, dragHandleProps }) {
   const netSpeed = (info.netUp || 0) + (info.netDown || 0);
   const loadPct = coreCount > 0 ? clampPct((info.load1 || 0) / coreCount * 100) : 0;
   return (
-    <>
+    <Card className="probe-overview-card">
+      <SectionHeader icon={<BarChart3 size={14} />} title={t('概览')} dragHandleProps={dragHandleProps} />
       <div className="probe-overview-grid">
         <MetricCard label={t('系统负载')} value={`${loadPct.toFixed(0)}%`} sub={`1m ${info.load1?.toFixed(2) || '0.00'} · 5m ${info.load5?.toFixed(2) || '0.00'} · 15m ${info.load15?.toFixed(2) || '0.00'}`} color={pctColor(loadPct, 70, 100)} icon={<Gauge size={13} />} progress={loadPct} />
         <MetricCard label="CPU" value={`${cpuAvg}%`} sub={t('平均占用')} color={pctColor(cpuAvg, 50, 80)} icon={<Cpu size={13} />} progress={cpuAvg} />
@@ -225,15 +283,15 @@ function HealthOverview({ t, cpuAvg, memPct, diskPct, info, coreCount }) {
         <MetricCard label={t('磁盘')} value={`${Math.round(diskPct)}%`} sub={`${fdisk(info.diskUsed)} / ${fdisk(info.diskTotal)}`} color={pctColor(diskPct, 70, 90)} icon={<HardDrive size={13} />} progress={diskPct} />
         <MetricCard label={t('网络')} value={fspeed(netSpeed)} sub={`↑ ${fspeed(info.netUp)} · ↓ ${fspeed(info.netDown)}`} color="var(--accent)" icon={<Globe size={13} />} />
       </div>
-    </>
+    </Card>
   );
 }
 
-function CpuSection({ t, info, hist, cores, cpuAvg, cpuExpanded, setCpuExpanded }) {
+function CpuSection({ t, info, hist, cores, cpuAvg, cpuExpanded, setCpuExpanded, dragHandleProps }) {
   const showBars = cores.length <= 8 || cpuExpanded;
   return (
     <Card>
-      <SectionHeader icon={<Cpu size={14} />} title={`CPU ${cores.length > 0 ? `${cores.length}${t('核')}` : ''}`} badge={`${cpuAvg}%`} />
+      <SectionHeader icon={<Cpu size={14} />} title={`CPU ${cores.length > 0 ? `${cores.length}${t('核')}` : ''}`} badge={`${cpuAvg}%`} dragHandleProps={dragHandleProps} />
       <Sparkline data={hist.cpu} height={44} />
       {info.cpuModel ? <div className="probe-muted-line" title={info.cpuModel}>{info.cpuModel}</div> : null}
       <CoreHeatGrid cores={cores} />
@@ -257,7 +315,7 @@ function CpuSection({ t, info, hist, cores, cpuAvg, cpuExpanded, setCpuExpanded 
   );
 }
 
-function MemorySection({ t, info, memPct }) {
+function MemorySection({ t, info, memPct, dragHandleProps }) {
   const memItems = [
     { dot: 'var(--danger)', label: t('已用'), val: fmem(info.memUsed) },
     { dot: 'var(--warning)', label: t('缓存'), val: fmem(info.memCache) },
@@ -266,7 +324,7 @@ function MemorySection({ t, info, memPct }) {
   const swapPct = info.swapTotal > 0 ? clampPct(info.swapUsed / info.swapTotal * 100) : 0;
   return (
     <Card>
-      <SectionHeader icon={<MemoryStick size={14} />} title={t('内存')} badge={fmem(info.memTotal)} />
+      <SectionHeader icon={<MemoryStick size={14} />} title={t('内存')} badge={fmem(info.memTotal)} dragHandleProps={dragHandleProps} />
       <div className="probe-memory-layout">
         <MemDonut used={info.memUsed} free={info.memFree} total={info.memTotal} />
         <div className="probe-memory-main">
@@ -296,7 +354,7 @@ function MemorySection({ t, info, memPct }) {
   );
 }
 
-function NetworkSection({ t, info, hist, onShowNetworkDetails }) {
+function NetworkSection({ t, info, hist, onShowNetworkDetails, dragHandleProps }) {
   const interfaces = Array.isArray(info.networkInterfaces) ? info.networkInterfaces : [];
   const topInterfaces = [...interfaces]
     .sort((a, b) => ((b.uploadSpeed || 0) + (b.downloadSpeed || 0)) - ((a.uploadSpeed || 0) + (a.downloadSpeed || 0)))
@@ -307,6 +365,7 @@ function NetworkSection({ t, info, hist, onShowNetworkDetails }) {
         icon={<Globe size={14} />}
         title={t('网络')}
         action={<button type="button" onClick={onShowNetworkDetails} className="probe-link-btn">{t('查看详情')}</button>}
+        dragHandleProps={dragHandleProps}
       />
       <Sparkline
         height={46}
@@ -341,11 +400,11 @@ function NetworkSection({ t, info, hist, onShowNetworkDetails }) {
   );
 }
 
-function DiskSection({ t, info, diskPartitions, visibleDiskPartitions, diskExpanded, setDiskExpanded }) {
+function DiskSection({ t, info, diskPartitions, visibleDiskPartitions, diskExpanded, setDiskExpanded, dragHandleProps }) {
   const diskPct = clampPct(info.diskPercent);
   return (
     <Card>
-      <SectionHeader icon={<HardDrive size={14} />} title={t('磁盘')} badge={`${fdisk(info.diskUsed)} / ${fdisk(info.diskTotal)}`} />
+      <SectionHeader icon={<HardDrive size={14} />} title={t('磁盘')} badge={`${fdisk(info.diskUsed)} / ${fdisk(info.diskTotal)}`} dragHandleProps={dragHandleProps} />
       <div className="probe-disk-main">
         <div className="probe-disk-head">
           <span title={info.diskDevice}>/ ({info.diskDevice})</span>
@@ -383,13 +442,14 @@ function DiskSection({ t, info, diskPartitions, visibleDiskPartitions, diskExpan
   );
 }
 
-function ProcessSection({ t, info, onShowAllProcesses }) {
+function ProcessSection({ t, info, onShowAllProcesses, dragHandleProps }) {
   return (
     <Card className="probe-process-card">
       <SectionHeader
         icon={<ClipboardList size={14} />}
         title={t('进程管理')}
         action={<button type="button" onClick={onShowAllProcesses} className="probe-link-btn">{t('查看全部')}</button>}
+        dragHandleProps={dragHandleProps}
       />
       <div className="probe-process-head">
         <span>CPU</span>
@@ -425,8 +485,178 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
   // ponytail: 跟踪当前 sessionId，用于丢弃切换服务器前在飞的异步响应（key remount 下冗余但安全）
   const activeSessionIdRef = useRef(sessionId);
   const onSnapshotRef = useRef(onSnapshot);
+  const [cardOrder, setCardOrder] = useState(readProbeCardOrder);
+  const [pressingCardId, setPressingCardId] = useState(null);
+  const [dragReadyId, setDragReadyId] = useState(null);
+  const [draggingCardId, setDraggingCardId] = useState(null);
+  const [dropIndicator, setDropIndicator] = useState(null);
+  const dragPressTimerRef = useRef(null);
+  const dragPressMetaRef = useRef(null);
+  const dragGhostRef = useRef(null);
   useEffect(() => { activeSessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { onSnapshotRef.current = onSnapshot; }, [onSnapshot]);
+  useEffect(() => {
+    const handleOrderChanged = (event) => {
+      setCardOrder(normalizeProbeCardOrder(event.detail));
+    };
+    window.addEventListener(PROBE_CARD_ORDER_CHANGED_EVENT, handleOrderChanged);
+    return () => window.removeEventListener(PROBE_CARD_ORDER_CHANGED_EVENT, handleOrderChanged);
+  }, []);
+
+  const clearCardPressTimer = useCallback(() => {
+    if (!dragPressTimerRef.current) return;
+    clearTimeout(dragPressTimerRef.current);
+    dragPressTimerRef.current = null;
+  }, []);
+
+  const clearCardDragGhost = useCallback(() => {
+    if (dragGhostRef.current?.parentNode) {
+      dragGhostRef.current.parentNode.removeChild(dragGhostRef.current);
+    }
+    dragGhostRef.current = null;
+    document.body.classList.remove('probe-card-dragging-cursor');
+  }, []);
+
+  const resetCardDragState = useCallback(() => {
+    clearCardPressTimer();
+    dragPressMetaRef.current = null;
+    setPressingCardId(null);
+    setDragReadyId(null);
+    setDraggingCardId(null);
+    setDropIndicator(null);
+    clearCardDragGhost();
+  }, [clearCardDragGhost, clearCardPressTimer]);
+
+  useEffect(() => () => {
+    clearCardPressTimer();
+    clearCardDragGhost();
+  }, [clearCardDragGhost, clearCardPressTimer]);
+
+  useEffect(() => {
+    if (!dragReadyId || draggingCardId) return;
+    const handlePointerRelease = () => {
+      clearCardPressTimer();
+      dragPressMetaRef.current = null;
+      setPressingCardId(null);
+      setDragReadyId(null);
+    };
+    window.addEventListener('pointerup', handlePointerRelease);
+    window.addEventListener('pointercancel', handlePointerRelease);
+    return () => {
+      window.removeEventListener('pointerup', handlePointerRelease);
+      window.removeEventListener('pointercancel', handlePointerRelease);
+    };
+  }, [clearCardPressTimer, dragReadyId, draggingCardId]);
+
+  const handleCardHandlePointerDown = useCallback((cardId, event) => {
+    if (event.button !== 0) return;
+    clearCardPressTimer();
+    dragPressMetaRef.current = { cardId, startX: event.clientX, startY: event.clientY };
+    if (PROBE_CARD_LONG_PRESS_MS <= 0) {
+      setPressingCardId(null);
+      setDragReadyId(cardId);
+      return;
+    }
+    setPressingCardId(cardId);
+    setDragReadyId(null);
+    dragPressTimerRef.current = setTimeout(() => {
+      dragPressTimerRef.current = null;
+      if (dragPressMetaRef.current?.cardId === cardId) {
+        setDragReadyId(cardId);
+      }
+    }, PROBE_CARD_LONG_PRESS_MS);
+  }, [clearCardPressTimer]);
+
+  const handleCardHandlePointerMove = useCallback((cardId, event) => {
+    const meta = dragPressMetaRef.current;
+    if (!meta || meta.cardId !== cardId || dragReadyId === cardId) return;
+    if (Math.abs(event.clientX - meta.startX) > 6 || Math.abs(event.clientY - meta.startY) > 6) {
+      clearCardPressTimer();
+      dragPressMetaRef.current = null;
+      setPressingCardId(null);
+    }
+  }, [clearCardPressTimer, dragReadyId]);
+
+  const handleCardHandlePointerUp = useCallback((cardId) => {
+    if (draggingCardId === cardId) return;
+    clearCardPressTimer();
+    dragPressMetaRef.current = null;
+    setPressingCardId(null);
+    if (dragReadyId === cardId) setDragReadyId(null);
+  }, [clearCardPressTimer, dragReadyId, draggingCardId]);
+
+  const handleCardHandlePointerLeave = useCallback((cardId) => {
+    if (dragReadyId === cardId || draggingCardId === cardId) return;
+    clearCardPressTimer();
+    dragPressMetaRef.current = null;
+    setPressingCardId(null);
+  }, [clearCardPressTimer, dragReadyId, draggingCardId]);
+
+  const handleCardDragStart = useCallback((cardId, event) => {
+    if (dragReadyId !== cardId) {
+      event.preventDefault();
+      return;
+    }
+    dragPressMetaRef.current = null;
+    setPressingCardId(null);
+    setDraggingCardId(cardId);
+    setDropIndicator(null);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', cardId);
+    clearCardDragGhost();
+    const sourceCard = event.currentTarget.closest('.probe-card-sortable');
+    if (sourceCard) {
+      const ghost = sourceCard.cloneNode(true);
+      ghost.classList.add('probe-card-drag-ghost');
+      ghost.style.width = `${sourceCard.getBoundingClientRect().width}px`;
+      document.body.appendChild(ghost);
+      dragGhostRef.current = ghost;
+      event.dataTransfer.setDragImage(ghost, 28, 18);
+    }
+    document.body.classList.add('probe-card-dragging-cursor');
+  }, [clearCardDragGhost, dragReadyId]);
+
+  const handleCardDragEnd = useCallback(() => {
+    resetCardDragState();
+  }, [resetCardDragState]);
+
+  const handleCardDragOver = useCallback((targetId, event) => {
+    if (!draggingCardId || draggingCardId === targetId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    setDropIndicator((prev) => prev?.targetId === targetId && prev?.position === position ? prev : { targetId, position });
+  }, [draggingCardId]);
+
+  const handleCardDrop = useCallback((targetId, event) => {
+    if (!draggingCardId) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = dropIndicator?.targetId === targetId
+      ? dropIndicator.position
+      : (event.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+    const nextOrder = reorderProbeCard(cardOrder, draggingCardId, targetId, position);
+    if (nextOrder.join('|') !== cardOrder.join('|')) {
+      setCardOrder(nextOrder);
+      persistProbeCardOrder(nextOrder);
+    }
+    resetCardDragState();
+  }, [cardOrder, draggingCardId, dropIndicator, resetCardDragState]);
+
+  const getSectionDragHandleProps = useCallback((cardId) => ({
+    draggable: dragReadyId === cardId,
+    pressing: pressingCardId === cardId && dragReadyId !== cardId,
+    dragReady: dragReadyId === cardId,
+    dragging: draggingCardId === cardId,
+    onPointerDown: (event) => handleCardHandlePointerDown(cardId, event),
+    onPointerMove: (event) => handleCardHandlePointerMove(cardId, event),
+    onPointerUp: () => handleCardHandlePointerUp(cardId),
+    onPointerLeave: () => handleCardHandlePointerLeave(cardId),
+    onPointerCancel: () => handleCardHandlePointerUp(cardId),
+    onDragStart: (event) => handleCardDragStart(cardId, event),
+    onDragEnd: handleCardDragEnd,
+  }), [dragReadyId, draggingCardId, handleCardDragEnd, handleCardDragStart, handleCardHandlePointerDown, handleCardHandlePointerLeave, handleCardHandlePointerMove, handleCardHandlePointerUp]);
 
   // 切换服务器时立即清空旧数据和静态缓存
   useEffect(() => {
@@ -689,16 +919,33 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
     ? info.diskPartitions
     : [{ mount: '/', size: `${info.diskTotal?.toFixed(0)}G`, avail: `${(info.diskTotal - info.diskUsed)?.toFixed(1)}G`, usedPct: Math.round(info.diskPercent) }];
   const visibleDiskPartitions = diskPartitions.length > 4 && !diskExpanded ? diskPartitions.slice(0, 4) : diskPartitions;
+  const orderedSections = {
+    overview: <HealthOverview t={t} cpuAvg={cpuAvg} memPct={memPct} diskPct={info.diskPercent} info={info} coreCount={cores.length} dragHandleProps={getSectionDragHandleProps('overview')} />,
+    cpu: <CpuSection t={t} info={info} hist={hist} cores={cores} cpuAvg={cpuAvg} cpuExpanded={cpuExpanded} setCpuExpanded={setCpuExpanded} dragHandleProps={getSectionDragHandleProps('cpu')} />,
+    memory: <MemorySection t={t} info={info} memPct={memPct} dragHandleProps={getSectionDragHandleProps('memory')} />,
+    network: <NetworkSection t={t} info={info} hist={hist} onShowNetworkDetails={handleShowNetworkDetails} dragHandleProps={getSectionDragHandleProps('network')} />,
+    disk: <DiskSection t={t} info={info} diskPartitions={diskPartitions} visibleDiskPartitions={visibleDiskPartitions} diskExpanded={diskExpanded} setDiskExpanded={setDiskExpanded} dragHandleProps={getSectionDragHandleProps('disk')} />,
+    process: <ProcessSection t={t} info={info} onShowAllProcesses={handleShowAllProcesses} dragHandleProps={getSectionDragHandleProps('process')} />,
+  };
 
   return (
-    <div className="probe-panel">
+    <div className={`probe-panel${draggingCardId ? ' probe-panel-card-dragging' : ''}`}>
       <ProbeHeader t={t} info={info} displayIP={displayIP} hideIP={hideIP} setHideIP={setHideIP} addToast={addToast} />
-      <HealthOverview t={t} cpuAvg={cpuAvg} memPct={memPct} diskPct={info.diskPercent} info={info} coreCount={cores.length} />
-      <CpuSection t={t} info={info} hist={hist} cores={cores} cpuAvg={cpuAvg} cpuExpanded={cpuExpanded} setCpuExpanded={setCpuExpanded} />
-      <MemorySection t={t} info={info} memPct={memPct} />
-      <NetworkSection t={t} info={info} hist={hist} onShowNetworkDetails={handleShowNetworkDetails} />
-      <DiskSection t={t} info={info} diskPartitions={diskPartitions} visibleDiskPartitions={visibleDiskPartitions} diskExpanded={diskExpanded} setDiskExpanded={setDiskExpanded} />
-      <ProcessSection t={t} info={info} onShowAllProcesses={handleShowAllProcesses} />
+      {cardOrder.map((cardId) => {
+        const cardNode = orderedSections[cardId];
+        if (!cardNode) return null;
+        const dropClass = dropIndicator?.targetId === cardId ? ` probe-card-drop-${dropIndicator.position}` : '';
+        return (
+          <div
+            key={cardId}
+            className={`probe-card-sortable${draggingCardId === cardId ? ' probe-card-dragging' : ''}${dropClass}`}
+            onDragOver={(event) => handleCardDragOver(cardId, event)}
+            onDrop={(event) => handleCardDrop(cardId, event)}
+          >
+            {cardNode}
+          </div>
+        );
+      })}
     </div>
   );
 }

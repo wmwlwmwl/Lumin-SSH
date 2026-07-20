@@ -1674,6 +1674,13 @@ body.theme-light .batch-operation-bar {
   overflow-x: hidden;
   box-sizing: border-box;
 }
+.probe-panel.probe-panel-card-dragging {
+  cursor: grabbing;
+}
+.probe-card-dragging-cursor,
+.probe-card-dragging-cursor * {
+  cursor: grabbing !important;
+}
 
 .probe-card {
   background: var(--surface-raised);
@@ -1682,6 +1689,67 @@ body.theme-light .batch-operation-bar {
   padding: 8px 10px;
   box-shadow: none;
 }
+.probe-card-sortable {
+  position: relative;
+  border-radius: var(--radius-sm);
+  transition: margin 0.16s ease, transform 0.16s ease, opacity 0.16s ease, filter 0.16s ease;
+}
+.probe-card-sortable .probe-card {
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+.probe-card-sortable.probe-card-dragging {
+  opacity: 0.22;
+  transform: scale(0.985);
+  filter: saturate(0.82);
+}
+.probe-card-sortable.probe-card-dragging .probe-card {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-raised));
+}
+.probe-card-sortable.probe-card-drop-before {
+  margin-top: 12px;
+}
+.probe-card-sortable.probe-card-drop-after {
+  margin-bottom: 12px;
+}
+.probe-card-sortable.probe-card-drop-before .probe-card {
+  transform: translateY(6px);
+}
+.probe-card-sortable.probe-card-drop-after .probe-card {
+  transform: translateY(-6px);
+}
+.probe-card-sortable.probe-card-drop-before::before,
+.probe-card-sortable.probe-card-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 24%, transparent);
+  pointer-events: none;
+}
+.probe-card-sortable.probe-card-drop-before::before {
+  top: -6px;
+}
+.probe-card-sortable.probe-card-drop-after::after {
+  bottom: -6px;
+}
+.probe-card-drag-ghost {
+  position: fixed;
+  left: -2000px;
+  top: -2000px;
+  pointer-events: none;
+  opacity: 0.96;
+  transform: rotate(-2deg);
+  z-index: 2147483647;
+}
+.probe-card-drag-ghost .probe-card {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-raised));
+  box-shadow: var(--shadow-lg);
+}
 
 .probe-section-header {
   display: flex;
@@ -1689,8 +1757,78 @@ body.theme-light .batch-operation-bar {
   gap: 6px;
   margin-bottom: 6px;
 }
-.probe-section-icon { display: inline-flex; align-items: center; color: var(--probe-detail); }
-.probe-section-title { font-size: 12px; font-weight: 600; color: var(--text-primary); flex: 1; min-width: 0; }
+.probe-section-handle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  margin: -2px 0;
+  padding: 2px 4px 2px 0;
+  border-radius: 8px;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease, color 0.12s ease;
+}
+.probe-section-handle-sortable {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.probe-section-handle-sortable:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.probe-section-handle-sortable.is-pressing {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform: scale(0.994);
+}
+.probe-section-handle-sortable.is-pressing::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -5px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: probeCardHoldReady 0.14s linear forwards;
+}
+.probe-section-handle-sortable.is-ready,
+.probe-section-handle-sortable.is-dragging {
+  cursor: grabbing;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent), 0 0 16px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.probe-section-icon { display: inline-flex; align-items: center; color: var(--probe-detail); transition: color 0.12s ease, transform 0.12s ease, opacity 0.12s ease; }
+.probe-section-title { font-size: 12px; font-weight: 600; color: var(--text-primary); min-width: 0; transition: color 0.12s ease; }
+.probe-section-spacer { flex: 1; min-width: 8px; min-height: 18px; }
+.probe-section-handle-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.42;
+  transition: color 0.12s ease, opacity 0.12s ease, transform 0.12s ease;
+}
+.probe-section-handle-sortable:hover .probe-section-handle-hint,
+.probe-section-handle-sortable.is-pressing .probe-section-handle-hint,
+.probe-section-handle-sortable.is-ready .probe-section-handle-hint,
+.probe-section-handle-sortable.is-dragging .probe-section-handle-hint {
+  opacity: 1;
+  color: var(--accent);
+}
+.probe-section-handle-sortable.is-pressing .probe-section-icon,
+.probe-section-handle-sortable.is-ready .probe-section-icon,
+.probe-section-handle-sortable.is-dragging .probe-section-icon {
+  color: var(--accent);
+}
+.probe-section-handle-sortable.is-ready .probe-section-handle-hint,
+.probe-section-handle-sortable.is-dragging .probe-section-handle-hint {
+  transform: scale(1.06);
+}
 .probe-section-badge {
   font-size: 11px;
   font-family: var(--font-mono);
@@ -1839,7 +1977,7 @@ body.theme-light .batch-operation-bar {
 .probe-swap-head span { display: inline-flex; align-items: center; gap: 4px; }
 .probe-swap-head b { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
 
-.probe-link-btn { padding: 0; border: 0; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
+.probe-link-btn { padding: 0; border: 0; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; position: relative; z-index: 1; }
 .probe-link-btn:hover { color: var(--accent-hover); }
 .probe-network-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .probe-network-stat { background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 6px 7px; min-width: 0; }
@@ -1892,7 +2030,7 @@ body.theme-light .batch-operation-bar {
 .probe-partition-row .probe-partition-value:nth-child(3) { color: var(--probe-detail); }
 .probe-partition-percent { font-weight: 700; }
 
-.probe-process-card { margin-bottom: 8px; }
+.probe-process-card { margin-bottom: 0; }
 .probe-process-head,
 .probe-process-row {
   display: grid;
@@ -2794,6 +2932,17 @@ body.theme-light .batch-operation-bar {
   100% {
     background: transparent;
     box-shadow: none;
+  }
+}
+
+@keyframes probeCardHoldReady {
+  from {
+    opacity: 0.55;
+    transform: scaleX(0.14);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
   }
 }
 

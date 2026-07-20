@@ -235,8 +235,8 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
               {purpose}
             </div>
             {targetCwd ? (
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                <div style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-tertiary)', fontSize: 11, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+              <div style={{ minWidth: 0, padding: '0 0 0 10px', borderLeft: '3px solid var(--accent)', borderTop: '1px solid rgba(var(--accent-rgb), 0.08)' }}>
+                <div style={{ color: 'rgba(var(--accent-rgb), 0.92)', fontSize: 13, fontWeight: 700, lineHeight: 1.6, fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
                   {targetCwd}
                 </div>
               </div>

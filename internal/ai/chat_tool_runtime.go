@@ -508,7 +508,7 @@ func (a *App) AssignAIChatToolTerminal(requestID string, targetSessionID string)
 			execution.Tool.Params["command"],
 			"",
 			"排队中, 等待终端空闲",
-			buildAIChatCommandMessageExtra(trimmedTargetSessionID, targetCwd, isAIChatMutatingCommandTool(execution.Tool)),
+			buildAIChatCommandMessageExtra(trimmedTargetSessionID, resolveAIChatCommandDisplayCwd(execution.Tool.Params["cwd"], targetCwd), isAIChatMutatingCommandTool(execution.Tool)),
 		),
 	)
 	return nil
@@ -537,7 +537,7 @@ func buildToolPreviewMessage(turnID string, tool aiParsedToolUse, index int) map
 			"command": tool.Params["command"],
 			"output":  "待批准",
 			"status":  "待批准",
-			"extra":   buildAIChatCommandMessageExtra("", "", isAIChatMutatingCommandTool(tool)),
+			"extra":   buildAIChatCommandMessageExtra("", resolveAIChatCommandDisplayCwd(tool.Params["cwd"]), isAIChatMutatingCommandTool(tool)),
 		}
 	}
 	if tool.Name == "ask_followup_question" {
@@ -1133,6 +1133,16 @@ func (a *App) emitAIChatToolExecutionPersistRequested(requestID string) {
 	})
 }
 
+func resolveAIChatCommandDisplayCwd(values ...string) string {
+	for _, value := range values {
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedValue != "" {
+			return trimmedValue
+		}
+	}
+	return ""
+}
+
 func buildAIChatCommandMessageExtra(targetSessionID string, targetCwd string, isMutating bool) map[string]interface{} {
 	extra := map[string]interface{}{
 		"isMutating": isMutating,
@@ -1409,7 +1419,7 @@ func (a *App) startAIChatToolExecution(requestID string, batch *aiPendingToolBat
 			tool.Params["command"],
 			"",
 			"执行中",
-			buildAIChatCommandMessageExtra(execution.TargetSessionID, "", isAIChatMutatingCommandTool(tool)),
+			buildAIChatCommandMessageExtra(execution.TargetSessionID, resolveAIChatCommandDisplayCwd(tool.Params["cwd"]), isAIChatMutatingCommandTool(tool)),
 		)
 	} else {
 		attachAIRestoreArtifactRef(message, execution.RestoreArtifactPath)
@@ -1740,7 +1750,7 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 						command,
 						"",
 						"排队中, 等待终端空闲",
-						buildAIChatCommandMessageExtra(execution.targetSessionID(), "", isMutating),
+						buildAIChatCommandMessageExtra(execution.targetSessionID(), resolveAIChatCommandDisplayCwd(cwd), isMutating),
 					),
 				)
 			},
@@ -1758,7 +1768,7 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 						command,
 						"",
 						"执行中",
-						buildAIChatCommandMessageExtra(execution.targetSessionID(), "", isMutating),
+						buildAIChatCommandMessageExtra(execution.targetSessionID(), resolveAIChatCommandDisplayCwd(cwd), isMutating),
 					),
 				)
 			},
@@ -1779,7 +1789,7 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 						command,
 						safeSnapshot,
 						"等待处理",
-						buildAIChatCommandMessageExtra(execution.targetSessionID(), "", isMutating),
+						buildAIChatCommandMessageExtra(execution.targetSessionID(), resolveAIChatCommandDisplayCwd(cwd), isMutating),
 					),
 				)
 			},
@@ -1831,7 +1841,7 @@ func (a *App) runAIChatCommandToolExecution(execution *aiToolExecutionState) {
 		}
 	}
 
-	commandExtra := buildAIChatCommandMessageExtra(execution.targetSessionID(), "", isMutating)
+	commandExtra := buildAIChatCommandMessageExtra(execution.targetSessionID(), resolveAIChatCommandDisplayCwd(result.CWD, cwd), isMutating)
 	if resultTokenEstimateMeta := buildAIResultTokenEstimateMeta(buildAIChatToolResultContent(execution.Tool.Name, rawResultSource)); len(resultTokenEstimateMeta) > 0 {
 		for key, value := range resultTokenEstimateMeta {
 			commandExtra[key] = value

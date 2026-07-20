@@ -226,6 +226,7 @@ export default {
   "隐藏密码": "Hide password",
   "显示密码": "Show password",
   "系统监控": "System Monitor",
+  "概览": "Overview",
   "实时查看服务器 CPU、内存、网络和磁盘使用情况": "Real-time view of server CPU, memory, network and disk usage",
   "CPU 每核心实时占用": "Real-time per-core CPU usage",
   "内存甜甜圈图分析": "Memory donut chart analysis",

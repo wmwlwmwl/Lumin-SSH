@@ -349,11 +349,10 @@ export default function AIProviderSelector({
     const options = quickModelResolved
       ? (quickModelOptions.length > 0 ? quickModelOptions : fallbackOptions)
       : fallbackOptions
-    const currentValue = typeof selectedProvider.model === 'string' && selectedProvider.model.trim()
-      ? selectedProvider.model.trim()
-      : (options[0] || '')
+    const selectedModel = typeof selectedProvider.model === 'string' ? selectedProvider.model.trim() : ''
+    const currentValue = selectedModel || (options[0] || '')
     return {
-      visible: true,
+      visible: Boolean(currentValue || options.length > 0),
       options,
       currentValue,
       currentLabel: currentValue || t('模型'),
@@ -363,9 +362,13 @@ export default function AIProviderSelector({
     if (!selectedProvider) {
       return { visible: false, options: [], currentValue: 'disable', currentLabel: '' }
     }
+    const selectedModel = typeof selectedProvider.model === 'string' ? selectedProvider.model.trim() : ''
+    if (!selectedModel) {
+      return { visible: false, options: [], currentValue: 'disable', currentLabel: '' }
+    }
     const providerValue = typeof selectedProvider.provider === 'string' && selectedProvider.provider.trim() ? selectedProvider.provider.trim() : 'Compatible'
     const providerDefinition = getAIProviderDefinition(providerValue)
-    const capability = buildDisplayModelCapability(providerDefinition.value, providerDefinition.getModelCapability(selectedProvider.model || ''))
+    const capability = buildDisplayModelCapability(providerDefinition.value, providerDefinition.getModelCapability(selectedModel))
     let options = buildReasoningOptions(capability)
     const storedValue = typeof selectedProvider.reasoningEffort === 'string' ? selectedProvider.reasoningEffort.trim().toLowerCase() : ''
     const defaultValue = typeof capability?.reasoningEffort === 'string' ? capability.reasoningEffort.trim().toLowerCase() : ''
