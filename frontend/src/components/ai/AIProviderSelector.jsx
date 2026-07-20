@@ -346,7 +346,9 @@ export default function AIProviderSelector({
       return { visible: false, options: [], currentValue: '', currentLabel: '' }
     }
     const fallbackOptions = buildProviderModelOptions(selectedProvider)
-    const options = quickModelResolved ? quickModelOptions : fallbackOptions
+    const options = quickModelResolved
+      ? (quickModelOptions.length > 0 ? quickModelOptions : fallbackOptions)
+      : fallbackOptions
     const currentValue = typeof selectedProvider.model === 'string' && selectedProvider.model.trim()
       ? selectedProvider.model.trim()
       : (options[0] || '')
@@ -356,7 +358,7 @@ export default function AIProviderSelector({
       currentValue,
       currentLabel: currentValue || t('模型'),
     }
-  }, [quickModelOptions, selectedProvider, t])
+  }, [quickModelOptions, quickModelResolved, selectedProvider, t])
   const quickReasoningConfig = useMemo(() => {
     if (!selectedProvider) {
       return { visible: false, options: [], currentValue: 'disable', currentLabel: '' }

@@ -5567,6 +5567,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                     const showTabFileManager = shouldMountFileManager
                       && fileManagerPosition === 'tab'
                       && contentTab === 'files';
+                    const sessionConnectingServer = connectingServers.find((item) => item.sessionId === s.id) || null;
                     const showLeftFileManager = showSplitFileManager && fileManagerPosition === 'left' && !fileManagerCollapsed;
                     const showBottomFileManager = showSplitFileManager && fileManagerPosition === 'bottom' && !fileManagerCollapsed;
                     const showBottomQuickCommands = showQuickCommands
@@ -5946,6 +5947,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               />
                             </div>
                           )}
+                          {sessionConnectingServer && s.status === 'connecting' && (
+                            <ConnectingCard
+                              connectingServer={sessionConnectingServer}
+                              t={t}
+                              onCancel={() => handleCancelConnection(s.id)}
+                            />
+                          )}
                         </div>
                       </div>
                     );
@@ -6306,17 +6314,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       <Toast toasts={toasts} onClose={removeToast} closeLabel={t('关闭')} />
       <GlobalDialog />
 
-      {/* ── 连接进度卡片（只跟随当前激活会话） ── */}
-      {connectingServers.map(cs =>
-        cs.sessionId === activeSessionId && (
-          <ConnectingCard
-            key={cs.sessionId}
-            connectingServer={cs}
-            t={t}
-            onCancel={() => handleCancelConnection(cs.sessionId)}
-          />
-        )
-      )}
 
       {/* ── 自动更新弹窗 ──────────────────────────────── */}
       <UpdateModal

@@ -167,13 +167,7 @@ export function buildSlashQuickCommandItems({ context, sources }) {
       }
 
       const nameScore = query ? scoreLooseMatch(name.toLowerCase(), query) : 120
-      const commandScore = query ? scoreLooseMatch(command.toLowerCase(), query) : 0
-      const groupScore = query ? scoreLooseMatch(groupPath.toLowerCase(), query) : 0
-      const matchScore = Math.max(
-        nameScore > 0 ? nameScore + 40 : 0,
-        commandScore,
-        groupScore > 0 ? groupScore - 20 : 0,
-      )
+      const matchScore = nameScore > 0 ? nameScore + 40 : 0
 
       if (query && matchScore <= 0) {
         return null

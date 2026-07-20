@@ -81,6 +81,7 @@ type Credential struct {
 type ChmodDialogSettings struct {
 	Mode                  string `json:"mode,omitempty"`
 	IncludeSubdirectories bool   `json:"includeSubdirectories,omitempty"`
+	AutoApplyLastSettings bool   `json:"autoApplyLastSettings,omitempty"`
 	LastModified          int64  `json:"last_modified,omitempty"`
 }
 
@@ -1801,6 +1802,7 @@ func (c *ConfigManager) GetChmodDialogSettings() map[string]interface{} {
 	return map[string]interface{}{
 		"mode":                  settings.ChmodDialog.Mode,
 		"includeSubdirectories": settings.ChmodDialog.IncludeSubdirectories,
+		"autoApplyLastSettings": settings.ChmodDialog.AutoApplyLastSettings,
 	}
 }
 
@@ -1814,6 +1816,20 @@ func (c *ConfigManager) SaveChmodDialogSettings(mode string, includeSubdirectori
 	settings := c.getFileManagerSettingsLocked()
 	settings.ChmodDialog.Mode = sanitizedMode
 	settings.ChmodDialog.IncludeSubdirectories = includeSubdirectories
+	settings.ChmodDialog.LastModified = time.Now().UnixMilli()
+	err := c.saveFileManagerSettingsLocked(settings)
+	if err == nil {
+		c.bumpSnapshotTime()
+		go c.AutoSync()
+	}
+	return err
+}
+
+func (c *ConfigManager) SetChmodAutoApplyLastSettings(enabled bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	settings := c.getFileManagerSettingsLocked()
+	settings.ChmodDialog.AutoApplyLastSettings = enabled
 	settings.ChmodDialog.LastModified = time.Now().UnixMilli()
 	err := c.saveFileManagerSettingsLocked(settings)
 	if err == nil {

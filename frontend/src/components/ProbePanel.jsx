@@ -417,6 +417,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
   const [cpuExpanded, setCpuExpanded] = useState(false);
   const [diskExpanded, setDiskExpanded] = useState(false);
   const [probeError, setProbeError] = useState(null);
+  const [probeErrorDetail, setProbeErrorDetail] = useState('');
   const probeErrorCountRef = useRef(0);
   const staticInfoRef = useRef(null);
   const activeRef = useRef(active);
@@ -435,6 +436,7 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
     setCpuExpanded(false);
     setDiskExpanded(false);
     setProbeError(null);
+    setProbeErrorDetail('');
     probeErrorCountRef.current = 0;
   }, [sessionId]);
 
@@ -527,10 +529,13 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
       });
       probeErrorCountRef.current = 0;
       setProbeError(false);
-    } catch (_) {
+      setProbeErrorDetail('');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err || '');
       probeErrorCountRef.current += 1;
       if (probeErrorCountRef.current >= 3) {
         setProbeError(true);
+        setProbeErrorDetail(errorMessage);
       }
     }
   }, [sessionId, enabled, t]);
@@ -574,7 +579,12 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
     setEnabling(true);
     try {
       await onEnable();
+      setProbeError(false);
+      setProbeErrorDetail('');
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err || '');
+      setProbeError(true);
+      setProbeErrorDetail(errorMessage);
       console.error('Probe enable failed:', err);
     } finally {
       setEnabling(false);
@@ -640,7 +650,26 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
           <div className="probe-error-icon">✕</div>
           <div className="probe-state-title">{t('写入失败，请重试')}</div>
           <div className="probe-state-desc">{t('监控脚本写入服务器失败，请检查连接或权限')}</div>
-          <button onClick={() => { setProbeError(false); probeErrorCountRef.current = 0; }} className="btn btn-primary btn-sm">{t('重试')}</button>
+          {probeErrorDetail ? (
+            <div style={{
+              marginTop: 10,
+              maxWidth: 360,
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'var(--surface-overlay)',
+              color: 'var(--text-secondary)',
+              fontSize: 12,
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              textAlign: 'left',
+            }}
+            >
+              {probeErrorDetail}
+            </div>
+          ) : null}
+          <button onClick={() => { setProbeError(false); setProbeErrorDetail(''); probeErrorCountRef.current = 0; }} className="btn btn-primary btn-sm">{t('重试')}</button>
         </div>
       );
     }

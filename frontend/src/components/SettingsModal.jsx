@@ -681,6 +681,7 @@ export default function SettingsModal({
   const [fileManagerUploadMaxFiles, setFileManagerUploadMaxFiles] = useState(localStorage.getItem('fileManagerUploadMaxFiles') || '6');
   const [fileManagerUploadMaxChunksPerFile, setFileManagerUploadMaxChunksPerFile] = useState(localStorage.getItem('fileManagerUploadMaxChunksPerFile') || '8');
   const [fileManagerUploadGlobalInflightLimit, setFileManagerUploadGlobalInflightLimit] = useState(localStorage.getItem('fileManagerUploadGlobalInflightLimit') || '24');
+  const [fileManagerChmodAutoApplyLastSettings, setFileManagerChmodAutoApplyLastSettings] = useState(false);
   const [runtimeEnvironmentEnabled, setRuntimeEnvironmentEnabled] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.enabled);
   const [runtimeEnvironmentType, setRuntimeEnvironmentType] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.environmentType);
   const [runtimeEnvironmentTargetPathTemplate, setRuntimeEnvironmentTargetPathTemplate] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.targetPathTemplate);
@@ -822,6 +823,20 @@ export default function SettingsModal({
     setter(next);
     if (next === '') localStorage.removeItem(key);
     else localStorage.setItem(key, next);
+  };
+  const handleToggleFileManagerChmodAutoApplyLastSettings = async () => {
+    const next = !fileManagerChmodAutoApplyLastSettings;
+    setFileManagerChmodAutoApplyLastSettings(next);
+    try {
+      const setter = window?.go?.main?.App?.SetChmodAutoApplyLastSettings;
+      if (typeof setter !== 'function') {
+        throw new Error($t('应用不可用'));
+      }
+      await setter(next);
+    } catch (err) {
+      setFileManagerChmodAutoApplyLastSettings(!next);
+      addToast($t('请求失败') + `: ${err}`, 'error');
+    }
   };
   const handleToggleRuntimeEnvironmentEnabled = async () => {
     const next = !runtimeEnvironmentEnabled;
@@ -980,6 +995,13 @@ export default function SettingsModal({
         setRuntimeEnvironmentType(settings.environmentType || DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.environmentType);
         setRuntimeEnvironmentTargetPathTemplate(settings.targetPathTemplate || DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.targetPathTemplate);
         setRuntimeEnvironmentModulePath(settings.modulePath || DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.modulePath);
+      })
+      .catch(() => {});
+
+    AppGo.GetChmodDialogSettings()
+      .then((settings) => {
+        if (cancelled || !settings) return;
+        setFileManagerChmodAutoApplyLastSettings(settings.autoApplyLastSettings === true);
       })
       .catch(() => {});
 
@@ -1530,6 +1552,8 @@ export default function SettingsModal({
                 onToggleFileManagerAutoOpenTransferQueue={handleToggleFileManagerAutoOpenTransferQueue}
                 fileManagerShowTabIcons={fileManagerShowTabIcons}
                 onToggleFileManagerShowTabIcons={handleToggleFileManagerShowTabIcons}
+                fileManagerChmodAutoApplyLastSettings={fileManagerChmodAutoApplyLastSettings}
+                onToggleFileManagerChmodAutoApplyLastSettings={handleToggleFileManagerChmodAutoApplyLastSettings}
                 fileManagerInitialPathMode={fileManagerInitialPathMode}
                 onFileManagerInitialPathModeChange={handleFileManagerInitialPathModeChange}
                 fileManagerNewTabPathMode={fileManagerNewTabPathMode}

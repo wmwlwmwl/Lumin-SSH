@@ -159,6 +159,30 @@ const FILE_MANAGER_NEW_TAB_PATH_MODE_ROOT = 'root';
 const FILE_MANAGER_NEW_TAB_PATH_MODE_SESSION_INITIAL_PATH = 'session_initial_path';
 const FILE_MANAGER_NEW_TAB_PATH_MODE_TERMINAL_CWD = 'terminal_cwd';
 
+function createLocalItemShell(name, isDirectory, sourceItem = {}) {
+  const normalizedName = String(name || '').trim();
+  return {
+    name: normalizedName,
+    isDirectory: Boolean(isDirectory),
+    size: Boolean(isDirectory) ? 0 : Number(sourceItem?.size || 0),
+    permission: String(sourceItem?.permission || '').trim(),
+    mode: String(sourceItem?.mode || '').trim(),
+    modifyTime: sourceItem?.modifyTime || Date.now(),
+    uid: String(sourceItem?.uid || '-').trim() || '-',
+    gid: String(sourceItem?.gid || '-').trim() || '-',
+  };
+}
+
+function upsertLocalItem(items, nextItem) {
+  const currentItems = Array.isArray(items) ? items : [];
+  const normalizedName = String(nextItem?.name || '').trim();
+  if (!normalizedName) {
+    return currentItems;
+  }
+  const filteredItems = currentItems.filter((item) => String(item?.name || '').trim() !== normalizedName);
+  return [...filteredItems, { ...nextItem, name: normalizedName }];
+}
+
 let fileManagerTabSequence = 0;
 
 function getFileManagerNewTabPathMode() {
@@ -637,7 +661,7 @@ async function uploadChunkWithRetry(label, uploadFn, onAttempt) {
 }
 
 // ── Chmod Dialog ──────────────────────────────────────────────
-function ChmodDialog({ path, permission, mode, uid, gid, ownerCandidates = [], groupCandidates = [], includeSubdirectories = false, showIncludeSubdirectories = false, onSave, onClose, t }) {
+function ChmodDialog({ path, permission, mode, rememberedMode = '', autoApplyLastSettings = false, uid, gid, ownerCandidates = [], groupCandidates = [], includeSubdirectories = false, showIncludeSubdirectories = false, onSave, onClose, t }) {
   const parsePerms = (permStr) => {
     const p = permStr && permStr.length >= 10 ? permStr.slice(1) : '---------';
     return {
@@ -647,11 +671,13 @@ function ChmodDialog({ path, permission, mode, uid, gid, ownerCandidates = [], g
     };
   };
 
-  const rememberedMode = normalizeChmodMode(mode);
+  const currentMode = normalizeChmodMode(mode);
+  const lastMode = normalizeChmodMode(rememberedMode);
+  const initialMode = autoApplyLastSettings && lastMode ? lastMode : currentMode;
   const fallbackPerms = parsePerms(permission || '');
-  const [perms, setPerms] = useState(rememberedMode ? permsFromChmodMode(rememberedMode) : fallbackPerms);
-  const [octal, setOctal] = useState(rememberedMode || calcChmodOctal(fallbackPerms));
-  const [includeChildren, setIncludeChildren] = useState(Boolean(includeSubdirectories));
+  const [perms, setPerms] = useState(initialMode ? permsFromChmodMode(initialMode) : fallbackPerms);
+  const [octal, setOctal] = useState(initialMode || calcChmodOctal(fallbackPerms));
+  const [includeChildren, setIncludeChildren] = useState(autoApplyLastSettings ? Boolean(includeSubdirectories) : false);
   const ownerOptions = useMemo(() => buildIdentityOptionList(uid, ownerCandidates), [uid, ownerCandidates]);
   const groupOptions = useMemo(() => buildIdentityOptionList(gid, groupCandidates), [gid, groupCandidates]);
   const ownerDefaultValue = useMemo(() => resolveIdentityInputValue(uid, ownerCandidates), [uid, ownerCandidates]);
@@ -711,6 +737,16 @@ function ChmodDialog({ path, permission, mode, uid, gid, ownerCandidates = [], g
     if (val.length === 3) {
       setPerms(permsFromChmodMode(val));
     }
+  };
+
+  const canApplyLastSettings = Boolean(lastMode);
+  const handleApplyLastSettings = () => {
+    if (!lastMode) {
+      return;
+    }
+    setOctal(lastMode);
+    setPerms(permsFromChmodMode(lastMode));
+    setIncludeChildren(Boolean(includeSubdirectories));
   };
 
   if (typeof document === 'undefined') {
@@ -798,6 +834,9 @@ function ChmodDialog({ path, permission, mode, uid, gid, ownerCandidates = [], g
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('八进制:')}</span>
               <input className="chmod-octal-input" value={octal} onChange={handleOctalChange} />
+              <button className="btn btn-ghost btn-sm" type="button" onClick={handleApplyLastSettings} disabled={!canApplyLastSettings}>
+                {t('应用上次')}
+              </button>
             </div>
             {showIncludeSubdirectories && (
               <label className="chmod-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
@@ -818,7 +857,7 @@ function ChmodDialog({ path, permission, mode, uid, gid, ownerCandidates = [], g
 }
 
 // Context menu component
-function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinned = false, canTogglePinned = false, canCloseTab = false, showCreateActions = false, onClose, onDownload, onEdit, onRename, onDelete, onDeleteShell, onMkdir, onNewFile, onCompress, onUncompress, onChmod, onCopyPath, onOpenInNewTab, onTogglePinned, onCloseTab, t }) {
+function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinned = false, canTogglePinned = false, canCloseTab = false, showCreateActions = false, deleteItemCount = 1, onClose, onDownload, onEdit, onRename, onDelete, onDeleteShell, onMkdir, onNewFile, onCompress, onUncompress, onChmod, onCopyPath, onOpenInNewTab, onTogglePinned, onCloseTab, t }) {
   const ref = useRef(null);
   const [adjusted, setAdjusted] = useState({ left: pos.x, top: pos.y });
   const isTabMenu = mode === 'tab';
@@ -912,12 +951,7 @@ function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinne
       {shouldShowDividerBeforeDelete && <div className="context-menu-divider" />}
       {shouldShowDeleteActions && (
         <div className="context-menu-item danger" onClick={onDelete}>
-          <Trash2 size={14} /> {t('删除')} (SFTP)
-        </div>
-      )}
-      {shouldShowDeleteActions && (
-        <div className="context-menu-item danger" onClick={onDeleteShell}>
-          <Terminal size={14} /> {t('删除')} (rm -rf)
+          <Trash2 size={14} /> {t('删除')}{deleteItemCount > 1 ? ` (${deleteItemCount}${t('项')})` : ''}
         </div>
       )}
     </div>
@@ -3540,7 +3574,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     try {
       setOperationProgress({ message: `${t('正在删除')} ${item.name}` });
-      await AppGo.DeleteItem(sessionId, remotePath, item.isDirectory);
+      await AppGo.DeleteItemShell(sessionId, remotePath);
       const deletedPlaceholder = createDeletedPlaceholder(item, remotePath);
       setSelectedPaths(prev => prev.filter(p => p !== remotePath));
       if (lastClickedPathRef.current === remotePath) {
@@ -3614,7 +3648,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         const name = path.split('/').pop();
         setOperationProgress({ message: `${t('正在删除')} ${name}`, current: i + 1, total });
         try {
-          await AppGo.DeleteItem(sessionId, path, dirSet.has(path));
+          await AppGo.DeleteItemShell(sessionId, path);
           successCount++;
           removedPaths.push(path);
         } catch (err) {
@@ -3926,11 +3960,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     const parentPath = getParentPath(normalizedTargetPath);
     try {
-      if (useShell) {
-        await AppGo.DeleteItemShell(sessionId, normalizedTargetPath);
-      } else {
-        await AppGo.DeleteItem(sessionId, normalizedTargetPath, true);
-      }
+      await AppGo.DeleteItemShell(sessionId, normalizedTargetPath);
       addToast(`${t('已删除')}: ${displayName}`, 'success');
       updateFileManagerTabPath(tabId, parentPath, { resetSelection: true, clearCache: true });
       if (tabId === activeFileManagerTabIdRef.current) {
@@ -4027,10 +4057,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const openChmodTarget = useCallback(async (itemPath, item) => {
     let rememberedMode = '';
     let rememberedIncludeSubdirectories = false;
+    let rememberedAutoApplyLastSettings = false;
     try {
       const settings = await AppGo.GetChmodDialogSettings();
       rememberedMode = normalizeChmodMode(settings?.mode);
       rememberedIncludeSubdirectories = settings?.includeSubdirectories === true;
+      rememberedAutoApplyLastSettings = settings?.autoApplyLastSettings === true;
     } catch (_) {}
     let resolvedItem = item;
     const getPathOwnership = window?.go?.main?.App?.GetPathOwnership;
@@ -4051,10 +4083,13 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         console.warn('GetPathOwnership failed:', error);
       }
     }
+    const actualMode = normalizeChmodMode(resolvedItem?.mode);
     setChmodTarget({
       item: resolvedItem,
       path: itemPath,
-      mode: rememberedMode || normalizeChmodMode(resolvedItem.mode),
+      mode: actualMode || '',
+      rememberedMode,
+      autoApplyLastSettings: rememberedAutoApplyLastSettings,
       ownerCandidates: [],
       groupCandidates: [],
       includeSubdirectories: rememberedIncludeSubdirectories,
@@ -4090,7 +4125,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const handleChmodSave = async (modeStr, includeSubdirectories, ownerValue, groupValue) => {
     if (!chmodTarget) return;
     const normalizedMode = normalizeChmodMode(modeStr) || '644';
-    const currentMode = normalizeChmodMode(chmodTarget.mode) || normalizedMode;
+    const currentMode = normalizeChmodMode(chmodTarget.item?.mode) || normalizeChmodMode(chmodTarget.mode) || normalizedMode;
     const modeChanged = normalizedMode !== currentMode;
     const rememberedIncludeSubdirectories = Boolean(includeSubdirectories);
     const recursive = Boolean(chmodTarget.showIncludeSubdirectories && rememberedIncludeSubdirectories);
@@ -4102,6 +4137,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const groupChanged = resolveIdentityCompareKey(groupValue, groupCandidates, currentGroupId) !== (currentGroupId ? `id:${currentGroupId}` : '');
     const ownerSpec = ownerChanged ? resolveIdentityInputSpec(ownerValue, ownerCandidates, currentOwnerId) : '';
     const groupSpec = groupChanged ? resolveIdentityInputSpec(groupValue, groupCandidates, currentGroupId) : '';
+    if (!modeChanged && !ownerChanged && !groupChanged) {
+      setChmodTarget(null);
+      return;
+    }
     try {
       try {
         await AppGo.SaveChmodDialogSettings(normalizedMode, rememberedIncludeSubdirectories);
@@ -4677,7 +4716,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                   />
                 )}
                 {showFileManagerTabIcons && <Folder size={11} />}
-                {showFileManagerTabIcons && isPinnedTab && <Pin size={10} style={{ opacity: 0.8 }} />}
+                {isPinnedTab && <Pin size={10} style={{ opacity: 0.8 }} />}
                 <Tiptop
                   text={tabDropPreviewText || tabDefaultTiptopText}
                   placement="bottom"
@@ -4875,6 +4914,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                     if (isDeletedPlaceholder) return;
                     e.preventDefault();
                     e.stopPropagation();
+                    const currentSelectedPaths = selectedPathsRef.current;
+                    const useSelectedPathsDelete = currentSelectedPaths.length > 1 && currentSelectedPaths.includes(itemPath);
                     setContextMenu({
                       pos: { x: e.clientX, y: e.clientY },
                       item,
@@ -4882,6 +4923,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                       itemBasePath: currentPath,
                       createBasePath: currentPath,
                       showCreateActions: false,
+                      deleteUsesSelectedPaths: useSelectedPathsDelete,
+                      deleteItemCount: useSelectedPathsDelete ? currentSelectedPaths.length : 1,
                     });
                   }}
                 >
@@ -4982,6 +5025,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           canTogglePinned={contextMenu.mode === 'tab' && contextMenu.tabSystemPinned !== true}
           canCloseTab={contextMenu.mode === 'tab' && contextMenu.tabPinned !== true && fileManagerWorkspace.tabs.length > 1}
           showCreateActions={Boolean(contextMenu.showCreateActions)}
+          deleteItemCount={Number.isFinite(Number(contextMenu.deleteItemCount)) ? Number(contextMenu.deleteItemCount) : 1}
           t={t}
           onClose={closeContextMenu}
           onTogglePinned={() => {
@@ -5042,6 +5086,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           onDelete={() => {
             if (operationInProgressRef.current) {
               addToast(t('有操作正在进行，请稍候'), 'warning');
+            } else if (contextMenu.deleteUsesSelectedPaths) {
+              void handleDeleteItems();
             } else if (contextMenu.mode === 'tab') {
               void handleDeleteTabDirectory(contextMenu.tabId, contextMenu.tabPath, false);
             } else if (contextMenu.item) {
@@ -5112,6 +5158,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           path={chmodTarget.path}
           permission={chmodTarget.item.permission}
           mode={chmodTarget.mode}
+          rememberedMode={chmodTarget.rememberedMode}
+          autoApplyLastSettings={chmodTarget.autoApplyLastSettings}
           uid={chmodTarget.item.uid}
           gid={chmodTarget.item.gid}
           ownerCandidates={chmodTarget.ownerCandidates}

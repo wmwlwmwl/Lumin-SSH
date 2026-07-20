@@ -13,7 +13,7 @@ export default function ConnectingCard({ connectingServer, t, onCancel }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: Z.FULLSCREEN_OVERLAY,
+      position: 'absolute', inset: 0, zIndex: Z.FULLSCREEN_OVERLAY,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(0,0,0,0.42)',
     }}>

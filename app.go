@@ -806,6 +806,10 @@ func (a *App) SaveChmodDialogSettings(mode string, includeSubdirectories bool) e
 	return a.configManager.SaveChmodDialogSettings(mode, includeSubdirectories)
 }
 
+func (a *App) SetChmodAutoApplyLastSettings(enabled bool) error {
+	return a.configManager.SetChmodAutoApplyLastSettings(enabled)
+}
+
 func (a *App) ListOwnershipCandidates(sessionId string) (OwnershipCandidates, error) {
 	return a.sshManager.ListOwnershipCandidates(sessionId)
 }

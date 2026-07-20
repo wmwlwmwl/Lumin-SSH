@@ -1336,7 +1336,9 @@ func runCommandWithSession(session *ssh.Session, cmd string, timeout time.Durati
 
 func runCommandWithSessionContext(ctx context.Context, session *ssh.Session, cmd string, timeout time.Duration) (string, error) {
 	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
 	session.Stdout = &stdoutBuf
+	session.Stderr = &stderrBuf
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1358,7 +1360,12 @@ func runCommandWithSessionContext(ctx context.Context, session *ssh.Session, cmd
 
 	select {
 	case err := <-errCh:
-		return stdoutBuf.String(), err
+		stdout := stdoutBuf.String()
+		stderr := strings.TrimSpace(stderrBuf.String())
+		if err != nil && stderr != "" {
+			return stdout, fmt.Errorf("%w: %s", err, stderr)
+		}
+		return stdout, err
 	case <-ctxDone:
 		go session.Close()
 		return "", ctx.Err()
@@ -1457,6 +1464,26 @@ func (m *SSHManager) deployProbeScript(sftpClient *sftp.Client, connKey string) 
 // extractSection 从 lines 中提取 startMarker（不含）到 endMarker（不含）之间的内容。
 // startMarker 为空时从开头开始收集；endMarker 为空时收集到末尾。
 // GetSystemInfo 与 GetServerStaticInfo 共用此实现，避免重复定义。
+func buildProbeScriptRunCommand(probeArg string) string {
+	return fmt.Sprintf(`sh -c 'f=~/.lumin/probe.sh; [ -f "$f" ] && sh "$f"%s || sh /tmp/.lumin/probe.sh%s'`, probeArg, probeArg)
+}
+
+func (m *SSHManager) diagnoseProbeScriptFailure(client *ssh.Client, probeArg string) string {
+	diagCmd := fmt.Sprintf(`sh -c 'f=~/.lumin/probe.sh; alt=/tmp/.lumin/probe.sh; if [ -f "$f" ]; then target="$f"; elif [ -f "$alt" ]; then target="$alt"; else echo "probe script not found"; echo "home candidate:$f"; echo "tmp candidate:$alt"; exit 0; fi; echo "target:$target"; ls -ld "$(dirname "$target")" 2>&1; ls -l "$target" 2>&1; command -v sh 2>&1; sh "$target"%s 2>&1 | head -n 20'`, probeArg)
+	out, err := m.executeCmdWithClient(client, diagCmd)
+	parts := make([]string, 0, 2)
+	if trimmedOut := strings.TrimSpace(out); trimmedOut != "" {
+		parts = append(parts, trimmedOut)
+	}
+	if err != nil {
+		errText := strings.TrimSpace(err.Error())
+		if errText != "" {
+			parts = append(parts, errText)
+		}
+	}
+	return strings.Join(parts, " | ")
+}
+
 func extractSection(lines []string, startMarker, endMarker string) []string {
 	var out []string
 	// BUG FIX: if startMarker is empty, strings.Contains(l,"") is always true
@@ -1519,13 +1546,25 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 	if includeNetworkConnections {
 		probeArg = " network"
 	}
-	out, err := m.executeCmdWithClient(client, fmt.Sprintf(`sh -c 'f=~/.lumin/probe.sh; [ -f "$f" ] && sh "$f"%s || sh /tmp/.lumin/probe.sh%s'`, probeArg, probeArg))
+	out, err := m.executeCmdWithClient(client, buildProbeScriptRunCommand(probeArg))
 	if err != nil || len(strings.TrimSpace(out)) == 0 {
-		// 执行失败（文件被删除或不可用），清除标记以便下次重新部署
 		m.mu.Lock()
 		delete(m.probeDeployed, connKey)
 		m.mu.Unlock()
-		return nil, fmt.Errorf("probe script execution failed")
+		detailParts := make([]string, 0, 3)
+		if err != nil {
+			detailParts = append(detailParts, err.Error())
+		}
+		if trimmedOut := strings.TrimSpace(out); trimmedOut != "" {
+			detailParts = append(detailParts, "stdout: "+trimmedOut)
+		}
+		if diagnostic := m.diagnoseProbeScriptFailure(client, probeArg); diagnostic != "" {
+			detailParts = append(detailParts, "diagnostics: "+diagnostic)
+		}
+		if len(detailParts) == 0 {
+			return nil, fmt.Errorf("probe script execution failed")
+		}
+		return nil, fmt.Errorf("probe script execution failed: %s", strings.Join(detailParts, " | "))
 	}
 
 	// ── Split on ---CPU2--- to get two halves ──────────────────────────

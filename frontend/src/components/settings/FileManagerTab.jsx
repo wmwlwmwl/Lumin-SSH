@@ -23,6 +23,8 @@ export default function FileManagerTab({
   onToggleFileManagerAutoOpenTransferQueue,
   fileManagerShowTabIcons,
   onToggleFileManagerShowTabIcons,
+  fileManagerChmodAutoApplyLastSettings,
+  onToggleFileManagerChmodAutoApplyLastSettings,
   fileManagerInitialPathMode,
   onFileManagerInitialPathModeChange,
   fileManagerNewTabPathMode,
@@ -74,9 +76,15 @@ export default function FileManagerTab({
           />
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <SettingRow
-            title={$t('显示文件资源管理器标签页图标')}
-            description={$t('关闭后标签只显示名称,不显示目录或固定图标')}
+            title={$t('显示文件资源管理器标签页目录图标')}
+            description={$t('关闭后只隐藏目录图标,仍显示置顶图标')}
             action={<ToggleSwitch checked={fileManagerShowTabIcons} onChange={onToggleFileManagerShowTabIcons} />}
+          />
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <SettingRow
+            title={$t('默认应用上次权限设置')}
+            description={$t('开启后,修改权限弹窗会默认套用上次保存的权限模式和包含子目录选项')}
+            action={<ToggleSwitch checked={fileManagerChmodAutoApplyLastSettings} onChange={onToggleFileManagerChmodAutoApplyLastSettings} />}
           />
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

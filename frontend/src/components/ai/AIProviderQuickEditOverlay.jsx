@@ -510,7 +510,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
 
       return true
     } catch (error) {
-      setModelOptions([])
+      setModelOptions(buildInitialModelOptions(getAIProviderDefinition(trimmedProvider || draft.provider), selectedModel || draft.model))
       setModelRefreshError(error instanceof Error ? error.message : t('刷新模型失败'))
       return false
     } finally {
