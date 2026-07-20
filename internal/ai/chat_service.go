@@ -424,8 +424,7 @@ func getAIAutoApprovalCategoryForTool(toolName string) string {
 func isAIAutoApprovalEffectivelyEnabled(settings AIConversationTaskSettings) bool {
 	return settings.AlwaysAllowReadOnly ||
 		settings.AlwaysAllowWrite ||
-		settings.AlwaysAllowExecute ||
-		settings.AlwaysAllowExecuteReadOnly
+		settings.AlwaysAllowExecute
 }
 
 func aiJSStringLength(value string) int {
