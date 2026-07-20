@@ -98,6 +98,25 @@ function getProviderModelSummary(t, provider) {
   return `${model}(${reasoningEffortLabel})`
 }
 
+function buildProviderModelOptions(provider) {
+  const providerValue = typeof provider?.provider === 'string' && provider.provider.trim() ? provider.provider.trim() : 'Compatible'
+  const providerDefinition = getAIProviderDefinition(providerValue)
+  const seen = new Set()
+  const options = []
+  const appendOption = (value) => {
+    const nextValue = typeof value === 'string' ? value.trim() : ''
+    if (!nextValue || seen.has(nextValue)) {
+      return
+    }
+    seen.add(nextValue)
+    options.push(nextValue)
+  }
+  appendOption(provider?.model)
+  ;(Array.isArray(providerDefinition?.initialModels) ? providerDefinition.initialModels : []).forEach(appendOption)
+  appendOption(providerDefinition?.defaultModel)
+  return options
+}
+
 function getApiKeyPreview(value) {
   const nextValue = typeof value === 'string' ? value.trim() : ''
   if (!nextValue) {
@@ -274,6 +293,10 @@ function buildEmbeddedBrowserAuthRequest(context) {
   }
 }
 
+function getAppBridge() {
+  return window?.go?.main?.AIBindings || window?.go?.main?.AIProviderBindings || window?.go?.main?.App
+}
+
 export default function AIProviderSelector({
   providers = defaultProviders,
   currentProviderId,
@@ -286,6 +309,7 @@ export default function AIProviderSelector({
   const iframeRef = useRef(null)
   const tooltipTimerRef = useRef(null)
   const [open, setOpen] = useState(false)
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [providerList, setProviderList] = useState(sortProviders(providers))
@@ -294,6 +318,7 @@ export default function AIProviderSelector({
   const [workspaceBounds, setWorkspaceBounds] = useState(null)
   const [dropdownMetrics, setDropdownMetrics] = useState(null)
   const [triggerRect, setTriggerRect] = useState(null)
+  const [modelTriggerRect, setModelTriggerRect] = useState(null)
   const [tooltipVisible, setTooltipVisible] = useState(false)
   const [tooltipTriggerRect, setTooltipTriggerRect] = useState(null)
   const [tokenStoreOpen, setTokenStoreOpen] = useState(false)
@@ -301,6 +326,10 @@ export default function AIProviderSelector({
   const [tokenStoreFrameURL, setTokenStoreFrameURL] = useState('')
   const [tokenStoreViewTitle, setTokenStoreViewTitle] = useState('')
   const [embeddedBrowserContext, setEmbeddedBrowserContext] = useState(null)
+  const [quickModelOptions, setQuickModelOptions] = useState([])
+  const [quickModelLoading, setQuickModelLoading] = useState(false)
+  const [quickModelError, setQuickModelError] = useState('')
+  const modelButtonRef = useRef(null)
   const expandLeft = triggerRect ? triggerRect.left + 400 > window.innerWidth - 16 : false
   const tooltipExpandLeft = tooltipTriggerRect ? tooltipTriggerRect.left + 280 > window.innerWidth - 16 : false
   const [editingState, setEditingState] = useState({ open: false, mode: 'edit', provider: null })
@@ -311,6 +340,22 @@ export default function AIProviderSelector({
     () => providerList.find((item) => item.id === effectiveSelectedId) || null,
     [providerList, effectiveSelectedId],
   )
+  const quickModelConfig = useMemo(() => {
+    if (!selectedProvider) {
+      return { visible: false, options: [], currentValue: '', currentLabel: '' }
+    }
+    const fallbackOptions = buildProviderModelOptions(selectedProvider)
+    const options = quickModelOptions.length > 0 ? quickModelOptions : fallbackOptions
+    const currentValue = typeof selectedProvider.model === 'string' && selectedProvider.model.trim()
+      ? selectedProvider.model.trim()
+      : (options[0] || '')
+    return {
+      visible: true,
+      options,
+      currentValue,
+      currentLabel: currentValue || t('模型'),
+    }
+  }, [quickModelOptions, selectedProvider, t])
   const quickReasoningConfig = useMemo(() => {
     if (!selectedProvider) {
       return { visible: false, options: [], currentValue: 'disable', currentLabel: '' }
@@ -365,7 +410,7 @@ export default function AIProviderSelector({
   }, [])
 
   const handleTriggerMouseEnter = useCallback(() => {
-    if (open || editingState.open || reasoningMenuOpen) {
+    if (open || editingState.open || modelMenuOpen || reasoningMenuOpen) {
       return
     }
     const rect = containerRef.current?.getBoundingClientRect()
@@ -379,7 +424,7 @@ export default function AIProviderSelector({
       setTooltipVisible(true)
       tooltipTimerRef.current = null
     }, summaryTooltipDelay)
-  }, [editingState.open, open, reasoningMenuOpen])
+  }, [editingState.open, modelMenuOpen, open, reasoningMenuOpen])
 
   const filteredProviders = useMemo(() => {
     const keyword = searchValue.trim().toLowerCase()
@@ -502,30 +547,32 @@ export default function AIProviderSelector({
   }, [tooltipVisible])
 
   useEffect(() => {
-    if (open || editingState.open || reasoningMenuOpen) {
+    if (open || editingState.open || modelMenuOpen || reasoningMenuOpen) {
       closeTooltip()
     }
-  }, [closeTooltip, editingState.open, open, reasoningMenuOpen])
+  }, [closeTooltip, editingState.open, modelMenuOpen, open, reasoningMenuOpen])
 
   useEffect(() => {
-    if ((!open && !reasoningMenuOpen) || editingState.open) {
+    if ((!open && !modelMenuOpen && !reasoningMenuOpen) || editingState.open) {
       return undefined
     }
 
     const handlePointerDown = (event) => {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false)
+        setModelMenuOpen(false)
         setReasoningMenuOpen(false)
       }
     }
 
     window.addEventListener('pointerdown', handlePointerDown)
     return () => window.removeEventListener('pointerdown', handlePointerDown)
-  }, [editingState.open, open, reasoningMenuOpen])
+  }, [editingState.open, modelMenuOpen, open, reasoningMenuOpen])
 
   useEffect(() => {
-    if (!editingState.open && !open && !reasoningMenuOpen && !tokenStoreOpen) {
+    if (!editingState.open && !open && !modelMenuOpen && !reasoningMenuOpen && !tokenStoreOpen) {
       setTriggerRect(null)
+      setModelTriggerRect(null)
       setWorkspaceBounds(null)
       return undefined
     }
@@ -590,6 +637,12 @@ export default function AIProviderSelector({
         })
         setTriggerRect({ top: triggerRectData.top, left: triggerRectData.left, right: triggerRectData.right, bottom: triggerRectData.bottom })
       }
+      const modelRectData = modelButtonRef.current?.getBoundingClientRect()
+      if (modelRectData) {
+        setModelTriggerRect({ top: modelRectData.top, left: modelRectData.left, right: modelRectData.right, bottom: modelRectData.bottom })
+      } else {
+        setModelTriggerRect(null)
+      }
     }
 
     updatePanelBounds()
@@ -600,12 +653,13 @@ export default function AIProviderSelector({
       window.removeEventListener('resize', updatePanelBounds)
       window.removeEventListener('scroll', updatePanelBounds, true)
     }
-  }, [editingState.open, open, reasoningMenuOpen, tokenStoreOpen])
+  }, [editingState.open, modelMenuOpen, open, reasoningMenuOpen, tokenStoreOpen])
 
   useEffect(() => {
     let cancelled = false
     closeTooltip()
     setOpen(false)
+    setModelMenuOpen(false)
     setReasoningMenuOpen(false)
     setSearchValue('')
     setTokenStoreOpen(false)
@@ -613,7 +667,11 @@ export default function AIProviderSelector({
     setTokenStoreFrameURL('')
     setTokenStoreViewTitle('')
     setEmbeddedBrowserContext(null)
+    setQuickModelOptions([])
+    setQuickModelLoading(false)
+    setQuickModelError('')
     setTriggerRect(null)
+    setModelTriggerRect(null)
     setTooltipTriggerRect(null)
     setDropdownMetrics(null)
     setPanelBounds(null)
@@ -649,6 +707,82 @@ export default function AIProviderSelector({
       cancelled = true
     }
   }, [closeTooltip, dismissSignal, providers, resolveProviderRegistryState])
+
+  useEffect(() => {
+    if (!selectedProvider) {
+      setQuickModelOptions([])
+      setQuickModelLoading(false)
+      setQuickModelError('')
+      return undefined
+    }
+
+    const providerValue = typeof selectedProvider.provider === 'string' ? selectedProvider.provider.trim() : ''
+    const baseUrl = typeof selectedProvider.baseUrl === 'string' ? selectedProvider.baseUrl.trim() : ''
+    const apiKey = typeof selectedProvider.apiKey === 'string' ? selectedProvider.apiKey.trim() : ''
+
+    if (!baseUrl || !apiKey) {
+      setQuickModelOptions(buildProviderModelOptions(selectedProvider))
+      setQuickModelLoading(false)
+      setQuickModelError('')
+      return undefined
+    }
+
+    let cancelled = false
+    setQuickModelLoading(true)
+    setQuickModelError('')
+
+    const bridge = getAppBridge()
+    const requestProfile = {
+      ...selectedProvider,
+      provider: providerValue || 'Compatible',
+      baseUrl,
+      apiKey,
+      model: typeof selectedProvider.model === 'string' ? selectedProvider.model.trim() : '',
+      dedicatedProxyEnabled: Boolean(selectedProvider.dedicatedProxyEnabled),
+      dedicatedProxyId: typeof selectedProvider.dedicatedProxyId === 'string' ? selectedProvider.dedicatedProxyId.trim() : '',
+    }
+
+    const requestModels = async () => {
+      try {
+        const models = bridge?.RequestAIProviderModelsWithProfile
+          ? await bridge.RequestAIProviderModelsWithProfile(JSON.stringify(requestProfile))
+          : bridge?.RequestAIProviderModels
+            ? await bridge.RequestAIProviderModels(baseUrl, apiKey)
+            : []
+        if (cancelled) {
+          return
+        }
+        const normalizedModels = Array.isArray(models)
+          ? models.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+          : []
+        setQuickModelOptions(normalizedModels.length > 0 ? normalizedModels : buildProviderModelOptions(selectedProvider))
+        setQuickModelError('')
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        setQuickModelOptions(buildProviderModelOptions(selectedProvider))
+        setQuickModelError(error instanceof Error ? error.message : '')
+      } finally {
+        if (!cancelled) {
+          setQuickModelLoading(false)
+        }
+      }
+    }
+
+    void requestModels()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    selectedProvider?.id,
+    selectedProvider?.provider,
+    selectedProvider?.baseUrl,
+    selectedProvider?.apiKey,
+    selectedProvider?.dedicatedProxyEnabled,
+    selectedProvider?.dedicatedProxyId,
+  ])
 
   useEffect(() => {
     if (!tokenStoreOpen) {
@@ -699,6 +833,8 @@ export default function AIProviderSelector({
 
   const handleSelectProvider = async (providerId) => {
     setOpen(false)
+    setModelMenuOpen(false)
+    setReasoningMenuOpen(false)
     if (!isControlled || persistSelectedProviderId) {
       await persistRegistryState(providerList, providerId)
     } else if (!isControlled) {
@@ -706,6 +842,55 @@ export default function AIProviderSelector({
     }
     await notifySelectionChange(providerId)
   }
+
+  const handleQuickModelSelect = useCallback(async (nextValue) => {
+    if (!selectedProvider) {
+      return
+    }
+    const normalizedValue = typeof nextValue === 'string' ? nextValue.trim() : ''
+    if (!normalizedValue) {
+      return
+    }
+    const providerValue = typeof selectedProvider.provider === 'string' && selectedProvider.provider.trim() ? selectedProvider.provider.trim() : 'Compatible'
+    const providerDefinition = getAIProviderDefinition(providerValue)
+    const capability = buildDisplayModelCapability(providerDefinition.value, providerDefinition.getModelCapability(normalizedValue))
+    const nextProviders = providerList.map((item) => {
+      if (item.id !== selectedProvider.id) {
+        return item
+      }
+      const nextReasoningOptions = buildReasoningOptions(capability)
+      let reasoningEffort = typeof item.reasoningEffort === 'string' ? item.reasoningEffort.trim().toLowerCase() : 'disable'
+      let enableReasoningEffort = item.enableReasoningEffort === true
+      if (capability?.reasoningMode === 'effort') {
+        if (!nextReasoningOptions.includes(reasoningEffort)) {
+          reasoningEffort = capability.requiredReasoningEffort
+            ? (capability.reasoningEffort || nextReasoningOptions[0] || 'disable')
+            : (enableReasoningEffort
+              ? (capability.reasoningEffort || nextReasoningOptions.find((value) => value !== 'disable') || 'disable')
+              : (nextReasoningOptions.includes('disable') ? 'disable' : (capability.reasoningEffort || nextReasoningOptions[0] || 'disable')))
+        }
+        enableReasoningEffort = capability.requiredReasoningEffort ? true : reasoningEffort !== 'disable'
+      } else {
+        reasoningEffort = 'disable'
+        enableReasoningEffort = false
+      }
+      return {
+        ...item,
+        model: normalizedValue,
+        reasoningEffort,
+        enableReasoningEffort,
+        modelMaxTokens: 0,
+        modelMaxThinkingTokens: 0,
+        updatedAt: Date.now(),
+      }
+    })
+    const normalizedState = normalizeAIProviderState({
+      currentProviderId: getPersistedSelectionId(nextProviders, persistedCurrentProviderId || effectiveSelectedId || selectedProvider.id),
+      providers: nextProviders,
+    })
+    await persistRegistryState(normalizedState.providers, normalizedState.currentProviderId)
+    setModelMenuOpen(false)
+  }, [effectiveSelectedId, getPersistedSelectionId, persistRegistryState, persistedCurrentProviderId, providerList, selectedProvider])
 
   const handleQuickReasoningSelect = useCallback(async (nextValue) => {
     if (!selectedProvider) {
@@ -937,12 +1122,13 @@ export default function AIProviderSelector({
 
   return (
     <>
-      <div ref={containerRef} style={{ position: 'relative', flexShrink: 0, overflow: 'visible', zIndex: open || reasoningMenuOpen ? 40 : 'auto' }}>
+      <div ref={containerRef} style={{ position: 'relative', flexShrink: 0, overflow: 'visible', zIndex: open || modelMenuOpen || reasoningMenuOpen ? 40 : 'auto' }}>
         <div style={{ display: 'inline-flex', alignItems: 'stretch' }}>
           <button
             type="button"
             onClick={() => {
               closeTooltip()
+              setModelMenuOpen(false)
               setReasoningMenuOpen(false)
               setOpen((prev) => !prev)
             }}
@@ -956,7 +1142,7 @@ export default function AIProviderSelector({
               alignItems: 'center',
               gap: 6,
               padding: '0 10px',
-              borderRadius: quickReasoningConfig.visible ? '8px 0 0 8px' : 8,
+              borderRadius: quickModelConfig.visible || quickReasoningConfig.visible ? '8px 0 0 8px' : 8,
               border: `1px solid ${open ? 'var(--accent-border)' : 'var(--border)'}`,
               background: open ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
               color: 'var(--text-primary)',
@@ -968,6 +1154,101 @@ export default function AIProviderSelector({
           >
             <span>{selectedProvider?.name || t('选择供应商')}</span>
           </button>
+          {quickModelConfig.visible ? (
+            <div ref={modelButtonRef} style={{ position: 'relative', marginLeft: -1 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  closeTooltip()
+                  setOpen(false)
+                  setReasoningMenuOpen(false)
+                  setModelMenuOpen((prev) => !prev)
+                }}
+                onMouseEnter={handleTriggerMouseEnter}
+                onMouseLeave={closeTooltip}
+                onFocus={handleTriggerMouseEnter}
+                onBlur={closeTooltip}
+                style={{
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '0 10px',
+                  borderRadius: quickReasoningConfig.visible ? 0 : '0 8px 8px 0',
+                  border: `1px solid ${modelMenuOpen ? 'var(--accent-border)' : 'var(--border)'}`,
+                  background: modelMenuOpen ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+                  color: modelMenuOpen ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  transition: 'var(--transition)',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                  maxWidth: 180,
+                }}
+              >
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{quickModelConfig.currentLabel}</span>
+              </button>
+              {modelMenuOpen && modelTriggerRect ? (
+                <div
+                  style={{
+                    position: 'fixed',
+                    right: Math.max(16, window.innerWidth - modelTriggerRect.right),
+                    bottom: window.innerHeight - modelTriggerRect.top + 8,
+                    minWidth: 180,
+                    maxWidth: 320,
+                    maxHeight: 320,
+                    padding: 4,
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-overlay)',
+                    boxShadow: 'var(--shadow-xl)',
+                    display: 'grid',
+                    gap: 2,
+                    overflowY: 'auto',
+                    zIndex: 10002,
+                  }}>
+                  {quickModelLoading ? (
+                    <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                      {t('刷新中...')}
+                    </div>
+                  ) : null}
+                  {!quickModelLoading && quickModelError ? (
+                    <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--danger)', lineHeight: 1.4 }}>
+                      {quickModelError}
+                    </div>
+                  ) : null}
+                  {quickModelConfig.options.map((option) => {
+                    const active = option === quickModelConfig.currentValue
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => void handleQuickModelSelect(option)}
+                        style={{
+                          minHeight: 30,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          padding: '0 10px',
+                          border: 'none',
+                          borderRadius: 8,
+                          background: active ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+                          color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontSize: 12,
+                          fontWeight: active ? 700 : 500,
+                          textAlign: 'left',
+                          transition: 'var(--transition)',
+                        }}
+                      >
+                        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option}</span>
+                        {active ? <span style={{ color: 'var(--accent)', fontSize: 12 }}>✓</span> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {quickReasoningConfig.visible ? (
             <div style={{ position: 'relative', marginLeft: -1 }}>
               <button
@@ -975,6 +1256,7 @@ export default function AIProviderSelector({
                 onClick={() => {
                   closeTooltip()
                   setOpen(false)
+                  setModelMenuOpen(false)
                   setReasoningMenuOpen((prev) => !prev)
                 }}
                 onMouseEnter={handleTriggerMouseEnter}
