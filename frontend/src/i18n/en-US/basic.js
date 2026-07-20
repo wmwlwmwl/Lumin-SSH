@@ -419,7 +419,6 @@ export default {
   "应用删除": "Delete",
   "保留云端项": "Keep and merge",
   "保留并合并": "Keep and merge",
-  "删除": "Delete",
   "服务器": "Servers",
   "预检失败": "Preview failed",
   "无法检查删除冲突，仍继续同步可能按本地删除记录静默删除目标云上的项。": "Could not check deletion conflicts. Continuing may silently remove cloud items based on local deletion records.",
