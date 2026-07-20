@@ -32,6 +32,11 @@ function normalizePositiveInteger(value) {
   return Math.floor(nextValue)
 }
 
+function normalizeModel(value) {
+  const nextValue = typeof value === 'string' ? value.trim() : ''
+  return nextValue === t('未选择模型') ? '' : nextValue
+}
+
 export function isBuiltinAIProvider(provider) {
   return provider?.builtin === true
 }
@@ -161,7 +166,7 @@ function normalizeProvider(provider, index) {
     id: typeof provider?.id === 'string' && provider.id.trim() ? provider.id.trim() : `ai-provider-${index}-${now}`,
     name: typeof provider?.name === 'string' && provider.name.trim() ? provider.name.trim() : t('未命名供应商'),
     provider: normalizeProtocol(provider?.provider),
-    model: typeof provider?.model === 'string' && provider.model.trim() ? provider.model.trim() : t('未选择模型'),
+    model: normalizeModel(provider?.model),
     baseUrl: typeof provider?.baseUrl === 'string' ? provider.baseUrl.trim() : '',
     apiKey: typeof provider?.apiKey === 'string' ? provider.apiKey.trim() : '',
     cacheStrategy: normalizeCacheStrategy(provider?.cacheStrategy),

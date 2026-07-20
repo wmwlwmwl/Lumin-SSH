@@ -125,7 +125,7 @@ function getModelCapability(modelId) {
 export const messagesProvider = {
   value: 'Messages',
   label: 'Messages',
-  defaultModel: 'claude-opus-4-8',
+  defaultModel: '',
   initialModels: [],
   supportsPromptCacheSettings: true,
   supportsWebSearch: true,

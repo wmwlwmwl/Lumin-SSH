@@ -238,7 +238,7 @@ function getModelCapability(modelId) {
 export const compatibleProvider = {
   value: 'Compatible',
   label: 'Compatible',
-  defaultModel: 'gpt-5.4',
+  defaultModel: '',
   initialModels: [],
   supportsPromptCacheSettings: true,
   supportsWebSearch: true,

@@ -510,6 +510,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
 
       return true
     } catch (error) {
+      setModelOptions([])
       setModelRefreshError(error instanceof Error ? error.message : t('刷新模型失败'))
       return false
     } finally {
@@ -773,7 +774,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
       const result = await bridge.ValidateAIProviderWebSearch(JSON.stringify({
         ...draft,
         provider: providerDefinition.value,
-        model: draft.model?.trim() || providerDefinition.defaultModel,
+        model: draft.model?.trim() || '',
         reasoningEffort: draft.reasoningEffort || 'disable',
         enableReasoningEffort: Boolean(draft.enableReasoningEffort),
         modelMaxTokens: normalizePositiveInteger(draft.modelMaxTokens),

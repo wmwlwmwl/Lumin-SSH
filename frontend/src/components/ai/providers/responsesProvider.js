@@ -238,7 +238,7 @@ function getModelCapability(modelId) {
 export const responsesProvider = {
   value: 'Responses',
   label: 'Responses',
-  defaultModel: 'gpt-5.4',
+  defaultModel: '',
   initialModels: [],
   supportsPromptCacheSettings: false,
   supportsWebSearch: true,

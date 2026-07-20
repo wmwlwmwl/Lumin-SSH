@@ -21,6 +21,8 @@ export default function FileManagerTab({
   onToggleFileManagerCompressedTransfer,
   fileManagerAutoOpenTransferQueue,
   onToggleFileManagerAutoOpenTransferQueue,
+  fileManagerShowTabIcons,
+  onToggleFileManagerShowTabIcons,
   fileManagerInitialPathMode,
   onFileManagerInitialPathModeChange,
   fileManagerNewTabPathMode,
@@ -69,6 +71,12 @@ export default function FileManagerTab({
             title={$t('发起传输任务时自动打开传输队列')}
             description={$t('上传或下载新建传输任务后自动展开传输队列面板')}
             action={<ToggleSwitch checked={fileManagerAutoOpenTransferQueue} onChange={onToggleFileManagerAutoOpenTransferQueue} />}
+          />
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <SettingRow
+            title={$t('显示文件资源管理器标签页图标')}
+            description={$t('关闭后标签只显示名称,不显示目录或固定图标')}
+            action={<ToggleSwitch checked={fileManagerShowTabIcons} onChange={onToggleFileManagerShowTabIcons} />}
           />
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -8,12 +8,14 @@ export default function Tiptop({
   className = '',
   style,
   triggerClassName = '',
+  forceVisible = false,
 }) {
   const triggerRef = useRef(null)
   const bubbleRef = useRef(null)
   const [visible, setVisible] = useState(false)
   const [position, setPosition] = useState(null)
   const hasText = text !== null && text !== undefined && text !== ''
+  const bubbleVisible = hasText && (visible || forceVisible)
 
   const updatePosition = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect()
@@ -28,7 +30,7 @@ export default function Tiptop({
   }, [placement])
 
   useEffect(() => {
-    if (!visible) {
+    if (!bubbleVisible) {
       return undefined
     }
     updatePosition()
@@ -38,11 +40,11 @@ export default function Tiptop({
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [updatePosition, visible])
+  }, [bubbleVisible, updatePosition])
 
   // ponytail: 用 bubbleRef 实际宽度 clamp，比字符估算准确；useLayoutEffect 绘制前执行不闪烁。
   useLayoutEffect(() => {
-    if (!visible || !position || !bubbleRef.current) return
+    if (!bubbleVisible || !position || !bubbleRef.current) return
     const bubbleWidth = bubbleRef.current.offsetWidth
     if (bubbleWidth === 0) return
     const margin = 8
@@ -54,7 +56,7 @@ export default function Tiptop({
     if (Math.abs(clampedX - position.left) > 0.5) {
       setPosition((prev) => (prev ? { ...prev, left: clampedX } : prev))
     }
-  }, [visible, position, text])
+  }, [bubbleVisible, position, text])
 
   const show = useCallback(() => {
     if (!hasText) {
@@ -86,7 +88,7 @@ export default function Tiptop({
           {children}
         </div>
       </div>
-      {visible && position && typeof document !== 'undefined'
+      {bubbleVisible && position && typeof document !== 'undefined'
         ? createPortal(
             <div
               ref={bubbleRef}

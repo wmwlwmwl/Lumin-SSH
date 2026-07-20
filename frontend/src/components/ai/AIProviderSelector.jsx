@@ -329,6 +329,7 @@ export default function AIProviderSelector({
   const [quickModelOptions, setQuickModelOptions] = useState([])
   const [quickModelLoading, setQuickModelLoading] = useState(false)
   const [quickModelError, setQuickModelError] = useState('')
+  const [quickModelResolved, setQuickModelResolved] = useState(false)
   const modelButtonRef = useRef(null)
   const expandLeft = triggerRect ? triggerRect.left + 400 > window.innerWidth - 16 : false
   const tooltipExpandLeft = tooltipTriggerRect ? tooltipTriggerRect.left + 280 > window.innerWidth - 16 : false
@@ -345,7 +346,7 @@ export default function AIProviderSelector({
       return { visible: false, options: [], currentValue: '', currentLabel: '' }
     }
     const fallbackOptions = buildProviderModelOptions(selectedProvider)
-    const options = quickModelOptions.length > 0 ? quickModelOptions : fallbackOptions
+    const options = quickModelResolved ? quickModelOptions : fallbackOptions
     const currentValue = typeof selectedProvider.model === 'string' && selectedProvider.model.trim()
       ? selectedProvider.model.trim()
       : (options[0] || '')
@@ -670,6 +671,7 @@ export default function AIProviderSelector({
     setQuickModelOptions([])
     setQuickModelLoading(false)
     setQuickModelError('')
+    setQuickModelResolved(false)
     setTriggerRect(null)
     setModelTriggerRect(null)
     setTooltipTriggerRect(null)
@@ -713,6 +715,7 @@ export default function AIProviderSelector({
       setQuickModelOptions([])
       setQuickModelLoading(false)
       setQuickModelError('')
+      setQuickModelResolved(false)
       return undefined
     }
 
@@ -724,12 +727,14 @@ export default function AIProviderSelector({
       setQuickModelOptions(buildProviderModelOptions(selectedProvider))
       setQuickModelLoading(false)
       setQuickModelError('')
+      setQuickModelResolved(false)
       return undefined
     }
 
     let cancelled = false
     setQuickModelLoading(true)
     setQuickModelError('')
+    setQuickModelResolved(false)
 
     const bridge = getAppBridge()
     const requestProfile = {
@@ -755,14 +760,16 @@ export default function AIProviderSelector({
         const normalizedModels = Array.isArray(models)
           ? models.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
           : []
-        setQuickModelOptions(normalizedModels.length > 0 ? normalizedModels : buildProviderModelOptions(selectedProvider))
+        setQuickModelOptions(normalizedModels)
         setQuickModelError('')
+        setQuickModelResolved(true)
       } catch (error) {
         if (cancelled) {
           return
         }
-        setQuickModelOptions(buildProviderModelOptions(selectedProvider))
+        setQuickModelOptions([])
         setQuickModelError(error instanceof Error ? error.message : '')
+        setQuickModelResolved(true)
       } finally {
         if (!cancelled) {
           setQuickModelLoading(false)
@@ -922,7 +929,7 @@ export default function AIProviderSelector({
       id: draft.id || `ai-provider-${Date.now()}`,
       name: draft.name?.trim() || t('未命名供应商'),
       provider: draft.provider?.trim() || 'Compatible',
-      model: draft.model?.trim() || t('未选择模型'),
+      model: draft.model?.trim() || '',
       baseUrl: draft.baseUrl?.trim() || '',
       apiKey: draft.apiKey?.trim() || '',
       cacheStrategy: draft.cacheStrategy || 'model',
