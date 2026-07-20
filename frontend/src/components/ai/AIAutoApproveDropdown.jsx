@@ -195,11 +195,7 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
   const [localSettings, setLocalSettings] = useState(() => normalizeAutoApprovalSettings(settings))
   const normalizedSettings = useMemo(() => normalizeAutoApprovalSettings(localSettings), [localSettings])
   const enabledCount = useMemo(
-    () => VISIBLE_OPTIONS.filter((option) => (
-      option.key === 'alwaysAllowExecute'
-        ? normalizedSettings.alwaysAllowExecute || normalizedSettings.alwaysAllowExecuteReadOnly
-        : normalizedSettings[option.key]
-    )).length,
+    () => VISIBLE_OPTIONS.filter((option) => normalizedSettings[option.key]).length,
     [normalizedSettings],
   )
 
