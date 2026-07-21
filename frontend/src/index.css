@@ -3385,14 +3385,24 @@ body.theme-light .add-supernova-ring {
   position: relative;
   display: block;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
+}
+
+/* Focus ring on shell so overflow:hidden does not clip the 2px glow corners */
+.editor-field-shell:focus-within {
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.editor-field-shell .input:focus,
+.dashboard-server-editor .editor-field-shell .input:focus {
+  box-shadow: none;
 }
 
 .editor-field-shell::after {
   content: "";
   position: absolute;
   inset: 1px;
-  border-radius: 7px;
+  border-radius: calc(var(--radius-sm) - 1px);
   pointer-events: none;
   opacity: 0;
 }
