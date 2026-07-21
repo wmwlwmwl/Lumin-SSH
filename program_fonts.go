@@ -136,6 +136,25 @@ func copyProgramFontFile(sourcePath string, fontsDirectory string) (ProgramFontI
 	return buildProgramFontInfoFromPath(targetPath)
 }
 
+func deleteProgramFontFile(fileName string) error {
+	fontsDirectory, err := ensureProgramFontsDirectory()
+	if err != nil {
+		return err
+	}
+	safeFileName := sanitizeProgramFontFileName(fileName)
+	if safeFileName == "" || safeFileName == "." || !isSupportedProgramFontFile(safeFileName) {
+		return fmt.Errorf("unsupported font file: %s", fileName)
+	}
+	targetPath := filepath.Join(fontsDirectory, safeFileName)
+	if err := os.Remove(targetPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func buildProgramFontDataURL(fileName string) (string, error) {
 	fontsDirectory, err := ensureProgramFontsDirectory()
 	if err != nil {

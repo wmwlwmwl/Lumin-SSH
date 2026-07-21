@@ -9,7 +9,7 @@ import { Sun, Monitor, Moon, Keyboard, Cloud, Info, Database, Folder, X, Refresh
 import { Z } from '../constants/zIndex';
 import { EventsOn, WindowSetSize, WindowUnmaximise } from '../../wailsjs/runtime/runtime.js';
 import { hexToRgb } from '../utils/theme.js';
-import { getProgramFontAssignmentSnapshot, listProgramFonts, selectAndImportProgramFontFiles, setProgramFontPreference } from '../utils/programFonts.js';
+import { deleteProgramFont, getProgramFontAssignmentSnapshot, listProgramFonts, selectAndImportProgramFontFiles, setProgramFontPreference } from '../utils/programFonts.js';
 import { syncWithRecoveryPassword } from '../utils/recoveryPasswordSync.js';
 import AppTab from './settings/AppTab';
 import GeneralTab from './settings/GeneralTab';
@@ -380,6 +380,7 @@ export default function SettingsModal({
   const [programFontSearchQuery, setProgramFontSearchQuery] = useState('');
   const [programFontAssignments, setProgramFontAssignments] = useState(() => getProgramFontAssignmentSnapshot());
   const [programFontImporting, setProgramFontImporting] = useState(false);
+  const [programFontDeleting, setProgramFontDeleting] = useState(false);
   const [activeProgramFontDropTarget, setActiveProgramFontDropTarget] = useState('');
   // Shortcuts state
   const defaultShortcuts = {
@@ -603,6 +604,23 @@ export default function SettingsModal({
       addToast($t('字体导入失败') + ': ' + err, 'error');
     } finally {
       setProgramFontImporting(false);
+    }
+  };
+
+  const handleDeleteProgramFont = async (fileName) => {
+    const normalizedFileName = typeof fileName === 'string' ? fileName.trim() : '';
+    if (!normalizedFileName || programFontDeleting) {
+      return;
+    }
+    setProgramFontDeleting(true);
+    try {
+      await deleteProgramFont(normalizedFileName);
+      await refreshProgramFonts();
+      addToast($t('字体已删除'), 'success');
+    } catch (err) {
+      addToast($t('字体删除失败') + ': ' + err, 'error');
+    } finally {
+      setProgramFontDeleting(false);
     }
   };
 
@@ -1591,6 +1609,8 @@ export default function SettingsModal({
                 onProgramFontSearchQueryChange={setProgramFontSearchQuery}
                 onAddProgramFonts={handleAddProgramFonts}
                 programFontImporting={programFontImporting}
+                programFontDeleting={programFontDeleting}
+                onDeleteProgramFont={(fileName) => { void handleDeleteProgramFont(fileName); }}
                 programFontAssignments={programFontAssignments}
                 onProgramFontDragStart={handleProgramFontDragStart}
                 onProgramFontDragEnd={handleProgramFontDragEnd}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { t as $t } from '../../i18n.js';
-import { Sun, Monitor, Moon } from 'lucide-react';
+import { Sun, Monitor, Moon, Trash2 } from 'lucide-react';
 import { ToggleSwitch } from './SharedComponents';
 
 export default function AppearanceTab({
@@ -9,6 +9,8 @@ export default function AppearanceTab({
   onProgramFontSearchQueryChange,
   onAddProgramFonts,
   programFontImporting,
+  programFontDeleting,
+  onDeleteProgramFont,
   programFontAssignments,
   onProgramFontDragStart,
   onProgramFontDragEnd,
@@ -106,8 +108,8 @@ export default function AppearanceTab({
                       onDragEnd={onProgramFontDragEnd}
                       style={{
                         display: 'flex',
-                        flexDirection: 'column',
-                        gap: 4,
+                        alignItems: 'center',
+                        gap: 8,
                         padding: '10px 12px',
                         borderRadius: 'var(--radius-md)',
                         border: '1px solid var(--border)',
@@ -116,8 +118,26 @@ export default function AppearanceTab({
                         userSelect: 'none',
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{font.displayName}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{font.fileName}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{font.displayName}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{font.fileName}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon"
+                        aria-label={$t('删除字体')}
+                        title={$t('删除字体')}
+                        disabled={!!programFontDeleting}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onDeleteProgramFont?.(font.fileName);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        style={{ flexShrink: 0, color: 'var(--danger)', opacity: programFontDeleting ? 0.5 : 1 }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   ))}
                 </div>

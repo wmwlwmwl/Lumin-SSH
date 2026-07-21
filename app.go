@@ -1612,6 +1612,10 @@ func (a *App) ImportProgramFontFiles(paths []string) ([]ProgramFontInfo, error) 
 	return imported, nil
 }
 
+func (a *App) DeleteProgramFont(fileName string) error {
+	return deleteProgramFontFile(fileName)
+}
+
 func (a *App) GetProgramFontDataURL(fileName string) (string, error) {
 	return buildProgramFontDataURL(fileName)
 }

@@ -167,6 +167,23 @@ export async function selectAndImportProgramFontFiles() {
   return importProgramFontFiles(selectedPaths)
 }
 
+export async function deleteProgramFont(fileName) {
+  const normalizedFileName = typeof fileName === 'string' ? fileName.trim() : ''
+  if (!normalizedFileName) {
+    return getProgramFontAssignmentSnapshot()
+  }
+  await AppGo.DeleteProgramFont(normalizedFileName)
+  invalidateLoadedProgramFont(normalizedFileName)
+  const targets = ['ui', 'terminal', 'ai']
+  for (const target of targets) {
+    if (getStoredProgramFontFileName(target) === normalizedFileName) {
+      setStoredProgramFontFileName(target, '')
+    }
+  }
+  await applyProgramFontPreferences().catch(() => {})
+  return getProgramFontAssignmentSnapshot()
+}
+
 export function getProgramFontAssignmentSnapshot() {
   return normalizeProgramFontAssignments(getResolvedProgramFontPreferences())
 }
