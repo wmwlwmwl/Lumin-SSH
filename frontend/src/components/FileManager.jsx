@@ -885,7 +885,7 @@ function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinne
     <div
       ref={ref}
       className="context-menu"
-      style={{ left: adjusted.left, top: adjusted.top }}
+      style={{ left: adjusted.left, top: adjusted.top, zIndex: Z.MENU }}
     >
       {item && item.isDirectory && (
         <div className="context-menu-item" onClick={onOpenInNewTab}>

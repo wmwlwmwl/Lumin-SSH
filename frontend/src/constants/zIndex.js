@@ -13,9 +13,12 @@ export const Z = {
   // ── Local overlays (loading states, etc.) ──
   COMPONENT_OVERLAY: 50,
 
-  // ── Popup panels ──
+  // ── Popup panels (term history/commands, local floating UI) ──
   POPUP_BACKDROP: 99,
   POPUP: 100,
+
+  // ── Anchored popovers under a high parent (e.g. topbar) ──
+  POPOVER: 150,
 
   // ── Nested context menus ──
   MENU_BACKDROP: 199,
@@ -34,11 +37,15 @@ export const Z = {
   TRAY_PANEL: 8000,
   FULLSCREEN_OVERLAY: 9000,
 
-  // ── Global modals / context menus ──
+  // ── Global modals ──
   MODAL: 9999,
 
-  // ── Absolute top ──
+  // ── Chrome / search / floating editor ──
+  TOPBAR: 10000,
   SEARCH_PANEL: 10000,
   FLOATING_EDITOR: 10001,
   FLOATING_EDITOR_MENU: 10002,
+
+  // ── Absolute top (toasts / system notices) ──
+  TOAST: 10003,
 };

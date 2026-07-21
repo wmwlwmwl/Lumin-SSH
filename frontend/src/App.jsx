@@ -6332,7 +6332,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       {/* ── 云端同步失败弹窗 ──────────────────────────── */}
       {syncFailed && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 1100,
+          position: 'fixed', bottom: 24, right: 24, zIndex: Z.TOAST,
           width: 380, background: 'var(--surface-raised)',
           border: '1px solid var(--border)',
           boxShadow: 'var(--shadow-md)',

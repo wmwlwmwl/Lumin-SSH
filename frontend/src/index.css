@@ -321,7 +321,7 @@ textarea:focus:not(:focus-visible) {
   --wails-draggable: drag;
   flex-shrink: 0;
   position: relative;
-  z-index: 10000;
+  z-index: 10000; /* Z.TOPBAR */
 }
 
 .topbar-content {
@@ -706,7 +706,7 @@ input::-ms-clear {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 9999; /* Z.MODAL — must outrank terminal/panels/menus */
   animation: fadeIn 0.12s ease;
 }
 
@@ -1146,7 +1146,7 @@ input::-ms-clear {
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  z-index: 10001;
+  z-index: 10001; /* above topbar chrome when portaled */
 }
 
 .tiptop-bubble-bottom {
@@ -2576,7 +2576,7 @@ body.theme-light .batch-operation-bar {
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
   padding: var(--space-1);
-  z-index: 2000;
+  z-index: 200; /* Z.MENU — below global modals / floating editor */
   min-width: 160px;
   animation: contextMenuIn 0.12s ease;
   transform-origin: top left;
@@ -2616,7 +2616,7 @@ body.theme-light .batch-operation-bar {
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
   box-shadow: var(--shadow-md);
-  z-index: 3000;
+  z-index: 10003; /* Z.TOAST */
   min-width: 260px;
   animation: slideUp 0.2s ease;
 }
@@ -3445,7 +3445,7 @@ body.theme-light .editor-field-shell.editor-field-shell-shine::after {
   position: fixed;
   top: calc(var(--topbar-h) + var(--space-3));
   right: var(--space-5);
-  z-index: 9999;
+  z-index: 10003; /* Z.TOAST */
   display: flex;
   flex-direction: column;
   pointer-events: none;
@@ -4250,7 +4250,7 @@ body.theme-light .dashboard-server-editor {
 /* ── 标签右键菜单 ───────────────────────────────────────────── */
 .tab-context-menu {
   position: fixed;
-  z-index: 10000;
+  z-index: 200; /* Z.MENU */
   background: var(--surface-overlay);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -4497,7 +4497,7 @@ body.theme-light .dashboard-server-editor {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  z-index: 100;
+  z-index: 100; /* Z.POPUP — below menus/modals/file editor */
 }
 .term-popup-backdrop {
   position: fixed;

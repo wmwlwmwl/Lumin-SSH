@@ -2504,7 +2504,7 @@ export default function Terminal({
             border: 'var(--term-context-border)',
             borderRadius: '8px',
             boxShadow: 'var(--term-context-shadow)',
-            zIndex: Z.MODAL,
+            zIndex: Z.MENU,
             padding: '4px 0',
             minWidth: '190px',
             fontFamily: 'var(--font-ui)',
@@ -2546,7 +2546,7 @@ export default function Terminal({
             style={{
               position: 'fixed',
               inset: 0,
-              zIndex: Z.MODAL - 1,
+              zIndex: Z.MENU_BACKDROP,
               background: 'transparent',
               cursor: 'default',
             }}
@@ -2572,7 +2572,7 @@ export default function Terminal({
               border: 'var(--term-context-border)',
               borderRadius: '8px',
               boxShadow: 'var(--term-context-shadow)',
-              zIndex: Z.MODAL,
+              zIndex: Z.MENU,
               padding: '4px 0',
               minWidth: '200px',
               maxWidth: '360px',
@@ -2630,7 +2630,7 @@ export default function Terminal({
             borderRadius: 8,
             padding: '6px 12px',
             fontSize: 12,
-            zIndex: Z.MODAL,
+            zIndex: Z.POPUP,
             pointerEvents: 'none',
             boxShadow: 'var(--term-context-shadow)',
           }}
