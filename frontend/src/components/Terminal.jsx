@@ -49,7 +49,8 @@ function getTerminalBufferSnapshotText(term) {
 }
 
 // 手写 URL 规则（不依赖 addon-web-links）；provider 负责点击，覆盖层负责常驻下划线
-const TERMINAL_URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~\[\]`()<>]/;
+// 排除 ; | 等 shell 分隔符，避免 curl ...sh;else 把后续命令粘进链接
+const TERMINAL_URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`;]*[^\s"':,.!?{}|\\^~\[\]`()<>;]/;
 
 function isTerminalHttpUrl(urlString) {
   try {
@@ -82,6 +83,44 @@ function getTerminalInputStartLine(term) {
 }
 
 /**
+ * 一行 buffer → 文本 + 每个字符对应的 0-based 列。
+ * 宽字符（CJK/emoji 等）占 2 列，不能用字符串下标当列号，否则高亮会整体偏左。
+ * 行为对齐 translateToString(true)：跳过 width=0 的占位格，并去掉行尾空白。
+ */
+function lineToTextAndCols(line) {
+  if (!line) return { text: '', colAt: [], widthAt: [] };
+  let text = '';
+  const colAt = [];
+  const widthAt = [];
+  const len = line.length;
+  let col = 0;
+  while (col < len) {
+    const cell = line.getCell(col);
+    if (!cell) break;
+    const w = cell.getWidth();
+    if (w === 0) {
+      col += 1;
+      continue;
+    }
+    const chars = cell.getChars() || ' ';
+    const advance = w > 0 ? w : 1;
+    for (let i = 0; i < chars.length; i += 1) {
+      text += chars[i];
+      colAt.push(col);
+      widthAt.push(advance);
+    }
+    col += advance;
+  }
+  let end = text.length;
+  while (end > 0 && text[end - 1] === ' ') end -= 1;
+  return {
+    text: text.slice(0, end),
+    colAt: colAt.slice(0, end),
+    widthAt: widthAt.slice(0, end),
+  };
+}
+
+/**
  * 取含 bufferLine0 的逻辑行各段（处理 isWrapped 换行 URL）。
  * isWrapped=true 表示本行是上一行的续行。
  */
@@ -98,7 +137,8 @@ function getLogicalLineSegments(term, bufferLine0) {
   for (;;) {
     const line = buf.getLine(y);
     if (!line) break;
-    segs.push({ y0: y, text: line.translateToString(true) });
+    const mapped = lineToTextAndCols(line);
+    segs.push({ y0: y, text: mapped.text, colAt: mapped.colAt, widthAt: mapped.widthAt });
     const next = buf.getLine(y + 1);
     if (!next?.isWrapped) break;
     y += 1;
@@ -106,17 +146,29 @@ function getLogicalLineSegments(term, bufferLine0) {
   return segs;
 }
 
-/** joined 串 0-based 下标 → buffer 1-based 列/行 */
-function joinedIndexToPos(segs, index) {
+/**
+ * joined 串 0-based 下标 → buffer 1-based 列/行。
+ * edge='start'：该字符起始列（1-based）；edge='end'：该字符占用的末列（1-based 含），
+ * 供下划线绘制 endCol = end.x 使用（与单宽时「末字符 1-based 列」一致，宽字符覆盖两列）。
+ */
+function joinedIndexToPos(segs, index, edge = 'start') {
+  if (!segs.length) return { x: 1, y: 1 };
   let rem = index;
   for (const seg of segs) {
     if (rem < seg.text.length) {
-      return { x: rem + 1, y: seg.y0 + 1 };
+      const col0 = seg.colAt[rem] ?? rem;
+      const w = seg.widthAt[rem] ?? 1;
+      const x = edge === 'end' ? col0 + w : col0 + 1;
+      return { x: Math.max(1, x), y: seg.y0 + 1 };
     }
     rem -= seg.text.length;
   }
   const last = segs[segs.length - 1];
-  return { x: Math.max(1, last.text.length), y: last.y0 + 1 };
+  if (!last.text.length) return { x: 1, y: last.y0 + 1 };
+  const lastIdx = last.text.length - 1;
+  const col0 = last.colAt[lastIdx] ?? lastIdx;
+  const w = last.widthAt[lastIdx] ?? 1;
+  return { x: Math.max(1, col0 + w), y: last.y0 + 1 };
 }
 
 /**
@@ -136,8 +188,8 @@ function findTerminalHttpLinksOnLine(term, bufferLineNumber) {
   while ((match = rex.exec(joined))) {
     const value = match[0];
     if (!isTerminalHttpUrl(value)) continue;
-    const start = joinedIndexToPos(segs, match.index);
-    const end = joinedIndexToPos(segs, match.index + value.length - 1);
+    const start = joinedIndexToPos(segs, match.index, 'start');
+    const end = joinedIndexToPos(segs, match.index + value.length - 1, 'end');
     links.push({ text: value, range: { start, end } });
   }
   return links;
