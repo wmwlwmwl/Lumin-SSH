@@ -4,7 +4,6 @@ import App from './App.jsx';
 import { initializeI18n, t } from './i18n.js';
 import { AlertTriangle } from 'lucide-react';
 import './index.css';
-import { hexToRgb } from './utils/theme.js';
 import { applyProgramFontPreferences } from './utils/programFonts.js';
 
 // 全局错误边界，防止渲染错误导致白屏
@@ -46,9 +45,8 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// Load initial theme and accent color
+// Load initial theme
 const savedTheme = localStorage.getItem('themeMode') || 'dark';
-const savedAccent = localStorage.getItem('themeAccent') || '#10b981';
 
 const isSystemLight = window.matchMedia('(prefers-color-scheme: light)').matches;
 const applyLight = savedTheme === 'light' || (savedTheme === 'system' && isSystemLight);
@@ -56,13 +54,6 @@ if (applyLight) {
   document.body.classList.add('theme-light');
 } else {
   document.body.classList.remove('theme-light');
-}
-
-// Ensure the accent color is overridden
-const useCustomAccent = localStorage.getItem('useCustomAccent') === 'true';
-if (useCustomAccent) {
-  document.body.style.setProperty('--accent', savedAccent);
-  document.body.style.setProperty('--accent-rgb', hexToRgb(savedAccent));
 }
 
 // 禁用浏览器默认右键菜单（完全拦截，以便使用统一的自定义玻璃菜单）

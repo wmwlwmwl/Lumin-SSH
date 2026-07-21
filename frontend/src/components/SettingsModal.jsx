@@ -8,7 +8,6 @@ import { useUpdateChecker } from '../hooks/useUpdateChecker.js';
 import { Sun, Monitor, Moon, Keyboard, Cloud, Info, Database, Folder, X, RefreshCw, Globe, Palette, Lock, SlidersHorizontal } from 'lucide-react';
 import { Z } from '../constants/zIndex';
 import { EventsOn, WindowSetSize, WindowUnmaximise } from '../../wailsjs/runtime/runtime.js';
-import { hexToRgb } from '../utils/theme.js';
 import { deleteProgramFont, getProgramFontAssignmentSnapshot, listProgramFonts, selectAndImportProgramFontFiles, setProgramFontPreference } from '../utils/programFonts.js';
 import { syncWithRecoveryPassword } from '../utils/recoveryPasswordSync.js';
 import AppTab from './settings/AppTab';
@@ -370,8 +369,6 @@ export default function SettingsModal({
 
   // Appearance state
   const [themeMode, setThemeMode] = useState(localStorage.getItem('themeMode') || 'dark');
-  const [themeAccent, setThemeAccent] = useState(localStorage.getItem('themeAccent') || '#10b981');
-  const [useCustomAccent, setUseCustomAccent] = useState(localStorage.getItem('useCustomAccent') === 'true');
   const [language, setLanguage] = useState(localStorage.getItem('appLanguage') || 'zh-CN');
   const [terminalFontSize, setTerminalFontSize] = useState(parseInt(localStorage.getItem('terminalFontSize') || '13', 10));
   const [termBgImage, setTermBgImage] = useState(localStorage.getItem('termBgImage') || '');
@@ -487,29 +484,6 @@ export default function SettingsModal({
     setShowThemeQuickEntry(next);
     localStorage.setItem('showThemeQuickEntry', String(next));
     window.dispatchEvent(new CustomEvent('theme-quick-entry-changed'));
-  };
-
-  const handleColorChange = (color) => {
-    setThemeAccent(color);
-    localStorage.setItem('themeAccent', color);
-    if (useCustomAccent) {
-      document.body.style.setProperty('--accent', color);
-      document.body.style.setProperty('--accent-rgb', hexToRgb(color));
-    }
-  };
-
-  const handleToggleAccent = () => {
-    const nextVal = !useCustomAccent;
-    setUseCustomAccent(nextVal);
-    localStorage.setItem('useCustomAccent', String(nextVal));
-    if (nextVal) {
-      document.body.style.setProperty('--accent', themeAccent);
-      document.body.style.setProperty('--accent-rgb', hexToRgb(themeAccent));
-    } else {
-      document.body.style.setProperty('--accent', null);
-      document.body.style.setProperty('--accent-rgb', null);
-    }
-    addToast(nextVal ? $t('已启用自定义强调色') : $t('已恢复默认强调色'), 'success');
   };
 
   const handleLanguageChange = async (e) => {
@@ -1639,10 +1613,6 @@ export default function SettingsModal({
                 onToggleThemeQuickEntry={handleToggleThemeQuickEntry}
                 probePanelPosition={probePanelPosition}
                 onProbePanelPositionChange={onProbePanelPositionChange}
-                themeAccent={themeAccent}
-                onColorChange={handleColorChange}
-                useCustomAccent={useCustomAccent}
-                onToggleAccent={handleToggleAccent}
                 termBgImage={termBgImage}
                 onTermBgUpload={handleTermBgUpload}
                 onTermBgReset={handleTermBgReset}

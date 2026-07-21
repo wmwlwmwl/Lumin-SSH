@@ -1671,13 +1671,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     };
     applyTheme();
 
-    const useCustomAccent = localStorage.getItem('useCustomAccent') === 'true';
-    const themeAccent = localStorage.getItem('themeAccent');
-    if (useCustomAccent && themeAccent) {
-      document.body.style.setProperty('--accent', themeAccent);
-      document.body.style.setProperty('--accent-rgb', hexToRgb(themeAccent));
-    }
-
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     mq.addEventListener('change', applyTheme);
     return () => mq.removeEventListener('change', applyTheme);
@@ -4278,50 +4271,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       });
     }
   }, [activeSessionId]);
-
-  // ── Quick Connect ──────────────────────────────────────────
-  const handleQuickConnect = useCallback(() => {
-    if (!searchQuery.trim()) return;
-
-    // Check if it matches an existing server name or host
-    const existing = servers.find(s => 
-      s.name.toLowerCase() === searchQuery.toLowerCase() || 
-      s.host === searchQuery
-    );
-
-    if (existing) {
-      connectServer(existing);
-      setSearchQuery('');
-      return;
-    }
-
-    // Attempt to parse ssh string: [user@]host[:port]
-    let user = 'root';
-    let host = searchQuery.trim();
-    let port = 22;
-
-    if (host.includes('@')) {
-      const parts = host.split('@');
-      user = parts[0];
-      host = parts[1];
-    }
-    
-    if (host.includes(':')) {
-      const parts = host.split(':');
-      host = parts[0];
-      port = parseInt(parts[1], 10) || 22;
-    }
-
-    setServerEditor({
-      name: host,
-      host,
-      port,
-      username: user,
-      authMode: 'password'
-    });
-    setSearchQuery('');
-
-  }, [searchQuery, servers, connectServer]);
 
   // ── Server CRUD ────────────────────────────────────────────
   const saveServerConfig = useCallback(async (data) => {

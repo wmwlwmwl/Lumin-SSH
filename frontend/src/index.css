@@ -3860,7 +3860,7 @@ body.theme-light .editor-mode-banner {
 .toggle-track.on .toggle-thumb { left: 18px; }
 
 /* ============================================================
-   仪表盘与闪电连接面板
+   仪表盘
    ============================================================ */
 .dashboard-container {
   display: flex;

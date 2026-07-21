@@ -39,8 +39,8 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 - **Terminal Timestamps** — Optional per-line timestamps (xterm markers stay aligned with scrollback)
 - **Sensitive Info Toggle** — One-click hide/show passwords, private keys
 
-### Dashboard & Quick Connect
-- **Quick Connect** — Enter host, port, user, password/key and connect instantly — no pre-configuration needed
+### Dashboard
+- **Inline Server Editor** — Always-on left panel to add/edit a host, with Save or Save & Connect
 - **Grid/Table Views** — Toggle between card grid and table layout
 - **Search & Filter** — Real-time search by server name, host, tags
 - **Smart Latency Detection** — **SSH Banner RTT** (proxy-aware, recommended with Clash/V2Ray) and **TCP Dial** protocols
@@ -48,10 +48,10 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 - **Tab Overflow Dropdown** — Excess server tabs collapse into a searchable dropdown list
 
 ### Server Management
-- **Auto-Save** — Quick-connected servers are automatically saved after successful connection
+- **Save & Connect** — Add a server and open an SSH session in one step
 - **Clone Server** — Right-click to clone any server with all configuration (passwords, keys included)
 - **Import/Export** — The host list toolbar's data management entry lets you export all or selected connections (plus referenced credentials and proxy nodes) as **plaintext JSON** or **encrypted .lumin2**; encrypted export can reuse the recovery password or a custom password; import auto-detects plaintext JSON and `.lumin2`, and prompts for a password on failure; provides an import template download for easy batch entry and cross-machine migration
-- **Duplicate Detection** — Detects host+port+username duplicates on add/edit/clone/quick connect
+- **Duplicate Detection** — Detects host+port+username duplicates on add/edit/clone
 - **Group Management** — Organize servers into groups, move between groups, filter by group
 - **OS Icon Recognition** — Auto-detects major distros (Ubuntu, Debian, CentOS, RHEL, Rocky, Alma, Fedora, Arch, NixOS, Alpine, openEuler, TencentOS, Windows, macOS, and more) plus role tags
 - **Credential Management** — Centralized reusable credentials (password/key) that auto-update across all referencing servers
@@ -115,7 +115,7 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 - **Built-in MCP Server** — Toggleable Streamable HTTP MCP server exposing SSH sessions to external AI tools
 - **MCP Client Management** — Add external MCP servers (**stdio / SSE / Streamable HTTP**), inspect tools and resources, and configure enablement, reload, restart, removal, and timeouts
 - **AI Agent Panel** — In-session panel showing MCP server URL, available tools list, and connection guide
-- **Visibility Control** — Toggle AI panel on/off in Settings (default: off)
+- **Visibility Control** — Expand/collapse the AI assistant panel on the session page (default: on; preference is remembered)
 - **Terminal Isolation** — Create independent AI panels and runtime sessions per terminal
 - **AI Command Terminal Assignment** — Assign chat commands to specific terminals with candidate status and readiness indicators
 - **Terminal Output Limits** — Configurable max lines and characters for MCP terminal reads
@@ -158,7 +158,6 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 ### Visual & Themes
 - **Dark/Light Themes** — System-follow auto-switching
 - **Minimal Compact UI** — Neutral blue-gray surfaces with unified buttons, tabs, tables, and modals
-- **Custom Accent Colors** — 10 preset color options
 - **4 Terminal Color Themes** — Lumin Default, Tokyo Night, Catppuccin, Dracula (each with dark/light variants)
 - **Font Manager** — Import, search, and delete `.ttf` / `.otf` / `.ttc` / `.woff` / `.woff2` fonts and assign them independently to the UI, terminal, and AI panel
 - **Custom Terminal Wallpaper** — Upload background images with adjustable opacity
@@ -194,8 +193,8 @@ Lumin is a desktop SSH client for developers and system administrators. Built wi
 ### First Run
 1. Download the latest `Lumin.exe` (or platform build) from [Releases](https://github.com/wmwlwmwl/Lumin-SSH/releases)
 2. Run the executable — config directory is auto-created at `%APPDATA%\Lumin\config\` (see table below for macOS / Linux)
-3. Click **Quick Connect** on Dashboard to enter host, port, username, and password/key — automatically saved to server list after connection
-4. Or click **Add Server** to open the full form with proxy, initial paths, and more options
+3. Fill host, port, username, and password/key on the Dashboard left panel, then **Save** or **Save & Connect**
+4. Or use **Add** in the host list for group, proxy, initial paths, and other options
 
 ### Daily Workflow
 - **Connect** — Double-click a server card or right-click → Connect
@@ -268,7 +267,7 @@ Lumin provides a comprehensive settings panel organized in tabs:
 | **Network** | Ping protocol (SSH Banner RTT / TCP Dial) and enablement, probe & ping refresh intervals, proxy node management |
 | **File Manager** | Follow terminal CWD, compressed transfer, transfer queue, tab icons, chmod defaults, initial/new-tab paths, download save & conflict strategy, upload concurrency/chunk settings |
 | **Runtime Environment** | Install/detect `uv` and related runtime deps (built-in Kimi / some MCP needs) |
-| **Appearance** | Font manager, terminal font size, local echo, timestamps, color theme, UI theme, theme quick entry, probe position, accent colors, terminal wallpaper, window size memory |
+| **Appearance** | Font manager, terminal font size, local echo, timestamps, color theme, UI theme, theme quick entry, probe position, terminal wallpaper, window size memory |
 | **Shortcuts** | All terminal operation shortcut rebinding |
 | **Sync & Cloud** | WebDAV / R2 / FTP / SFTP, recovery password, retention, and auto-sync strategy |
 | **About** | Version info, update check, community links |

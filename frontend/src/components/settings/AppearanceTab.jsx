@@ -26,8 +26,6 @@ export default function AppearanceTab({
   themeMode, onThemeChange,
   showThemeQuickEntry, onToggleThemeQuickEntry,
   probePanelPosition, onProbePanelPositionChange,
-  themeAccent, onColorChange,
-  useCustomAccent, onToggleAccent,
   termBgImage, onTermBgUpload, onTermBgReset,
   termBgOpacity, onTermBgOpacityChange,
   rememberWindowSize, onToggleRememberWindowSize, onResetWindowSize,
@@ -345,28 +343,6 @@ export default function AppearanceTab({
               <button className={`btn btn-sm ${probePanelPosition === 'left' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onProbePanelPositionChange('left')} style={{ borderRadius: 'var(--radius-xl)', background: probePanelPosition === 'left' ? 'var(--surface-sunken)' : 'transparent' }}>{$t('左侧')}</button>
               <button className={`btn btn-sm ${probePanelPosition === 'right' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onProbePanelPositionChange('right')} style={{ borderRadius: 'var(--radius-xl)', background: probePanelPosition === 'right' ? 'var(--surface-sunken)' : 'transparent' }}>{$t('右侧')}</button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('强调色')}</h3>
-        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('使用自定义强调色')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('覆盖主题自带的强调色')}</div>
-            </div>
-            <ToggleSwitch checked={useCustomAccent} onChange={onToggleAccent} />
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {['#3b82f6','#8b5cf6','#d946ef','#f43f5e','#f97316','#eab308','#84cc16','#10b981','#06b6d4','#64748b'].map((color, i) => (
-              <div key={i} onClick={() => onColorChange(color)} style={{
-                width: 24, height: 24, borderRadius: '50%', background: color, cursor: 'pointer',
-                border: themeAccent === color ? '2px solid #fff' : 'none',
-                boxShadow: themeAccent === color ? `0 0 0 2px ${color}` : 'none'
-              }} />
-            ))}
           </div>
         </div>
       </div>
