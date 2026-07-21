@@ -15,8 +15,6 @@ function SettingRow({ title, description, action }) {
 }
 
 export default function FileManagerTab({
-  fileManagerFollowTerminalCwd,
-  onToggleFileManagerFollowTerminalCwd,
   fileManagerCompressedTransfer,
   onToggleFileManagerCompressedTransfer,
   fileManagerAutoOpenTransferQueue,
@@ -59,12 +57,6 @@ export default function FileManagerTab({
       <div>
         <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('偏好设置')}</h3>
         <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-          <SettingRow
-            title={$t('文件管理器跟随终端目录')}
-            description={$t('终端 cd 切换目录时自动同步文件管理器路径')}
-            action={<ToggleSwitch checked={fileManagerFollowTerminalCwd} onChange={onToggleFileManagerFollowTerminalCwd} />}
-          />
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <SettingRow
             title={$t('压缩传输')}
             description={$t('多文件或文件夹上传时先在本机打包为 tar.gz，上传后远端自动解压')}

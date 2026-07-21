@@ -77,14 +77,30 @@ function normalizeFileManagerTabPath(path) {
   return parts.length > 0 ? `/${parts.join('/')}` : '/';
 }
 
+function getFileManagerSystemPinnedType(tab) {
+  if (String(tab?.systemPinnedType || '').trim() === 'cwd') {
+    return 'cwd';
+  }
+  if (tab?.systemPinned === true) {
+    return 'home';
+  }
+  return '';
+}
+
 function sortFileManagerTabs(tabs) {
-  const systemPinnedTabs = [];
+  const homeSystemPinnedTabs = [];
+  const cwdSystemPinnedTabs = [];
   const pinnedTabs = [];
   const normalTabs = [];
   (Array.isArray(tabs) ? tabs : []).forEach((tab) => {
     if (!tab || typeof tab !== 'object') return;
-    if (tab.systemPinned === true) {
-      systemPinnedTabs.push(tab);
+    const systemPinnedType = getFileManagerSystemPinnedType(tab);
+    if (systemPinnedType === 'home') {
+      homeSystemPinnedTabs.push(tab);
+      return;
+    }
+    if (systemPinnedType === 'cwd') {
+      cwdSystemPinnedTabs.push(tab);
       return;
     }
     if (tab.pinned === true) {
@@ -93,7 +109,7 @@ function sortFileManagerTabs(tabs) {
     }
     normalTabs.push(tab);
   });
-  return [...systemPinnedTabs, ...pinnedTabs, ...normalTabs];
+  return [...homeSystemPinnedTabs, ...cwdSystemPinnedTabs, ...pinnedTabs, ...normalTabs];
 }
 
 function normalizeFileManagerWorkspaceState(state) {
@@ -108,12 +124,14 @@ function normalizeFileManagerWorkspaceState(state) {
           return {
             id,
             path: normalizeFileManagerTabPath(tab.path),
+            customTitle: typeof tab.customTitle === 'string' ? tab.customTitle.trim() : '',
             sortField: typeof tab.sortField === 'string' ? tab.sortField : 'name',
             sortDir: tab.sortDir === 'desc' ? 'desc' : 'asc',
             selectedPaths: Array.isArray(tab.selectedPaths) ? tab.selectedPaths.filter((item) => typeof item === 'string') : [],
             scrollTop: Number.isFinite(Number(tab.scrollTop)) ? Number(tab.scrollTop) : 0,
             pinned: tab.pinned === true || tab.systemPinned === true,
             systemPinned: tab.systemPinned === true,
+            systemPinnedType: tab.systemPinned === true ? getFileManagerSystemPinnedType(tab) : '',
           };
         })
         .filter(Boolean)

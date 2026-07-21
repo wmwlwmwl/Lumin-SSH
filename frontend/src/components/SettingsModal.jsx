@@ -689,7 +689,6 @@ export default function SettingsModal({
   const [supportsWebviewGpuDisable, setSupportsWebviewGpuDisable] = useState(false);
   const [webviewGpuDisabled, setWebviewGpuDisabled] = useState(false);
   const [programDirectory, setProgramDirectory] = useState('');
-  const [fileManagerFollowTerminalCwd, setFileManagerFollowTerminalCwd] = useState(localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   const [fileManagerCompressedTransfer, setFileManagerCompressedTransfer] = useState(localStorage.getItem('fileManagerCompressedTransfer') !== 'false');
   const [fileManagerAutoOpenTransferQueue, setFileManagerAutoOpenTransferQueue] = useState(localStorage.getItem('fileManagerAutoOpenTransferQueue') !== 'false');
   const [fileManagerShowTabIcons, setFileManagerShowTabIcons] = useState(localStorage.getItem('fileManagerShowTabIcons') !== 'false');
@@ -780,13 +779,6 @@ export default function SettingsModal({
       setWebviewGpuDisabled(!next);
       addToast($t('硬件加速设置保存失败') + `: ${err}`, 'error');
     }
-  };
-  const handleToggleFileManagerFollowTerminalCwd = () => {
-    const next = !fileManagerFollowTerminalCwd;
-    setFileManagerFollowTerminalCwd(next);
-    if (next) localStorage.removeItem('fileManagerFollowTerminalCwd');
-    else localStorage.setItem('fileManagerFollowTerminalCwd', 'false');
-    window.dispatchEvent(new CustomEvent('file-manager-follow-terminal-cwd-changed', { detail: next }));
   };
   const handleToggleFileManagerCompressedTransfer = () => {
     const next = !fileManagerCompressedTransfer;
@@ -1576,8 +1568,6 @@ export default function SettingsModal({
 
             {activeTab === 'fileManager' && (
               <FileManagerTab
-                fileManagerFollowTerminalCwd={fileManagerFollowTerminalCwd}
-                onToggleFileManagerFollowTerminalCwd={handleToggleFileManagerFollowTerminalCwd}
                 fileManagerCompressedTransfer={fileManagerCompressedTransfer}
                 onToggleFileManagerCompressedTransfer={handleToggleFileManagerCompressedTransfer}
                 fileManagerAutoOpenTransferQueue={fileManagerAutoOpenTransferQueue}

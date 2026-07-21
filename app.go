@@ -2272,6 +2272,87 @@ func (a *App) CancelBuiltinProviderInitialization(providerID string) error {
 	return nil
 }
 
+func summarizeWorkspaceStateForLog(jsonStr string) map[string]interface{} {
+	trimmed := strings.TrimSpace(jsonStr)
+	if trimmed == "" {
+		return map[string]interface{}{
+			"hasState": false,
+		}
+	}
+	summary := map[string]interface{}{
+		"hasState": true,
+		"size":     len(trimmed),
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		summary["parseError"] = err.Error()
+		return summary
+	}
+	if value, ok := payload["activeSessionId"].(string); ok {
+		summary["activeSessionId"] = strings.TrimSpace(value)
+	}
+	if value, ok := payload["activeTerminalId"].(string); ok {
+		summary["activeTerminalId"] = strings.TrimSpace(value)
+	}
+	if sessions, ok := payload["sessions"].([]interface{}); ok {
+		summary["sessionCount"] = len(sessions)
+		sessionIds := make([]string, 0, len(sessions))
+		for _, item := range sessions {
+			sessionMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			sessionID, ok := sessionMap["id"].(string)
+			if !ok || strings.TrimSpace(sessionID) == "" {
+				continue
+			}
+			sessionIds = append(sessionIds, strings.TrimSpace(sessionID))
+		}
+		if len(sessionIds) > 0 {
+			summary["sessionIds"] = sessionIds
+		}
+	}
+	if workspaces, ok := payload["fileManagerWorkspaces"].(map[string]interface{}); ok {
+		summary["fileManagerWorkspaceCount"] = len(workspaces)
+		workspaceKeys := make([]string, 0, len(workspaces))
+		workspaceTabs := make(map[string]interface{}, len(workspaces))
+		for key, rawWorkspace := range workspaces {
+			trimmedKey := strings.TrimSpace(key)
+			workspaceKeys = append(workspaceKeys, trimmedKey)
+			workspaceMap, ok := rawWorkspace.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			tabSummary := map[string]interface{}{}
+			if activeTabID, ok := workspaceMap["activeTabId"].(string); ok {
+				tabSummary["activeTabId"] = strings.TrimSpace(activeTabID)
+			}
+			if tabs, ok := workspaceMap["tabs"].([]interface{}); ok {
+				tabSummary["tabCount"] = len(tabs)
+				tabPaths := make([]string, 0, len(tabs))
+				for _, rawTab := range tabs {
+					tabMap, ok := rawTab.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					tabPath, ok := tabMap["path"].(string)
+					if !ok {
+						continue
+					}
+					tabPaths = append(tabPaths, strings.TrimSpace(tabPath))
+				}
+				if len(tabPaths) > 0 {
+					tabSummary["tabPaths"] = tabPaths
+				}
+			}
+			workspaceTabs[trimmedKey] = tabSummary
+		}
+		summary["fileManagerWorkspaceKeys"] = workspaceKeys
+		summary["fileManagerWorkspaceTabs"] = workspaceTabs
+	}
+	return summary
+}
+
 func (a *App) GetLiveWorkspaceState() string {
 	if a == nil {
 		return ""
@@ -2306,7 +2387,8 @@ func (a *App) GetWorkspaceState() string {
 }
 
 func (a *App) SaveWorkspaceState(jsonStr string) error {
-	return a.configManager.SaveWorkspaceState(jsonStr)
+	err := a.configManager.SaveWorkspaceState(jsonStr)
+	return err
 }
 
 func (a *App) GetWorkspaceSessionState(serverId string) string {
@@ -2314,11 +2396,13 @@ func (a *App) GetWorkspaceSessionState(serverId string) string {
 }
 
 func (a *App) SaveWorkspaceSessionState(serverId string, jsonStr string) error {
-	return a.configManager.SaveWorkspaceSessionState(serverId, jsonStr)
+	err := a.configManager.SaveWorkspaceSessionState(serverId, jsonStr)
+	return err
 }
 
 func (a *App) ClearWorkspaceState() error {
-	return a.configManager.ClearWorkspaceState()
+	err := a.configManager.ClearWorkspaceState()
+	return err
 }
 
 // GetParamHistory 获取参数历史

@@ -34,7 +34,7 @@ import ImportExportDialog from './components/ImportExportDialog.jsx';
 import ExportSelectedDialog from './components/ExportSelectedDialog.jsx';
 import Tiptop from './components/Tiptop.jsx';
 import { restoreAIChatTool } from './components/ai/aiChatBridge.js';
-import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket, Copy, Sun, Moon } from 'lucide-react';
+import { Bot, Settings, House, Minus, Square, X, Plus, Monitor, RefreshCw, Folder, ScrollText, Cpu, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Globe, Rocket, Copy, PenLine, Sun, Moon } from 'lucide-react';
 import { Z } from './constants/zIndex';
 
 import logoImg from './assets/logo.png';
@@ -389,6 +389,23 @@ function remapSessionFileManagerWorkspaceMap(workspaces, idMap) {
     next[sourceMap[terminalId] || terminalId] = workspace;
   });
   return next;
+}
+
+function pickSessionFileManagerWorkspaces(session) {
+  const terminalIds = new Set(
+    (session?.terminals || [])
+      .map((terminal) => (typeof terminal?.id === 'string' ? terminal.id.trim() : ''))
+      .filter(Boolean),
+  );
+  if (typeof session?.id === 'string' && session.id.trim()) {
+    terminalIds.add(session.id.trim());
+  }
+  if (terminalIds.size === 0) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(getAllSessionFileManagerWorkspaces()).filter(([terminalId]) => terminalIds.has(String(terminalId || '').trim())),
+  );
 }
 
 function normalizeWorkspaceContentTab(value) {
@@ -2482,7 +2499,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (serverObj) {
       setConnectingServers((prev) => [...prev, { server: serverObj, sessionId: session.id, startTime: Date.now() }]);
     }
-
     try {
       await AppGo.ConnectSSH(session.id, session.serverId);
 
@@ -2502,6 +2518,16 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           label: term.label || `${t('终端')}1`,
         }))
         .filter(term => !!term.id);
+
+      if (!deferState && Object.keys(oldToNew).length > 0) {
+        remapSessionFileManagerWorkspaces(oldToNew);
+        const remappedLayouts = remapTerminalPaneLayouts(terminalPaneLayoutsRef.current, oldToNew, session.id);
+        terminalPaneLayoutsRef.current = remappedLayouts;
+        setTerminalPaneLayouts(remappedLayouts);
+        if (lastTerminalRef.current[session.id] && oldToNew[lastTerminalRef.current[session.id]]) {
+          lastTerminalRef.current[session.id] = oldToNew[lastTerminalRef.current[session.id]];
+        }
+      }
 
       if (!deferState) {
         setSessions((prev) =>
@@ -2676,13 +2702,15 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   // ── 监听 SSH 意外断开事件 ────────────────────────────────────
   useEffect(() => {
     const unbind = EventsOn('ssh-disconnected', (sessionId) => {
+      const sessionList = sessionsRef.current;
+      const matchedSession = sessionList.find((item) => item.id === sessionId)
+        || sessionList.find((item) => item.terminals?.some((terminal) => terminal.id === sessionId))
+        || null;
       setSessions((prev) => {
-        // 检查是否是服务器级别的 session
         const serverSession = prev.find(s => s.id === sessionId);
         if (serverSession) {
           return prev.map((s) => (s.id === sessionId ? { ...s, status: 'closed' } : s));
         }
-        // 检查是否是子终端
         const parent = prev.find(s => s.terminals?.some(t => t.id === sessionId));
         if (parent) {
           return prev.map((s) => (s.id === parent.id ? { ...s, status: 'closed' } : s));
@@ -3041,7 +3069,6 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     const sessionSnapshot = rememberWorkspace && workspacePersistenceLevel === 'session'
       ? await loadServerWorkspaceSessionSnapshot(server.id)
       : null;
-
     const sessionId = `session_${Date.now()}`;
     const newSession = {
       id: sessionId,
@@ -3072,12 +3099,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         const restoredLayouts = remapSessionWorkspaceLayouts(sessionSnapshot.terminalPaneLayouts || {}, result.oldToNew, sessionId);
         const mergedLayouts = { ...terminalPaneLayoutsRef.current, ...restoredLayouts };
         const currentWorkspaces = { ...getAllSessionFileManagerWorkspaces() };
+        const remappedSnapshotWorkspaces = remapSessionFileManagerWorkspaceMap(sessionSnapshot.fileManagerWorkspaces || {}, result.oldToNew);
         Object.keys(sessionSnapshot.fileManagerWorkspaces || {}).forEach((terminalId) => {
           delete currentWorkspaces[terminalId];
         });
         replaceAllSessionFileManagerWorkspaces({
           ...currentWorkspaces,
-          ...remapSessionFileManagerWorkspaceMap(sessionSnapshot.fileManagerWorkspaces || {}, result.oldToNew),
+          ...remappedSnapshotWorkspaces,
         });
         sessionsRef.current = sessionsRef.current.map((item) => (
           item.id === sessionId ? restoredSession : item
@@ -3251,6 +3279,46 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       if (mountedRef.current) setCreatingTerminalSessionId(null);
     }
   }, [addToast, markWorkspaceRestoreNavigationOverride, t]);
+
+  const handleRenameTerminalTab = useCallback(async (sessionId, terminalId) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    const currentTerminals = Array.isArray(session?.terminals) && session.terminals.length > 0
+      ? session.terminals
+      : (session ? [{ id: session.id, label: `${t('终端')}1` }] : []);
+    const targetTerminal = currentTerminals.find((item) => item.id === terminalId);
+    if (!session || !targetTerminal) {
+      return;
+    }
+    const currentLabel = String(targetTerminal.label || '').trim() || t('终端');
+    const nextLabel = await window.luminDialog?.prompt(`${t('标签标题')}: ${currentLabel}`);
+    if (nextLabel === null || nextLabel === undefined) {
+      return;
+    }
+    const trimmedLabel = String(nextLabel).trim();
+    if (!trimmedLabel || trimmedLabel === currentLabel) {
+      return;
+    }
+    const nextSessions = sessionsRef.current.map((item) => (
+      item.id === sessionId
+        ? {
+            ...item,
+            terminals: (Array.isArray(item.terminals) && item.terminals.length > 0 ? item.terminals : currentTerminals).map((term) => (
+              term.id === terminalId
+                ? { ...term, label: trimmedLabel }
+                : term
+            )),
+          }
+        : item
+    ));
+    sessionsRef.current = nextSessions;
+    setSessions(nextSessions);
+    persistWorkspaceSnapshotRef.current({
+      sessions: nextSessions,
+      activeSessionId: activeSessionIdRef.current,
+      activeTerminalId: activeTerminalIdRef.current,
+      terminalPaneLayouts: terminalPaneLayoutsRef.current,
+    });
+  }, [t]);
 
   // ── 关闭单个终端标签 ──────────────────────────────────────
   const closeTerminal = useCallback((sessionId, terminalId, e) => {
@@ -3756,7 +3824,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   useEffect(() => {
     let timerId = 0;
-    const handleWorkspaceChange = () => {
+    const handleWorkspaceChange = (event) => {
       if (timerId) {
         window.clearTimeout(timerId);
       }
@@ -6447,6 +6515,18 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 </div>
               );
             })}
+            {terminalTabContextMenu.type === 'terminal' && (
+              <div
+                className="tab-context-menu-item"
+                onClick={() => {
+                  const { sessionId, terminalId } = terminalTabContextMenu;
+                  setTerminalTabContextMenu(null);
+                  void handleRenameTerminalTab(sessionId, terminalId);
+                }}
+              >
+                <PenLine size={14} /> {t('重命名标签标题')}
+              </div>
+            )}
             <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
             <div
               className="tab-context-menu-item"
