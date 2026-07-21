@@ -80,6 +80,61 @@ func sanitizeConnectionProxyConfig(conn *Connection) {
 	}
 }
 
+// normalizeConnectionForSync 同步比较/上传用的连接规范化。
+// 与安卓 Connection.normalizedForSync 对齐：trim 空字段、proxyMode=direct 清掉无意义默认 proxy*，
+// 避免「PC omitempty vs 安卓写 socks5/1080 空串」被 connsEqual 当成真变更。
+func normalizeConnectionForSync(conn Connection) Connection {
+	conn.ID = strings.TrimSpace(conn.ID)
+	conn.Name = strings.TrimSpace(conn.Name)
+	conn.Host = strings.TrimSpace(conn.Host)
+	conn.Username = strings.TrimSpace(conn.Username)
+	conn.Password = strings.TrimSpace(conn.Password)
+	conn.AuthMethod = strings.TrimSpace(conn.AuthMethod)
+	conn.PrivateKey = strings.TrimSpace(conn.PrivateKey)
+	conn.Passphrase = strings.TrimSpace(conn.Passphrase)
+	conn.Group = strings.TrimSpace(conn.Group)
+	conn.Os = strings.TrimSpace(conn.Os)
+	conn.CredentialID = strings.TrimSpace(conn.CredentialID)
+	conn.TerminalInitPath = strings.TrimSpace(conn.TerminalInitPath)
+	conn.FileManagerInitPath = strings.TrimSpace(conn.FileManagerInitPath)
+	sanitizeConnectionProxyConfig(&conn)
+	return conn
+}
+
+// normalizeCredentialForSync 同步比较/上传用的凭据规范化（与安卓 Credential.normalizedForSync 对齐）。
+func normalizeCredentialForSync(cred Credential) Credential {
+	cred.ID = strings.TrimSpace(cred.ID)
+	cred.Name = strings.TrimSpace(cred.Name)
+	cred.AuthMethod = strings.TrimSpace(cred.AuthMethod)
+	cred.Username = strings.TrimSpace(cred.Username)
+	cred.Password = strings.TrimSpace(cred.Password)
+	cred.PrivateKey = strings.TrimSpace(cred.PrivateKey)
+	cred.Passphrase = strings.TrimSpace(cred.Passphrase)
+	return cred
+}
+
+func normalizeConnectionsForSync(conns []Connection) []Connection {
+	if conns == nil {
+		return []Connection{}
+	}
+	out := make([]Connection, len(conns))
+	for i := range conns {
+		out[i] = normalizeConnectionForSync(conns[i])
+	}
+	return out
+}
+
+func normalizeCredentialsForSync(creds []Credential) []Credential {
+	if creds == nil {
+		return []Credential{}
+	}
+	out := make([]Credential, len(creds))
+	for i := range creds {
+		out[i] = normalizeCredentialForSync(creds[i])
+	}
+	return out
+}
+
 func (c *ConfigManager) GetProxyNodes() []ai.AIProxyNode {
 	if c == nil {
 		return nil

@@ -1252,3 +1252,52 @@ func TestInferredDeleteWritesTombstoneSoUploadIsNotEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestConnsEqualNormalizesAndroidDefaultProxyFields(t *testing.T) {
+	// PC omitempty 形态 vs 安卓 historically 写 socks5/1080 空串
+	pc := []Connection{{
+		ID: "1", Name: "s", Host: "h", Port: 22, Username: "u",
+		Password: "p", AuthMethod: "password", ProxyMode: "direct",
+		LastModified: 100,
+	}}
+	android := []Connection{{
+		ID: "1", Name: "s", Host: "h", Port: 22, Username: "u",
+		Password: "p", AuthMethod: "password",
+		PrivateKey: "", Passphrase: "", Group: "", CredentialID: "",
+		ProxyMode: "direct", ProxyNodeID: "", ProxyType: "socks5",
+		ProxyHost: "", ProxyPort: 1080, ProxyUsername: "", ProxyPassword: "",
+		LastModified: 100,
+	}}
+	if !connsEqual(pc, android) {
+		t.Fatal("规范化后 direct 模式下默认 proxy* 不应被视为差异")
+	}
+}
+
+func TestCredsEqualNormalizesEmptyPrivateKey(t *testing.T) {
+	a := []Credential{{ID: "c", Name: "n", AuthMethod: "password", Username: "u", Password: "p", LastModified: 1}}
+	b := []Credential{{ID: "c", Name: "n", AuthMethod: "password", Username: "u", Password: "p", PrivateKey: "", Passphrase: "", LastModified: 1}}
+	if !credsEqual(a, b) {
+		t.Fatal("空 privateKey/passphrase 应与缺失等价")
+	}
+}
+
+func TestQuickCmdsEqualIgnoresExpanded(t *testing.T) {
+	pc := `[{"type":"group","name":"面板安装","expanded":true,"children":[{"name":"宝塔","command":"x","last_modified":1}],"last_modified":1}]`
+	android := `[{"type":"group","name":"面板安装","expanded":false,"children":[{"name":"宝塔","command":"x","last_modified":1}],"last_modified":1}]`
+	if !quickCmdsEqual(pc, android) {
+		t.Fatal("仅 expanded 不同不应视为快捷命令业务变化")
+	}
+	androidDiff := `[{"type":"group","name":"面板安装","expanded":false,"children":[{"name":"宝塔","command":"y","last_modified":1}],"last_modified":1}]`
+	if quickCmdsEqual(pc, androidDiff) {
+		t.Fatal("command 真变更必须检测为不同")
+	}
+}
+
+func TestNormalizeConnectionForSyncClearsDirectProxyDefaults(t *testing.T) {
+	c := normalizeConnectionForSync(Connection{
+		ID: "1", ProxyMode: "direct", ProxyType: "socks5", ProxyPort: 1080,
+	})
+	if c.ProxyType != "" || c.ProxyPort != 0 {
+		t.Fatalf("direct 应清空 proxyType/port, got type=%q port=%d", c.ProxyType, c.ProxyPort)
+	}
+}

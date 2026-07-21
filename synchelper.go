@@ -59,11 +59,12 @@ type SyncSnapshot struct {
 	AIProviders            []ai.AIProviderProfile `json:"ai_providers"`
 	AIGlobalSettings       *ai.AIGlobalSettings   `json:"ai_global_settings"`
 	ProxyNodes             []ai.AIProxyNode       `json:"proxy_nodes"`
-	DeletedConnections     []SyncTombstone        `json:"deleted_connections,omitempty"`
-	DeletedCredentials     []SyncTombstone        `json:"deleted_credentials,omitempty"`
+	// deleted_* 始终写出（含 []），与安卓 desktopSnapshotJson 一致，避免「字段缺失 vs 空数组」语义分叉。
+	DeletedConnections []SyncTombstone `json:"deleted_connections"`
+	DeletedCredentials []SyncTombstone `json:"deleted_credentials"`
 	// TombstonePrunedBefore：清理删除记录水位线。合并时远端 deleted_at 早于此值的墓碑丢弃。
-	TombstonePrunedBefore  int64                  `json:"tombstone_pruned_before,omitempty"`
-	SnapshotTime           int64                  `json:"snapshot_time,omitempty"` // 快照总时间戳（Unix 毫秒），用于判断同步方向
+	TombstonePrunedBefore int64 `json:"tombstone_pruned_before,omitempty"`
+	SnapshotTime          int64 `json:"snapshot_time,omitempty"` // 快照总时间戳（Unix 毫秒），用于判断同步方向
 	HasCredentials         bool                   `json:"-"`
 	HasQuickCommands       bool                   `json:"-"`
 	HasAIProviders         bool                   `json:"-"`
@@ -152,14 +153,16 @@ func connsEqual(a, b []Connection) bool {
 	}
 	m := make(map[string]Connection, len(a))
 	for _, c := range a {
-		m[c.ID] = c
+		n := normalizeConnectionForSync(c)
+		m[n.ID] = n
 	}
 	for _, c := range b {
-		e, ok := m[c.ID]
+		n := normalizeConnectionForSync(c)
+		e, ok := m[n.ID]
 		if !ok {
 			return false
 		}
-		if e != c {
+		if e != n {
 			return false
 		}
 	}
@@ -202,21 +205,23 @@ func snapshotEqual(s1, s2 *SyncSnapshot) bool {
 	return true
 }
 
-// credsEqual 比较两个凭据列表是否内容一致
+// credsEqual 比较两个凭据列表是否内容一致（规范化后，空 privateKey 等与缺失等价）
 func credsEqual(a, b []Credential) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	m := make(map[string]Credential, len(a))
 	for _, c := range a {
-		m[c.ID] = c
+		n := normalizeCredentialForSync(c)
+		m[n.ID] = n
 	}
 	for _, c := range b {
-		e, ok := m[c.ID]
+		n := normalizeCredentialForSync(c)
+		e, ok := m[n.ID]
 		if !ok {
 			return false
 		}
-		if e != c {
+		if e != n {
 			return false
 		}
 	}
@@ -555,9 +560,16 @@ func (c *ConfigManager) localSyncSnapshot() *SyncSnapshot {
 	// 应用水位线：清理后的旧墓碑不应再出现在上传包里
 	conns := filterTombstonesNotBefore(store.Connections, store.PrunedBefore)
 	creds := filterTombstonesNotBefore(store.Credentials, store.PrunedBefore)
+	// 上传包用规范化连接/凭据，避免与安卓默认字段形态互相覆盖造成乒乓
+	if conns == nil {
+		conns = []SyncTombstone{}
+	}
+	if creds == nil {
+		creds = []SyncTombstone{}
+	}
 	return &SyncSnapshot{
-		Connections:              c.GetConnections(),
-		Credentials:              c.GetCredentials(),
+		Connections:              normalizeConnectionsForSync(c.GetConnections()),
+		Credentials:              normalizeCredentialsForSync(c.GetCredentials()),
 		QuickCommands:            c.loadRawFile(c.quickCmdFile),
 		AIProviders:              c.GetAIProviderRegistry().Providers,
 		AIGlobalSettings:         c.localAIGlobalSettingsForSync(),
@@ -603,6 +615,17 @@ func (c *ConfigManager) uploadSnapshot(s RemoteStorage, snap *SyncSnapshot, pass
 				),
 				pb,
 			)
+		}
+	}
+	if snap != nil {
+		// 上传线格式稳定：规范化连接/凭据；墓碑 nil → [] 始终写出
+		snap.Connections = normalizeConnectionsForSync(snap.Connections)
+		snap.Credentials = normalizeCredentialsForSync(snap.Credentials)
+		if snap.DeletedConnections == nil {
+			snap.DeletedConnections = []SyncTombstone{}
+		}
+		if snap.DeletedCredentials == nil {
+			snap.DeletedCredentials = []SyncTombstone{}
 		}
 	}
 	data, err := json.MarshalIndent(snap, "", "  ")
@@ -2439,7 +2462,30 @@ func cmdLastModified(m map[string]interface{}) int64 {
 	return int64(v)
 }
 
-// quickCmdsEqual JSON 语义比较（忽略 key 顺序），避免前端 JSON.stringify 和 Go json.MarshalIndent 的 key 排序差异导致误判
+// stripQuickExpanded 递归去掉快捷命令树里的 expanded（纯 UI 折叠态，不应驱动云同步乒乓）。
+func stripQuickExpanded(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(t))
+		for k, val := range t {
+			if k == "expanded" {
+				continue
+			}
+			out[k] = stripQuickExpanded(val)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, val := range t {
+			out[i] = stripQuickExpanded(val)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// quickCmdsEqual JSON 语义比较（忽略 key 顺序与 expanded），避免前端/安卓序列化差异导致误判
 func quickCmdsEqual(a, b string) bool {
 	if a == b {
 		return true
@@ -2451,6 +2497,8 @@ func quickCmdsEqual(a, b string) bool {
 	if err := json.Unmarshal([]byte(b), &vb); err != nil {
 		return false
 	}
+	va = stripQuickExpanded(va)
+	vb = stripQuickExpanded(vb)
 	da, _ := json.Marshal(va)
 	db, _ := json.Marshal(vb)
 	return string(da) == string(db)
