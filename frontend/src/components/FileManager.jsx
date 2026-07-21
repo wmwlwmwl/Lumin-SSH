@@ -1373,11 +1373,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             : (currentPathHydratedRef.current && !preserveWorkspacePathRef.current ? currentPathRef.current : tab.path);
           const normalizedTabPath = normalizePath(tab.path) || '/';
           const normalizedNextPath = normalizePath(nextPath) || '/';
-          // 仅用户固定标签锁定路径；系统固定标签需跟随终端 cwd
-          const isUserPinned = tab.pinned === true && tab.systemPinned !== true;
           return {
             ...tab,
-            path: isUserPinned && normalizedNextPath !== normalizedTabPath ? tab.path : normalizedNextPath,
+            path: tab.pinned === true && normalizedNextPath !== normalizedTabPath ? tab.path : normalizedNextPath,
             sortField: overrides.sortField ?? sortFieldRef.current,
             sortDir: overrides.sortDir ?? sortDirRef.current,
             selectedPaths: Array.isArray(overrides.selectedPaths) ? overrides.selectedPaths : selectedPathsRef.current,
@@ -1924,10 +1922,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       ? currentWorkspace.tabs.find((tab) => tab.id === targetTabId)
       : null;
     const normalizedTargetWorkspaceTabPath = normalizePath(targetWorkspaceTab?.path) || '/';
-    // 用户固定标签：切换路径时开新标签；系统固定标签原地切换（含终端 cwd 同步）
     if (
       targetWorkspaceTab?.pinned === true
-      && targetWorkspaceTab?.systemPinned !== true
       && normalizedPath !== normalizedTargetWorkspaceTabPath
       && typeof openFileManagerPathInNewTabRef.current === 'function'
     ) {
