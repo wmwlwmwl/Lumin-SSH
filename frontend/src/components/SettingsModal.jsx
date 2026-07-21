@@ -692,6 +692,7 @@ export default function SettingsModal({
   const [fileManagerCompressedTransfer, setFileManagerCompressedTransfer] = useState(localStorage.getItem('fileManagerCompressedTransfer') !== 'false');
   const [fileManagerAutoOpenTransferQueue, setFileManagerAutoOpenTransferQueue] = useState(localStorage.getItem('fileManagerAutoOpenTransferQueue') !== 'false');
   const [fileManagerShowTabIcons, setFileManagerShowTabIcons] = useState(localStorage.getItem('fileManagerShowTabIcons') !== 'false');
+  const [fileManagerHideTabCloseButton, setFileManagerHideTabCloseButton] = useState(localStorage.getItem('fileManagerHideTabCloseButton') === 'true');
   const [fileManagerInitialPathMode, setFileManagerInitialPathMode] = useState(localStorage.getItem('fileManagerInitialPathMode') || 'session_initial_path');
   const [fileManagerNewTabPathMode, setFileManagerNewTabPathMode] = useState(localStorage.getItem('fileManagerNewTabPathMode') || 'inherit_current');
   const [fileManagerAskDownloadEveryTime, setFileManagerAskDownloadEveryTime] = useState(localStorage.getItem('fileManagerAskDownloadEveryTime') === 'true');
@@ -804,6 +805,13 @@ export default function SettingsModal({
     if (next) localStorage.removeItem('fileManagerShowTabIcons');
     else localStorage.setItem('fileManagerShowTabIcons', 'false');
     window.dispatchEvent(new CustomEvent('file-manager-show-tab-icons-changed', { detail: next }));
+  };
+  const handleToggleFileManagerHideTabCloseButton = () => {
+    const next = !fileManagerHideTabCloseButton;
+    setFileManagerHideTabCloseButton(next);
+    if (next) localStorage.setItem('fileManagerHideTabCloseButton', 'true');
+    else localStorage.removeItem('fileManagerHideTabCloseButton');
+    window.dispatchEvent(new CustomEvent('file-manager-hide-tab-close-button-changed', { detail: next }));
   };
   const handleFileManagerInitialPathModeChange = (value) => {
     setFileManagerInitialPathMode(value);
@@ -1575,6 +1583,8 @@ export default function SettingsModal({
                 onToggleFileManagerAutoOpenTransferQueue={handleToggleFileManagerAutoOpenTransferQueue}
                 fileManagerShowTabIcons={fileManagerShowTabIcons}
                 onToggleFileManagerShowTabIcons={handleToggleFileManagerShowTabIcons}
+                fileManagerHideTabCloseButton={fileManagerHideTabCloseButton}
+                onToggleFileManagerHideTabCloseButton={handleToggleFileManagerHideTabCloseButton}
                 fileManagerChmodAutoApplyLastSettings={fileManagerChmodAutoApplyLastSettings}
                 onToggleFileManagerChmodAutoApplyLastSettings={handleToggleFileManagerChmodAutoApplyLastSettings}
                 fileManagerInitialPathMode={fileManagerInitialPathMode}

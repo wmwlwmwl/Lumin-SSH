@@ -197,6 +197,10 @@ function shouldShowFileManagerTabIcons() {
   return localStorage.getItem('fileManagerShowTabIcons') !== 'false';
 }
 
+function shouldHideFileManagerTabCloseButton() {
+  return localStorage.getItem('fileManagerHideTabCloseButton') === 'true';
+}
+
 function createFileManagerTab(path = '', options = {}) {
   fileManagerTabSequence += 1;
   return {
@@ -1084,6 +1088,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const [followTerminalCwd, setFollowTerminalCwd] = useState(() => localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   useEffect(() => { followTerminalCwdRef.current = followTerminalCwd; }, [followTerminalCwd]);
   const [showFileManagerTabIcons, setShowFileManagerTabIcons] = useState(() => shouldShowFileManagerTabIcons());
+  const [hideFileManagerTabCloseButton, setHideFileManagerTabCloseButton] = useState(() => shouldHideFileManagerTabCloseButton());
   useEffect(() => {
     const handleChange = (e) => setFollowTerminalCwd(e.detail !== false);
     window.addEventListener('file-manager-follow-terminal-cwd-changed', handleChange);
@@ -1093,6 +1098,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const handleChange = (e) => setShowFileManagerTabIcons(e.detail !== false);
     window.addEventListener('file-manager-show-tab-icons-changed', handleChange);
     return () => window.removeEventListener('file-manager-show-tab-icons-changed', handleChange);
+  }, []);
+  useEffect(() => {
+    const handleChange = (e) => setHideFileManagerTabCloseButton(e.detail === true);
+    window.addEventListener('file-manager-hide-tab-close-button-changed', handleChange);
+    return () => window.removeEventListener('file-manager-hide-tab-close-button-changed', handleChange);
   }, []);
   useEffect(() => {
     if (!sessionId || !currentPathHydratedRef.current || !isActive) return;
@@ -4863,7 +4873,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                 >
                   <span>{getFileManagerTabLabel(tab.path, t)}</span>
                 </Tiptop>
-                {fileManagerWorkspace.tabs.length > 1 && !isPinnedTab && (
+                {!hideFileManagerTabCloseButton && fileManagerWorkspace.tabs.length > 1 && !isPinnedTab && (
                   <span
                     className="terminal-sub-tab-close"
                     onClick={(event) => { void handleCloseFileManagerTab(tab.id, event); }}
@@ -5162,7 +5172,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           isPinned={contextMenu.mode === 'tab' && contextMenu.tabPinned === true}
           isSystemPinned={contextMenu.mode === 'tab' && contextMenu.tabSystemPinned === true}
           canTogglePinned={contextMenu.mode === 'tab' && contextMenu.tabSystemPinned !== true}
-          canCloseTab={contextMenu.mode === 'tab' && contextMenu.tabPinned !== true && fileManagerWorkspace.tabs.length > 1}
+          canCloseTab={contextMenu.mode === 'tab' && contextMenu.tabPinned !== true && fileManagerWorkspace.tabs.length > 1 && !hideFileManagerTabCloseButton}
           showCreateActions={Boolean(contextMenu.showCreateActions)}
           deleteItemCount={Number.isFinite(Number(contextMenu.deleteItemCount)) ? Number(contextMenu.deleteItemCount) : 1}
           t={t}

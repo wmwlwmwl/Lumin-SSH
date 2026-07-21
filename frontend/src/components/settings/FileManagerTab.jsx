@@ -23,6 +23,8 @@ export default function FileManagerTab({
   onToggleFileManagerAutoOpenTransferQueue,
   fileManagerShowTabIcons,
   onToggleFileManagerShowTabIcons,
+  fileManagerHideTabCloseButton,
+  onToggleFileManagerHideTabCloseButton,
   fileManagerChmodAutoApplyLastSettings,
   onToggleFileManagerChmodAutoApplyLastSettings,
   fileManagerInitialPathMode,
@@ -79,6 +81,12 @@ export default function FileManagerTab({
             title={$t('显示文件资源管理器标签页目录图标')}
             description={$t('关闭后只隐藏目录图标,仍显示置顶图标')}
             action={<ToggleSwitch checked={fileManagerShowTabIcons} onChange={onToggleFileManagerShowTabIcons} />}
+          />
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <SettingRow
+            title={$t('文件资源管理器不显示关闭图标按钮')}
+            description={$t('开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭')}
+            action={<ToggleSwitch checked={fileManagerHideTabCloseButton} onChange={onToggleFileManagerHideTabCloseButton} />}
           />
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <SettingRow
