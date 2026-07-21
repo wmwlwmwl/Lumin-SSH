@@ -1,15 +1,19 @@
-import { Check, Pin, SquarePen } from 'lucide-react';
+import { Check, Copy, Pin, SquarePen } from 'lucide-react';
 import { useTranslation } from '../../i18n.js';
 import Tiptop from '../Tiptop.jsx';
 
-function IconButton({ title, active = false, onClick, children }) {
+function IconButton({ title, active = false, disabled = false, onClick, children }) {
   return (
     <Tiptop text={title}>
       <button
         type="button"
         aria-label={title}
+        aria-disabled={disabled}
         onClick={(event) => {
           event.stopPropagation();
+          if (disabled) {
+            return;
+          }
           onClick?.();
         }}
         style={{
@@ -24,6 +28,8 @@ function IconButton({ title, active = false, onClick, children }) {
           color: active ? 'var(--accent)' : 'var(--text-muted)',
           transition: 'var(--transition)',
           flexShrink: 0,
+          opacity: disabled ? 0.45 : 1,
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
         {children}
@@ -32,7 +38,7 @@ function IconButton({ title, active = false, onClick, children }) {
   );
 }
 
-export default function AIProviderListRow({ item, active = false, builtin = false, onSelect, onEdit, onTogglePin }) {
+export default function AIProviderListRow({ item, active = false, builtin = false, onSelect, onCopy, onEdit, onTogglePin }) {
   const { t } = useTranslation()
   const secondaryLabel = item.model || item.description || 'Compatible'
 
@@ -84,6 +90,9 @@ export default function AIProviderListRow({ item, active = false, builtin = fals
             <Pin size={13} />
           </IconButton>
         ) : null}
+        <IconButton title={t('复制供应商')} disabled={builtin} onClick={onCopy}>
+          <Copy size={13} />
+        </IconButton>
         <IconButton title={t('编辑供应商')} onClick={onEdit}>
           <SquarePen size={13} />
         </IconButton>

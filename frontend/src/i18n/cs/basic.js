@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Použít vlastní:{value}",
   "暂无可用模型": "Zatím nejsou k dispozici žádné modely",
   "供应商列表": "Seznam dodavatelů",
+  "复制供应商": "Kopírovat dodavatele",
   "添加供应商": "Přidat dodavatele",
   "搜索...": "vyhledávání...",
   "输入框与用户消息只显示": "Zobrazují se pouze vstupní pole a uživatelské zprávy",

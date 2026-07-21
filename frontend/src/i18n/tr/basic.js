@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Özel kullan:{value}",
   "暂无可用模型": "Henüz model mevcut değil",
   "供应商列表": "Tedarikçi listesi",
+  "复制供应商": "Tedarikçiyi kopyala",
   "添加供应商": "Tedarikçi ekle",
   "搜索...": "aramak...",
   "输入框与用户消息只显示": "Giriş kutuları ve kullanıcı mesajları yalnızca görüntülenir",

@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Gunakan khusus:{value}",
   "暂无可用模型": "Belum ada model yang tersedia",
   "供应商列表": "Daftar pemasok",
+  "复制供应商": "Salin pemasok",
   "添加供应商": "Tambahkan pemasok",
   "搜索...": "mencari...",
   "输入框与用户消息只显示": "Kotak masukan dan pesan pengguna hanya ditampilkan",

@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Utiliser personnalisé :{value}",
   "暂无可用模型": "Aucun modèle disponible pour l'instant",
   "供应商列表": "Liste des fournisseurs",
+  "复制供应商": "Fournisseur de copie",
   "添加供应商": "Ajouter un fournisseur",
   "搜索...": "recherche...",
   "输入框与用户消息只显示": "Les zones de saisie et les messages utilisateur sont uniquement affichés",

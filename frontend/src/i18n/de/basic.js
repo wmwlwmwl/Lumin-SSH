@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Verwenden Sie benutzerdefiniert:{value}",
   "暂无可用模型": "Noch keine Modelle verfügbar",
   "供应商列表": "Lieferantenliste",
+  "复制供应商": "Lieferant kopieren",
   "添加供应商": "Lieferant hinzufügen",
   "搜索...": "suchen...",
   "输入框与用户消息只显示": "Eingabefelder und Benutzermeldungen werden nur angezeigt",

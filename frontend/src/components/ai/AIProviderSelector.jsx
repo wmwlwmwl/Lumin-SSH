@@ -125,6 +125,11 @@ function getApiKeyPreview(value) {
   return nextValue.length <= 12 ? nextValue : nextValue.slice(-12)
 }
 
+function buildProviderCopyName(t, provider) {
+  const baseName = typeof provider?.name === 'string' && provider.name.trim() ? provider.name.trim() : t('未命名供应商')
+  return `${baseName}${t('副本')}`
+}
+
 function sortProviders(items) {
   const locale = getLanguage() || 'zh-CN'
   return [...items].sort((left, right) => {
@@ -843,6 +848,17 @@ export default function AIProviderSelector({
     setEditingState({ open: true, mode, provider })
   }
 
+  const handleCopyProvider = (provider) => {
+    if (!provider || isBuiltinAIProvider(provider)) {
+      return
+    }
+    handleOpenEditor('create', {
+      ...provider,
+      id: '',
+      name: buildProviderCopyName(t, provider),
+    })
+  }
+
   const handleSelectProvider = async (providerId) => {
     setOpen(false)
     setModelMenuOpen(false)
@@ -1118,6 +1134,7 @@ export default function AIProviderSelector({
           builtin={isBuiltinAIProvider(item)}
           active={item.id === effectiveSelectedId}
           onSelect={() => handleSelectProvider(item.id)}
+          onCopy={() => handleCopyProvider(item)}
           onEdit={() => handleOpenEditor('edit', item)}
           onTogglePin={() => handleTogglePin(item)}
         />

@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Gebruik aangepast:{value}",
   "暂无可用模型": "Nog geen modellen beschikbaar",
   "供应商列表": "Leverancierslijst",
+  "复制供应商": "Kopieer leverancier",
   "添加供应商": "Leverancier toevoegen",
   "搜索...": "zoekopdracht...",
   "输入框与用户消息只显示": "Invoervakken en gebruikersberichten worden alleen weergegeven",

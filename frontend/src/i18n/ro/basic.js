@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Utilizați personalizat:{value}",
   "暂无可用模型": "Nu există încă modele disponibile",
   "供应商列表": "Lista furnizorilor",
+  "复制供应商": "Furnizor de copiere",
   "添加供应商": "Adăugați furnizorul",
   "搜索...": "căutare...",
   "输入框与用户消息只显示": "Casetele de introducere și mesajele utilizatorului sunt afișate numai",

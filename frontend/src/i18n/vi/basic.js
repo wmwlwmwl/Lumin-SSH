@@ -1113,6 +1113,7 @@ export default {
   "使用自定义模型": "Sử dụng tùy chỉnh:{value}",
   "暂无可用模型": "Chưa có mẫu nào",
   "供应商列表": "Danh sách nhà cung cấp",
+  "复制供应商": "Sao chép nhà cung cấp",
   "添加供应商": "Thêm nhà cung cấp",
   "搜索...": "tìm kiếm...",
   "输入框与用户消息只显示": "Hộp nhập và tin nhắn người dùng chỉ được hiển thị",
