@@ -885,7 +885,7 @@ function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinne
     <div
       ref={ref}
       className="context-menu"
-      style={{ left: adjusted.left, top: adjusted.top }}
+      style={{ left: adjusted.left, top: adjusted.top, zIndex: Z.MENU }}
     >
       {item && item.isDirectory && (
         <div className="context-menu-item" onClick={onOpenInNewTab}>
@@ -1727,6 +1727,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   }, [sessionId]);
   const [editorMode, setEditorMode] = useState(() => localStorage.getItem('fileEditorMode') || 'modal');
   const [editorSplitPosition, setEditorSplitPosition] = useState(() => localStorage.getItem('editorSplitPosition') || 'right');
+  const [externalOpening, setExternalOpening] = useState(false);
   const setTransferInfo = useCallback(() => {}, []);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -2867,6 +2868,31 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     };
   }, [abortActiveUploadsForSession, t]);
 
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    const offSynced = EventsOn('external-edit-synced', (payload = {}) => {
+      if (payload.sessionId !== sessionId) return;
+      const remotePath = payload.remotePath || '';
+      addToast(`${t('外部编辑已同步到远程')}${remotePath ? `: ${remotePath}` : ''}`, 'success');
+      // Refresh in-memory editor buffer if the same file is open internally.
+      if (remotePath && openEditFilesRef.current.some((f) => f.path === remotePath)) {
+        AppGo.ReadFile(sessionId, remotePath)
+          .then((content) => {
+            setOpenEditFiles((prev) => prev.map((f) => (f.path === remotePath ? { ...f, content } : f)));
+          })
+          .catch(() => {});
+      }
+    });
+    const offError = EventsOn('external-edit-error', (payload = {}) => {
+      if (payload.sessionId !== sessionId) return;
+      addToast(`${t('外部编辑同步失败')}: ${payload.error || ''}`, 'error');
+    });
+    return () => {
+      offSynced?.();
+      offError?.();
+    };
+  }, [sessionId, addToast, t]);
+
   const handleSelectedFiles = useCallback(async (e) => {
     const rawSelectedFiles = Array.from(e.target.files || []);
     console.log('[FileManager][click upload] input files', {
@@ -3101,6 +3127,76 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
   }, [sessionId, sessionGroupId, currentPath, addToast, t, getDefaultDownloadDir, getDownloadConflictSettings, resolvePromptDownloadConflict, openTransferQueueIfNeeded]);
 
+  const rememberExternalEditorPath = useCallback((path) => {
+    const cleaned = String(path || '').trim();
+    if (!cleaned) return;
+    localStorage.setItem('fileEditorPreferredApp', cleaned);
+    let recent = [];
+    try {
+      recent = JSON.parse(localStorage.getItem('fileEditorRecentApps') || '[]');
+    } catch {
+      recent = [];
+    }
+    if (!Array.isArray(recent)) recent = [];
+    recent = [cleaned, ...recent.filter((item) => item !== cleaned)].slice(0, 5);
+    localStorage.setItem('fileEditorRecentApps', JSON.stringify(recent));
+  }, []);
+
+  const openExternalEditor = useCallback(async (remotePath, content, editorPath = '') => {
+    if (!sessionId || !remotePath) return false;
+    setExternalOpening(true);
+    try {
+      if (editorPath) {
+        await AppGo.OpenRemoteFileWithEditor(sessionId, remotePath, content || '', editorPath);
+        rememberExternalEditorPath(editorPath);
+        addToast(t('已用外部编辑器打开'), 'success');
+      } else {
+        await AppGo.OpenRemoteFileInSystemEditor(sessionId, remotePath, content || '');
+        addToast(t('已用系统编辑器打开'), 'success');
+      }
+      return true;
+    } catch (err) {
+      addToast(`${t('打开外部编辑器失败')}: ${err}`, 'error');
+      return false;
+    } finally {
+      setExternalOpening(false);
+    }
+  }, [sessionId, addToast, t, rememberExternalEditorPath]);
+
+  const handleOpenSystemEditor = useCallback(async (file, content) => {
+    if (!file?.path) return;
+    await openExternalEditor(file.path, content ?? file.content ?? '');
+  }, [openExternalEditor]);
+
+  // forcePick=true：始终弹出选择框；false：有记忆路径则直接打开（对齐 electerm）
+  const handleOpenWithEditor = useCallback(async (file, content, forcePick = false) => {
+    if (!file?.path) return;
+    try {
+      let editorPath = '';
+      if (!forcePick) {
+        editorPath = (localStorage.getItem('fileEditorPreferredApp') || '').trim();
+      }
+      if (!editorPath) {
+        editorPath = await AppGo.SelectExternalEditor();
+        if (!editorPath) {
+          addToast(t('未选择编辑器'), 'warning');
+          return;
+        }
+      }
+      const ok = await openExternalEditor(file.path, content ?? file.content ?? '', editorPath);
+      // 记忆路径失效时，自动再选一次
+      if (!ok && !forcePick && (localStorage.getItem('fileEditorPreferredApp') || '').trim()) {
+        localStorage.removeItem('fileEditorPreferredApp');
+        const nextPath = await AppGo.SelectExternalEditor();
+        if (nextPath) {
+          await openExternalEditor(file.path, content ?? file.content ?? '', nextPath);
+        }
+      }
+    } catch (err) {
+      addToast(`${t('打开外部编辑器失败')}: ${err}`, 'error');
+    }
+  }, [openExternalEditor, addToast, t]);
+
   // Open file editor
   const handleEdit = async (item) => {
     const remotePath = joinPath(currentPath, item.name);
@@ -3146,6 +3242,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   // 关闭单个文件
   const closeEditFile = (path) => {
+    if (sessionId && path) {
+      AppGo.StopExternalEdit(sessionId, path).catch(() => {});
+    }
     const prev = openEditFilesRef.current;
     const next = prev.filter(f => f.path !== path);
     setOpenEditFiles(next);
@@ -3159,6 +3258,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   // 关闭所有文件
   const closeAllEditFiles = () => {
+    const prev = openEditFilesRef.current;
+    if (sessionId) {
+      prev.forEach((file) => {
+        if (file?.path) AppGo.StopExternalEdit(sessionId, file.path).catch(() => {});
+      });
+    }
     setOpenEditFiles([]);
     setActiveEditPath(null);
   };
@@ -5148,6 +5253,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             isActive={isActive}
             workbenchSessionId={sessionGroupId}
             workbenchOwnerId={sessionId}
+            onOpenSystemEditor={handleOpenSystemEditor}
+            onOpenWithEditor={handleOpenWithEditor}
+            externalOpening={externalOpening}
           />
         </Suspense>
       )}

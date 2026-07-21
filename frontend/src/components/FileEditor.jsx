@@ -15,10 +15,23 @@ import { xml } from '@codemirror/lang-xml';
 import { sql } from '@codemirror/lang-sql';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
-import { X, Pencil, Save, SquarePen, Upload } from 'lucide-react';
+import { X, Pencil, Save, SquarePen, Upload, ExternalLink, AppWindow } from 'lucide-react';
 import { Z } from '../constants/zIndex';
 import { getSessionWorkbenchState, setSessionWorkbenchState, subscribeSessionWorkbenchState } from '../utils/fileWorkbench.js';
 import Tiptop from './Tiptop.jsx';
+
+const EXTERNAL_PREFERRED_APP_KEY = 'fileEditorPreferredApp';
+
+function readPreferredExternalApp() {
+  return (localStorage.getItem(EXTERNAL_PREFERRED_APP_KEY) || '').trim();
+}
+
+function preferredExternalAppLabel(path) {
+  if (!path) return '';
+  const normalized = path.replace(/\\/g, '/');
+  const base = normalized.split('/').pop() || path;
+  return base.replace(/\.exe$/i, '').replace(/\.app$/i, '');
+}
 
 // Debian sources.list 语法高亮
 const debianList = StreamLanguage.define({
@@ -127,6 +140,9 @@ export default function FileEditor({
   isActive = true,
   workbenchSessionId = '',
   workbenchOwnerId = '',
+  onOpenSystemEditor,
+  onOpenWithEditor,
+  externalOpening = false,
 }) {
   const { t } = useTranslation();
   const C = getTerminalTheme().container;
@@ -135,6 +151,17 @@ export default function FileEditor({
   const [editedContents, setEditedContents] = useState({});
   const [saving, setSaving] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [preferredExternalApp, setPreferredExternalApp] = useState(() => readPreferredExternalApp());
+
+  useEffect(() => {
+    const refreshPreferred = () => setPreferredExternalApp(readPreferredExternalApp());
+    window.addEventListener('storage', refreshPreferred);
+    window.addEventListener('focus', refreshPreferred);
+    return () => {
+      window.removeEventListener('storage', refreshPreferred);
+      window.removeEventListener('focus', refreshPreferred);
+    };
+  }, []);
 
   // 打开文件时自动恢复
   useEffect(() => {
@@ -499,22 +526,44 @@ export default function FileEditor({
   // 编辑器核心内容
   const editorContent = (
     <>
-      {/* Header */}
+      {/* Header：最小化/关闭固定右上角；操作行加大右 padding，避免与保存重叠 */}
       <div
-        className="modal-header"
+        className="modal-header file-editor-toolbar"
         style={{
-          paddingBottom: 8,
           cursor: mode === 'popup' ? 'move' : 'default',
+          display: 'flex',
           flexWrap: 'wrap',
+          alignItems: 'center',
           gap: 8,
-          padding: mode === 'split' ? '8px 56px 4px 12px' : '20px 64px 0 24px',
+          rowGap: 6,
+          // 非 split：最小化+关闭；split：仅关闭。留足空隙不压住保存
+          padding: mode === 'split' ? '8px 40px 6px 12px' : '16px 72px 8px 16px',
           position: 'relative',
+          minWidth: 0,
         }}
         onMouseDown={mode === 'popup' ? startPopupDrag : undefined}
       >
-        <div className="modal-title" style={{ flexShrink: 0, minWidth: 0 }}>
+        <div
+          className="modal-title"
+          style={{
+            flex: '1 1 140px',
+            minWidth: 0,
+            maxWidth: '100%',
+            overflow: 'hidden',
+          }}
+        >
           <SquarePen size={14} style={{ flexShrink: 0 }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14 }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 13,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+            }}
+            title={activeFile ? activeFile.name : t('编辑器')}
+          >
             {activeFile ? activeFile.name : t('编辑器')}
           </span>
           {isModified && (
@@ -525,12 +574,23 @@ export default function FileEditor({
               padding: '2px 8px',
               borderRadius: 4,
               fontWeight: 500,
+              flexShrink: 0,
             }}>
               {t('未保存')}
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            flex: '1 1 auto',
+            flexWrap: 'wrap',
+            gap: 6,
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            minWidth: 0,
+          }}
+        >
           <span style={{
             fontSize: 11,
             color: 'var(--text-tertiary)',
@@ -538,40 +598,160 @@ export default function FileEditor({
             background: 'var(--surface-sunken)',
             padding: '2px 8px',
             borderRadius: 4,
+            flexShrink: 0,
           }}>
             {ext || 'text'}
           </span>
 
-          {/* 分栏位置选择（仅在 split 模式显示） */}
           {mode === 'split' && (
-            <select
-              className="btn btn-ghost btn-sm"
-              value={splitPosition}
-              onChange={(e) => onSplitPositionChange && onSplitPositionChange(e.target.value)}
-              style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', border: 'none', background: 'var(--surface-overlay)', color: 'var(--text-primary)', borderRadius: 6 }}
-            >
-              <option value="left">{t('左侧分栏')}</option>
-              <option value="right">{t('右侧分栏')}</option>
-              <option value="bottom">{t('底部分栏')}</option>
-            </select>
+            <Tiptop text={t('分栏位置')} placement="bottom">
+              <select
+                className="btn btn-ghost btn-sm"
+                value={splitPosition}
+                onChange={(e) => onSplitPositionChange && onSplitPositionChange(e.target.value)}
+                aria-label={t('分栏位置')}
+                style={{
+                  padding: '4px 6px',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: 'var(--surface-overlay)',
+                  color: 'var(--text-primary)',
+                  borderRadius: 6,
+                  flexShrink: 0,
+                }}
+              >
+                <option value="left">{t('左侧分栏')}</option>
+                <option value="right">{t('右侧分栏')}</option>
+                <option value="bottom">{t('底部分栏')}</option>
+              </select>
+            </Tiptop>
           )}
 
-          <select
-            className="btn btn-ghost btn-sm"
-            value={mode}
-            onChange={(e) => onModeChange && onModeChange(e.target.value)}
-            style={{ padding: '4px 6px', fontSize: 11, cursor: 'pointer', border: 'none', background: 'var(--surface-overlay)', color: 'var(--text-primary)', borderRadius: 6 }}
+          <Tiptop text={t('编辑模式')} placement="bottom">
+            <select
+              className="btn btn-ghost btn-sm"
+              value={mode}
+              onChange={(e) => onModeChange && onModeChange(e.target.value)}
+              aria-label={t('编辑模式')}
+              style={{
+                padding: '4px 6px',
+                fontSize: 11,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'var(--surface-overlay)',
+                color: 'var(--text-primary)',
+                borderRadius: 6,
+                flexShrink: 0,
+              }}
+            >
+              <option value="modal">{t('全屏弹窗')}</option>
+              <option value="popup">{t('浮动面板')}</option>
+              <option value="split">{t('分栏编辑')}</option>
+            </select>
+          </Tiptop>
+
+          <Tiptop text={t('使用系统编辑器')} placement="bottom">
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={!activeFile || externalOpening || !onOpenSystemEditor}
+              onClick={() => onOpenSystemEditor?.(activeFile, currentContent)}
+              aria-label={t('使用系统编辑器')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 8px',
+                fontSize: 11,
+                flexShrink: 0,
+                maxWidth: '100%',
+              }}
+            >
+              <ExternalLink size={13} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {t('使用系统编辑器')}
+              </span>
+            </button>
+          </Tiptop>
+
+          <Tiptop
+            text={preferredExternalApp
+              ? `${t('用已记住的编辑器打开')} (${preferredExternalAppLabel(preferredExternalApp)})`
+              : t('用…编辑')}
+            placement="bottom"
           >
-            <option value="modal">{t('全屏弹窗')}</option>
-            <option value="popup">{t('浮动面板')}</option>
-            <option value="split">{t('分栏编辑')}</option>
-          </select>
-          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || !isModified}>
-            {saving ? t('保存中...') : <><Save size={13} /> {t('保存')}</>}
-          </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={!activeFile || externalOpening || !onOpenWithEditor}
+              onClick={() => {
+                onOpenWithEditor?.(activeFile, currentContent, false);
+                setTimeout(() => setPreferredExternalApp(readPreferredExternalApp()), 0);
+              }}
+              aria-label={preferredExternalApp
+                ? `${t('用已记住的编辑器打开')} (${preferredExternalAppLabel(preferredExternalApp)})`
+                : t('用…编辑')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 8px',
+                fontSize: 11,
+                flexShrink: 0,
+                maxWidth: preferredExternalApp ? 110 : undefined,
+                minWidth: 0,
+              }}
+            >
+              <AppWindow size={13} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                {preferredExternalApp
+                  ? `${t('用')} ${preferredExternalAppLabel(preferredExternalApp)}`
+                  : t('用…编辑')}
+              </span>
+            </button>
+          </Tiptop>
+
+          {preferredExternalApp && (
+            <Tiptop text={t('更换外部编辑器')} placement="bottom">
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={!activeFile || externalOpening || !onOpenWithEditor}
+                onClick={() => {
+                  onOpenWithEditor?.(activeFile, currentContent, true);
+                  setTimeout(() => setPreferredExternalApp(readPreferredExternalApp()), 0);
+                }}
+                aria-label={t('更换外部编辑器')}
+                style={{ padding: '4px 8px', fontSize: 11, flexShrink: 0 }}
+              >
+                {t('更换…')}
+              </button>
+            </Tiptop>
+          )}
+
+          <Tiptop text={saving ? t('保存中...') : t('保存')} placement="bottom">
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleSave}
+              disabled={saving || !isModified}
+              aria-label={t('保存')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                padding: '4px 10px',
+                fontSize: 11,
+                flexShrink: 0,
+                minHeight: 28,
+              }}
+            >
+              <Save size={13} style={{ flexShrink: 0 }} />
+              {saving ? t('保存中...') : t('保存')}
+            </button>
+          </Tiptop>
         </div>
+
         {mode !== 'split' && (
-          <Tiptop text={t('最小化')} placement="bottom" style={{ position: 'absolute', top: 8, right: 28, zIndex: Z.PANEL_BUTTON }}>
+          <Tiptop text={t('最小化')} placement="bottom" style={{ position: 'absolute', top: 8, right: 36, zIndex: Z.PANEL_BUTTON }}>
             <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setMinimized(true)} aria-label={t('最小化')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
@@ -811,12 +991,14 @@ export default function FileEditor({
     );
   }
 
-  // modal mode (default)
-  return (
-    <div className="modal-overlay" onContextMenu={handleContextMenu}>
+  // modal mode (default) — portal to body so file-manager stacking context cannot bury the editor
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="modal-overlay" style={{ zIndex: Z.MODAL }} onContextMenu={handleContextMenu}>
       <div className="modal modal-xl" style={{ display: 'flex', flexDirection: 'column', maxHeight: '90vh', marginTop: 48 }}>
         {editorContent}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
