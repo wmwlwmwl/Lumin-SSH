@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Laden Sie den Ordner lokal herunter",
   "在新标签页打开": "In neuem Tab öffnen",
   "关闭标签": "Tab schließen",
+  "重命名标签标题": "Benennen Sie den Etikettentitel um",
+  "标签标题": "Tag-Titel",
   "固定": "behoben",
   "取消固定": "Lösen",
   "双击关闭标签,长按拖拽调整": "Doppelklicken Sie, um die Beschriftung zu schließen, und halten Sie sie gedrückt und ziehen Sie, um sie anzupassen",

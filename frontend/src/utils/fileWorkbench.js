@@ -108,6 +108,7 @@ function normalizeFileManagerWorkspaceState(state) {
           return {
             id,
             path: normalizeFileManagerTabPath(tab.path),
+            customTitle: typeof tab.customTitle === 'string' ? tab.customTitle.trim() : '',
             sortField: typeof tab.sortField === 'string' ? tab.sortField : 'name',
             sortDir: tab.sortDir === 'desc' ? 'desc' : 'asc',
             selectedPaths: Array.isArray(tab.selectedPaths) ? tab.selectedPaths.filter((item) => typeof item === 'string') : [],

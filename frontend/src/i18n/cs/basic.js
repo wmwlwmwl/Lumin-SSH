@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Stáhněte složku do místního",
   "在新标签页打开": "Otevřít na nové kartě",
   "关闭标签": "zavřít kartu",
+  "重命名标签标题": "Přejmenujte název štítku",
+  "标签标题": "Název značky",
   "固定": "opraveno",
   "取消固定": "Odepnout",
   "双击关闭标签,长按拖拽调整": "Dvojitým kliknutím štítek zavřete, dlouhým stisknutím a přetažením upravíte",

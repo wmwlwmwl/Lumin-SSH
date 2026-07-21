@@ -2373,11 +2373,6 @@ func (a *App) SetLiveWorkspaceState(jsonStr string) error {
 	a.liveWorkspaceStateMu.Lock()
 	a.liveWorkspaceState = trimmed
 	a.liveWorkspaceStateMu.Unlock()
-	emitRemoteLogEvent("workspace_reconnect_debug", map[string]interface{}{
-		"module":  "app",
-		"phase":   "set_live_workspace_state",
-		"summary": summarizeWorkspaceStateForLog(trimmed),
-	})
 	return nil
 }
 
@@ -2393,12 +2388,6 @@ func (a *App) GetWorkspaceState() string {
 
 func (a *App) SaveWorkspaceState(jsonStr string) error {
 	err := a.configManager.SaveWorkspaceState(jsonStr)
-	emitRemoteLogEvent("workspace_reconnect_debug", map[string]interface{}{
-		"module":  "app",
-		"phase":   "save_workspace_state",
-		"error":   remoteLogErrorString(err),
-		"summary": summarizeWorkspaceStateForLog(jsonStr),
-	})
 	return err
 }
 
@@ -2408,23 +2397,11 @@ func (a *App) GetWorkspaceSessionState(serverId string) string {
 
 func (a *App) SaveWorkspaceSessionState(serverId string, jsonStr string) error {
 	err := a.configManager.SaveWorkspaceSessionState(serverId, jsonStr)
-	emitRemoteLogEvent("workspace_reconnect_debug", map[string]interface{}{
-		"module":   "app",
-		"phase":    "save_workspace_session_state",
-		"serverId": strings.TrimSpace(serverId),
-		"error":    remoteLogErrorString(err),
-		"summary":  summarizeWorkspaceStateForLog(jsonStr),
-	})
 	return err
 }
 
 func (a *App) ClearWorkspaceState() error {
 	err := a.configManager.ClearWorkspaceState()
-	emitRemoteLogEvent("workspace_reconnect_debug", map[string]interface{}{
-		"module": "app",
-		"phase":  "clear_workspace_state",
-		"error":  remoteLogErrorString(err),
-	})
 	return err
 }
 

@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Download de map naar lokaal",
   "在新标签页打开": "Openen in nieuw tabblad",
   "关闭标签": "tabblad sluiten",
+  "重命名标签标题": "Hernoem de labeltitel",
+  "标签标题": "Tagtitel",
   "固定": "vast",
   "取消固定": "Losmaken",
   "双击关闭标签,长按拖拽调整": "Dubbelklik om het label te sluiten, houd ingedrukt en sleep om aan te passen",

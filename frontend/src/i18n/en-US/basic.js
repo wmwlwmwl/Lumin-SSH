@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Download Folder",
   "在新标签页打开": "Open in new tab",
   "关闭标签": "close tab",
+  "重命名标签标题": "Rename label title",
+  "标签标题": "Tag title",
   "固定": "fixed",
   "取消固定": "Unpin",
   "双击关闭标签,长按拖拽调整": "Double-click to close the label, long-press and drag to adjust",

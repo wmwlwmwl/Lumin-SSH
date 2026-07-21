@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Klasörü yerele indirin",
   "在新标签页打开": "Yeni sekmede aç",
   "关闭标签": "sekmeyi kapat",
+  "重命名标签标题": "Etiket başlığını yeniden adlandırın",
+  "标签标题": "Etiket başlığı",
   "固定": "sabit",
   "取消固定": "Sabitlemeyi kaldır",
   "双击关闭标签,长按拖拽调整": "Etiketi kapatmak için çift tıklayın, ayarlamak için uzun basın ve sürükleyin",

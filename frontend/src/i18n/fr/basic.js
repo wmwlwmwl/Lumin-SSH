@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Téléchargez le dossier en local",
   "在新标签页打开": "Ouvrir dans un nouvel onglet",
   "关闭标签": "fermer l'onglet",
+  "重命名标签标题": "Renommer le titre de l'étiquette",
+  "标签标题": "Titre de la balise",
   "固定": "fixé",
   "取消固定": "Détacher",
   "双击关闭标签,长按拖拽调整": "Double-cliquez pour fermer l'étiquette, appuyez longuement et faites glisser pour ajuster",

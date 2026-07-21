@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Descargar la carpeta a local",
   "在新标签页打开": "Abrir en nueva pestaña",
   "关闭标签": "cerrar pestaña",
+  "重命名标签标题": "Cambiar el nombre del título de la etiqueta",
+  "标签标题": "Título de la etiqueta",
   "固定": "fijado",
   "取消固定": "Desprender",
   "双击关闭标签,长按拖拽调整": "Haga doble clic para cerrar la etiqueta, mantenga presionada y arrastre para ajustar",

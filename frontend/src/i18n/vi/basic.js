@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Tải thư mục về cục bộ",
   "在新标签页打开": "Mở trong tab mới",
   "关闭标签": "đóng tab",
+  "重命名标签标题": "Đổi tên tiêu đề nhãn",
+  "标签标题": "Tiêu đề thẻ",
   "固定": "đã sửa",
   "取消固定": "Bỏ ghim",
   "双击关闭标签,长按拖拽调整": "Bấm đúp để đóng nhãn, nhấn và kéo để điều chỉnh",

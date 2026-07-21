@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Unduh folder ke lokal",
   "在新标签页打开": "Buka di tab baru",
   "关闭标签": "tutup tab",
+  "重命名标签标题": "Ganti nama judul label",
+  "标签标题": "Judul tanda",
   "固定": "tetap",
   "取消固定": "Membuka peniti",
   "双击关闭标签,长按拖拽调整": "Klik dua kali untuk menutup label, tekan lama dan seret untuk menyesuaikan",

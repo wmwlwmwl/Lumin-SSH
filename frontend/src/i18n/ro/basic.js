@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Descărcați folderul în local",
   "在新标签页打开": "Deschide într-o filă nouă",
   "关闭标签": "închide fila",
+  "重命名标签标题": "Redenumiți titlul etichetei",
+  "标签标题": "Titlul etichetei",
   "固定": "fix",
   "取消固定": "Anulați fixarea",
   "双击关闭标签,长按拖拽调整": "Faceți dublu clic pentru a închide eticheta, apăsați lung și trageți pentru a ajusta",

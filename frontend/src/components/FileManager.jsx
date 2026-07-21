@@ -23,7 +23,7 @@ import {
 } from '../utils/fileWorkbench.js';
 import {
   Folder, FolderOpen, FolderPlus, File, FileText, FilePlus, FileCode,
-  FileArchive, Settings, ClipboardList, Wrench, Image, Code, Globe,
+  FileArchive, Settings, ClipboardList, Wrench, Image, Code, Globe, House,
   Palette, Database, Terminal, Film, Music, Archive, HardDrive, BookOpen,
   Pencil, PenLine, Download, Upload, Trash2, RefreshCw, Lock, FolderUp, SquarePen, Copy,
   Pin, X, ClipboardPaste, Plus, ChevronLeft, ChevronRight,
@@ -206,6 +206,7 @@ function createFileManagerTab(path = '', options = {}) {
   return {
     id: `file-manager-tab-${Date.now()}-${fileManagerTabSequence}`,
     path: String(path || '').trim(),
+    customTitle: String(options.customTitle || '').trim(),
     sortField: 'name',
     sortDir: 'asc',
     selectedPaths: [],
@@ -215,7 +216,11 @@ function createFileManagerTab(path = '', options = {}) {
   };
 }
 
-function getFileManagerTabLabel(path, t) {
+function getFileManagerTabLabel(path, t, customTitle = '') {
+  const normalizedCustomTitle = String(customTitle || '').trim();
+  if (normalizedCustomTitle) {
+    return normalizedCustomTitle;
+  }
   const normalizedPath = String(path || '').trim();
   if (!normalizedPath || normalizedPath === '/') {
     return t('目录根');
@@ -931,9 +936,9 @@ function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinne
           <FileArchive size={14} /> {t('解压')}
         </div>
       )}
-      {item && (!isTabMenu || !isPinned) && (
+      {item && (!isTabMenu || !isSystemPinned) && (
         <div className="context-menu-item" onClick={onRename}>
-          <PenLine size={14} /> {t('重命名')}
+          <PenLine size={14} /> {isTabMenu ? t('重命名标签标题') : t('重命名')}
         </div>
       )}
       {item && (
@@ -1084,11 +1089,6 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   useEffect(() => {
     if (!sessionId) return undefined;
     return subscribeSessionFileManagerWorkspace(sessionId, setFileManagerWorkspaceState);
-  }, [sessionId]);
-  useEffect(() => {
-    if (!sessionId) return undefined;
-    return subscribeSessionFileManagerWorkspace(sessionId, (nextWorkspace) => {
-    });
   }, [sessionId]);
   const [followTerminalCwd, setFollowTerminalCwd] = useState(() => localStorage.getItem('fileManagerFollowTerminalCwd') !== 'false');
   useEffect(() => { followTerminalCwdRef.current = followTerminalCwd; }, [followTerminalCwd]);
@@ -3598,7 +3598,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const nextPinned = targetTab.systemPinned === true || targetTab.pinned === true;
     const positionText = t(
       side === 'before' ? '在 {label} 标签页之前,' : '在 {label} 标签页之后,',
-      { label: getFileManagerTabLabel(targetTab.path, t) },
+      { label: getFileManagerTabLabel(targetTab.path, t, targetTab.customTitle) },
     );
     const stateText = draggedTab.pinned === nextPinned
       ? t(nextPinned ? '并保持固定' : '并保持未固定')
@@ -4085,48 +4085,37 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
   }, [commitFileManagerWorkspace, normalizePath, removeCachedTabItems]);
 
-  const handleRenameTabDirectory = useCallback(async (tabId, targetPath) => {
-    const normalizedTargetPath = normalizePath(targetPath) || '/';
-    const targetTab = (fileManagerWorkspace?.tabs || []).find((tab) => tab.id === tabId);
-    if (targetTab?.systemPinned === true) {
+  const handleRenameFileManagerTabTitle = useCallback(async (tabId) => {
+    const targetTab = (fileManagerWorkspaceRef.current?.tabs || []).find((tab) => tab.id === tabId);
+    if (!targetTab) {
+      return;
+    }
+    if (targetTab.systemPinned === true) {
       addToast(t('初始目录标签不可修改'), 'warning');
       return;
     }
-    if (targetTab?.pinned === true) {
-      addToast(t('固定标签路径不可变，请先取消固定'), 'warning');
+    const currentCustomTitle = String(targetTab.customTitle || '').trim();
+    const currentLabel = getFileManagerTabLabel(targetTab.path, t, currentCustomTitle);
+    const defaultLabel = getFileManagerTabLabel(targetTab.path, t, '');
+    const nextTitle = await window.luminDialog?.prompt(`${t('标签标题')}: ${currentLabel}`);
+    if (nextTitle === null || nextTitle === undefined) {
       return;
     }
-    if (normalizedTargetPath === '/') {
-      addToast(t('根目录不支持重命名'), 'warning');
+    const trimmedTitle = String(nextTitle).trim();
+    const resolvedCustomTitle = trimmedTitle && trimmedTitle !== defaultLabel ? trimmedTitle : '';
+    if (resolvedCustomTitle === currentCustomTitle) {
       return;
     }
-    const displayName = normalizedTargetPath.split('/').filter(Boolean).pop() || normalizedTargetPath;
-    const nextName = await window.luminDialog?.prompt(`${t('重命名')}: ${displayName}`);
-    const trimmedName = String(nextName || '').trim();
-    if (!trimmedName || trimmedName === displayName) {
-      return;
-    }
-    const parentPath = getParentPath(normalizedTargetPath);
-    const newPath = joinPath(parentPath, trimmedName);
-    try {
-      await AppGo.RenameItem(sessionId, normalizedTargetPath, newPath);
-      addToast(t('重命名成功'), 'success');
-      updateFileManagerTabPath(tabId, newPath);
-      if (tabId === activeFileManagerTabIdRef.current) {
-        await loadDir(newPath, {
-          tabId,
-          silent: true,
-          staleWhileRevalidate: true,
-          staleItems: cloneFileManagerItemsForCache(items),
-          preserveView: true,
-          trackDiff: false,
-          showLoading: false,
-        });
-      }
-    } catch (err) {
-      addToast(`${t('重命名失败')}: ${err}`, 'error');
-    }
-  }, [addToast, fileManagerWorkspace, items, loadDir, normalizePath, sessionId, t, updateFileManagerTabPath]);
+    commitFileManagerWorkspace((current) => ({
+      activeTabId: current?.activeTabId || '',
+      tabs: (current?.tabs || []).map((tab) => (
+        tab.id === tabId
+          ? { ...tab, customTitle: resolvedCustomTitle }
+          : tab
+      )),
+    }));
+    addToast(t('重命名成功'), 'success');
+  }, [addToast, commitFileManagerWorkspace, t]);
 
   const handleDeleteTabDirectory = useCallback(async (tabId, targetPath, useShell = false) => {
     const normalizedTargetPath = normalizePath(targetPath) || '/';
@@ -4909,14 +4898,14 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
                     }}
                   />
                 )}
-                {showFileManagerTabIcons && <Folder size={11} />}
-                {isPinnedTab && <Pin size={10} style={{ opacity: 0.8 }} />}
+                {showFileManagerTabIcons && !isSystemPinnedTab && <Folder size={11} />}
+                {isPinnedTab && !isSystemPinnedTab && <Pin size={10} style={{ opacity: 0.8 }} />}
                 <Tiptop
                   text={tabDropPreviewText || tabDefaultTiptopText}
                   placement="bottom"
                   forceVisible={showDropIndicator && Boolean(tabDropPreviewText)}
                 >
-                  <span>{getFileManagerTabLabel(tab.path, t)}</span>
+                  <span>{isSystemPinnedTab ? <House size={12} /> : getFileManagerTabLabel(tab.path, t, tab.customTitle)}</span>
                 </Tiptop>
                 {!hideFileManagerTabCloseButton && fileManagerWorkspace.tabs.length > 1 && !isPinnedTab && (
                   <span
@@ -5263,7 +5252,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           }}
           onRename={() => {
             if (contextMenu.mode === 'tab') {
-              void handleRenameTabDirectory(contextMenu.tabId, contextMenu.tabPath);
+              void handleRenameFileManagerTabTitle(contextMenu.tabId);
             } else if (contextMenu.item) {
               startRename(contextMenu.item);
             }

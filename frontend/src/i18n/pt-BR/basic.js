@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Baixe a pasta para local",
   "在新标签页打开": "Abrir em nova aba",
   "关闭标签": "fechar aba",
+  "重命名标签标题": "Renomear título do rótulo",
+  "标签标题": "Título da etiqueta",
   "固定": "fixo",
   "取消固定": "Liberar",
   "双击关闭标签,长按拖拽调整": "Clique duas vezes para fechar o rótulo, mantenha pressionado e arraste para ajustar",

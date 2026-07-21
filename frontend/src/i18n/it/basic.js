@@ -199,6 +199,8 @@ export default {
   "下载文件夹到本地": "Scarica la cartella in locale",
   "在新标签页打开": "Apri in una nuova scheda",
   "关闭标签": "chiudi scheda",
+  "重命名标签标题": "Rinominare il titolo dell'etichetta",
+  "标签标题": "Titolo dell'etichetta",
   "固定": "fisso",
   "取消固定": "Sblocca",
   "双击关闭标签,长按拖拽调整": "Fare doppio clic per chiudere l'etichetta, premere a lungo e trascinare per regolare",
