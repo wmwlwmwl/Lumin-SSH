@@ -15,10 +15,16 @@ import { xml } from '@codemirror/lang-xml';
 import { sql } from '@codemirror/lang-sql';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
-import { X, Pencil, Save, SquarePen, Upload } from 'lucide-react';
+import { X, Pencil, Save, SquarePen, Upload, ExternalLink, AppWindow } from 'lucide-react';
 import { Z } from '../constants/zIndex';
 import { getSessionWorkbenchState, setSessionWorkbenchState, subscribeSessionWorkbenchState } from '../utils/fileWorkbench.js';
 import Tiptop from './Tiptop.jsx';
+
+const EXTERNAL_AUTO_OPEN_KEY = 'fileEditorAutoOpenExternal';
+
+function readExternalAutoOpen() {
+  return localStorage.getItem(EXTERNAL_AUTO_OPEN_KEY) === 'true';
+}
 
 // Debian sources.list 语法高亮
 const debianList = StreamLanguage.define({
@@ -127,6 +133,9 @@ export default function FileEditor({
   isActive = true,
   workbenchSessionId = '',
   workbenchOwnerId = '',
+  onOpenSystemEditor,
+  onOpenWithEditor,
+  externalOpening = false,
 }) {
   const { t } = useTranslation();
   const C = getTerminalTheme().container;
@@ -135,6 +144,7 @@ export default function FileEditor({
   const [editedContents, setEditedContents] = useState({});
   const [saving, setSaving] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [autoOpenExternal, setAutoOpenExternal] = useState(() => readExternalAutoOpen());
 
   // 打开文件时自动恢复
   useEffect(() => {
@@ -566,6 +576,53 @@ export default function FileEditor({
             <option value="popup">{t('浮动面板')}</option>
             <option value="split">{t('分栏编辑')}</option>
           </select>
+          <Tiptop text={t('使用系统编辑器')} placement="bottom">
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={!activeFile || externalOpening || !onOpenSystemEditor}
+              onClick={() => onOpenSystemEditor?.(activeFile, currentContent)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: 11 }}
+            >
+              <ExternalLink size={13} />
+              {t('使用系统编辑器')}
+            </button>
+          </Tiptop>
+          <Tiptop text={t('用…编辑')} placement="bottom">
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={!activeFile || externalOpening || !onOpenWithEditor}
+              onClick={() => onOpenWithEditor?.(activeFile, currentContent)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: 11 }}
+            >
+              <AppWindow size={13} />
+              {t('用…编辑')}
+            </button>
+          </Tiptop>
+          <Tiptop text={t('自动打开外部编辑器')} placement="bottom">
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                userSelect: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={autoOpenExternal}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setAutoOpenExternal(next);
+                  localStorage.setItem(EXTERNAL_AUTO_OPEN_KEY, next ? 'true' : 'false');
+                }}
+              />
+              {t('自动打开')}
+            </label>
+          </Tiptop>
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || !isModified}>
             {saving ? t('保存中...') : <><Save size={13} /> {t('保存')}</>}
           </button>

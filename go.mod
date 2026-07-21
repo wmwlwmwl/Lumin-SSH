@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/energye/systray v1.0.3
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/jlaffaye/ftp v0.2.1
 	github.com/minio/minio-go/v7 v7.2.0

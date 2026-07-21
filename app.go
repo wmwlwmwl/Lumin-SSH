@@ -65,6 +65,7 @@ type App struct {
 	aiSkipNextAutomaticReqMap map[string]bool
 	liveWorkspaceStateMu      sync.RWMutex
 	liveWorkspaceState        string
+	externalEdit              *ExternalEditManager
 }
 
 // wsEntry 包装一个 WebSocket 连接及其独立写锁。
@@ -109,7 +110,7 @@ const githubContributorsMaxRetries = 5
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{
+	app := &App{
 		sshManager:                NewSSHManager(),
 		configManager:             NewConfigManager(),
 		wsConns:                   make(map[string]*wsEntry),
@@ -122,6 +123,8 @@ func NewApp() *App {
 		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
+	app.externalEdit = NewExternalEditManager(app)
+	return app
 }
 
 // startup is called when the app starts. The context is saved
@@ -256,6 +259,9 @@ func (a *App) DoQuit() {
 	// 在 runtime.Quit 之前清理托盘，确保 Windows 消息循环仍在运行
 	if a.onBeforeQuit != nil {
 		a.onBeforeQuit()
+	}
+	if a.externalEdit != nil {
+		a.externalEdit.StopAll()
 	}
 	// 断开所有 SSH 会话，避免服务器侧遗留僵尸会话
 	if a.sshManager != nil {
@@ -692,7 +698,65 @@ func (a *App) ReconnectWithPassword(sessionId string, connId string, newPassword
 
 // DisconnectSSH closes an SSH connection
 func (a *App) DisconnectSSH(sessionId string) {
+	if a.externalEdit != nil {
+		a.externalEdit.StopSession(sessionId)
+	}
 	a.sshManager.Disconnect(sessionId)
+}
+
+// OpenRemoteFileInSystemEditor downloads a remote file to a local temp path and opens it
+// with the OS default application. Local changes are watched and synced back via SFTP.
+// content may be empty to re-read from remote; non-empty content is used as the initial temp file.
+func (a *App) OpenRemoteFileInSystemEditor(sessionId string, remotePath string, content string) (map[string]interface{}, error) {
+	if a.externalEdit == nil {
+		return nil, fmt.Errorf("external editor not ready")
+	}
+	return a.externalEdit.Open(sessionId, remotePath, content, "")
+}
+
+// OpenRemoteFileWithEditor is like OpenRemoteFileInSystemEditor but launches a specific editor binary/.app.
+func (a *App) OpenRemoteFileWithEditor(sessionId string, remotePath string, content string, editorPath string) (map[string]interface{}, error) {
+	if a.externalEdit == nil {
+		return nil, fmt.Errorf("external editor not ready")
+	}
+	return a.externalEdit.Open(sessionId, remotePath, content, editorPath)
+}
+
+// SelectExternalEditor opens a native file dialog for choosing an editor executable.
+func (a *App) SelectExternalEditor() (string, error) {
+	filters := []runtime.FileFilter{
+		{DisplayName: "Applications", Pattern: "*.*"},
+	}
+	if goruntime.GOOS == "windows" {
+		filters = []runtime.FileFilter{
+			{DisplayName: "Executables (*.exe)", Pattern: "*.exe"},
+			{DisplayName: "All files", Pattern: "*.*"},
+		}
+	}
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:   "选择外部编辑器",
+		Filters: filters,
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(path), nil
+}
+
+// StopExternalEdit stops watching and cleans temp files for one remote path.
+func (a *App) StopExternalEdit(sessionId string, remotePath string) error {
+	if a.externalEdit == nil {
+		return nil
+	}
+	return a.externalEdit.Stop(sessionId, remotePath)
+}
+
+// ListExternalEditSessions returns active external-edit sessions.
+func (a *App) ListExternalEditSessions() []map[string]interface{} {
+	if a.externalEdit == nil {
+		return nil
+	}
+	return a.externalEdit.List()
 }
 
 // AcceptHostKeyChange 用户确认主机密钥变更
