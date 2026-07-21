@@ -108,19 +108,9 @@ jobs:
           name: "Lumin SSH Client ${{ github.ref_name }}"
           body: |
             ## 更新日志
-            - 支持用系统/指定外部编辑器打开远程文件并自动回传
-            - 终端链接宽字符列对齐，补齐多语言缺 key
-            - 支持删除已导入的程序字体
-            - 强化文件管理器跟随终端目录同步（修复 cd 后不同步）
-            - 文件编辑器 UI 改进：按钮固定定位、工具栏压缩换行
-            - 理顺 UI 叠层层级，避免终端与命令区盖住文件编辑器
-            - AI 助手新增专属供应商恶魔模式，多项优化改进
-            - 修复同步：清理水位线、冲突确认、AutoSync 保护、跨端误删
-            - 终端允许发送空命令，修复 AI 终端执行队列
-            - 改进资源监视器与文件管理器
-            - 删除服务器清空编辑表单
-            - 多语言更新
-            - 改进 logo
+            - 修复同步：规范化连接/快捷命令比较，消除与安卓乒乓上传
+            - 修复侧边编辑配置输入框聚焦时蓝色边框四角被裁切
+            - 清理冗余日志文件
 
             ## 产物下载
             - Linux 便携版 ([Lumin-V${{ steps.version.outputs.version }}-linux-amd64](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-linux-amd64))：即下即用

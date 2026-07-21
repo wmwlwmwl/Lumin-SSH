@@ -12,7 +12,7 @@
   "info": {
     "companyName": "Lumin",
     "productName": "Lumin",
-    "productVersion": "1.2.0",
+    "productVersion": "1.2.0.1",
     "copyright": "Copyright 2024 Lumin",
     "comments": "Lightweight SSH Client"
   }
