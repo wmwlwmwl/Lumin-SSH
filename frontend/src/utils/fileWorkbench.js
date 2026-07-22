@@ -78,8 +78,9 @@ function normalizeFileManagerTabPath(path) {
 }
 
 function getFileManagerSystemPinnedType(tab) {
-  if (String(tab?.systemPinnedType || '').trim() === 'cwd') {
-    return 'cwd';
+  const rawType = String(tab?.systemPinnedType || '').trim();
+  if (rawType === 'cwd') {
+    return '';
   }
   if (tab?.systemPinned === true) {
     return 'home';
@@ -89,7 +90,6 @@ function getFileManagerSystemPinnedType(tab) {
 
 function sortFileManagerTabs(tabs) {
   const homeSystemPinnedTabs = [];
-  const cwdSystemPinnedTabs = [];
   const pinnedTabs = [];
   const normalTabs = [];
   (Array.isArray(tabs) ? tabs : []).forEach((tab) => {
@@ -99,17 +99,13 @@ function sortFileManagerTabs(tabs) {
       homeSystemPinnedTabs.push(tab);
       return;
     }
-    if (systemPinnedType === 'cwd') {
-      cwdSystemPinnedTabs.push(tab);
-      return;
-    }
     if (tab.pinned === true) {
       pinnedTabs.push(tab);
       return;
     }
     normalTabs.push(tab);
   });
-  return [...homeSystemPinnedTabs, ...cwdSystemPinnedTabs, ...pinnedTabs, ...normalTabs];
+  return [...homeSystemPinnedTabs, ...pinnedTabs, ...normalTabs];
 }
 
 function normalizeFileManagerWorkspaceState(state) {
@@ -119,6 +115,8 @@ function normalizeFileManagerWorkspaceState(state) {
       source.tabs
         .map((tab) => {
           if (!tab || typeof tab !== 'object') return null;
+          const legacySystemPinnedType = String(tab.systemPinnedType || '').trim();
+          if (legacySystemPinnedType === 'cwd') return null;
           const id = String(tab.id || '').trim();
           if (!id) return null;
           return {

@@ -163,7 +163,7 @@ const FILE_MANAGER_SYSTEM_TAB_KIND_CWD = 'cwd';
 
 function getFileManagerSystemTabType(tab) {
   if (String(tab?.systemPinnedType || '').trim() === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) {
-    return FILE_MANAGER_SYSTEM_TAB_KIND_CWD;
+    return '';
   }
   if (tab?.systemPinned === true) {
     return FILE_MANAGER_SYSTEM_TAB_KIND_HOME;
@@ -245,9 +245,7 @@ function createFileManagerTab(path = '', options = {}) {
     scrollTop: 0,
     pinned: options.pinned === true || options.systemPinned === true,
     systemPinned: options.systemPinned === true,
-    systemPinnedType: options.systemPinned === true
-      ? (options.systemPinnedType === FILE_MANAGER_SYSTEM_TAB_KIND_CWD ? FILE_MANAGER_SYSTEM_TAB_KIND_CWD : FILE_MANAGER_SYSTEM_TAB_KIND_HOME)
-      : '',
+    systemPinnedType: options.systemPinned === true ? FILE_MANAGER_SYSTEM_TAB_KIND_HOME : '',
   };
 }
 
@@ -268,14 +266,6 @@ function renderFileManagerTabTitle(tab, t) {
   const systemTabType = getFileManagerSystemTabType(tab);
   if (systemTabType === FILE_MANAGER_SYSTEM_TAB_KIND_HOME) {
     return <House size={12} />;
-  }
-  if (systemTabType === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) {
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <Terminal size={12} />
-        <span>{getFileManagerTabLabel(tab?.path, t, tab?.customTitle)}</span>
-      </span>
-    );
   }
   return <span>{getFileManagerTabLabel(tab?.path, t, tab?.customTitle)}</span>;
 }
@@ -923,7 +913,7 @@ function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinne
   const isTabMenu = mode === 'tab';
   const shouldShowCreateActions = showCreateActions || !item;
   const shouldShowDividerBeforeCreate = Boolean(item && shouldShowCreateActions);
-  const shouldShowDeleteActions = Boolean(item) && (!isTabMenu || !isPinned);
+  const shouldShowDeleteActions = Boolean(item) && !isTabMenu;
   const shouldShowDividerBeforeDelete = shouldShowDeleteActions;
 
   React.useLayoutEffect(() => {
@@ -2207,12 +2197,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   const ensureForcedInitialFileManagerTab = useCallback((workspace, forcedPath, cwdPath = '') => {
     const normalizedForcedPath = normalizePath(forcedPath) || '/';
-    const normalizedCwdPath = normalizePath(cwdPath) || normalizedForcedPath;
     const currentTabs = Array.isArray(workspace?.tabs) ? workspace.tabs.filter((tab) => tab && typeof tab === 'object') : [];
     const currentActiveTabId = typeof workspace?.activeTabId === 'string' ? workspace.activeTabId : '';
     const homeSystemTab = currentTabs.find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_HOME) || null;
-    const cwdSystemTab = currentTabs.find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) || null;
-    const baseHomeTab = homeSystemTab || createFileManagerTab(normalizedForcedPath, {
+    const homeTabPath = normalizePath(homeSystemTab?.path) || normalizedForcedPath;
+    const baseHomeTab = homeSystemTab || createFileManagerTab(homeTabPath, {
       pinned: true,
       systemPinned: true,
       systemPinnedType: FILE_MANAGER_SYSTEM_TAB_KIND_HOME,
@@ -2221,32 +2210,16 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const nextHomeTab = {
       ...baseHomeTab,
       customTitle: '',
-      path: normalizedForcedPath,
+      path: homeTabPath,
       pinned: true,
       systemPinned: true,
       systemPinnedType: FILE_MANAGER_SYSTEM_TAB_KIND_HOME,
-      selectedPaths: baseHomePath === normalizedForcedPath ? (Array.isArray(baseHomeTab.selectedPaths) ? baseHomeTab.selectedPaths : []) : [],
-      scrollTop: baseHomePath === normalizedForcedPath && Number.isFinite(Number(baseHomeTab.scrollTop)) ? Number(baseHomeTab.scrollTop) : 0,
+      selectedPaths: baseHomePath === homeTabPath ? (Array.isArray(baseHomeTab.selectedPaths) ? baseHomeTab.selectedPaths : []) : [],
+      scrollTop: baseHomePath === homeTabPath && Number.isFinite(Number(baseHomeTab.scrollTop)) ? Number(baseHomeTab.scrollTop) : 0,
     };
-    const baseCwdTab = cwdSystemTab || createFileManagerTab(normalizedCwdPath, {
-      pinned: true,
-      systemPinned: true,
-      systemPinnedType: FILE_MANAGER_SYSTEM_TAB_KIND_CWD,
-    });
-    const baseCwdPath = normalizePath(baseCwdTab.path) || '/';
-    const nextCwdTab = {
-      ...baseCwdTab,
-      customTitle: '',
-      path: normalizedCwdPath,
-      pinned: true,
-      systemPinned: true,
-      systemPinnedType: FILE_MANAGER_SYSTEM_TAB_KIND_CWD,
-      selectedPaths: baseCwdPath === normalizedCwdPath ? (Array.isArray(baseCwdTab.selectedPaths) ? baseCwdTab.selectedPaths : []) : [],
-      scrollTop: baseCwdPath === normalizedCwdPath && Number.isFinite(Number(baseCwdTab.scrollTop)) ? Number(baseCwdTab.scrollTop) : 0,
-    };
-    const nextTabs = [nextHomeTab, nextCwdTab];
+    const nextTabs = [nextHomeTab];
     currentTabs.forEach((tab) => {
-      if (tab.id === nextHomeTab.id || tab.id === nextCwdTab.id || tab.systemPinned === true) {
+      if (tab.id === nextHomeTab.id || tab.systemPinned === true) {
         return;
       }
       nextTabs.push(tab);
@@ -2265,60 +2238,51 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     };
   }, [normalizePath]);
 
-  const syncTerminalCwdSystemTabPath = useCallback((cwdPath) => {
+  const resolveTerminalCwdFollowTarget = useCallback((cwdPath) => {
     const normalizedCwdPath = normalizePath(cwdPath);
     if (!normalizedCwdPath) {
       return null;
     }
     const currentWorkspace = fileManagerWorkspaceRef.current;
     const currentTabs = Array.isArray(currentWorkspace?.tabs) ? currentWorkspace.tabs : [];
-    const previousCwdTab = currentTabs.find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) || null;
-    const previousCwdPath = normalizePath(previousCwdTab?.path) || '';
-    const nextWorkspace = commitFileManagerWorkspace((workspace) => {
-      const workspaceTabs = Array.isArray(workspace?.tabs) ? workspace.tabs : [];
-      const homeSystemTab = workspaceTabs.find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_HOME) || null;
-      const homePath = normalizePath(homeSystemTab?.path) || normalizedCwdPath;
-      return ensureForcedInitialFileManagerTab(workspace, homePath, normalizedCwdPath);
-    });
-    const nextCwdTab = (nextWorkspace?.tabs || []).find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) || null;
-    if (previousCwdTab && previousCwdPath && previousCwdPath !== normalizedCwdPath && nextCwdTab?.id) {
-      triggerCwdSystemTabHighlight(nextCwdTab.id);
+    const activeTabId = String(activeFileManagerTabIdRef.current || currentWorkspace?.activeTabId || '').trim();
+    const activeTab = currentTabs.find((tab) => tab.id === activeTabId) || currentTabs[0] || null;
+    if (!activeTab) {
+      return null;
     }
-    return nextWorkspace;
-  }, [commitFileManagerWorkspace, ensureForcedInitialFileManagerTab, normalizePath, triggerCwdSystemTabHighlight]);
+    return {
+      path: normalizedCwdPath,
+      tabId: String(activeTab.id || '').trim(),
+    };
+  }, [normalizePath]);
 
   const applyTerminalCwdFollow = useCallback(async (cwd, options = {}) => {
-    const newPath = normalizePath(cwd);
-    if (!newPath) return false;
+    const followTarget = resolveTerminalCwdFollowTarget(cwd);
+    if (!followTarget?.path || !followTarget?.tabId) {
+      pendingTerminalCwdRef.current = '';
+      return false;
+    }
     if (initializingPathRef.current) {
-      pendingTerminalCwdRef.current = newPath;
+      pendingTerminalCwdRef.current = followTarget.path;
+      return false;
+    }
+    if (!isActiveRef.current && options.force !== true) {
+      pendingTerminalCwdRef.current = followTarget.path;
       return false;
     }
     pendingTerminalCwdRef.current = '';
-    const nextWorkspace = syncTerminalCwdSystemTabPath(newPath) || fileManagerWorkspaceRef.current;
-    const cwdSystemTab = (nextWorkspace?.tabs || []).find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) || null;
-    const cwdSystemTabId = String(cwdSystemTab?.id || '').trim();
-    if (!cwdSystemTabId) {
-      return false;
-    }
-    if (cwdSystemTabId !== String(activeFileManagerTabIdRef.current || '').trim()) {
+    if (followTarget.path === currentPathRef.current && followTarget.tabId === String(activeFileManagerTabIdRef.current || '').trim()) {
       return true;
     }
-    if (!isActiveRef.current && options.force !== true) {
-      return false;
-    }
-    if (newPath === currentPathRef.current) {
-      return true;
-    }
-    return loadDir(newPath, {
-      tabId: cwdSystemTabId,
+    return loadDir(followTarget.path, {
+      tabId: followTarget.tabId,
       silent: true,
       preserveView: false,
       trackDiff: false,
       showLoading: options.showLoading === true,
       transitionMode: options.transitionMode || 'directory',
     });
-  }, [loadDir, normalizePath, syncTerminalCwdSystemTabPath]);
+  }, [loadDir, resolveTerminalCwdFollowTarget]);
 
   useEffect(() => {
     if (!isActive) {
