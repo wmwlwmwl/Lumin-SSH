@@ -145,13 +145,16 @@ svg[class*="lucide"] {
   --topbar-h:  40px;
   --probe-w:   300px;
 
-  /* ── 通用标签态语义变量（还原 git 旧版） ── */
-  --tab-inactive-bg: color-mix(in srgb, var(--surface-overlay) 78%, var(--surface-hover));
-  --tab-inactive-bg-hover: color-mix(in srgb, var(--surface-overlay) 56%, var(--surface-hover));
-  --tab-inactive-border: color-mix(in srgb, var(--border) 82%, var(--surface-hover));
-  --tab-inactive-text: color-mix(in srgb, var(--text-secondary) 88%, var(--text-primary));
-  --tab-active-bg: var(--surface-base);
-  --tab-active-border: color-mix(in srgb, var(--border-subtle) 88%, var(--accent));
+  /* ── 通用标签态语义变量 ── */
+  /* 中间档：未选中再亮一档；选中淡 accent 底 + 主色字 + 底线（非实心蓝按钮） */
+  --tab-inactive-bg: var(--surface-active);
+  --tab-inactive-bg-hover: color-mix(in srgb, var(--surface-active) 82%, var(--accent) 8%);
+  --tab-inactive-border: color-mix(in srgb, var(--border) 88%, #6b7a90);
+  --tab-inactive-text: var(--text-primary);
+  --tab-active-bg: color-mix(in srgb, var(--accent) 18%, var(--surface-raised));
+  --tab-active-border: color-mix(in srgb, var(--accent) 48%, var(--border));
+  --tab-active-text: var(--text-primary);
+  --tab-radius: 0;
 }
 
 /* ── 设计 Token：浅色模式 ───────────────────────── */
@@ -242,13 +245,15 @@ body.theme-light {
   --shadow-lg:  0 6px 16px rgba(15, 23, 42, 0.10);
   --shadow-xl:  0 10px 24px rgba(15, 23, 42, 0.12);
 
-  /* 浅色：还原 git 旧版标签 */
-  --tab-inactive-bg: color-mix(in srgb, var(--surface-sunken) 72%, var(--surface-overlay));
-  --tab-inactive-bg-hover: color-mix(in srgb, var(--surface-active) 52%, var(--surface-overlay));
-  --tab-inactive-border: color-mix(in srgb, var(--border) 92%, var(--surface-active));
-  --tab-inactive-text: color-mix(in srgb, var(--text-secondary) 90%, var(--text-primary));
-  --tab-active-bg: var(--surface-raised);
-  --tab-active-border: color-mix(in srgb, var(--border-subtle) 82%, var(--accent));
+  /* 浅色中间档：未选中再亮；选中淡蓝底 + 深字 + 底线 */
+  --tab-inactive-bg: #e4e8ee;
+  --tab-inactive-bg-hover: #d8dee6;
+  --tab-inactive-border: rgba(28, 35, 45, 0.16);
+  --tab-inactive-text: #1f2937;
+  --tab-active-bg: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  --tab-active-border: color-mix(in srgb, var(--accent) 42%, var(--border));
+  --tab-active-text: #0f172a;
+  --tab-radius: 0;
 }
 
 .mention-context-textarea-highlight {
@@ -852,11 +857,15 @@ input::-ms-clear {
 }
 .tab-item.active {
   background: var(--tab-active-bg);
-  color: var(--text-primary);
+  color: var(--tab-active-text, var(--text-primary));
   border-color: var(--tab-active-border);
   border-bottom-color: var(--accent);
   box-shadow: inset 0 -2px 0 var(--accent);
   font-weight: 600;
+}
+.tab-item.active .tab-close,
+.tab-item.active .tab-reconnect {
+  opacity: 0.7;
 }
 .tab-item.active::after {
   content: none;
@@ -925,37 +934,48 @@ input::-ms-clear {
 
 .terminal-sub-tab-nav {
   align-self: stretch;
-  width: 24px;
-  min-width: 24px;
+  width: 28px;
+  min-width: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
+  border: 1px solid var(--tab-inactive-border);
+  background: var(--tab-inactive-bg);
+  color: var(--tab-inactive-text);
   flex-shrink: 0;
   transition: var(--transition-fast);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .terminal-sub-tab-nav-left {
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--tab-inactive-border);
 }
 
 .terminal-sub-tab-nav-right {
-  border-left: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--tab-inactive-border);
 }
 
 .terminal-sub-tab-nav:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: var(--tab-inactive-bg-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.terminal-sub-tab-nav:active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--tab-inactive-bg));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   color: var(--text-primary);
 }
 
 .terminal-sub-tab-nav.disabled,
 .terminal-sub-tab-nav:disabled {
-  opacity: 0.35;
+  opacity: 0.42;
   cursor: default;
   pointer-events: none;
+  background: color-mix(in srgb, var(--tab-inactive-bg) 55%, transparent);
+  color: var(--text-muted);
 }
 
 .terminal-sub-tab-scroll.is-dragging,
@@ -977,24 +997,25 @@ input::-ms-clear {
   padding: 0 10px;
   border-radius: 0;
   background: var(--tab-inactive-bg);
-  border: none;
-  border-left: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  box-shadow: none;
+  border: 1px solid var(--tab-inactive-border);
+  border-left: 1px solid var(--tab-inactive-border);
+  color: var(--tab-inactive-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .terminal-create-btn:hover {
   background: var(--tab-inactive-bg-hover);
-  border-color: var(--border-subtle);
+  border-color: var(--border-focus);
   color: var(--text-primary);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .terminal-create-btn.active {
   background: var(--tab-active-bg);
-  border-color: var(--border-subtle);
-  color: var(--text-primary);
+  border-color: var(--tab-active-border);
+  color: var(--tab-active-text, var(--text-primary));
   box-shadow: inset 0 -2px 0 var(--accent);
+  font-weight: 600;
 }
 
 .terminal-tool-btn {
@@ -1044,11 +1065,14 @@ input::-ms-clear {
 }
 .terminal-sub-tab.active {
   background: var(--tab-active-bg);
-  color: var(--text-primary);
+  color: var(--tab-active-text, var(--text-primary));
   border-color: var(--tab-active-border);
   border-bottom-color: var(--accent);
   box-shadow: inset 0 -2px 0 var(--accent);
   font-weight: 600;
+}
+.terminal-sub-tab.active .terminal-sub-tab-close {
+  opacity: 0.7;
 }
 .terminal-sub-tab-change-ring {
   position: absolute;

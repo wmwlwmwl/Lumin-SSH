@@ -587,13 +587,65 @@ export default function App() {
       return [{ ...term, type: 'terminal', terminalIds: [term.id] }];
     });
   }, [getEffectiveTerminals, getSessionGroupedTerminalIds, getSessionPaneLayouts, terminalPaneLayouts, t]);
-  const resolveSessionRootTerminalId = useCallback((session, preferredId, layoutSource = terminalPaneLayouts) => {
+  const resolveSessionRootTerminalId = useCallback((session, preferredId, layoutSource = terminalPaneLayouts, preferredLabel = '') => {
     const tabs = getSessionWorkspaceTabs(session, layoutSource);
-    if (tabs.some((tab) => tab.id === preferredId)) {
+    if (!tabs.length) {
+      return null;
+    }
+    if (preferredId && tabs.some((tab) => tab.id === preferredId)) {
       return preferredId;
+    }
+    // 重连后 id 会变，用标签名兜底（如「终端3」）
+    const label = typeof preferredLabel === 'string' ? preferredLabel.trim() : '';
+    if (label) {
+      const byLabel = tabs.find((tab) => String(tab.label || '').trim() === label);
+      if (byLabel) {
+        return byLabel.id;
+      }
+    }
+    // session 上缓存的上次选中（含 label）
+    const cachedId = session?.activeTerminalId;
+    if (cachedId && tabs.some((tab) => tab.id === cachedId)) {
+      return cachedId;
+    }
+    const cachedLabel = typeof session?.activeTerminalLabel === 'string' ? session.activeTerminalLabel.trim() : '';
+    if (cachedLabel) {
+      const byCachedLabel = tabs.find((tab) => String(tab.label || '').trim() === cachedLabel);
+      if (byCachedLabel) {
+        return byCachedLabel.id;
+      }
     }
     return tabs[0]?.id || null;
   }, [getSessionWorkspaceTabs, terminalPaneLayouts]);
+  // 写入每个会话「上次选中终端」——同时更新 ref 与 session 字段，保证持久化不丢
+  const rememberSessionActiveTerminal = useCallback((sessionId, terminalId, terminalLabel = '') => {
+    if (!sessionId || !terminalId) {
+      return;
+    }
+    lastTerminalRef.current[sessionId] = terminalId;
+    setSessions((prev) => {
+      let changed = false;
+      const next = prev.map((session) => {
+        if (session.id !== sessionId) {
+          return session;
+        }
+        const label = terminalLabel
+          || session.terminals?.find((term) => term.id === terminalId)?.label
+          || session.activeTerminalLabel
+          || '';
+        if (session.activeTerminalId === terminalId && session.activeTerminalLabel === label) {
+          return session;
+        }
+        changed = true;
+        return { ...session, activeTerminalId: terminalId, activeTerminalLabel: label };
+      });
+      if (changed) {
+        sessionsRef.current = next;
+        return next;
+      }
+      return prev;
+    });
+  }, []);
   const canSplitSessionRootPane = useCallback((layoutId, layoutSource = terminalPaneLayouts) => {
     const rect = getTerminalPaneRect(getSessionRootPaneCells(layoutId, layoutSource));
     return !!rect && (rect.width > 1 || rect.height > 1);
@@ -768,11 +820,18 @@ export default function App() {
     if (!session) {
       return;
     }
-    const nextTerminalId = resolveSessionRootTerminalId(session, activeTerminalIdRef.current);
-    if (nextTerminalId !== activeTerminalIdRef.current) {
+    // 终端 id 重连后会变：优先当前 active，再 session 缓存 id/label，避免被打回终端1
+    const nextTerminalId = resolveSessionRootTerminalId(
+      session,
+      activeTerminalIdRef.current || session.activeTerminalId || lastTerminalRef.current[activeSessionId],
+      terminalPaneLayouts,
+      session.activeTerminalLabel || '',
+    );
+    if (nextTerminalId && nextTerminalId !== activeTerminalIdRef.current) {
       setActiveTerminalId(nextTerminalId);
+      rememberSessionActiveTerminal(activeSessionId, nextTerminalId, session.activeTerminalLabel || '');
     }
-  }, [activeSessionId, resolveSessionRootTerminalId, sessions, terminalPaneLayouts]);
+  }, [activeSessionId, rememberSessionActiveTerminal, resolveSessionRootTerminalId, sessions, terminalPaneLayouts]);
   
   // ── 新增自动检测更新状态 ──────────────────────────────
   const [startupUpdateInfo, setStartupUpdateInfo] = useState(null);
@@ -814,6 +873,8 @@ export default function App() {
   const terminalSubTabScrollTargetRef = useRef(0);
   const terminalSubTabScrollFrameRef = useRef(0);
   const terminalSubTabDraggingRef = useRef(false);
+  // 按会话记忆终端子标签横向滚动位置（回首页再进 / 切会话不丢）
+  const terminalSubTabScrollBySessionRef = useRef({});
   const terminalDockLongPressTimerRef = useRef(null);
   const terminalDockPointerCleanupRef = useRef(null);
   const terminalDockClickSuppressUntilRef = useRef(0);
@@ -2426,13 +2487,22 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (remaining.length > 0) {
       const nextSession = remaining[remaining.length - 1];
       setActiveSessionId(nextSession.id);
-      setActiveTerminalId(resolveSessionRootTerminalId(nextSession, lastTerminalRef.current[nextSession.id]));
+      const nextTermId = resolveSessionRootTerminalId(
+        nextSession,
+        lastTerminalRef.current[nextSession.id] || nextSession.activeTerminalId,
+        terminalPaneLayoutsRef.current,
+        nextSession.activeTerminalLabel || '',
+      );
+      setActiveTerminalId(nextTermId);
+      if (nextTermId) {
+        rememberSessionActiveTerminal(nextSession.id, nextTermId, nextSession.activeTerminalLabel || '');
+      }
       setContentTab(resolveSessionContentTab(nextSession.id));
     } else {
       setActiveSessionId(null);
       setActiveTerminalId(null);
     }
-  }, [resolveSessionContentTab, resolveSessionRootTerminalId]);
+  }, [rememberSessionActiveTerminal, resolveSessionContentTab, resolveSessionRootTerminalId]);
 
   // ponytail: 提取 tab 点击处理，避免每次渲染创建 N 个闭包
   const handleTabClick = useCallback((sessionId) => {
@@ -2441,14 +2511,19 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setTerminalTabContextMenu(null);
     setActiveSessionId(sessionId);
     const sess = sessionsRef.current.find(x => x.id === sessionId);
-    const nextTerminalId = sess ? resolveSessionRootTerminalId(sess, lastTerminalRef.current[sessionId]) : null;
+    const preferredId = lastTerminalRef.current[sessionId] || sess?.activeTerminalId || null;
+    const preferredLabel = sess?.activeTerminalLabel || '';
+    const nextTerminalId = sess ? resolveSessionRootTerminalId(sess, preferredId, terminalPaneLayoutsRef.current, preferredLabel) : null;
     setActiveTerminalId(nextTerminalId);
+    if (nextTerminalId) {
+      rememberSessionActiveTerminal(sessionId, nextTerminalId, preferredLabel);
+    }
     setContentTab(resolveSessionContentTab(sessionId));
     persistWorkspaceSnapshotRef.current({
       activeSessionId: sessionId,
       activeTerminalId: nextTerminalId,
     });
-  }, [markWorkspaceRestoreNavigationOverride, resolveSessionContentTab, resolveSessionRootTerminalId]);
+  }, [markWorkspaceRestoreNavigationOverride, rememberSessionActiveTerminal, resolveSessionContentTab, resolveSessionRootTerminalId]);
 
   const canCopySessionPassword = useCallback((sessionId) => {
     const session = sessionsRef.current.find((item) => item.id === sessionId);
@@ -2579,19 +2654,28 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           const workspaceTerminalIds = (session.workspaceTabs || []).flatMap((tab) => tab.terminalIds || []);
           const baseTerminalIds = [...workspaceTerminalIds, ...terminalById.keys()];
           const orderedTerminalIds = Array.from(new Set(baseTerminalIds.length > 0 ? baseTerminalIds : [session.id]));
+          const terminals = orderedTerminalIds.map((terminalId, index) => {
+            const terminal = terminalById.get(terminalId);
+            return {
+              id: terminalId,
+              label: terminal?.label || `${t('终端')}${index + 1}`,
+            };
+          });
+          const savedActiveTermId = typeof session.activeTerminalId === 'string' ? session.activeTerminalId.trim() : '';
+          const savedActiveTermLabel = typeof session.activeTerminalLabel === 'string' ? session.activeTerminalLabel.trim() : '';
+          // 当前激活会话若未带 per-session 字段，回退全局 activeTerminalId
+          const fallbackActiveTermId = session.id === snapshot.activeSessionId
+            ? (typeof snapshot.activeTerminalId === 'string' ? snapshot.activeTerminalId.trim() : '')
+            : '';
           return {
             id: session.id,
             serverId: session.serverId,
             serverName: session.serverName || session.host,
             host: session.host || '',
             status: 'connecting',
-            terminals: orderedTerminalIds.map((terminalId, index) => {
-              const terminal = terminalById.get(terminalId);
-              return {
-                id: terminalId,
-                label: terminal?.label || `${t('终端')}${index + 1}`,
-              };
-            }),
+            activeTerminalId: savedActiveTermId || fallbackActiveTermId || null,
+            activeTerminalLabel: savedActiveTermLabel || null,
+            terminals,
           };
         });
       if (savedSessions.length === 0) {
@@ -2657,12 +2741,33 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           const restoredSessionLayouts = Object.fromEntries(
             Object.entries(restoredLayouts).filter(([, layout]) => layout?.sessionId === savedSession.id)
           );
+          // 每个会话各自恢复上次选中的终端（不仅当前激活会话）
+          // 优先按旧 id 映射；失败再用标签名（终端3）兜底
+          const rawPreferredId = savedSession.activeTerminalId
+            || (savedSession.id === initialActiveSessionId ? snapshot.activeTerminalId : null);
+          const preferredTermId = (rawPreferredId && idMap[rawPreferredId]) || rawPreferredId || null;
+          const preferredLabel = savedSession.activeTerminalLabel || '';
+          const resolvedTermId = resolveSessionRootTerminalId(
+            restoredSession,
+            preferredTermId,
+            { ...terminalPaneLayoutsRef.current, ...restoredSessionLayouts },
+            preferredLabel,
+          );
+          const resolvedLabel = restoredSession.terminals?.find((term) => term.id === resolvedTermId)?.label
+            || preferredLabel
+            || '';
+          const sessionWithActive = resolvedTermId
+            ? { ...restoredSession, activeTerminalId: resolvedTermId, activeTerminalLabel: resolvedLabel }
+            : restoredSession;
+          if (resolvedTermId) {
+            lastTerminalRef.current[sessionWithActive.id] = resolvedTermId;
+          }
           // ponytail: 用函数式更新而非整体覆盖，避免恢复期间用户新建/关闭的 session 被丢失或复活
           sessionsRef.current = sessionsRef.current.map((session) => (
-            session.id === savedSession.id ? restoredSession : session
+            session.id === savedSession.id ? sessionWithActive : session
           ));
           setSessions((prev) => prev.map((session) => (
-            session.id === savedSession.id ? restoredSession : session
+            session.id === savedSession.id ? sessionWithActive : session
           )));
           terminalPaneLayoutsRef.current = { ...terminalPaneLayoutsRef.current, ...restoredSessionLayouts };
           setTerminalPaneLayouts((prev) => ({ ...prev, ...restoredSessionLayouts }));
@@ -2679,9 +2784,30 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         setActiveTerminalId(null);
         return;
       }
-      const preferredTerminalId = idMap[snapshot.activeTerminalId] || snapshot.activeTerminalId;
-      const resolvedTerminalId = resolveSessionRootTerminalId(finalSession, preferredTerminalId, terminalPaneLayoutsRef.current);
-      lastTerminalRef.current[finalSession.id] = resolvedTerminalId;
+      const preferredTerminalId = finalSession.activeTerminalId
+        || lastTerminalRef.current[finalSession.id]
+        || idMap[snapshot.activeTerminalId]
+        || snapshot.activeTerminalId;
+      const resolvedTerminalId = resolveSessionRootTerminalId(
+        finalSession,
+        preferredTerminalId,
+        terminalPaneLayoutsRef.current,
+        finalSession.activeTerminalLabel || '',
+      );
+      if (resolvedTerminalId) {
+        lastTerminalRef.current[finalSession.id] = resolvedTerminalId;
+        const resolvedLabel = finalSession.terminals?.find((term) => term.id === resolvedTerminalId)?.label || '';
+        sessionsRef.current = sessionsRef.current.map((session) => (
+          session.id === finalSession.id
+            ? { ...session, activeTerminalId: resolvedTerminalId, activeTerminalLabel: resolvedLabel }
+            : session
+        ));
+        setSessions((prev) => prev.map((session) => (
+          session.id === finalSession.id
+            ? { ...session, activeTerminalId: resolvedTerminalId, activeTerminalLabel: resolvedLabel }
+            : session
+        )));
+      }
       setActiveSessionId(finalSession.id);
       setActiveTerminalId(resolvedTerminalId);
       setContentTab('terminal');
@@ -3173,6 +3299,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       });
       return next;
     });
+    delete terminalSubTabScrollBySessionRef.current[sessionId];
     if (activeSessionIdRef.current === sessionId) {
       switchToNextSession(sessionId);
     }
@@ -3224,6 +3351,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     window?.go?.main?.App?.ClearWorkspaceState?.().catch(() => {});
     setSessions([]);
     setTerminalPaneLayouts({});
+    terminalSubTabScrollBySessionRef.current = {};
     setActiveSessionId(null);
     setActiveTerminalId(null);
     setConnectingServers([]);
@@ -3253,17 +3381,41 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       const newTermId = await AppGo.OpenTerminal(baseTermId);
       const nextSessions = sessionsRef.current.map((s) => (
         s.id === sessionId
-          ? { ...s, terminals: [...(s.terminals || []), { id: newTermId, label: termLabel }] }
+          ? {
+              ...s,
+              terminals: [...(s.terminals || []), { id: newTermId, label: termLabel }],
+              activeTerminalId: newTermId,
+              activeTerminalLabel: termLabel,
+            }
           : s
       ));
       sessionsRef.current = nextSessions;
+      // 新标签在列表末尾：预置滚到最大位置（挂载后再 clamp）
+      // 注意：scroll helpers 定义在后面，这里直接写 ref，避免 TDZ
+      terminalSubTabScrollBySessionRef.current[sessionId] = Number.MAX_SAFE_INTEGER;
       setSessions(nextSessions);
       setActiveTerminalId(newTermId);
       setContentTab('terminal');
+      lastTerminalRef.current[sessionId] = newTermId;
       persistWorkspaceSnapshotRef.current({
         sessions: nextSessions,
         activeSessionId: sessionId,
         activeTerminalId: newTermId,
+      });
+      // 等标签 DOM 挂上后再滚到最新
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = terminalSubTabScrollRef.current;
+          if (!el) return;
+          const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+          const nextLeft = maxLeft;
+          terminalSubTabScrollBySessionRef.current[sessionId] = nextLeft;
+          terminalSubTabScrollTargetRef.current = nextLeft;
+          el.scrollLeft = nextLeft;
+          setTerminalSubTabOverflow(maxLeft > 1);
+          setTerminalSubTabCanScrollLeft(maxLeft > 1 && nextLeft > 1);
+          setTerminalSubTabCanScrollRight(maxLeft > 1 && nextLeft < maxLeft - 1);
+        });
       });
     } catch (err) {
       addToast(`${t('新建终端失败')}: ${err}`, 'error', 5000);
@@ -3774,11 +3926,26 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           ...(session.terminals || []).map((term) => term.id),
         ]));
         const terminalById = new Map((session.terminals || []).map((term) => [term.id, term]));
+        const preferredId = session.id === savedActiveSessionId
+          ? savedActiveTerminalId
+          : (session.activeTerminalId || lastTerminalRef.current[session.id]);
+        const preferredLabel = session.activeTerminalLabel || '';
+        const sessionActiveTerminalId = resolveSessionRootTerminalId(
+          session,
+          preferredId,
+          savedLayouts,
+          preferredLabel,
+        );
+        const sessionActiveTerminalLabel = terminalById.get(sessionActiveTerminalId)?.label
+          || preferredLabel
+          || '';
         return {
           id: session.id,
           serverId: session.serverId,
           serverName: session.serverName,
           host: session.host,
+          activeTerminalId: sessionActiveTerminalId || null,
+          activeTerminalLabel: sessionActiveTerminalLabel || null,
           workspaceTabs,
           terminals: terminalOrder
             .map((terminalId) => terminalById.get(terminalId))
@@ -3839,6 +4006,48 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     '--terminal-list-scrollbar-thumb': withAlpha(terminalSubTabTheme?.xterm?.cursor, 0.32, 'rgba(var(--accent-rgb), 0.32)'),
     '--terminal-list-scrollbar-thumb-hover': withAlpha(terminalSubTabTheme?.xterm?.blue || terminalSubTabTheme?.xterm?.cursor, 0.58, 'rgba(var(--accent-rgb), 0.58)'),
   }), [terminalSubTabTheme]);
+  const rememberTerminalSubTabScroll = useCallback((sessionId, left) => {
+    if (!sessionId) return;
+    const next = Number.isFinite(left) ? Math.max(0, left) : 0;
+    terminalSubTabScrollBySessionRef.current[sessionId] = next;
+  }, []);
+  const restoreTerminalSubTabScroll = useCallback((sessionId, immediate = true) => {
+    const el = terminalSubTabScrollRef.current;
+    if (!el || !sessionId) return;
+    const saved = terminalSubTabScrollBySessionRef.current[sessionId];
+    if (typeof saved !== 'number') return; // 无记忆：留给 scrollActive 定位当前标签
+    const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const nextLeft = Math.max(0, Math.min(maxLeft, saved));
+    terminalSubTabScrollTargetRef.current = nextLeft;
+    if (immediate) {
+      el.scrollLeft = nextLeft;
+    }
+  }, []);
+  // 把指定终端子标签滚进可视区（工作区恢复选中了 7 但滚动还在 1 时用）
+  const scrollTerminalSubTabIntoView = useCallback((terminalId, sessionId) => {
+    const el = terminalSubTabScrollRef.current;
+    if (!el || !terminalId) return;
+    const tabEl = el.querySelector(`[data-terminal-id="${CSS.escape(String(terminalId))}"]`);
+    if (!tabEl) return;
+    const elRect = el.getBoundingClientRect();
+    const tabRect = tabEl.getBoundingClientRect();
+    const pad = 6;
+    let delta = 0;
+    if (tabRect.left < elRect.left + pad) {
+      delta = tabRect.left - elRect.left - pad;
+    } else if (tabRect.right > elRect.right - pad) {
+      delta = tabRect.right - elRect.right + pad;
+    } else {
+      return;
+    }
+    const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    const nextLeft = Math.max(0, Math.min(maxLeft, el.scrollLeft + delta));
+    terminalSubTabScrollTargetRef.current = nextLeft;
+    el.scrollLeft = nextLeft;
+    if (sessionId) {
+      rememberTerminalSubTabScroll(sessionId, nextLeft);
+    }
+  }, [rememberTerminalSubTabScroll]);
   const syncTerminalSubTabOverflowState = useCallback(() => {
     const el = terminalSubTabScrollRef.current;
     if (!el) {
@@ -3853,10 +4062,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setTerminalSubTabOverflow(hasOverflow);
     setTerminalSubTabCanScrollLeft(hasOverflow && currentLeft > 1);
     setTerminalSubTabCanScrollRight(hasOverflow && currentLeft < maxLeft - 1);
+    if (activeSessionId) {
+      rememberTerminalSubTabScroll(activeSessionId, hasOverflow ? currentLeft : 0);
+    }
     if (!hasOverflow) {
       terminalSubTabScrollTargetRef.current = 0;
     }
-  }, []);
+  }, [activeSessionId, rememberTerminalSubTabScroll]);
   const stopTerminalSubTabScrollAnimation = useCallback(() => {
     if (!terminalSubTabScrollFrameRef.current) {
       return;
@@ -3894,6 +4106,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
     const clampedLeft = Math.max(0, Math.min(maxLeft, nextLeft));
     terminalSubTabScrollTargetRef.current = clampedLeft;
+    if (activeSessionId) {
+      rememberTerminalSubTabScroll(activeSessionId, clampedLeft);
+    }
     if (immediate) {
       stopTerminalSubTabScrollAnimation();
       el.scrollLeft = clampedLeft;
@@ -3903,12 +4118,33 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (!terminalSubTabScrollFrameRef.current) {
       terminalSubTabScrollFrameRef.current = requestAnimationFrame(stepTerminalSubTabScroll);
     }
-  }, [stepTerminalSubTabScroll, stopTerminalSubTabScrollAnimation, syncTerminalSubTabOverflowState]);
+  }, [activeSessionId, rememberTerminalSubTabScroll, stepTerminalSubTabScroll, stopTerminalSubTabScrollAnimation, syncTerminalSubTabOverflowState]);
   useEffect(() => () => stopTerminalSubTabScrollAnimation(), [stopTerminalSubTabScrollAnimation]);
+  // 切换会话 / 恢复工作区 / 选中标签变化：先恢复记忆位置，再保证当前选中标签可见
+  useEffect(() => {
+    if (!activeSessionId) return undefined;
+    stopTerminalSubTabScrollAnimation();
+    const frame = requestAnimationFrame(() => {
+      restoreTerminalSubTabScroll(activeSessionId, true);
+      if (activeTerminalId) {
+        scrollTerminalSubTabIntoView(activeTerminalId, activeSessionId);
+      }
+      syncTerminalSubTabOverflowState();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeSessionId, activeTerminalId, activeSessionRootTerminals, contentTab, restoreTerminalSubTabScroll, scrollTerminalSubTabIntoView, stopTerminalSubTabScrollAnimation, syncTerminalSubTabOverflowState]);
   useEffect(() => {
     const el = terminalSubTabScrollRef.current;
     if (!el) return undefined;
-    const handleResize = () => syncTerminalSubTabOverflowState();
+    const handleResize = () => {
+      if (activeSessionId) {
+        restoreTerminalSubTabScroll(activeSessionId, true);
+      }
+      if (activeSessionId && activeTerminalId) {
+        scrollTerminalSubTabIntoView(activeTerminalId, activeSessionId);
+      }
+      syncTerminalSubTabOverflowState();
+    };
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(handleResize) : null;
     observer?.observe(el);
     window.addEventListener('resize', handleResize);
@@ -3917,17 +4153,17 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       observer?.disconnect();
       window.removeEventListener('resize', handleResize);
     };
-  }, [activeSessionId, activeSessionRootTerminals, contentTab, syncTerminalSubTabOverflowState]);
-  useEffect(() => {
-    const frame = requestAnimationFrame(syncTerminalSubTabOverflowState);
-    return () => cancelAnimationFrame(frame);
-  }, [activeSessionId, activeSessionRootTerminals, contentTab, syncTerminalSubTabOverflowState]);
+  }, [activeSessionId, activeTerminalId, activeSessionRootTerminals, contentTab, restoreTerminalSubTabScroll, scrollTerminalSubTabIntoView, syncTerminalSubTabOverflowState]);
   const handleTerminalSubTabScroll = useCallback((e) => {
+    const left = e.currentTarget.scrollLeft;
     if (!terminalSubTabScrollFrameRef.current) {
-      terminalSubTabScrollTargetRef.current = e.currentTarget.scrollLeft;
+      terminalSubTabScrollTargetRef.current = left;
+    }
+    if (activeSessionId) {
+      rememberTerminalSubTabScroll(activeSessionId, left);
     }
     syncTerminalSubTabOverflowState();
-  }, [syncTerminalSubTabOverflowState]);
+  }, [activeSessionId, rememberTerminalSubTabScroll, syncTerminalSubTabOverflowState]);
   const handleTerminalSubTabWheel = useCallback((e) => {
     const el = terminalSubTabScrollRef.current;
     if (!el || el.scrollWidth <= el.clientWidth) {
@@ -4247,12 +4483,12 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     </div>
   ) : null;
 
-  // 同步 activeTerminalId / contentTab 到每个 session 的记忆
+  // 同步 activeTerminalId / contentTab 到每个 session 的记忆（含可持久化字段）
   useEffect(() => {
     if (activeSessionId && activeTerminalId) {
-      lastTerminalRef.current[activeSessionId] = activeTerminalId;
+      rememberSessionActiveTerminal(activeSessionId, activeTerminalId);
     }
-  }, [activeSessionId, activeTerminalId]);
+  }, [activeSessionId, activeTerminalId, rememberSessionActiveTerminal]);
 
   useEffect(() => {
     if (activeSessionId) {
@@ -5478,6 +5714,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       <Tiptop key={term.id} text={term.label} placement="bottom">
                         <div
                           className={`terminal-sub-tab ${activeTerminalId === term.id ? 'active' : ''}`}
+                          data-terminal-id={term.id}
                           onMouseDown={canPreviewDock ? (e) => handleTerminalSubTabDockMouseDown(e, activeSession, term) : undefined}
                           onContextMenu={(e) => {
                             e.preventDefault();
@@ -5499,7 +5736,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                             setTerminalTabContextMenu(null);
                             setActiveTerminalId(term.id);
                             setContentTab('terminal');
-                            lastTerminalRef.current[activeSession.id] = term.id;
+                            rememberSessionActiveTerminal(activeSession.id, term.id, term.label);
                             persistWorkspaceSnapshotRef.current({
                               activeSessionId: activeSession.id,
                               activeTerminalId: term.id,

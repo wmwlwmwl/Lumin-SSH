@@ -188,7 +188,19 @@ export default function Dashboard({
                       setCollapsedGroups(new Set(visibleGroupNames));
                     }
                   }}
-                  style={{ height: 28, padding: '0 8px', fontSize: 12, border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 4 }}
+                  style={{
+                    height: 28,
+                    padding: '0 10px',
+                    fontSize: 12,
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--surface-overlay)',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontWeight: 500,
+                  }}
                 >
                   {allCollapsed ? <Folder size={13} /> : <FolderOpen size={13} />}
                   <span>{allCollapsed ? t('打开分组') : t('收起分组')}</span>
@@ -200,7 +212,18 @@ export default function Dashboard({
                   className="btn btn-ghost"
                   onClick={onOpenImportExport}
                   aria-label={t('数据管理')}
-                  style={{ height: 28, padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--border-subtle)' }}
+                  style={{
+                    height: 28,
+                    padding: '0 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--surface-overlay)',
+                    color: 'var(--text-secondary)',
+                    fontWeight: 500,
+                  }}
                 >
                   <Database size={13} />
                   <span style={{ fontSize: 12 }}>{t('数据管理')}</span>
