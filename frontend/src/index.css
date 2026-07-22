@@ -155,6 +155,9 @@ svg[class*="lucide"] {
   --tab-active-border: color-mix(in srgb, var(--accent) 48%, var(--border));
   --tab-active-text: var(--text-primary);
   --tab-radius: 0;
+
+  /* Shell script file icon (dark: vivid green) */
+  --file-icon-shell: #89e051;
 }
 
 /* ── 设计 Token：浅色模式 ───────────────────────── */
@@ -178,6 +181,9 @@ body.theme-light {
   --text-secondary:  #334155;
   --text-tertiary:   #526176;
   --text-muted:      #6b7a8f;
+
+  /* Shell script file icon (light: deeper green for contrast) */
+  --file-icon-shell: #15803d;
 
   /* ── 监控面板专用文字（比全局更清晰） ── */
   --probe-label:     #1f2937;
@@ -2598,6 +2604,13 @@ body.theme-light .batch-operation-bar {
 
 .file-name-cell { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .file-icon { font-size: var(--text-md); flex-shrink: 0; }
+.file-icon-shell {
+  color: var(--file-icon-shell);
+  shape-rendering: geometricPrecision;
+}
+.file-icon-shell svg {
+  stroke-width: 2.25;
+}
 .file-name {
   font-size: var(--text-base);
   color: var(--text-primary);

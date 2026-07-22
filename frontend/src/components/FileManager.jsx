@@ -90,7 +90,8 @@ function fileIcon(name, isDir) {
     md: '#083fa1', txt: '#4b5563', log: '#4b5563',
     png: '#a855f7', jpg: '#a855f7', jpeg: '#a855f7', gif: '#a855f7', svg: '#a855f7', webp: '#a855f7',
     zip: '#eab308', tar: '#eab308', gz: '#eab308', rar: '#eab308', '7z': '#eab308',
-    sh: '#89e051', bash: '#89e051', zsh: '#89e051',
+    // Theme-aware via CSS variable so light/dark switch updates without remount
+    sh: 'var(--file-icon-shell)', bash: 'var(--file-icon-shell)', zsh: 'var(--file-icon-shell)',
     pdf: '#ff0000', sql: '#e38c00', xml: '#f16529', php: '#4f5d95',
     mp4: '#6366f1', mkv: '#6366f1', avi: '#6366f1',
     mp3: '#1db954', wav: '#1db954',
@@ -111,6 +112,14 @@ function fileIcon(name, isDir) {
   };
   const IconComp = iconMap[ext] || File;
   const color = colorMap[ext] || '#4b5563';
+  const isShellScript = ext === 'sh' || ext === 'bash' || ext === 'zsh';
+  if (isShellScript) {
+    return (
+      <span className="file-icon-shell">
+        <IconComp size={ICON_SIZE} />
+      </span>
+    );
+  }
   return <IconComp size={ICON_SIZE} style={{ color }} />;
 }
 
@@ -1248,18 +1257,29 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const draggingFileManagerTabIdRef = useRef('');
   const [fileManagerTabDropIndicator, setFileManagerTabDropIndicator] = useState(null);
   const tabItemsCacheRef = useRef(new Map());
-  const getCachedTabItems = useCallback((tabId) => {
-    const cachedItems = tabItemsCacheRef.current.get(String(tabId || '').trim());
-    return Array.isArray(cachedItems) ? cloneFileManagerItemsForCache(cachedItems) : null;
-  }, []);
+  const getCachedTabItems = useCallback((tabId, path = '') => {
+    const key = String(tabId || '').trim();
+    if (!key) return null;
+    const cached = tabItemsCacheRef.current.get(key);
+    if (!cached) return null;
+    const normalizedTarget = normalizePath(path);
+    if (normalizedTarget && cached.path && cached.path !== normalizedTarget) {
+      return null;
+    }
+    return Array.isArray(cached.items) ? cloneFileManagerItemsForCache(cached.items) : null;
+  }, [normalizePath]);
   const getCachedPathItems = useCallback((path) => (
     getSessionCachedFileManagerPathItems(sessionId, path)
   ), [sessionId]);
-  const cacheCurrentTabItems = useCallback((tabId, nextItems) => {
+  const cacheCurrentTabItems = useCallback((tabId, path, nextItems) => {
     const key = String(tabId || '').trim();
     if (!key) return;
-    tabItemsCacheRef.current.set(key, cloneFileManagerItemsForCache(nextItems));
-  }, []);
+    const normalized = normalizePath(path) || '/';
+    tabItemsCacheRef.current.set(key, {
+      path: normalized,
+      items: cloneFileManagerItemsForCache(nextItems),
+    });
+  }, [normalizePath]);
   const cachePathItems = useCallback((path, nextItems) => {
     setSessionCachedFileManagerPathItems(sessionId, path, nextItems);
   }, [sessionId]);
@@ -1427,7 +1447,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (!currentPathHydratedRef.current) return;
     const displayedTabId = displayedTabIdRef.current || '';
     if (displayedTabId) {
-      cacheCurrentTabItems(displayedTabId, items);
+      cacheCurrentTabItems(displayedTabId, currentPathRef.current || currentPath, items);
     }
     cachePathItems(currentPath || currentPathRef.current || '/', items);
   }, [cacheCurrentTabItems, cachePathItems, currentPath, items]);
@@ -1468,11 +1488,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   }, [commitFileManagerWorkspace, normalizePath, sessionId]);
   const restoreTabItemsFromCache = useCallback((tab, path) => {
     const resolvedTabId = String(tab?.id || '').trim();
-    const cachedItems = getCachedTabItems(resolvedTabId);
+    const resolvedPath = normalizePath(path ?? tab?.path) || '/';
+    const cachedItems = getCachedTabItems(resolvedTabId, resolvedPath);
     if (!cachedItems) {
       return false;
     }
-    const resolvedPath = normalizePath(path ?? tab?.path) || '/';
     displayedTabIdRef.current = resolvedTabId;
     currentPathHydratedRef.current = true;
     currentPathRef.current = resolvedPath;
@@ -2032,10 +2052,16 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const explicitStaleWhileRevalidate = resolvedOptions.staleWhileRevalidate === true;
     const providedStaleItems = explicitStaleWhileRevalidate ? cloneFileManagerItemsForCache(resolvedOptions.staleItems) : null;
     const cachedPathItems = providedStaleItems ? null : getCachedPathItems(normalizedPath);
-    const staleWhileRevalidate = explicitStaleWhileRevalidate || (!!cachedPathItems && normalizedPath !== currentPathRef.current);
+    // Prefer path-level cache whenever leaving the current path so tab switches don't flash the previous tab's list.
+    const pathChanged = normalizedPath !== currentPathRef.current;
+    const samePathRefresh = currentPathHydratedRef.current && !pathChanged;
+    const staleWhileRevalidate = explicitStaleWhileRevalidate
+      || (!!cachedPathItems && pathChanged)
+      || (!!cachedPathItems && resolvedOptions.preferPathCache === true);
     const staleItems = providedStaleItems || cachedPathItems;
-    const transitionMode = resolvedOptions.transitionMode === 'directory' || resolvedOptions.transitionMode === 'tab'
-      ? resolvedOptions.transitionMode
+    // Only animate directory navigation. Tab switches (including cwd-linked tab path jumps) stay instant.
+    const transitionMode = resolvedOptions.transitionMode === 'directory'
+      ? 'directory'
       : 'none';
     const transitionDirection = resolvedOptions.transitionDirection === 'backward'
       ? 'backward'
@@ -2043,7 +2069,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         ? 'forward'
         : (transitionMode === 'directory' && normalizedPath === getParentPath(currentPathRef.current) ? 'backward' : 'forward');
     const preserveWorkspacePathOnSuccess = resolvedOptions.preserveWorkspacePathOnSuccess === true;
-    const shouldAnimateSwitch = transitionMode !== 'none' && !staleWhileRevalidate;
+    const shouldAnimateSwitch = transitionMode === 'directory' && !staleWhileRevalidate;
     const switchToken = shouldAnimateSwitch ? beginFileListSwitch(transitionDirection) : 0;
 
     if (staleWhileRevalidate && staleItems) {
@@ -2053,11 +2079,17 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       setLoading(false);
       setItems(staleItems);
       setCurrentPath(normalizedPath);
+    } else if (pathChanged && !shouldAnimateSwitch) {
+      // No usable cache: clear previous tab/path content immediately so the old list never flashes.
+      displayedTabIdRef.current = targetTabId || displayedTabIdRef.current;
+      currentPathHydratedRef.current = true;
+      currentPathRef.current = normalizedPath;
+      setItems([]);
+      setCurrentPath(normalizedPath);
     }
 
-    const samePathRefresh = currentPathHydratedRef.current && normalizedPath === currentPathRef.current;
     const preserveView = resolvedOptions.preserveView ?? (staleWhileRevalidate ? true : samePathRefresh);
-    const trackDiff = resolvedOptions.trackDiff ?? (staleWhileRevalidate ? true : samePathRefresh);
+    const trackDiff = (resolvedOptions.trackDiff ?? (staleWhileRevalidate ? true : samePathRefresh)) && samePathRefresh;
     const showLoading = resolvedOptions.showLoading ?? (shouldAnimateSwitch ? false : (staleWhileRevalidate ? false : !(preserveView || trackDiff)));
 
     if (showLoading) {
@@ -2155,19 +2187,19 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       || ''
     ).trim();
     const preserveView = options.preserveView === true;
-    const token = beginFileListSwitch();
-    commitFileListSwitch(token, () => {
-      displayedTabIdRef.current = targetTabId || displayedTabIdRef.current;
-      currentPathHydratedRef.current = true;
-      currentPathRef.current = normalizedPath;
-      setLoading(false);
-      setItems(Array.isArray(nextItems) ? nextItems : []);
-      setCurrentPath(normalizedPath);
-      if (!preserveView && fileListRef.current) {
-        fileListRef.current.scrollTop = 0;
-      }
-    });
-  }, [normalizePath, beginFileListSwitch, commitFileListSwitch]);
+    // Tab cache restore must be instant — slide animation feels wrong when a background
+    // cwd-linked tab path has already changed while the user was on another tab.
+    cancelFileListSwitch();
+    displayedTabIdRef.current = targetTabId || displayedTabIdRef.current;
+    currentPathHydratedRef.current = true;
+    currentPathRef.current = normalizedPath;
+    setLoading(false);
+    setItems(Array.isArray(nextItems) ? nextItems : []);
+    setCurrentPath(normalizedPath);
+    if (!preserveView && fileListRef.current) {
+      fileListRef.current.scrollTop = 0;
+    }
+  }, [normalizePath, cancelFileListSwitch]);
 
   const buildNonRememberedInitialPathCandidates = useCallback(async () => {
     const candidates = [];
@@ -2282,10 +2314,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     });
     const nextCwdTab = (nextWorkspace?.tabs || []).find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_CWD) || null;
     if (previousCwdTab && previousCwdPath && previousCwdPath !== normalizedCwdPath && nextCwdTab?.id) {
+      removeCachedTabItems(nextCwdTab.id);
       triggerCwdSystemTabHighlight(nextCwdTab.id);
     }
     return nextWorkspace;
-  }, [commitFileManagerWorkspace, ensureForcedInitialFileManagerTab, normalizePath, triggerCwdSystemTabHighlight]);
+  }, [commitFileManagerWorkspace, ensureForcedInitialFileManagerTab, normalizePath, removeCachedTabItems, triggerCwdSystemTabHighlight]);
 
   const applyTerminalCwdFollow = useCallback(async (cwd, options = {}) => {
     const newPath = normalizePath(cwd);
@@ -3463,6 +3496,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (!tabId || tabId === activeFileManagerTabIdRef.current) {
       return;
     }
+    cancelFileListSwitch();
     const currentWorkspace = syncCurrentTabToWorkspace({ scrollTop: fileListRef.current?.scrollTop || 0 }) || fileManagerWorkspace;
     const targetTab = currentWorkspace?.tabs?.find((tab) => tab.id === tabId);
     if (!targetTab) {
@@ -3473,7 +3507,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setSortDir(targetTab.sortDir === 'desc' ? 'desc' : 'asc');
     const nextSelectedPaths = Array.isArray(targetTab.selectedPaths) ? targetTab.selectedPaths : [];
     const targetPath = normalizePath(targetTab.path) || '/';
-    const cachedItems = getCachedTabItems(tabId);
+    const cachedItems = getCachedTabItems(tabId, targetPath);
     const restoreSelectionAndScroll = () => {
       setSelectedPaths(nextSelectedPaths);
       lastClickedPathRef.current = nextSelectedPaths[nextSelectedPaths.length - 1] || null;
@@ -3505,6 +3539,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         preserveView: true,
         trackDiff: true,
         showLoading: false,
+        preferPathCache: true,
       });
       return;
     }
@@ -3534,7 +3569,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       preserveView: false,
       trackDiff: false,
       showLoading: false,
-      transitionMode: 'tab',
+      preferPathCache: true,
     });
     if (!ok && isFileManagerTabLoadSuperseded(tabId)) {
       return;
@@ -3549,7 +3584,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         preserveView: false,
         trackDiff: false,
         showLoading: false,
-        transitionMode: 'tab',
+        preferPathCache: true,
       });
       if (ok) {
         setSelectedPaths([]);
@@ -3565,7 +3600,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         )),
       }));
     }
-  }, [commitFileManagerWorkspace, fileManagerWorkspace, getCachedTabItems, loadDir, normalizePath, syncCurrentTabToWorkspace, applyAnimatedFileListSnapshot]);
+  }, [commitFileManagerWorkspace, fileManagerWorkspace, getCachedTabItems, loadDir, normalizePath, syncCurrentTabToWorkspace, applyAnimatedFileListSnapshot, cancelFileListSwitch]);
 
   const resolveNewFileManagerTabPath = useCallback(async () => {
     const mode = getFileManagerNewTabPathMode();
@@ -3617,7 +3652,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setSortDir(nextTab.sortDir);
     if (candidatePaths[0] === currentPathRef.current) {
       displayedTabIdRef.current = nextTab.id;
-      cacheCurrentTabItems(nextTab.id, items);
+      cacheCurrentTabItems(nextTab.id, candidatePaths[0], items);
       setSelectedPaths([]);
       lastClickedPathRef.current = null;
       requestAnimationFrame(() => {
@@ -3637,7 +3672,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         preserveView: false,
         trackDiff: false,
         showLoading: false,
-        transitionMode: 'tab',
+        preferPathCache: true,
       });
       if (!ok && isFileManagerTabLoadSuperseded(nextTab.id)) {
         return;
@@ -3750,6 +3785,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   const handleCloseFileManagerTab = useCallback(async (tabId, event) => {
     event?.stopPropagation();
+    cancelFileListSwitch();
     const currentWorkspace = syncCurrentTabToWorkspace({ scrollTop: fileListRef.current?.scrollTop || 0 }) || fileManagerWorkspace;
     const currentTabs = Array.isArray(currentWorkspace?.tabs) ? currentWorkspace.tabs : [];
     if (currentTabs.length <= 1) {
@@ -3784,7 +3820,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setSortDir(nextActiveTab.sortDir === 'desc' ? 'desc' : 'asc');
     const nextSelectedPaths = Array.isArray(nextActiveTab.selectedPaths) ? nextActiveTab.selectedPaths : [];
     const targetPath = normalizePath(nextActiveTab.path) || '/';
-    const cachedItems = getCachedTabItems(nextActiveTab.id);
+    const cachedItems = getCachedTabItems(nextActiveTab.id, targetPath);
     const restoreSelectionAndScroll = () => {
       setSelectedPaths(nextSelectedPaths);
       lastClickedPathRef.current = nextSelectedPaths[nextSelectedPaths.length - 1] || null;
@@ -3816,6 +3852,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         preserveView: true,
         trackDiff: true,
         showLoading: false,
+        preferPathCache: true,
       });
       return;
     }
@@ -3844,9 +3881,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       preserveView: false,
       trackDiff: false,
       showLoading: false,
-      transitionMode: 'tab',
+      preferPathCache: true,
     });
-  }, [addToast, applyAnimatedFileListSnapshot, commitFileManagerWorkspace, fileManagerWorkspace, getCachedTabItems, loadDir, normalizePath, removeCachedTabItems, syncCurrentTabToWorkspace, t]);
+  }, [addToast, applyAnimatedFileListSnapshot, cancelFileListSwitch, commitFileManagerWorkspace, fileManagerWorkspace, getCachedTabItems, loadDir, normalizePath, removeCachedTabItems, syncCurrentTabToWorkspace, t]);
 
   // Delete
   const handleDelete = async (item) => {
