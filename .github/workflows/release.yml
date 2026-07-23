@@ -283,12 +283,16 @@ jobs:
             ${{ env.installer_sha }}
 
   # 全平台产物齐套后再取消 draft，客户端 /releases/latest 才能看到
+  # 用 gh release edit 只改 draft/latest，避免 softprops 更新时把 name/body 清空
   publish-release:
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          make_latest: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --latest

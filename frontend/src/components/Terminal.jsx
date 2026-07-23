@@ -1033,7 +1033,9 @@ export default function Terminal({
       lineH = term.options.fontSize * term.options.lineHeight;
     }
 
-    const color = 'var(--term-status-color)';
+    // 时间戳用状态色；命令块树线/折叠钮用 accent，深色终端上更醒目
+    const tsColor = 'var(--term-status-color)';
+    const blockColor = 'var(--accent)';
     let html = '';
     for (let i = 0; i < rows; i++) {
       const tsIdx = firstVisible + i;
@@ -1054,7 +1056,7 @@ export default function Terminal({
       // 固定列宽：时间戳列右对齐贴齐「]」，命令块列固定 14px，中间无 gap，避免看起来多一格空
       if (showTs) {
         // [HH:MM:SS] 共 10 字符；等宽 11px 约 66px，固定 70 够用
-        parts.push(`<span style="display:inline-block;width:70px;min-width:70px;max-width:70px;text-align:right;flex-shrink:0;letter-spacing:0;box-sizing:border-box">${ts || ''}</span>`);
+        parts.push(`<span style="display:inline-block;width:70px;min-width:70px;max-width:70px;text-align:right;flex-shrink:0;letter-spacing:0;box-sizing:border-box;color:${tsColor}">${ts || ''}</span>`);
       }
       if (showCb) {
         let blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;flex-shrink:0"></span>`;
@@ -1063,16 +1065,16 @@ export default function Terminal({
           const canFold = owning.collapsed || owning.end > owning.start;
           const icon = owning.collapsed ? '+' : '−';
           blockCell = canFold
-            ? `<button type="button" data-cb-id="${owning.block.id}" title="${owning.collapsed ? '展开' : '收起'}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;min-width:14px;height:14px;margin:0;padding:0;border:1px solid color-mix(in srgb, ${color} 55%, transparent);border-radius:2px;background:transparent;color:${color};font-size:11px;line-height:1;cursor:pointer;font-family:var(--font-mono);flex-shrink:0;box-sizing:border-box">${icon}</button>`
-            : `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;border:1px solid color-mix(in srgb, ${color} 35%, transparent);border-radius:2px;opacity:0.5;flex-shrink:0;box-sizing:border-box"></span>`;
+            ? `<button type="button" data-cb-id="${owning.block.id}" title="${owning.collapsed ? '展开' : '收起'}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;min-width:14px;height:14px;margin:0;padding:0;border:1px solid color-mix(in srgb, ${blockColor} 78%, transparent);border-radius:2px;background:color-mix(in srgb, ${blockColor} 16%, transparent);color:${blockColor};font-size:11px;line-height:1;cursor:pointer;font-family:var(--font-mono);flex-shrink:0;box-sizing:border-box;font-weight:700">${icon}</button>`
+            : `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;border:1px solid color-mix(in srgb, ${blockColor} 55%, transparent);border-radius:2px;opacity:0.75;flex-shrink:0;box-sizing:border-box"></span>`;
         } else if (owning && !owning.collapsed && tsIdx > owning.start && tsIdx < owning.end) {
-          blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;opacity:0.55;color:${color};flex-shrink:0">│</span>`;
+          blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;opacity:0.88;color:${blockColor};flex-shrink:0;font-weight:600">│</span>`;
         } else if (owning && !owning.collapsed && tsIdx === owning.end && owning.end > owning.start) {
-          blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;opacity:0.55;color:${color};flex-shrink:0">└</span>`;
+          blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;opacity:0.88;color:${blockColor};flex-shrink:0;font-weight:600">└</span>`;
         }
         parts.push(blockCell);
       }
-      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:${color};font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;padding:0 2px 0 4px;box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:2px">${parts.join('')}</div>`;
+      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;padding:0 2px 0 4px;box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:2px">${parts.join('')}</div>`;
     }
     gutter.innerHTML = html;
   }
