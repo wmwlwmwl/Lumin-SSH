@@ -53,6 +53,7 @@ function getTermSearchDecorations() {
 
 function formatTerminalTimestamp(date = new Date()) {
   const pad = (value) => String(value).padStart(2, '0');
+  // 固定 [HH:MM:SS]，括号内不加空格，避免 gutter 对齐时看起来「多一格」
   return `[${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}]`;
 }
 
@@ -473,6 +474,9 @@ export default function Terminal({
   const localEchoRef = useRef(localStorage.getItem('terminalLocalEcho') === 'true');
   const timestampsEnabledRef = useRef(localStorage.getItem('terminalTimestamps') === 'true');
   const [timestampsVisible, setTimestampsVisible] = useState(localStorage.getItem('terminalTimestamps') === 'true');
+  // 命令块：左侧折叠钮 + 树线，可收起输出
+  const commandBlocksEnabledRef = useRef(localStorage.getItem('terminalCommandBlocks') === 'true');
+  const [commandBlocksVisible, setCommandBlocksVisible] = useState(localStorage.getItem('terminalCommandBlocks') === 'true');
   const [alternateBufferActive, setAlternateBufferActive] = useState(false);
   const alternateBufferActiveRef = useRef(false);
   // Ring buffer 时间戳：用 xterm marker 跟随 scrollback 裁剪，避免 buffer 行号复用后错位
@@ -484,6 +488,16 @@ export default function Terminal({
   const tsSet = (marker, val) => {
     if (!marker) return;
     const r = tsRingRef.current;
+    // 同 line 只保留最新戳（执行命令时要盖掉空提示符上的旧时间）
+    const line = marker.line;
+    if (typeof line === 'number' && line >= 0) {
+      for (let j = 0; j < r.entries.length; j += 1) {
+        if (r.entries[j]?.marker?.line === line) {
+          r.entries[j].marker.dispose?.();
+          r.entries[j] = null;
+        }
+      }
+    }
     const i = r.next;
     r.entries[i]?.marker?.dispose?.();
     r.entries[i] = { marker, val };
@@ -514,6 +528,323 @@ export default function Terminal({
     tsRingRef.current.entries.fill(null);
     tsRingRef.current.next = 0;
   };
+  // 按 buffer 行号快照时间戳（收起/展开改写 buffer 后要还原，不能重新 now()）
+  // 与 syncGutter 一致：ring 从旧到新扫，后写覆盖，保留「执行时刻」而非提示符出现时刻
+  const tsSnapshotByLine = (term, lineCount) => {
+    const total = typeof lineCount === 'number' ? lineCount : (term?.buffer?.active?.length || 0);
+    const byLine = new Array(Math.max(0, total)).fill('');
+    const ring = tsRingRef.current;
+    for (let offset = 0; offset < ring.entries.length; offset += 1) {
+      const index = (ring.next + offset) % ring.entries.length;
+      const entry = ring.entries[index];
+      const line = entry?.marker?.line;
+      if (!entry || entry.marker?.isDisposed || typeof line !== 'number' || line < 0 || line >= byLine.length) continue;
+      byLine[line] = entry.val;
+    }
+    return byLine;
+  };
+  const tsRemountFromList = (term, tsList) => {
+    tsClear();
+    if (!term?.buffer?.active || !Array.isArray(tsList) || !timestampsEnabledRef.current) return;
+    const bufLen = term.buffer.active.length;
+    const cursorLine = term.buffer.active.baseY + term.buffer.active.cursorY;
+    const limit = Math.min(tsList.length, bufLen);
+    for (let line = 0; line < limit; line += 1) {
+      const val = tsList[line];
+      if (!val) continue;
+      try {
+        const marker = term.registerMarker(line - cursorLine);
+        if (marker) tsSet(marker, val);
+      } catch (_) {}
+    }
+  };
+  // 命令块：扫描 buffer 里「提示符行 → 下一提示符行」；收起时改写 buffer 只留一行摘要
+  // 同名命令用「第几次出现」区分，避免收起第二个把第一个状态冲掉
+  const CB_POOL = 400;
+  const cbBlocksRef = useRef(null);
+  if (!cbBlocksRef.current) {
+    // key = `${commandLineText}#${occurrence}`；value = { id, commandLineText, occurrence, collapsed, savedOutput, savedOutputTs }
+    cbBlocksRef.current = new Map();
+  }
+  const cbIdSeqRef = useRef(1);
+  const cbRewriteLockRef = useRef(false);
+  const isCollapseSummaryLine = (text) => /^⋯\s+\d+\s+lines\s*$/.test(String(text || '').trim());
+  // 行首是 shell 提示符（后面可跟命令）。不能要求「整行以 # 结尾」，否则 `root@host:~# ping` 识别不到
+  const isShellPromptLine = (text) => {
+    const t = String(text || '').replace(/\s+$/g, '');
+    if (!t || t.length < 2 || isCollapseSummaryLine(t)) return false;
+    // user@host:path# cmd  /  user@host:path$ cmd
+    if (/^[\w.-]+@[\w.-]+:[^\n]*?[#\$](?:\s+|$)/.test(t)) return true;
+    // [user@host dir]$ cmd
+    if (/^\[[^\]]+\][#\$%](?:\s+|$)/.test(t)) return true;
+    // root@host ~]# cmd  一类
+    if (/^[\w.-]+@[\w.-]+\s+[^\n]*[#\$%](?:\s+|$)/.test(t)) return true;
+    // 极简：以 #/$ 单独起命令（少见）
+    if (/^[#\$]\s+\S/.test(t)) return true;
+    return false;
+  };
+  // 空提示符可以显示时间；真正执行（回车）时再更新该行时间戳
+  const normalizeCmdLineKey = (text) => String(text || '').replace(/\s+$/g, '');
+  const blockStateKey = (commandLineText, occurrence) => `${normalizeCmdLineKey(commandLineText)}#${occurrence}`;
+  const readTerminalBufferLines = (term) => {
+    const buf = term?.buffer?.active;
+    if (!buf) return [];
+    const lines = [];
+    const total = buf.length;
+    for (let i = 0; i < total; i += 1) {
+      const bl = buf.getLine(i);
+      lines.push(bl ? bl.translateToString(true) : '');
+    }
+    while (lines.length > 1 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    return lines;
+  };
+  // 扫描所有提示符行下标：块 i = prompt[i] .. prompt[i+1]-1
+  const scanPromptIndexes = (lines) => {
+    const idxs = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      if (isShellPromptLine(lines[i])) idxs.push(i);
+    }
+    return idxs;
+  };
+  // 在 buffer 里找「第 occurrence 次」出现的命令行（0-based）
+  const findCommandLineOccurrence = (lines, commandLineText, occurrence) => {
+    const key = normalizeCmdLineKey(commandLineText);
+    let seen = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (normalizeCmdLineKey(lines[i]) !== key) continue;
+      if (seen === occurrence) return i;
+      seen += 1;
+    }
+    return -1;
+  };
+  const getOrCreateBlockState = (commandLineText, occurrence) => {
+    const textKey = normalizeCmdLineKey(commandLineText);
+    if (!textKey) return null;
+    const occ = Math.max(0, Number(occurrence) || 0);
+    const key = blockStateKey(textKey, occ);
+    const map = cbBlocksRef.current;
+    let block = map.get(key);
+    if (!block) {
+      if (map.size >= CB_POOL) {
+        const firstKey = map.keys().next().value;
+        if (firstKey != null) map.delete(firstKey);
+      }
+      block = {
+        id: cbIdSeqRef.current++,
+        commandLineText: textKey,
+        occurrence: occ,
+        collapsed: false,
+        savedOutput: null,
+        savedOutputTs: null,
+      };
+      map.set(key, block);
+    }
+    return block;
+  };
+  const rewriteTerminalBufferLines = (term, lines, nextTimestamps = null, options = {}) => {
+    if (!term) return;
+    const anchorLine = typeof options.anchorLine === 'number' ? options.anchorLine : -1;
+    const bufBefore = term.buffer?.active;
+    const viewportBefore = bufBefore ? bufBefore.viewportY : 0;
+    const baseBefore = bufBefore ? bufBefore.baseY : 0;
+    // 尽量保持视口相对锚点行的偏移，减少重写后整屏「跳一下」
+    const anchorOffset = anchorLine >= 0 ? (anchorLine - viewportBefore) : 0;
+
+    cbRewriteLockRef.current = true;
+    // 一次 write 完成：清 scrollback + 清屏 + 回顶 + 写回。
+    // 比 term.reset() 轻（不重置模式/字符集），并用 write 回调在同一渲染路径里恢复滚动与 gutter。
+    const normalized = (Array.isArray(lines) ? lines : []).map((line) => String(line ?? ''));
+    const body = normalized.length === 0
+      ? ''
+      : normalized.length === 1
+        ? normalized[0]
+        : `${normalized.slice(0, -1).join('\r\n')}\r\n${normalized[normalized.length - 1]}`;
+    // \x1b[3J 清 scrollback，\x1b[2J 清屏，\x1b[H 光标回原点
+    const payload = `\x1b[3J\x1b[2J\x1b[H${body}`;
+
+    const finish = () => {
+      try {
+        if (Array.isArray(nextTimestamps)) {
+          tsRemountFromList(term, nextTimestamps);
+        }
+        const buf = term.buffer.active;
+        const maxVp = Math.max(0, buf.baseY);
+        if (anchorLine >= 0) {
+          const nextVp = Math.max(0, Math.min(maxVp, anchorLine - anchorOffset));
+          term.scrollToLine(nextVp);
+        } else if (baseBefore > 0) {
+          const ratio = Math.min(1, viewportBefore / baseBefore);
+          term.scrollToLine(Math.floor(maxVp * ratio));
+        } else {
+          term.scrollToBottom();
+        }
+      } catch (_) {}
+      cbRewriteLockRef.current = false;
+      // 直接 sync，少一帧 rAF 延迟，减轻「收起后 gutter 晚半拍」
+      try { syncGutter(); } catch (_) { scheduleGutterSync(); }
+    };
+
+    try {
+      // 只影响本地 xterm，不发给 SSH
+      term.write(payload, finish);
+    } catch (_) {
+      finish();
+    }
+  };
+  const cbToggleBlock = (blockId) => {
+    const term = termRef.current;
+    if (!term || term.buffer.active.type !== 'normal' || cbRewriteLockRef.current) return;
+    let block = null;
+    for (const b of cbBlocksRef.current.values()) {
+      if (b.id === blockId) { block = b; break; }
+    }
+    if (!block) return;
+
+    const lines = readTerminalBufferLines(term);
+    const oldTs = tsSnapshotByLine(term, lines.length);
+    // 用「命令文本 + 第几次出现」定位，避免两次 ping 绑到同一行
+    const start = findCommandLineOccurrence(lines, block.commandLineText, block.occurrence);
+    if (start < 0) return;
+
+    if (!block.collapsed) {
+      // 收起：start+1 到「下一提示符前」→ 换成一行摘要
+      const prompts = scanPromptIndexes(lines);
+      const pIdx = prompts.indexOf(start);
+      let end = start;
+      if (pIdx >= 0 && pIdx + 1 < prompts.length) {
+        end = prompts[pIdx + 1] - 1;
+      } else {
+        // 最后一个提示符：若下一行是摘要则用摘要；否则跟到末尾有内容的行
+        if (isCollapseSummaryLine(lines[start + 1])) {
+          end = start + 1;
+        } else {
+          end = start;
+          for (let i = start + 1; i < lines.length; i += 1) {
+            if (String(lines[i] || '').trim()) end = i;
+          }
+        }
+      }
+      if (end <= start) return;
+      // output / outputTs 同步构建，避免 filter 后 index 错位
+      const output = [];
+      const outputTs = [];
+      for (let i = start + 1; i <= end; i += 1) {
+        if (isCollapseSummaryLine(lines[i])) continue;
+        output.push(lines[i]);
+        outputTs.push(oldTs[i] || '');
+      }
+      if (output.length === 0) return;
+      block.savedOutput = output;
+      block.savedOutputTs = outputTs;
+      block.collapsed = true;
+      const nextLines = [
+        ...lines.slice(0, start + 1),
+        `⋯ ${output.length} lines`,
+        ...lines.slice(end + 1),
+      ];
+      // 严格 index 手术：前缀 + 摘要 + 后缀（后缀行号整体前移，戳也整段切开）
+      const summaryTs = outputTs.find(Boolean) || oldTs[start] || '';
+      const nextTs = [
+        ...oldTs.slice(0, start + 1),
+        summaryTs,
+        ...oldTs.slice(end + 1),
+      ];
+      // 以命令行作锚点，重写后视口尽量不跳
+      rewriteTerminalBufferLines(term, nextLines, nextTs, { anchorLine: start });
+      return;
+    }
+
+    // 展开
+    if (!Array.isArray(block.savedOutput) || block.savedOutput.length === 0) {
+      block.collapsed = false;
+      scheduleGutterSync();
+      return;
+    }
+    let summaryIdx = start + 1;
+    if (!isCollapseSummaryLine(lines[summaryIdx])) {
+      const nearby = lines.findIndex((l, idx) => idx > start && idx <= start + 3 && isCollapseSummaryLine(l));
+      if (nearby < 0) {
+        block.collapsed = false;
+        block.savedOutput = null;
+        block.savedOutputTs = null;
+        scheduleGutterSync();
+        return;
+      }
+      summaryIdx = nearby;
+    }
+    const restoredTs = Array.isArray(block.savedOutputTs) && block.savedOutputTs.length === block.savedOutput.length
+      ? block.savedOutputTs
+      : block.savedOutput.map(() => oldTs[start] || '');
+    const nextLines = [
+      ...lines.slice(0, start + 1),
+      ...block.savedOutput,
+      ...lines.slice(summaryIdx + 1),
+    ];
+    const nextTs = [
+      ...oldTs.slice(0, start + 1),
+      ...restoredTs,
+      ...oldTs.slice(summaryIdx + 1),
+    ];
+    block.collapsed = false;
+    rewriteTerminalBufferLines(term, nextLines, nextTs, { anchorLine: start });
+  };
+  // 关闭功能前：把所有已收起的块展开回 buffer，否则 savedOutput 清掉后无法再展开
+  const cbExpandAllCollapsed = (term) => {
+    if (!term || term.buffer.active.type !== 'normal' || cbRewriteLockRef.current) return false;
+    const collapsed = [...cbBlocksRef.current.values()].filter(
+      (b) => b && b.collapsed && Array.isArray(b.savedOutput) && b.savedOutput.length > 0,
+    );
+    if (collapsed.length === 0) return false;
+
+    let lines = readTerminalBufferLines(term);
+    let oldTs = tsSnapshotByLine(term, lines.length);
+    // 从后往前展开，避免前面插入行导致后面 occurrence 定位错位
+    collapsed.sort((a, b) => b.occurrence - a.occurrence || b.commandLineText.localeCompare(a.commandLineText));
+
+    for (const block of collapsed) {
+      const start = findCommandLineOccurrence(lines, block.commandLineText, block.occurrence);
+      if (start < 0) {
+        block.collapsed = false;
+        block.savedOutput = null;
+        block.savedOutputTs = null;
+        continue;
+      }
+      let summaryIdx = start + 1;
+      if (!isCollapseSummaryLine(lines[summaryIdx])) {
+        const nearby = lines.findIndex((l, idx) => idx > start && idx <= start + 3 && isCollapseSummaryLine(l));
+        if (nearby < 0) {
+          block.collapsed = false;
+          block.savedOutput = null;
+          block.savedOutputTs = null;
+          continue;
+        }
+        summaryIdx = nearby;
+      }
+      const restoredTs = Array.isArray(block.savedOutputTs) && block.savedOutputTs.length === block.savedOutput.length
+        ? block.savedOutputTs
+        : block.savedOutput.map(() => oldTs[start] || '');
+      lines = [
+        ...lines.slice(0, start + 1),
+        ...block.savedOutput,
+        ...lines.slice(summaryIdx + 1),
+      ];
+      oldTs = [
+        ...oldTs.slice(0, start + 1),
+        ...restoredTs,
+        ...oldTs.slice(summaryIdx + 1),
+      ];
+      block.collapsed = false;
+      block.savedOutput = null;
+      block.savedOutputTs = null;
+    }
+    rewriteTerminalBufferLines(term, lines, oldTs);
+    return true;
+  };
+  const cbClear = () => {
+    cbBlocksRef.current = new Map();
+  };
   const gutterRef = useRef(null);
   const gutterSyncRAFRef = useRef(null);
   const linkUnderlineLayerRef = useRef(null);
@@ -523,9 +854,10 @@ export default function Terminal({
   // ponytail: getTerminalTheme() 每次渲染调用 30+ 次，缓存为 1 次
   const T = useMemo(() => getTerminalTheme(), [themeToggle]);
 
-  // ── 时间轴：同步 gutter 到 xterm 视口 ───────────────────────────
+  // ── 时间轴 / 命令块：同步 gutter 到 xterm 视口 ─────────────────
   function scheduleGutterSync() {
-    if (gutterSyncRAFRef.current !== null || !timestampsEnabledRef.current || alternateBufferActiveRef.current) return;
+    const gutterNeeded = timestampsEnabledRef.current || commandBlocksEnabledRef.current;
+    if (gutterSyncRAFRef.current !== null || !gutterNeeded || alternateBufferActiveRef.current) return;
     gutterSyncRAFRef.current = requestAnimationFrame(() => {
       gutterSyncRAFRef.current = null;
       syncGutter();
@@ -618,34 +950,81 @@ export default function Terminal({
     layer.innerHTML = parts.join('');
   }
 
+  function collectLiveCommandBlocks(term) {
+    // 完全按 buffer 扫描提示符：prompt[i] .. prompt[i+1]-1
+    // 同名命令按出现次序分块，避免两次 ping 共用状态
+    const lines = readTerminalBufferLines(term);
+    const prompts = scanPromptIndexes(lines);
+    const list = [];
+    const occurrenceByText = new Map();
+    for (let i = 0; i < prompts.length; i += 1) {
+      const start = prompts[i];
+      const commandLineText = normalizeCmdLineKey(lines[start]);
+      const occurrence = occurrenceByText.get(commandLineText) || 0;
+      occurrenceByText.set(commandLineText, occurrence + 1);
+      const block = getOrCreateBlockState(commandLineText, occurrence);
+      if (!block) continue;
+      let end = start;
+      if (block.collapsed && isCollapseSummaryLine(lines[start + 1])) {
+        end = start + 1;
+      } else if (i + 1 < prompts.length) {
+        end = Math.max(start, prompts[i + 1] - 1);
+      } else if (isCollapseSummaryLine(lines[start + 1])) {
+        end = start + 1;
+      } else {
+        end = start;
+        for (let j = start + 1; j < lines.length; j += 1) {
+          if (isShellPromptLine(lines[j])) break;
+          if (String(lines[j] || '').trim()) end = j;
+        }
+      }
+      list.push({ block, start, end, collapsed: Boolean(block.collapsed) });
+    }
+    return list;
+  }
+
   function syncGutter() {
     const gutter = gutterRef.current;
     const term = termRef.current;
-    if (!gutter || !term || !timestampsEnabledRef.current || term.buffer.active.type !== 'normal') return;
+    const showTs = timestampsEnabledRef.current;
+    const showCb = commandBlocksEnabledRef.current;
+    if (!gutter || !term || (!showTs && !showCb) || term.buffer.active.type !== 'normal') {
+      return;
+    }
     const buf = term.buffer.active;
     const rows = term.rows;
     if (!rows || !containerRef.current) return;
 
     const timestampsByLine = new Map();
-    const ring = tsRingRef.current;
-    for (let offset = 0; offset < ring.entries.length; offset += 1) {
-      const index = (ring.next + offset) % ring.entries.length;
-      const entry = ring.entries[index];
-      const line = entry?.marker?.line;
-      if (!entry || entry.marker.isDisposed || line < 0) {
-        ring.entries[index] = null;
-      } else if (timestampsByLine.has(line)) {
-        entry.marker.dispose?.();
-        ring.entries[index] = null;
-      } else {
-        timestampsByLine.set(line, entry.val);
+    if (showTs) {
+      const ring = tsRingRef.current;
+      // 从旧到新扫：后写覆盖先写，保证「执行时刻」压过「提示符出现时刻」
+      for (let offset = 0; offset < ring.entries.length; offset += 1) {
+        const index = (ring.next + offset) % ring.entries.length;
+        const entry = ring.entries[index];
+        const line = entry?.marker?.line;
+        if (!entry || entry.marker.isDisposed || line < 0) {
+          ring.entries[index] = null;
+        } else {
+          timestampsByLine.set(line, entry.val);
+        }
       }
     }
+
+    const liveBlocks = showCb ? collectLiveCommandBlocks(term) : [];
+    // 行 → 所在块；块起点优先
+    const blockByLine = new Map();
+    liveBlocks.forEach((item) => {
+      for (let line = item.start; line <= item.end; line += 1) {
+        const existing = blockByLine.get(line);
+        if (existing && existing.start === line && existing.start !== item.start) continue;
+        blockByLine.set(line, item);
+      }
+    });
 
     const firstVisible = buf.viewportY; // buffer 中第一个可见行 (ydisp)
 
     // 通过 xterm screen/rows 的实际渲染尺寸计算行高，确保像素级对齐
-    // viewport 包含滚动容器尺寸，不能代表文本起点；screen 才是实际文本层。
     const screen = containerRef.current.querySelector('.xterm-screen');
     const rowsEl = containerRef.current.querySelector('.xterm-rows');
     let lineH;
@@ -653,28 +1032,71 @@ export default function Terminal({
       const screenRect = screen.getBoundingClientRect();
       const rowsRect = rowsEl.getBoundingClientRect();
       lineH = Math.max(rowsRect.height / rows, 1);
-      const top = Math.max(rowsRect.top - screenRect.top, 0);
-      const paddingTop = `${top}px`;
+      const paddingTop = `${Math.max(rowsRect.top - screenRect.top, 0)}px`;
       if (gutter.style.paddingTop !== paddingTop) gutter.style.paddingTop = paddingTop;
     } else {
       lineH = term.options.fontSize * term.options.lineHeight;
     }
 
+    const color = 'var(--term-status-color)';
     let html = '';
     for (let i = 0; i < rows; i++) {
       const tsIdx = firstVisible + i;
       const bufLine = buf.getLine(tsIdx);
-      const isEmptyLine = !bufLine || bufLine.translateToString(true) === '';
-      // 空行或包裹行（超长行续行）不显示时间戳
+      const lineText = bufLine ? bufLine.translateToString(true) : '';
+      const isEmptyLine = !bufLine || lineText === '';
       const isWrapped = bufLine && bufLine.isWrapped;
       let ts = '';
-      if (!isEmptyLine && !isWrapped && tsIdx >= 0) {
-        ts = timestampsByLine.get(tsIdx) || (tsIdx === buf.baseY + buf.cursorY ? tsEnsureLine(term, tsIdx, timestampsByLine) : '');
+      // 空提示符也可显示已有戳；当前光标行没有戳时补一个（出现提示符的时间）
+      // 真正执行命令时会在回车路径更新为执行时刻
+      if (showTs && !isEmptyLine && !isWrapped && tsIdx >= 0 && !isCollapseSummaryLine(lineText)) {
+        ts = timestampsByLine.get(tsIdx)
+          || (tsIdx === buf.baseY + buf.cursorY ? tsEnsureLine(term, tsIdx, timestampsByLine) : '');
       }
-      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:var(--term-status-color);font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;overflow:hidden;padding:0 4px;box-sizing:border-box">${ts}</div>`;
+
+      const owning = showCb ? blockByLine.get(tsIdx) : null;
+      const parts = [];
+      // 固定列宽：时间戳列右对齐贴齐「]」，命令块列固定 14px，中间无 gap，避免看起来多一格空
+      if (showTs) {
+        // [HH:MM:SS] 共 10 字符；等宽 11px 约 66px，固定 70 够用
+        parts.push(`<span style="display:inline-block;width:70px;min-width:70px;max-width:70px;text-align:right;flex-shrink:0;letter-spacing:0;box-sizing:border-box">${ts || ''}</span>`);
+      }
+      if (showCb) {
+        let blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;flex-shrink:0"></span>`;
+        if (owning && tsIdx === owning.start) {
+          // 可折叠：展开有输出，或已收起可再展开
+          const canFold = owning.collapsed || owning.end > owning.start;
+          const icon = owning.collapsed ? '+' : '−';
+          blockCell = canFold
+            ? `<button type="button" data-cb-id="${owning.block.id}" title="${owning.collapsed ? '展开' : '收起'}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;min-width:14px;height:14px;margin:0;padding:0;border:1px solid color-mix(in srgb, ${color} 55%, transparent);border-radius:2px;background:transparent;color:${color};font-size:11px;line-height:1;cursor:pointer;font-family:var(--font-mono);flex-shrink:0;box-sizing:border-box">${icon}</button>`
+            : `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;border:1px solid color-mix(in srgb, ${color} 35%, transparent);border-radius:2px;opacity:0.5;flex-shrink:0;box-sizing:border-box"></span>`;
+        } else if (owning && !owning.collapsed && tsIdx > owning.start && tsIdx < owning.end) {
+          blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;opacity:0.55;color:${color};flex-shrink:0">│</span>`;
+        } else if (owning && !owning.collapsed && tsIdx === owning.end && owning.end > owning.start) {
+          blockCell = `<span style="display:inline-flex;width:14px;min-width:14px;height:14px;align-items:center;justify-content:center;opacity:0.55;color:${color};flex-shrink:0">└</span>`;
+        }
+        parts.push(blockCell);
+      }
+      html += `<div style="height:${lineH}px;line-height:${lineH}px;font-size:11px;color:${color};font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;padding:0 2px 0 4px;box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:2px">${parts.join('')}</div>`;
     }
     gutter.innerHTML = html;
   }
+
+  // gutter 点击折叠/展开（随显示状态重绑，避免首屏 display:none 时漏挂）
+  useEffect(() => {
+    const gutter = gutterRef.current;
+    if (!gutter || !commandBlocksVisible) return undefined;
+    const onClick = (event) => {
+      const btn = event.target?.closest?.('button[data-cb-id]');
+      if (!btn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = Number(btn.getAttribute('data-cb-id'));
+      if (Number.isFinite(id)) cbToggleBlock(id);
+    };
+    gutter.addEventListener('click', onClick);
+    return () => gutter.removeEventListener('click', onClick);
+  }, [commandBlocksVisible]);
 
   // ── 终端清屏处理：清空视口对应的时间戳 ─────────────────────
   function handleClearScreen() {
@@ -782,9 +1204,10 @@ export default function Terminal({
       vpEl.addEventListener('scroll', onTermScroll, { passive: true });
     }
 
-    // ── 每行时间戳追踪：marker 会跟随 xterm scrollback 裁剪同步移动 ──
+    // ── 每行时间戳 / 命令块：marker 跟随 xterm scrollback 裁剪 ──
     const lineFeedDisposable = term.onLineFeed(() => {
-      if (!timestampsEnabledRef.current || term.buffer.active.type !== 'normal') return;
+      if (term.buffer.active.type !== 'normal') return;
+      if (!timestampsEnabledRef.current && !commandBlocksEnabledRef.current) return;
 
       const buf = term.buffer.active;
       const cursorLine = buf.baseY + buf.cursorY;
@@ -794,8 +1217,20 @@ export default function Terminal({
         const line = buf.getLine(pos);
         if (line && line.isWrapped) { pos--; } else { break; }
       }
-      if (pos >= 0) {
-        tsSet(term.registerMarker(pos - cursorLine), formatTerminalTimestamp());
+      if (pos < 0) return;
+
+      // 收起/展开改写 buffer 时不要打新时间戳；摘要行不打。
+      // 回车完成的行（含「空提示符出现」/「执行命令」）都用当前时刻覆盖旧戳。
+      if (timestampsEnabledRef.current && !cbRewriteLockRef.current) {
+        const posText = buf.getLine(pos)?.translateToString(true) || '';
+        if (!isCollapseSummaryLine(posText)) {
+          tsClearLine(pos);
+          tsSet(term.registerMarker(pos - cursorLine), formatTerminalTimestamp());
+        }
+      }
+      // 命令块由 gutter sync 扫描提示符决定，lineFeed 只需刷新
+      if (commandBlocksEnabledRef.current && !cbRewriteLockRef.current) {
+        scheduleGutterSync();
       }
     });
     const writeParsedDisposable = term.onWriteParsed(() => {
@@ -1256,6 +1691,7 @@ export default function Terminal({
       if (ws) { try { ws.close(); } catch (_) {} }
       if (wsRef.current === ws) wsRef.current = null;
       tsClear(); // 清理时间戳
+      cbClear(); // 清理命令块边框
       if (window.__luminTerminalSnapshots?.[sessionId]) {
         delete window.__luminTerminalSnapshots[sessionId];
       }
@@ -1426,10 +1862,29 @@ export default function Terminal({
     const handleTimestampsChange = (e) => {
       timestampsEnabledRef.current = e.detail !== false;
       setTimestampsVisible(e.detail !== false);
-      if (e.detail === false) {
+      if (!timestampsEnabledRef.current && !commandBlocksEnabledRef.current) {
         if (gutterRef.current) gutterRef.current.innerHTML = '';
       } else {
         scheduleGutterSync();
+      }
+    };
+    const handleCommandBlocksChange = (e) => {
+      const enabled = e.detail !== false;
+      commandBlocksEnabledRef.current = enabled;
+      setCommandBlocksVisible(enabled);
+      if (!enabled) {
+        // ponytail: 关开关前先展开，否则 buffer 里还留着 ⋯ N lines，但 savedOutput 被清掉，再开无法展开
+        const term = termRef.current;
+        if (term) {
+          cbExpandAllCollapsed(term);
+        }
+        cbClear();
+      }
+      if (!timestampsEnabledRef.current && !enabled) {
+        if (gutterRef.current) gutterRef.current.innerHTML = '';
+      } else {
+        // 下一帧再 sync，等 display/width 样式生效
+        requestAnimationFrame(() => scheduleGutterSync());
       }
     };
     const handleProgramFontSettingsChange = (e) => {
@@ -1447,11 +1902,13 @@ export default function Terminal({
     window.addEventListener('app-shortcuts-changed', handleShortcutsChange);
     window.addEventListener('terminal-local-echo-changed', handleLocalEchoChange);
     window.addEventListener('terminal-timestamps-changed', handleTimestampsChange);
+    window.addEventListener('terminal-command-blocks-changed', handleCommandBlocksChange);
     window.addEventListener('program-font-settings-changed', handleProgramFontSettingsChange);
     return () => {
       window.removeEventListener('app-shortcuts-changed', handleShortcutsChange);
       window.removeEventListener('terminal-local-echo-changed', handleLocalEchoChange);
       window.removeEventListener('terminal-timestamps-changed', handleTimestampsChange);
+      window.removeEventListener('terminal-command-blocks-changed', handleCommandBlocksChange);
       window.removeEventListener('program-font-settings-changed', handleProgramFontSettingsChange);
     };
   }, []);
@@ -2357,11 +2814,13 @@ export default function Terminal({
         </div>
       )}
 
-      {/* ── xterm 渲染层 + 时间轴 ── */}
+      {/* ── xterm 渲染层 + 时间轴 / 命令块边框 ── */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <div ref={gutterRef} style={{
-          display: timestampsVisible && !alternateBufferActive ? 'block' : 'none',
-          width: 75,
+          display: (timestampsVisible || commandBlocksVisible) && !alternateBufferActive ? 'block' : 'none',
+          // 时间戳约 72px；命令块约 16px；两者同时开约 96px
+          // 时间戳列 70 + 命令块 14 + padding ≈ 90；仅时间戳 75；仅命令块 22
+          width: timestampsVisible && commandBlocksVisible ? 90 : timestampsVisible ? 75 : 22,
           flexShrink: 0,
           paddingTop: 0,
           overflow: 'hidden',
@@ -2394,7 +2853,7 @@ export default function Terminal({
               zIndex: 2,
             }}
           />
-        </div>
+          </div>
       </div>
 
       {/* ── 底部命令输入栏 ── */}

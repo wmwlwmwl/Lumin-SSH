@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Když je tato funkce vypnutá, při zadávání citlivého obsahu, jako jsou hesla, se nebudou zobrazovat znaky.",
   "每行显示时间": "Zobrazení času na řádek",
   "在终端每行输出前添加时间戳": "Přidejte časové razítko před každý řádek výstupu terminálu",
+  "命令块边框": "Sbalitelné bloky příkazů",
+  "左侧显示可折叠命令块，点击收起输出": "Zobrazit sbalitelné bloky příkazů vlevo; kliknutím skryjte výstup",
   "界面主题": "Téma rozhraní",
   "主题": "téma",
   "选择浅色、深色或跟随系统设置": "Vyberte světlo, tmu nebo postupujte podle nastavení systému",

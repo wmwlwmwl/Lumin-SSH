@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Wenn diese Option deaktiviert ist, werden bei der Eingabe sensibler Inhalte wie Passwörter keine Zeichen angezeigt.",
   "每行显示时间": "Anzeigezeit pro Zeile",
   "在终端每行输出前添加时间戳": "Fügen Sie vor jeder Zeile der Terminalausgabe einen Zeitstempel hinzu",
+  "命令块边框": "Einklappbare Befehlsblöcke",
+  "左侧显示可折叠命令块，点击收起输出": "Einklappbare Befehlsblöcke links anzeigen; klicken, um die Ausgabe auszublenden",
   "界面主题": "Schnittstellenthema",
   "主题": "Thema",
   "选择浅色、深色或跟随系统设置": "Wählen Sie hell, dunkel oder folgen Sie den Systemeinstellungen",

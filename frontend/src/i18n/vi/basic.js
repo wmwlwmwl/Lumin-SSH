@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Khi tắt, ký tự sẽ không hiển thị khi nhập nội dung nhạy cảm như mật khẩu.",
   "每行显示时间": "Hiển thị thời gian trên mỗi dòng",
   "在终端每行输出前添加时间戳": "Thêm dấu thời gian trước mỗi dòng đầu ra của thiết bị đầu cuối",
+  "命令块边框": "Khối lệnh có thể thu gọn",
+  "左侧显示可折叠命令块，点击收起输出": "Hiển thị khối lệnh có thể thu gọn bên trái; nhấp để ẩn đầu ra",
   "界面主题": "Chủ đề giao diện",
   "主题": "chủ đề",
   "选择浅色、深色或跟随系统设置": "Chọn sáng, tối hoặc làm theo cài đặt hệ thống",

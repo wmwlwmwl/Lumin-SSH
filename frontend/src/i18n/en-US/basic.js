@@ -841,6 +841,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "When disabled, sensitive input like passwords will not be displayed",
   "每行显示时间": "Show timestamps on each line",
   "在终端每行输出前添加时间戳": "Show timestamps before each line of terminal output",
+  "命令块边框": "Collapsible command blocks",
+  "左侧显示可折叠命令块，点击收起输出": "Show collapsible command blocks; click to hide output",
   "界面主题": "Interface Theme",
   "主题": "Theme",
   "选择浅色、深色或跟随系统设置": "Choose Light, Dark or System",
