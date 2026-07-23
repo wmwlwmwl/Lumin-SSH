@@ -572,7 +572,7 @@ export default function SettingsModal({
     if (!themePackage?.id || themePackage.source === 'builtin') {
       return;
     }
-    const ok = await window.luminDialog?.confirm?.(`${$t('确定删除')}${themePackage.name}${$t('？此操作不可撤销')}`);
+    const ok = await window.luminDialog?.confirm?.(`${$t('确定删除')}${$t(themePackage.name)}${$t('？此操作不可撤销')}`);
     if (!ok) {
       return;
     }

@@ -1479,4 +1479,21 @@ export default {
   "操作失败": "Operace se nezdařila",
   "操作完成": "Operace dokončena",
   "有操作正在进行，请稍候": "Probíhá operace, čekejte prosím.",
+
+  // theme package color names
+  "天青": "Sky Blue",
+  "晨雾": "Morning Mist",
+  "丁香": "Lilac",
+  "玫粉": "Rose Pink",
+  "夜空": "Night Sky",
+  "紫雾": "Purple Mist",
+  "粉紫": "Pink Purple",
+  "默认蓝调深色": "Default blue dark",
+  "默认蓝调浅色": "Default blue light",
+  "靛蓝夜色": "Indigo night",
+  "蓝灰浅色": "Blue-gray light",
+  "淡紫深色": "Soft purple dark",
+  "淡紫浅色": "Soft purple light",
+  "粉紫深色": "Pink-purple dark",
+  "粉紫浅色": "Pink-purple light",
 };

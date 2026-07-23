@@ -13,8 +13,9 @@ const LEGACY_THEME_PACKAGE_MAP = {
 
 const TERMINAL_THEME_FAMILIES = {
   lumin: {
-    name: 'Lumin',
     dark: {
+      name: '天青',
+      description: '默认蓝调深色',
       accent: '#4d9eff',
       xterm: {
         background: '#00000000', foreground: '#e6edf3', cursor: '#4d9eff',
@@ -43,6 +44,8 @@ const TERMINAL_THEME_FAMILIES = {
       },
     },
     light: {
+      name: '天青',
+      description: '默认蓝调浅色',
       accent: '#2563eb',
       xterm: {
         background: '#00000000', foreground: '#0f172a', cursor: '#2563eb',
@@ -71,8 +74,9 @@ const TERMINAL_THEME_FAMILIES = {
     },
   },
   'tokyo-night': {
-    name: 'Tokyo Night',
     dark: {
+      name: '夜空',
+      description: '靛蓝夜色',
       accent: '#7aa2f7',
       xterm: {
         background: '#00000000', foreground: '#c0caf5', cursor: '#7aa2f7',
@@ -101,6 +105,8 @@ const TERMINAL_THEME_FAMILIES = {
       },
     },
     light: {
+      name: '晨雾',
+      description: '蓝灰浅色',
       accent: '#1d4ed8',
       xterm: {
         background: '#00000000', foreground: '#1f2335', cursor: '#1d4ed8',
@@ -129,8 +135,9 @@ const TERMINAL_THEME_FAMILIES = {
     },
   },
   catppuccin: {
-    name: 'Catppuccin',
     dark: {
+      name: '紫雾',
+      description: '淡紫深色',
       accent: '#cba6f7',
       xterm: {
         background: '#00000000', foreground: '#cdd6f4', cursor: '#f5c2e7',
@@ -159,6 +166,8 @@ const TERMINAL_THEME_FAMILIES = {
       },
     },
     light: {
+      name: '丁香',
+      description: '淡紫浅色',
       accent: '#8839ef',
       xterm: {
         background: '#00000000', foreground: '#2c2f3a', cursor: '#d20f39',
@@ -187,8 +196,9 @@ const TERMINAL_THEME_FAMILIES = {
     },
   },
   dracula: {
-    name: 'Dracula',
     dark: {
+      name: '粉紫',
+      description: '粉紫深色',
       accent: '#ff79c6',
       xterm: {
         background: '#00000000', foreground: '#f8f8f2', cursor: '#f8f8f2',
@@ -217,6 +227,8 @@ const TERMINAL_THEME_FAMILIES = {
       },
     },
     light: {
+      name: '玫粉',
+      description: '粉紫浅色',
       accent: '#be185d',
       xterm: {
         background: '#00000000', foreground: '#1f1f2e', cursor: '#be185d',
@@ -484,8 +496,8 @@ function buildBuiltinThemePackages() {
       return {
         schemaVersion: THEME_PACKAGE_SCHEMA_VERSION,
         id: themeKey,
-        name: `${family.name} ${modeHint === 'light' ? 'Light' : 'Dark'}`,
-        description: `${family.name} ${modeHint === 'light' ? '浅色' : '深色'}主题包`,
+        name: modeTheme.name,
+        description: modeTheme.description || '',
         modeHint,
         source: 'builtin',
         path: '',

@@ -342,8 +342,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 	return []ThemePackageFile{
 		buildBuiltinThemePackage(
 			"lumin-dark",
-			"Lumin Dark",
-			"Lumin 默认深色主题包",
+			"天青",
+			"默认蓝调深色",
 			"dark",
 			"#4d9eff",
 			buildTerminalComponent(
@@ -399,8 +399,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"lumin-light",
-			"Lumin Light",
-			"Lumin 默认浅色主题包",
+			"天青",
+			"默认蓝调浅色",
 			"light",
 			"#2563eb",
 			buildTerminalComponent(
@@ -456,8 +456,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"tokyo-night-dark",
-			"Tokyo Night Dark",
-			"Tokyo Night 深色主题包",
+			"夜空",
+			"靛蓝夜色",
 			"dark",
 			"#7aa2f7",
 			buildTerminalComponent(
@@ -513,8 +513,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"tokyo-night-light",
-			"Tokyo Night Light",
-			"Tokyo Night 浅色主题包",
+			"晨雾",
+			"蓝灰浅色",
 			"light",
 			"#1d4ed8",
 			buildTerminalComponent(
@@ -570,8 +570,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"catppuccin-dark",
-			"Catppuccin Dark",
-			"Catppuccin 深色主题包",
+			"紫雾",
+			"淡紫深色",
 			"dark",
 			"#cba6f7",
 			buildTerminalComponent(
@@ -627,8 +627,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"catppuccin-light",
-			"Catppuccin Light",
-			"Catppuccin 浅色主题包",
+			"丁香",
+			"淡紫浅色",
 			"light",
 			"#8839ef",
 			buildTerminalComponent(
@@ -684,8 +684,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"dracula-dark",
-			"Dracula Dark",
-			"Dracula 深色主题包",
+			"粉紫",
+			"粉紫深色",
 			"dark",
 			"#ff79c6",
 			buildTerminalComponent(
@@ -741,8 +741,8 @@ func buildBuiltinThemePackages() []ThemePackageFile {
 		),
 		buildBuiltinThemePackage(
 			"dracula-light",
-			"Dracula Light",
-			"Dracula 浅色主题包",
+			"玫粉",
+			"粉紫浅色",
 			"light",
 			"#be185d",
 			buildTerminalComponent(
@@ -834,7 +834,7 @@ func defaultThemePackageForMode(modeHint string) ThemePackageFile {
 	return ThemePackageFile{
 		SchemaVersion: themePackageSchemaVersion,
 		ID:            defaultDarkThemePackageID,
-		Name:          "Lumin Dark",
+		Name:          "天青",
 		ModeHint:      "dark",
 		Tokens:        buildBaseThemeTokens("dark", "#4d9eff"),
 		Components: map[string]interface{}{

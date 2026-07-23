@@ -1479,4 +1479,21 @@ export default {
   "操作失败": "Der Vorgang ist fehlgeschlagen",
   "操作完成": "Vorgang abgeschlossen",
   "有操作正在进行，请稍候": "Es läuft gerade ein Vorgang, bitte warten Sie.",
+
+  // theme package color names
+  "天青": "Himmelblau",
+  "晨雾": "Morgennebel",
+  "丁香": "Flieder",
+  "玫粉": "Rosarot",
+  "夜空": "Nachthimmel",
+  "紫雾": "Violettnebel",
+  "粉紫": "Rosaviolett",
+  "默认蓝调深色": "Standard Blau Dunkel",
+  "默认蓝调浅色": "Standard Blau Hell",
+  "靛蓝夜色": "Indigo-Nacht",
+  "蓝灰浅色": "Blaugrau hell",
+  "淡紫深色": "Zartes Violett dunkel",
+  "淡紫浅色": "Zartes Violett hell",
+  "粉紫深色": "Rosa-Violett dunkel",
+  "粉紫浅色": "Rosa-Violett hell",
 };
