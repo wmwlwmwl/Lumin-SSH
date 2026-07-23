@@ -1557,6 +1557,27 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setItems((current) => (typeof updater === 'function' ? updater(current) : updater));
   }, [captureFileListViewAnchor]);
 
+  const confirmCreatedItem = useCallback(async (targetDirPath, name, isDirectory) => {
+    const normalizedTargetDirPath = normalizePath(targetDirPath) || '/';
+    const trimmedName = String(name || '').trim();
+    let listedItems = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const nextItems = await AppGo.ListDir(sessionId, normalizedTargetDirPath);
+      listedItems = Array.isArray(nextItems) ? nextItems : [];
+      const matchedItem = listedItems.find((item) => (
+        String(item?.name || '').trim() === trimmedName
+        && Boolean(item?.isDirectory) === Boolean(isDirectory)
+      ));
+      if (matchedItem) {
+        return { matchedItem, listedItems, normalizedTargetDirPath };
+      }
+      if (attempt < 2) {
+        await new Promise((resolve) => window.setTimeout(resolve, 120 * (attempt + 1)));
+      }
+    }
+    throw new Error(`${isDirectory ? t('未找到文件夹') : t('未找到文件')}: ${trimmedName}`);
+  }, [normalizePath, sessionId, t]);
+
   React.useLayoutEffect(() => {
     const pendingRestore = pendingViewRestoreRef.current;
     if (!pendingRestore) return;
@@ -4114,16 +4135,26 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   // Create directory
   const handleMkdir = async (targetDirPath = currentPath) => {
+    const normalizedTargetDirPath = normalizePath(typeof targetDirPath === 'string' ? targetDirPath : (currentPathRef.current || currentPath)) || '/';
     const name = await window.luminDialog?.prompt(t('新文件夹名称:'));
     if (!name) return;
-    const remotePath = joinPath(targetDirPath, name);
+    const remotePath = joinPath(normalizedTargetDirPath, name);
     try {
       await AppGo.Mkdir(sessionId, remotePath);
-      addToast(`${t('文件夹创建成功')}: ${name}`, 'success');
-      if (targetDirPath === currentPathRef.current) {
+      const { matchedItem, listedItems } = await confirmCreatedItem(normalizedTargetDirPath, name, true);
+      const currentVisiblePath = normalizePath(currentPathRef.current) || '/';
+      if (normalizedTargetDirPath === currentVisiblePath) {
         queueRowEffect(remotePath, remotePath, 'added');
-        updateItemsPreservingView((prev) => upsertLocalItem(prev, createLocalItemShell(name, true)));
+        updateItemsPreservingView(listedItems);
+      } else {
+        setSessionCachedFileManagerPathItems(sessionId, normalizedTargetDirPath, listedItems);
       }
+      addToast(
+        normalizedTargetDirPath === currentVisiblePath
+          ? `${t('文件夹创建成功')}: ${matchedItem.name}`
+          : `${t('文件夹创建成功')}: ${matchedItem.name} [${normalizedTargetDirPath}]`,
+        'success',
+      );
     } catch (err) {
       addToast(`${t('创建失败')}: ${err}`, 'error');
     }
@@ -4131,16 +4162,26 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   // Create file
   const handleNewFile = async (targetDirPath = currentPath) => {
+    const normalizedTargetDirPath = normalizePath(typeof targetDirPath === 'string' ? targetDirPath : (currentPathRef.current || currentPath)) || '/';
     const name = await window.luminDialog?.prompt(t('新文件名称:'));
     if (!name) return;
-    const remotePath = joinPath(targetDirPath, name);
+    const remotePath = joinPath(normalizedTargetDirPath, name);
     try {
       await AppGo.WriteFile(sessionId, remotePath, '');
-      addToast(`${t('文件创建成功')}: ${name}`, 'success');
-      if (targetDirPath === currentPathRef.current) {
+      const { matchedItem, listedItems } = await confirmCreatedItem(normalizedTargetDirPath, name, false);
+      const currentVisiblePath = normalizePath(currentPathRef.current) || '/';
+      if (normalizedTargetDirPath === currentVisiblePath) {
         queueRowEffect(remotePath, remotePath, 'added');
-        updateItemsPreservingView((prev) => upsertLocalItem(prev, createLocalItemShell(name, false)));
+        updateItemsPreservingView(listedItems);
+      } else {
+        setSessionCachedFileManagerPathItems(sessionId, normalizedTargetDirPath, listedItems);
       }
+      addToast(
+        normalizedTargetDirPath === currentVisiblePath
+          ? `${t('文件创建成功')}: ${matchedItem.name}`
+          : `${t('文件创建成功')}: ${matchedItem.name} [${normalizedTargetDirPath}]`,
+        'success',
+      );
     } catch (err) {
       addToast(`${t('创建失败')}: ${err}`, 'error');
     }
@@ -4728,7 +4769,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             <button
               className="btn file-toolbar-outline-btn"
               aria-label={t('新建文件')}
-              onClick={handleNewFile}
+              onClick={() => { void handleNewFile(); }}
             >
               <FilePlus size={14} />
             </button>
@@ -4737,7 +4778,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             <button
               className="btn file-toolbar-outline-btn"
               aria-label={t('新建文件夹')}
-              onClick={handleMkdir}
+              onClick={() => { void handleMkdir(); }}
             >
               <FolderPlus size={14} />
             </button>

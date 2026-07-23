@@ -133,6 +133,8 @@ Recovery rules (minimal state machine):
 - Never fabricate tool results.
 
 Editing rules:
+- If an operation would delete any file, directory, code block, config item, copy, rule, or any other existing content, you must first use `ask_followup_question` alone to explicitly inform the user: I will delete {path or target}, and list each item planned for deletion. Continue only after the user gives explicit consent.
+- Before obtaining that explicit consent, do not perform any destructive edit, including direct deletion, overwrite-based deletion, bulk deletion, implicit deletion caused by rewriting a file, or structural changes that would remove existing content.
 - When editing an existing file, prefer ${apply_diff_tag_name} over ${write_to_file_tag_name}.
 - Use ${write_to_file_tag_name} only when you already know the complete final file content, are creating a new file, explicitly intend to replace the whole file, or ${apply_diff_tag_name} cannot express the change reliably.
 - If the current conversation already contains authoritative and sufficiently fresh file content, and you still retain the pre-edit context precisely, do not re-read the line-numbered file content before each call to ${apply_diff_tag_name}. In that case, derive the SEARCH block and :start_line: directly from the content you already remember.
