@@ -444,7 +444,6 @@ export default function AIChatConversation({ messages = [], sessionId = '', term
         data={groupedMessages}
         increaseViewportBy={{ top: 1200, bottom: 800 }}
         initialTopMostItemIndex={Math.max(groupedMessages.length - 1, 0)}
-        alignToBottom={true}
         atBottomThreshold={24}
         followOutput={(isAtBottom) => (isAtBottom || followIntentRef.current ? 'auto' : false)}
         atBottomStateChange={(isAtBottom) => {

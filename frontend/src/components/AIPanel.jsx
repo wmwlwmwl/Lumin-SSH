@@ -4375,6 +4375,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         conversationSearchActive={conversationSearchOpen}
         showContextTokens={Boolean(activeConversation)}
         contextTokens={panelState.contextTokens}
+        apiMessageCount={Array.isArray(panelState.apiMessages) ? panelState.apiMessages.length : 0}
         isCondensingContext={Boolean(panelState.isCondensingContext)}
         canCondenseContext={Boolean(activeConversation) && runtimePhase === 'ready' && !panelState.isCondensingContext}
         onCondenseContext={handleCondenseContext}

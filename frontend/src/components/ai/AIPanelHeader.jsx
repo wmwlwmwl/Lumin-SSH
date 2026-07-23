@@ -1,4 +1,4 @@
-import { Columns2, House, Search, Settings } from 'lucide-react'
+import { Columns2, House, MessagesSquare, Search, Settings } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from '../../i18n.js'
 import Tiptop from '../Tiptop.jsx'
@@ -35,6 +35,7 @@ export default function AIPanelHeader({
   showConversationDiffButton = false,
   showContextTokens = false,
   contextTokens = 0,
+  apiMessageCount = 0,
   isCondensingContext = false,
   canCondenseContext = false,
   conversationSearchActive = false,
@@ -42,6 +43,7 @@ export default function AIPanelHeader({
 }) {
   const { t } = useTranslation()
   const contextTokenLabel = useMemo(() => formatAIContextTokens(contextTokens), [contextTokens])
+  const normalizedApiMessageCount = Number.isFinite(Number(apiMessageCount)) && Number(apiMessageCount) > 0 ? Math.trunc(Number(apiMessageCount)) : 0
   const modeToggleLabel = isDevilMode
     ? t('切换到天使模式:善良的天使会全心全意地保护你和你的设备,它有绝对的原则和信念来帮助你,同时也会感化你的不良行为')
     : t('切换到恶魔模式:可恶的恶魔会不择手段地满足你所有的危险想法,它会诱导你突破边界,并纵容你一步步滑向失控')
@@ -78,37 +80,68 @@ export default function AIPanelHeader({
         ) : null}
       </div>
       {showContextTokens ? (
-        <Tiptop text={isCondensingContext ? t('正在智能压缩上下文') : t('当前对话上下文 Token,点击智能压缩')} placement="bottom" style={{ justifySelf: 'center' }}>
-          <button
-            type="button"
-            aria-label={isCondensingContext ? t('正在智能压缩上下文') : t('当前对话上下文 Token,点击智能压缩')}
-            disabled={!canCondenseContext}
-            onClick={onCondenseContext}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 'fit-content',
-              minWidth: 0,
-              maxWidth: '100%',
-              height: 28,
-              padding: '0 10px',
-              borderRadius: 999,
-              border: `1px solid ${isCondensingContext ? 'var(--accent-border)' : 'var(--border)'}`,
-              background: isCondensingContext ? 'var(--accent-dim)' : 'transparent',
-              color: isCondensingContext ? 'var(--accent)' : 'var(--text-secondary)',
-              fontSize: 12,
-              fontWeight: 700,
-              opacity: canCondenseContext || isCondensingContext ? 1 : 0.6,
-              transition: 'var(--transition)',
-              whiteSpace: 'nowrap',
-              lineHeight: 1,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {contextTokenLabel}
-          </button>
-        </Tiptop>
+        <div style={{ justifySelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: '100%' }}>
+          <Tiptop text={isCondensingContext ? t('正在智能压缩上下文') : t('当前对话上下文 Token,点击智能压缩')} placement="bottom">
+            <button
+              type="button"
+              aria-label={isCondensingContext ? t('正在智能压缩上下文') : t('当前对话上下文 Token,点击智能压缩')}
+              disabled={!canCondenseContext}
+              onClick={onCondenseContext}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 'fit-content',
+                minWidth: 0,
+                maxWidth: '100%',
+                height: 28,
+                padding: '0 10px',
+                borderRadius: 999,
+                border: `1px solid ${isCondensingContext ? 'var(--accent-border)' : 'var(--border)'}`,
+                background: isCondensingContext ? 'var(--accent-dim)' : 'transparent',
+                color: isCondensingContext ? 'var(--accent)' : 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 700,
+                opacity: canCondenseContext || isCondensingContext ? 1 : 0.6,
+                transition: 'var(--transition)',
+                whiteSpace: 'nowrap',
+                lineHeight: 1,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {contextTokenLabel}
+            </button>
+          </Tiptop>
+          <Tiptop text={t('当前对话节点数')} placement="bottom">
+            <span
+              aria-label={t('当前对话节点数')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                width: 'fit-content',
+                minWidth: 0,
+                height: 28,
+                padding: '0 10px',
+                borderRadius: 999,
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                lineHeight: 1,
+                fontVariantNumeric: 'tabular-nums',
+                cursor: 'default',
+                userSelect: 'none',
+              }}
+            >
+              <MessagesSquare size={12} />
+              <span>{normalizedApiMessageCount}</span>
+            </span>
+          </Tiptop>
+        </div>
       ) : (
         <div />
       )}
