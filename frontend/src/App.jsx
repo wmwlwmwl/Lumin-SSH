@@ -4531,9 +4531,15 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     </div>
   ) : null;
   // ponytail: AI 面板按会话保活，不依赖当前 active 是否 connected。
-  // 否则首页连新服务器 / 重连时 active 会短暂变成 connecting，整棵 AI 树卸载并取消后台执行。
-  // connecting 也保活，避免重连瞬间把正在跑的会话拆掉。
-  const aiKeepAliveSessions = sessions.filter((s) => s.status === 'connected' || s.status === 'connecting');
+  // 否则首页连新服务器 / 重连 / 某台掉线时，AI 树卸载会 cancel 后台请求。
+  // closed/error 也保活：掉线只应停那台 SSH，不该拆其它服务器还在跑的 AI。
+  // 真正关闭标签（forceClose 移出 sessions）时才卸载。
+  const aiKeepAliveSessions = sessions.filter((s) => (
+    s.status === 'connected'
+    || s.status === 'connecting'
+    || s.status === 'closed'
+    || s.status === 'error'
+  ));
   const aiPanelNode = aiKeepAliveSessions.length > 0 ? (
     <div
       style={{
