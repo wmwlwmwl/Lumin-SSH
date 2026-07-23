@@ -5409,6 +5409,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       key={s.id}
                       className={`tab-item no-drag ${activeSessionId === s.id ? 'active' : ''}`}
                       onClick={() => handleTabClick(s.id)}
+                      onDoubleClick={(e) => { void closeSession(s.id, e); }}
+                      onMouseDown={(e) => {
+                        if (e.button !== 1) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void closeSession(s.id, e);
+                      }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         const rect = e.currentTarget.getBoundingClientRect();
@@ -5432,6 +5439,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               e.stopPropagation();
                               reconnectSession(s);
                             }}
+                            onDoubleClick={(e) => e.stopPropagation()}
                             aria-label={t('重新连接')}
                             style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                           >
@@ -5439,7 +5447,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                           </span>
                         </Tiptop>
                       )}
-                      <span className="tab-close no-drag" onClick={(e) => closeSession(s.id, e)}><X size={12} /></span>
+                      <span
+                        className="tab-close no-drag"
+                        onClick={(e) => closeSession(s.id, e)}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        <X size={12} />
+                      </span>
                     </div>
                   ))}
                 </div>
