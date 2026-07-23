@@ -6,6 +6,19 @@ import { AlertTriangle } from 'lucide-react';
 import './index.css';
 import { applyProgramFontPreferences } from './utils/programFonts.js';
 import { applyStoredThemePackage, loadThemePackages } from './utils/theme.js';
+// favicon 与 UI logo 共用同一源，避免 public/favicon.png 再拷一份
+import logoFavicon from './assets/logo.png';
+
+(() => {
+  let link = document.querySelector("link[rel='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/png';
+    document.head.appendChild(link);
+  }
+  link.href = logoFavicon;
+})();
 
 // 全局错误边界，防止渲染错误导致白屏
 class ErrorBoundary extends React.Component {

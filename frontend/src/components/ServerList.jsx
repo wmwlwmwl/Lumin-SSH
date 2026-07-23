@@ -509,10 +509,10 @@ export default function ServerList({
       tryConnect(server);
     };
 
+    // key 必须在 map 返回的最外层（Tiptop），挂在内层 div 时 React 仍会报 missing key
     return (
-      <Tiptop text={`${server.username}@${server.host}:${server.port || 22}`}>
+      <Tiptop key={`${server.id}-${rowToken || 'stable'}`} text={`${server.username}@${server.host}:${server.port || 22}`}>
         <div
-          key={`${server.id}-${rowToken || 'stable'}`}
           data-server-update-id={server.id}
           className={`server-card ${active ? 'active' : ''}${rowToken ? ' save-flow-hit' : ''}${selectionMode && isChecked ? 'selected' : ''}`}
           {...pointerSelectHandlers}

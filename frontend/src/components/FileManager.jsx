@@ -382,52 +382,6 @@ function readBlobAsBase64(blob) {
   });
 }
 
-function debugUploadFileInfo(file) {
-  if (!file) return null;
-  return {
-    name: file.name,
-    size: file.size,
-    type: file.type,
-    lastModified: file.lastModified,
-    webkitRelativePath: file.webkitRelativePath,
-    fullPath: file._fullPath,
-    path: file.path,
-    constructorName: file.constructor?.name,
-    keys: Object.keys(file),
-  };
-}
-
-function debugUploadItemInfo(item) {
-  if (!item) return null;
-  let entry = null;
-  let file = null;
-  try {
-    const rawEntry = item.webkitGetAsEntry?.();
-    if (rawEntry) {
-      entry = {
-        name: rawEntry.name,
-        fullPath: rawEntry.fullPath,
-        isFile: rawEntry.isFile,
-        isDirectory: rawEntry.isDirectory,
-        filesystemName: rawEntry.filesystem?.name,
-      };
-    }
-  } catch (err) {
-    entry = { error: String(err) };
-  }
-  try {
-    file = item.kind === 'file' ? debugUploadFileInfo(item.getAsFile?.()) : null;
-  } catch (err) {
-    file = { error: String(err) };
-  }
-  return {
-    kind: item.kind,
-    type: item.type,
-    entry,
-    file,
-  };
-}
-
 function isCompressedTransferEnabled() {
   return localStorage.getItem('fileManagerCompressedTransfer') !== 'false';
 }
@@ -3088,20 +3042,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   const handleSelectedFiles = useCallback(async (e) => {
     const rawSelectedFiles = Array.from(e.target.files || []);
-    console.log('[FileManager][click upload] input files', {
-      files: rawSelectedFiles.map(debugUploadFileInfo),
-      rawFiles: rawSelectedFiles,
-    });
     const selectedFiles = rawSelectedFiles
       .filter((file) => !isHiddenFile(file.name))
       .map((file) => ({
         file,
         relativePath: file.webkitRelativePath || file.name,
       }));
-    console.log('[FileManager][click upload] normalized entries', selectedFiles.map((entry) => ({
-      relativePath: entry.relativePath,
-      file: debugUploadFileInfo(entry.file),
-    })));
     e.target.value = '';
     if (selectedFiles.length === 0) {
       return;
@@ -3116,7 +3062,6 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     try {
       const paths = await AppGo.SelectUploadFiles();
-      console.log('[FileManager][native click upload] paths', paths);
       await uploadNativePaths(paths || []);
     } catch (err) {
       if (err) addToast(`${t('上传失败')}: ${err}`, 'error');
@@ -3130,7 +3075,6 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
     try {
       const dirPath = await AppGo.SelectUploadDirectory();
-      console.log('[FileManager][native click upload folder] path', dirPath);
       if (!dirPath) {
         return;
       }
@@ -4493,29 +4437,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   useEffect(() => {
     if (!isActive) return undefined;
-    console.log('[FileManager][native drop upload] register', {
-      canResolveFilePaths: CanResolveFilePaths?.(),
-      flags: window.wails?.flags,
-    });
     OnFileDrop((x, y, paths) => {
       const rect = fileManagerRootRef.current?.getBoundingClientRect?.();
       const compressedEnabled = isCompressedTransferEnabled();
       const hit = !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-      console.log('[FileManager][native drop upload] callback', {
-        x,
-        y,
-        paths,
-        compressedEnabled,
-        hit,
-        rect: rect ? {
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-          width: rect.width,
-          height: rect.height,
-        } : null,
-      });
       if (!rect || !hit || !compressedEnabled) return;
       nativeDropHandledUntilRef.current = Date.now() + 5000;
       setIsDragOver(false);
@@ -4584,13 +4509,6 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
     const droppedItems = Array.from(e.dataTransfer.items || []);
     const droppedFiles = Array.from(e.dataTransfer.files || []);
-    console.log('[FileManager][drop upload] dataTransfer', {
-      types: Array.from(e.dataTransfer.types || []),
-      items: droppedItems.map(debugUploadItemInfo),
-      files: droppedFiles.map(debugUploadFileInfo),
-      rawItems: droppedItems,
-      rawFiles: droppedFiles,
-    });
     if (droppedItems.length === 0 && droppedFiles.length === 0) return;
 
     const entryMap = new Map();
@@ -4620,18 +4538,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
     droppedFiles.forEach((file) => addEntry(file, file.webkitRelativePath || file.name));
 
-    console.log('[FileManager][drop upload] normalized entries', Array.from(entryMap.values()).map((entry) => ({
-      relativePath: entry.relativePath,
-      file: debugUploadFileInfo(entry.file),
-    })));
     if (isCompressedTransferEnabled()) {
-      console.log('[FileManager][drop upload] compressed transfer enabled, waiting for native drop handoff');
+      // 等原生 OnFileDrop 抢先处理；超时再走浏览器 File/Blob 兜底
       await new Promise((resolve) => setTimeout(resolve, 3000));
       if (Date.now() < nativeDropHandledUntilRef.current) {
-        console.log('[FileManager][drop upload] native drop handled, skip browser File/Blob fallback');
         return;
       }
-      console.warn('[FileManager][drop upload] native drop did not handle in time, fallback to browser File/Blob upload');
     }
     await uploadEntries(Array.from(entryMap.values()));
   };

@@ -471,6 +471,8 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
   const [info, setInfo] = useState(() => snapshot?.info || null);
   // ponytail: 合并 3 个历史数组为 1 个状态更新，减少 3 次渲染为 1 次
   const [hist, setHist] = useState(() => snapshot?.hist || createEmptyHist());
+  const histRef = useRef(hist);
+  histRef.current = hist;
   const [showConfirm, setShowConfirm] = useState(false);
   const [enabling, setEnabling] = useState(false);
   const [hideIP, setHideIP] = useState(() => localStorage.getItem('probeHideIP') === 'true');
@@ -660,9 +662,11 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
 
   // 切换服务器时立即清空旧数据和静态缓存
   useEffect(() => {
+    const nextHist = snapshot?.hist || createEmptyHist();
     setInfo(snapshot?.info || null);
     staticInfoRef.current = null;
-    setHist(snapshot?.hist || createEmptyHist());
+    histRef.current = nextHist;
+    setHist(nextHist);
     setCpuExpanded(false);
     setDiskExpanded(false);
     setProbeError(null);
@@ -747,16 +751,17 @@ export default function ProbePanel({ sessionId, host, addToast, enabled, active,
         networkInterfaces: data.network?.interfaces || [],
         processes: data.processes || [],
       };
+      // 用 histRef 算 nextHist，避免在 setState updater 里调父组件 onSnapshot（渲染期 setState 警告）
+      const prevHist = histRef.current || createEmptyHist();
+      const nextHist = {
+        cpu: [...prevHist.cpu, ni.cpuUsage].slice(-HISTORY_SIZE),
+        up: [...prevHist.up, ni.netUp].slice(-HISTORY_SIZE),
+        down: [...prevHist.down, ni.netDown].slice(-HISTORY_SIZE),
+      };
+      histRef.current = nextHist;
       setInfo(ni);
-      setHist(prev => {
-        const nextHist = {
-          cpu: [...prev.cpu, ni.cpuUsage].slice(-HISTORY_SIZE),
-          up: [...prev.up, ni.netUp].slice(-HISTORY_SIZE),
-          down: [...prev.down, ni.netDown].slice(-HISTORY_SIZE),
-        };
-        onSnapshotRef.current?.({ info: ni, hist: nextHist });
-        return nextHist;
-      });
+      setHist(nextHist);
+      onSnapshotRef.current?.({ info: ni, hist: nextHist });
       probeErrorCountRef.current = 0;
       setProbeError(false);
       setProbeErrorDetail('');
