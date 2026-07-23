@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Zacht paars licht",
   "粉紫深色": "Roze-paars donker",
   "粉紫浅色": "Roze-paars licht",
-  // theme package copy actions
   "复制到浅色": "Kopiëren naar licht",
   "复制到深色": "Kopiëren naar donker",
   "主题包已复制到浅色": "Themapakket gekopieerd naar licht",

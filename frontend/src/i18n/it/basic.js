@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Viola morbido chiaro",
   "粉紫深色": "Rosa-viola scuro",
   "粉紫浅色": "Rosa-viola chiaro",
-  // theme package copy actions
   "复制到浅色": "Copia in chiaro",
   "复制到深色": "Copia in scuro",
   "主题包已复制到浅色": "Pacchetto tema copiato in chiaro",

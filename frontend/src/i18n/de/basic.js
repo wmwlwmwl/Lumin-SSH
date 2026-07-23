@@ -1523,8 +1523,6 @@ export default {
   "淡紫浅色": "Zartes Violett hell",
   "粉紫深色": "Rosa-Violett dunkel",
   "粉紫浅色": "Rosa-Violett hell",
-
-  // theme package copy actions
   "复制到浅色": "Als Hell kopieren",
   "复制到深色": "Als Dunkel kopieren",
   "主题包已复制到浅色": "Themenpaket nach Hell kopiert",

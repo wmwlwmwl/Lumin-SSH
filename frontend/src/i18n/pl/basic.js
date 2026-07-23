@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Miękki fiolet jasny",
   "粉紫深色": "Różowofioletowy ciemny",
   "粉紫浅色": "Różowofioletowy jasny",
-  // theme package copy actions
   "复制到浅色": "Kopiuj do jasnego",
   "复制到深色": "Kopiuj do ciemnego",
   "主题包已复制到浅色": "Pakiet motywu skopiowany do jasnego",

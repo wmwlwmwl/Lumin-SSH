@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Ungu lembut terang",
   "粉紫深色": "Ungu merah muda gelap",
   "粉紫浅色": "Ungu merah muda terang",
-  // theme package copy actions
   "复制到浅色": "Salin ke terang",
   "复制到深色": "Salin ke gelap",
   "主题包已复制到浅色": "Paket tema disalin ke terang",

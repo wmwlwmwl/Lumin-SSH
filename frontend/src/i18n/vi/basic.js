@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Tím nhạt sáng",
   "粉紫深色": "Hồng tím tối",
   "粉紫浅色": "Hồng tím sáng",
-  // theme package copy actions
   "复制到浅色": "Sao chép sang sáng",
   "复制到深色": "Sao chép sang tối",
   "主题包已复制到浅色": "Đã sao chép gói chủ đề sang sáng",

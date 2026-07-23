@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Yumuşak mor açık",
   "粉紫深色": "Pembe-mor koyu",
   "粉紫浅色": "Pembe-mor açık",
-  // theme package copy actions
   "复制到浅色": "Açık temaya kopyala",
   "复制到深色": "Koyu temaya kopyala",
   "主题包已复制到浅色": "Tema paketi açık temaya kopyalandı",

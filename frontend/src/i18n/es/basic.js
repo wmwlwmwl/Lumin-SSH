@@ -1523,8 +1523,6 @@ export default {
   "淡紫浅色": "Púrpura suave claro",
   "粉紫深色": "Rosa-púrpura oscuro",
   "粉紫浅色": "Rosa-púrpura claro",
-
-  // theme package copy actions
   "复制到浅色": "Copiar a claro",
   "复制到深色": "Copiar a oscuro",
   "主题包已复制到浅色": "Paquete copiado a claro",

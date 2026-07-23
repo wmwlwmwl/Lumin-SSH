@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Jemná fialová světlá",
   "粉紫深色": "Růžovofialová tmavá",
   "粉紫浅色": "Růžovofialová světlá",
-  // theme package copy actions
   "复制到浅色": "Kopírovat do světlého",
   "复制到深色": "Kopírovat do tmavého",
   "主题包已复制到浅色": "Balíček motivu zkopírován do světlého",

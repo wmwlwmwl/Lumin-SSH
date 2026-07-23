@@ -1523,7 +1523,6 @@ export default {
   "淡紫浅色": "Violet moale deschis",
   "粉紫深色": "Roz-violet închis",
   "粉紫浅色": "Roz-violet deschis",
-  // theme package copy actions
   "复制到浅色": "Copiază în deschis",
   "复制到深色": "Copiază în întunecat",
   "主题包已复制到浅色": "Pachetul de temă a fost copiat în deschis",
