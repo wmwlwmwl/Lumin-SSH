@@ -110,9 +110,24 @@ jobs:
           name: "Lumin SSH Client ${{ github.ref_name }}"
           body: |
             ## 更新日志
-            - 修复同步：规范化连接/快捷命令比较，消除与安卓乒乓上传
-            - 修复侧边编辑配置输入框聚焦时蓝色边框四角被裁切
-            - 清理冗余日志文件
+            - 内置主题按配色起名并接入多语言；重做浅色 ANSI 对比度
+            - 终端支持可折叠命令块边框、缓冲区查找（Ctrl+F）
+            - 文件管理器支持右侧停靠、自定义标签标题、隐藏关闭按钮
+            - 服务器掉线时保活其他会话的 AI 面板
+            - 切换/连接服务器时保活已连接会话的 AI 面板
+            - 服务器标签支持双击与中键关闭连接，顶栏禁止划词
+            - 支持重命名服务器分组，重命名冲突时保留弹窗输入
+            - 修复 Messages (Anthropic) 协议下无法获取模型列表
+            - 修复文件管理器新建后列表不同步
+            - 修复侧边栏输入框拖拽全选异常
+            - 双击标题栏空白处最大化/还原窗口
+            - 工作区按会话恢复终端选中与标签滚动
+            - 标签支持自定义标题，收敛 cwd 跟随
+            - 编辑/克隆时显示中央短提示
+            - AI 助手改进：新增协同助理、复制供应商图标、优化输出动画
+            - 移除自定义强调色与过时闪电直连
+            - 移除旧版云端凭据派生密钥与 .enc 备份兼容
+            - 平台安装包未就绪时禁止热更，Release 全平台齐套后再发布
 
             ## 产物下载
             - Linux 便携版 ([Lumin-V${{ steps.version.outputs.version }}-linux-amd64](https://github.com/wmwlwmwl/Lumin-SSH/releases/download/v${{ steps.version.outputs.version }}/Lumin-V${{ steps.version.outputs.version }}-linux-amd64))：即下即用
