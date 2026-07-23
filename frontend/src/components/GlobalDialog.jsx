@@ -55,6 +55,8 @@ export default function GlobalDialog() {
               defaultValue,
               checkboxLabel,
               inputType: options?.inputType === 'password' ? 'password' : 'text',
+              // validate(value) => null/undefined 通过；返回字符串则保留弹窗并展示错误
+              validate: typeof options?.validate === 'function' ? options.validate : null,
               onConfirm: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
               onCancel: () => resolve(null)
             }];
@@ -115,6 +117,8 @@ export default function GlobalDialog() {
 function DialogContent({ current, onClose, onConfirm, onChoice }) {
   const { t } = useTranslation();
   const [inputValue, setInputValue] = useState(current.defaultValue || '');
+  const [inputError, setInputError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [checked, setChecked] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   // confirm: 默认落在「取消」，避免回车误关连接；左右切换后回车确认
@@ -137,6 +141,29 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
       setFocusAction('confirm');
     }
   }, [current.id, current.type]);
+
+  const submitPrompt = async () => {
+    if (submitting) return;
+    if (typeof current.validate === 'function') {
+      setSubmitting(true);
+      try {
+        const result = await current.validate(inputValue);
+        if (result != null && result !== true && result !== '') {
+          setInputError(String(result));
+          return;
+        }
+        setInputError('');
+        onConfirm(inputValue, checked);
+      } catch (err) {
+        setInputError(String(err?.message || err || t('操作失败')));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+    setInputError('');
+    onConfirm(inputValue, checked);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -173,7 +200,7 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
         }
         e.preventDefault();
         if (current.type === 'prompt') {
-          onConfirm(inputValue, checked);
+          void submitPrompt();
         } else if (current.type === 'confirm') {
           if (focusAction === 'cancel') onClose();
           else onConfirm(true, checked);
@@ -188,7 +215,7 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [current, inputValue, checked, focusAction, choiceCount, onClose, onConfirm, onChoice]);
+  }, [current, inputValue, checked, focusAction, choiceCount, submitting, onClose, onConfirm, onChoice]);
 
   const handleCopyMessage = async () => {
     if (!messageText) {
@@ -279,14 +306,25 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
       
       {current.type === 'prompt' && (
         <>
-          <div style={{ position: 'relative', marginBottom: current.checkboxLabel ? 12 : 28 }}>
+          <div style={{ position: 'relative', marginBottom: inputError ? 8 : (current.checkboxLabel ? 12 : 28) }}>
             <input 
               autoFocus
               className="input" 
-              style={{ width: '100%', textAlign: 'center', fontSize: 16, padding: current.checkboxLabel ? '12px 68px 12px 16px' : '12px 36px 12px 16px' }}
+              style={{
+                width: '100%',
+                textAlign: 'center',
+                fontSize: 16,
+                padding: current.checkboxLabel ? '12px 68px 12px 16px' : '12px 36px 12px 16px',
+                borderColor: inputError ? 'var(--danger)' : undefined,
+                boxShadow: inputError ? '0 0 0 1px var(--danger)' : undefined,
+              }}
               value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
+              onChange={e => {
+                setInputValue(e.target.value);
+                if (inputError) setInputError('');
+              }}
               type={isPasswordInput && !showPassword ? 'password' : 'text'}
+              aria-invalid={!!inputError}
             />
             {isPasswordInput && (
               <Tiptop
@@ -321,12 +359,18 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
                 onClick={async () => {
                   try {
                     const text = await navigator.clipboard.readText();
-                    if (text) setInputValue(text);
+                    if (text) {
+                      setInputValue(text);
+                      if (inputError) setInputError('');
+                    }
                   } catch {
                     try {
                       const { ClipboardGetText } = await import('../../wailsjs/runtime/runtime.js');
                       const text = await ClipboardGetText();
-                      if (text) setInputValue(text);
+                      if (text) {
+                        setInputValue(text);
+                        if (inputError) setInputError('');
+                      }
                     } catch {}
                   }
                 }}
@@ -341,6 +385,17 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
               ><Clipboard size={16} /></button>
             </Tiptop>
           </div>
+          {inputError ? (
+            <div style={{
+              marginBottom: current.checkboxLabel ? 12 : 20,
+              fontSize: 12,
+              color: 'var(--danger)',
+              lineHeight: 1.4,
+              textAlign: 'center',
+            }}>
+              {inputError}
+            </div>
+          ) : null}
           {current.checkboxLabel && current.checkboxLabel.trim() && (
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 28, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
               <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
@@ -406,8 +461,9 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
         )}
         <button
           className="btn btn-primary"
+          disabled={current.type === 'prompt' && submitting}
           onClick={() => {
-            if (current.type === 'prompt') onConfirm(inputValue, checked);
+            if (current.type === 'prompt') void submitPrompt();
             else if (current.type === 'confirm') onConfirm(true, checked);
             else onClose();
           }}
