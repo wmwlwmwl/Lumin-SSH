@@ -349,6 +349,9 @@ textarea:focus:not(:focus-visible) {
   flex-shrink: 0;
   position: relative;
   z-index: 10000; /* Z.TOPBAR */
+  /* 顶栏双击最大化/点按钮时禁止划词，避免 WebView2 弹出 AI 搜索工具条 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .topbar-content {
@@ -363,6 +366,8 @@ textarea:focus:not(:focus-visible) {
 .topbar-content input,
 .topbar-content .no-drag {
   --wails-draggable: no-drag;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .topbar-logo {

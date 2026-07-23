@@ -1482,6 +1482,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   }, []);
 
   const handleTopbarDoubleClick = useCallback((e) => {
+    // WebView2 双击常会顺带划词，触发系统「AI 搜索/翻译」条；先清掉选区
+    try {
+      window.getSelection?.()?.removeAllRanges?.();
+    } catch {}
     if (
       e.target.closest('button') ||
       e.target.closest('input') ||
@@ -1491,6 +1495,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     ) {
       return;
     }
+    e.preventDefault();
     handleToggleMaximise();
   }, [handleToggleMaximise]);
 
@@ -5395,7 +5400,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   return (
     <div className="app-layout">
       {/* ── Topbar ───────────────────────────────────────── */}
-      <div className="topbar" onDoubleClick={handleTopbarDoubleClick}>
+      <div
+        className="topbar"
+        onMouseDown={(e) => {
+          // detail>1 为双击的第二次按下；阻止浏览器默认划词（否则 WebView2 会弹 AI 搜索条）
+          if (e.detail > 1) e.preventDefault();
+        }}
+        onDoubleClick={handleTopbarDoubleClick}
+      >
         <div className="topbar-content">
           <div className="topbar-logo" onClick={() => { markWorkspaceRestoreNavigationOverride(); setActiveSessionId(null); setActiveTerminalId(null); setShowSettings(false); }}>
             <div
