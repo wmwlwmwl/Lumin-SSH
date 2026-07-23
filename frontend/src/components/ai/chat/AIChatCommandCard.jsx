@@ -155,13 +155,78 @@ function normalizeAICommandStatus(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function processCommandOutputCarriageReturns(input) {
+  const source = typeof input === 'string' ? input : ''
+  if (!source.includes('\r')) {
+    return source
+  }
+  return source.split('\n').map((line) => {
+    const segments = line.split('\r')
+    if (segments.length === 1) {
+      return line
+    }
+    let current = Array.from(segments[0] || '')
+    for (const segment of segments.slice(1)) {
+      if (!segment) {
+        continue
+      }
+      const segmentRunes = Array.from(segment)
+      if (segmentRunes.length >= current.length) {
+        current = segmentRunes
+        continue
+      }
+      const next = [...current]
+      for (let index = 0; index < segmentRunes.length; index += 1) {
+        next[index] = segmentRunes[index]
+      }
+      current = next
+    }
+    return current.join('')
+  }).join('\n')
+}
+
+function processCommandOutputBackspaces(input) {
+  const source = typeof input === 'string' ? input : ''
+  if (!source.includes('\b')) {
+    return source
+  }
+  const output = []
+  for (const ch of Array.from(source)) {
+    if (ch === '\b') {
+      if (output.length > 0) {
+        output.pop()
+      }
+      continue
+    }
+    output.push(ch)
+  }
+  return output.join('')
+}
+
+const ansiEscapePattern = /\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
+const invisibleCommandOutputControlCharacterPattern = /[\u0000-\u0008\u000B\u000C\u000E-\u001A\u001C-\u001F\u007F-\u009F]/g
+
+function normalizeCommandOutputForDisplay(value) {
+  let output = typeof value === 'string' ? value : ''
+  if (!output) {
+    return ''
+  }
+  output = output.replace(/\r\n/g, '\n')
+  output = processCommandOutputCarriageReturns(output)
+  output = processCommandOutputBackspaces(output)
+  output = output.replace(ansiEscapePattern, '')
+  output = output.replace(invisibleCommandOutputControlCharacterPattern, '')
+  return output.trim()
+}
+
 const runningStatusKey = '执行中'
 
 export default function AIChatCommandCard({ purpose, command, output, status = runningStatusKey, extra = {} }) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const normalizedStatus = useMemo(() => normalizeAICommandStatus(status), [status])
-  const expanded = isExpanded || ((normalizedStatus === '等待处理' || normalizedStatus === '后台继续' || normalizedStatus === '已终止') && Boolean(output))
+  const displayOutput = useMemo(() => normalizeCommandOutputForDisplay(output), [output])
+  const expanded = isExpanded || ((normalizedStatus === '等待处理' || normalizedStatus === '后台继续' || normalizedStatus === '已终止') && Boolean(displayOutput))
   const normalizedCommand = String(command || '')
   const riskState = useMemo(() => assessSensitiveCommandRisk(normalizedCommand), [normalizedCommand])
   const riskBadgePalette = useMemo(() => getRiskBadgePalette(riskState.severity), [riskState.severity])
@@ -192,7 +257,7 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
   }
 
   const scheduleOutputScrollToBottom = () => {
-    if (!expanded || !output || !shouldAutoFollowOutputRef.current || outputScrollFrameRef.current) {
+    if (!expanded || !displayOutput || !shouldAutoFollowOutputRef.current || outputScrollFrameRef.current) {
       return
     }
     outputScrollFrameRef.current = window.requestAnimationFrame(() => {
@@ -205,12 +270,12 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
   }
 
   useEffect(() => {
-    if (!expanded || !output) {
+    if (!expanded || !displayOutput) {
       return undefined
     }
     scheduleOutputScrollToBottom()
     return undefined
-  }, [expanded, output, status])
+  }, [displayOutput, expanded, status])
 
   useEffect(() => {
     return () => {
@@ -299,8 +364,8 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
         </div>
         <div style={{ padding: '12px 12px 10px', display: 'grid', gap: 10 }}>
           <pre style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.24)' : riskState.severity === 'warning' ? '1px solid rgba(var(--warning-rgb), 0.24)' : mutationPalette.commandBorder, background: riskState.severity ? 'var(--surface-base)' : mutationPalette.commandBackground, color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 260, overflowY: 'auto', overflowX: 'auto' }}>{highlightedCommand}</pre>
-          {expanded && output ? (
-            <pre ref={outputContainerRef} onScroll={handleOutputScroll} style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>{t(output)}</pre>
+          {expanded && displayOutput ? (
+            <pre ref={outputContainerRef} onScroll={handleOutputScroll} style={{ margin: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border-subtle)', background: 'var(--surface-base)', color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65, fontFamily: 'var(--font-mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>{t(displayOutput)}</pre>
           ) : null}
         </div>
       </div>
