@@ -2,25 +2,7 @@ import { Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation, t as translate } from '../../i18n.js'
 import { normalizeAISlashCommands, normalizeSlashCommandName } from './aiSlashCommands.js'
-
-function handleInputDragSelectAll(event) {
-  if (event.buttons === 1) {
-    const input = event.currentTarget || event.target
-    if (input) {
-      input.select()
-      const originalPointerEvents = input.style.pointerEvents
-      input.style.pointerEvents = 'none'
-
-      const handleGlobalMouseUp = () => {
-        input.style.pointerEvents = originalPointerEvents
-        window.removeEventListener('mouseup', handleGlobalMouseUp)
-        window.removeEventListener('blur', handleGlobalMouseUp)
-      }
-      window.addEventListener('mouseup', handleGlobalMouseUp)
-      window.addEventListener('blur', handleGlobalMouseUp)
-    }
-  }
-}
+import { handleInputDragSelectAll } from './inputDragSelect.js'
 
 function buildDraftCommands(commands) {
   return normalizeAISlashCommands(commands).map((command, index) => ({

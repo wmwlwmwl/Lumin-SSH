@@ -2,27 +2,9 @@ import { RotateCcw, Save, Trash2, Eye, EyeOff } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '../../i18n.js'
 import Tiptop from '../Tiptop.jsx'
+import { handleInputDragSelectAll } from './inputDragSelect.js'
 
 const defaultConfigText = '{\n  "mcpServers": {}\n}'
-
-function handleInputDragSelectAll(event) {
-  if (event.buttons === 1) {
-    const input = event.currentTarget || event.target
-    if (input) {
-      input.select()
-      const originalPointerEvents = input.style.pointerEvents
-      input.style.pointerEvents = 'none'
-
-      const handleGlobalMouseUp = () => {
-        input.style.pointerEvents = originalPointerEvents
-        window.removeEventListener('mouseup', handleGlobalMouseUp)
-        window.removeEventListener('blur', handleGlobalMouseUp)
-      }
-      window.addEventListener('mouseup', handleGlobalMouseUp)
-      window.addEventListener('blur', handleGlobalMouseUp)
-    }
-  }
-}
 
 function ToggleSwitch({ checked, onChange, disabled = false }) {
   return (

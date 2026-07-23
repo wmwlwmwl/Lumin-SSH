@@ -10,25 +10,7 @@ import {
   canUseDedicatedWebSearchCandidate,
   getAIProviderDefinition,
 } from './providers/index.js'
-
-function handleInputDragSelectAll(event) {
-  if (event.buttons === 1) {
-    const input = event.currentTarget || event.target
-    if (input) {
-      input.select()
-      const originalPointerEvents = input.style.pointerEvents
-      input.style.pointerEvents = 'none'
-
-      const handleGlobalMouseUp = () => {
-        input.style.pointerEvents = originalPointerEvents
-        window.removeEventListener('mouseup', handleGlobalMouseUp)
-        window.removeEventListener('blur', handleGlobalMouseUp)
-      }
-      window.addEventListener('mouseup', handleGlobalMouseUp)
-      window.addEventListener('blur', handleGlobalMouseUp)
-    }
-  }
-}
+import { handleInputDragSelectAll } from './inputDragSelect.js'
 
 const cacheOptions = [
   { value: 'model', labelKey: '基于模型能力' },
@@ -1616,6 +1598,7 @@ export default function AIProviderQuickEditOverlay({ open, mode = 'edit', provid
                           <input
                             value={dedicatedProviderSearch}
                             onChange={(event) => setDedicatedProviderSearch(event.target.value)}
+                            onMouseLeave={handleInputDragSelectAll}
                             placeholder={t('搜索全局配置')}
                             style={{
                               width: '100%',
