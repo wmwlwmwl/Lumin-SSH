@@ -4674,34 +4674,44 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   }, [handleBatchDelete, t]);
 
   const handleRenameGroup = useCallback(async (groupName) => {
-    const next = await window.luminDialog?.prompt(
-      t('请输入新的分组名称'),
-      groupName,
-      t('重命名分组'),
-    );
-    if (next === null || next === undefined) {
-      return false;
-    }
-    const trimmed = String(next).trim();
-    if (!trimmed) {
-      addToast(t('分组名称不能为空'), 'error');
-      return false;
-    }
-    if (trimmed === groupName) {
-      return false;
-    }
-    try {
-      await AppGo.RenameConnectionGroup(groupName, trimmed);
-      addToast(t('分组已重命名'), 'success');
-      try {
-        await loadServers();
-      } catch (err) {
-        console.error('Failed to load servers:', err);
+    let draft = groupName;
+    while (true) {
+      const next = await window.luminDialog?.prompt(
+        t('请输入新的分组名称'),
+        draft,
+        t('重命名分组'),
+      );
+      if (next === null || next === undefined) {
+        return false;
       }
-      return trimmed;
-    } catch (err) {
-      addToast(err?.message || err || t('重命名失败'), 'error');
-      return false;
+      const trimmed = String(next).trim();
+      if (!trimmed) {
+        addToast(t('分组名称不能为空'), 'error');
+        draft = next;
+        continue;
+      }
+      if (trimmed === groupName) {
+        return false;
+      }
+      try {
+        await AppGo.RenameConnectionGroup(groupName, trimmed);
+        addToast(t('分组已重命名'), 'success');
+        try {
+          await loadServers();
+        } catch (err) {
+          console.error('Failed to load servers:', err);
+        }
+        return trimmed;
+      } catch (err) {
+        const message = String(err?.message || err || t('重命名失败'));
+        addToast(message, 'error');
+        // 名称冲突/校验失败时保留输入并再次打开弹窗，方便继续修改
+        if (message.includes('分组名称已存在') || message.includes('分组名称不能为空')) {
+          draft = trimmed;
+          continue;
+        }
+        return false;
+      }
     }
   }, [loadServers, addToast, t]);
 
