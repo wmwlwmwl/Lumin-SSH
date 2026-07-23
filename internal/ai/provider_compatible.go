@@ -110,6 +110,123 @@ func fetchCompatibleProviderModels(client *http.Client, baseURL string, apiKey s
 	return models, nil
 }
 
+func fetchMessagesProviderModels(client *http.Client, baseURL string, apiKey string) ([]string, error) {
+	trimmedBaseURL := aiprovider.NormalizeMessagesBaseURL(baseURL)
+	if trimmedBaseURL == "" {
+		return nil, fmt.Errorf("请先填写 Anthropic 基础 URL")
+	}
+
+	endpoint := trimmedBaseURL + "/v1/models"
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("anthropic-version", "2023-06-01")
+	if key := strings.TrimSpace(apiKey); key != "" {
+		request.Header.Set("x-api-key", key)
+	}
+
+	if client == nil {
+		client = &http.Client{Timeout: 20 * time.Second}
+	}
+
+	response, fetchErr := client.Do(request)
+
+	is404Or405 := false
+	if fetchErr == nil && response != nil {
+		if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed {
+			is404Or405 = true
+			response.Body.Close()
+		}
+	}
+
+	if (fetchErr != nil || is404Or405) && strings.Contains(trimmedBaseURL, "/anthropic") {
+		// Fallback for DeepSeek or similar providers that expose Anthropic-compatible /v1/messages
+		// but require OpenAI-compatible /v1/models on their main domain.
+		derivedBaseURL := strings.TrimSuffix(strings.TrimRight(trimmedBaseURL, "/"), "/anthropic")
+		var fallbackErr error
+		fallbackSucceeded := false
+		for _, path := range []string{"/v1/models", "/models"} {
+			fallbackEndpoint := derivedBaseURL + path
+			fallbackReq, err := http.NewRequest(http.MethodGet, fallbackEndpoint, nil)
+			if err != nil {
+				continue
+			}
+			fallbackReq.Header.Set("Accept", "application/json")
+			if key := strings.TrimSpace(apiKey); key != "" {
+				fallbackReq.Header.Set("Authorization", "Bearer "+key)
+			}
+			fallbackResp, err := client.Do(fallbackReq)
+			if err != nil {
+				fallbackErr = err
+				continue
+			}
+			if fallbackResp.StatusCode >= 200 && fallbackResp.StatusCode < 300 {
+				response = fallbackResp
+				fetchErr = nil
+				fallbackSucceeded = true
+				break
+			}
+			bodyBytes, _ := io.ReadAll(io.LimitReader(fallbackResp.Body, 1024))
+			fallbackResp.Body.Close()
+			fallbackErr = fmt.Errorf("fallback to %s failed (status %d): %s", path, fallbackResp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		}
+		if !fallbackSucceeded {
+			if fallbackErr != nil {
+				return nil, fmt.Errorf("获取 Anthropic 模型列表失败，且尝试备用 OpenAI 兼容接口失败: %v", fallbackErr)
+			}
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			return nil, fmt.Errorf("获取 Anthropic 模型列表失败 (404/405)")
+		}
+	} else if fetchErr != nil {
+		return nil, fetchErr
+	} else if is404Or405 {
+		return nil, fmt.Errorf("获取 Anthropic 模型列表失败 (404/405)")
+	}
+
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		errorText := strings.TrimSpace(string(bodyBytes))
+		if errorText == "" {
+			errorText = response.Status
+		}
+		return nil, fmt.Errorf("%s", errorText)
+	}
+
+	var payload aiProviderModelsResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	modelSet := make(map[string]struct{}, len(payload.Data))
+	models := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		modelID := strings.TrimSpace(item.ID)
+		if modelID == "" {
+			continue
+		}
+		if _, exists := modelSet[modelID]; exists {
+			continue
+		}
+		modelSet[modelID] = struct{}{}
+		models = append(models, modelID)
+	}
+
+	sort.Strings(models)
+
+	if len(models) == 0 {
+		return nil, fmt.Errorf("未获取到任何模型")
+	}
+
+	return models, nil
+}
+
 func (a *App) RequestAIProviderModels(baseURL string, apiKey string) ([]string, error) {
 	client, err := a.newAIHTTPClient(20 * time.Second)
 	if err != nil {
@@ -130,6 +247,9 @@ func (a *App) RequestAIProviderModelsWithProfile(jsonStr string) ([]string, erro
 	client, err := a.newAIHTTPClientForProfile(&profile, 20*time.Second)
 	if err != nil {
 		return nil, err
+	}
+	if profile.Provider == "Messages" {
+		return fetchMessagesProviderModels(client, profile.BaseURL, profile.APIKey)
 	}
 	return fetchCompatibleProviderModels(client, profile.BaseURL, profile.APIKey)
 }

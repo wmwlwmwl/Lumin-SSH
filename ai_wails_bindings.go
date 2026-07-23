@@ -252,6 +252,10 @@ func (b *AIBindings) RequestAIProviderModels(baseURL string, apiKey string) ([]s
 	return b.runtime().RequestAIProviderModels(baseURL, apiKey)
 }
 
+func (b *AIBindings) RequestAIProviderModelsWithProfile(jsonStr string) ([]string, error) {
+	return b.runtime().RequestAIProviderModelsWithProfile(jsonStr)
+}
+
 type aiSSHDelegate struct {
 	manager *SSHManager
 }
