@@ -588,6 +588,26 @@ export default function SettingsModal({
     }
   };
 
+  const handleCopyThemePackageToMode = async (themePackage, targetMode) => {
+    if (!themePackage?.id || (targetMode !== 'light' && targetMode !== 'dark')) {
+      return;
+    }
+    setThemePackageBusy(true);
+    try {
+      const copied = await AppGo.CopyThemePackageToMode(themePackage.id, targetMode);
+      await refreshThemePackages();
+      const copiedId = String(copied?.id || '').trim();
+      if (copiedId) {
+        await handleSelectThemePackage(targetMode, copiedId);
+      }
+      addToast(targetMode === 'light' ? $t('主题包已复制到浅色') : $t('主题包已复制到深色'), 'success');
+    } catch (err) {
+      addToast($t('主题包复制失败') + `: ${err}`, 'error');
+    } finally {
+      setThemePackageBusy(false);
+    }
+  };
+
   const handleStartAIThemeTuning = useCallback((slot) => {
     if (typeof window === 'undefined') {
       return;
@@ -1759,6 +1779,7 @@ export default function SettingsModal({
                 onImportThemePackages={() => { void handleImportThemePackages(); }}
                 onTuneActiveThemeWithAI={() => { handleStartAIThemeTuning(); }}
                 onDeleteThemePackage={(themePackage) => { void handleDeleteThemePackage(themePackage); }}
+                onCopyThemePackageToMode={(themePackage, targetMode) => { void handleCopyThemePackageToMode(themePackage, targetMode); }}
                 themePackageBusy={themePackageBusy}
                 showThemeQuickEntry={showThemeQuickEntry}
                 onToggleThemeQuickEntry={handleToggleThemeQuickEntry}

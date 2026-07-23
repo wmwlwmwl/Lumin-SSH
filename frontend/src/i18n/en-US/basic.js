@@ -1522,4 +1522,11 @@ export default {
   "淡紫浅色": "Soft purple light",
   "粉紫深色": "Pink-purple dark",
   "粉紫浅色": "Pink-purple light",
+
+  // theme package copy actions
+  "复制到浅色": "Copy to light",
+  "复制到深色": "Copy to dark",
+  "主题包已复制到浅色": "Theme package copied to light",
+  "主题包已复制到深色": "Theme package copied to dark",
+  "主题包复制失败": "Failed to copy theme package",
 };

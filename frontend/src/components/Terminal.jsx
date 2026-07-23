@@ -21,33 +21,28 @@ import '@xterm/xterm/css/xterm.css';
 import { useTranslation } from '../i18n.js';
 import defaultTermBg from '../assets/term_bg.png';
 import { Z } from '../constants/zIndex';
-import { getTerminalTheme, getAppThemeMode } from '../utils/theme.js';
+import { getTerminalTheme, getAppThemeMode, isDarkTerminalSurface } from '../utils/theme.js';
 import { getResolvedProgramFontPreferences } from '../utils/programFonts.js';
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
-// SearchAddon 要求 #RRGGBB。浅/深完全两套，互不迁就：
-// 浅色：琥珀非当前 + 深橙当前（奶油底上够醒目）
-// 深色：亮蓝非当前 + 亮黄当前（避开绿提示符叠成泥色；不用灰/橙）
-function getTermSearchDecorations() {
-  if (getAppThemeMode() === 'light') {
+// SearchAddon 只上背景、不改字色。按终端底色选高亮，不按界面 mode。
+// 深色终端必须用「够深」的底：偏亮的半透明底会触发 minimumContrastRatio 把白字压成黑字。
+function getTermSearchDecorations(terminalTheme) {
+  if (!isDarkTerminalSurface(terminalTheme)) {
     return {
       matchBackground: '#fbbf24',
-      matchBorder: '#d97706',
       matchOverviewRuler: '#fbbf24',
       activeMatchBackground: '#ea580c',
-      activeMatchBorder: '#c2410c',
       activeMatchColorOverviewRuler: '#ea580c',
     };
   }
   return {
-    matchBackground: '#1f6feb',
-    matchBorder: '#58a6ff',
-    matchOverviewRuler: '#1f6feb',
-    activeMatchBackground: '#ffdf5d',
-    activeMatchBorder: '#ffffff',
-    activeMatchColorOverviewRuler: '#ffdf5d',
+    matchBackground: '#1d4ed8',
+    matchOverviewRuler: '#3b82f6',
+    activeMatchBackground: '#be123c',
+    activeMatchColorOverviewRuler: '#fb7185',
   };
 }
 
@@ -1130,7 +1125,8 @@ export default function Terminal({
       fontWeightBold:   700,
       lineHeight:       1.22,
       letterSpacing:    0.3,
-      minimumContrastRatio: 3,
+      // 关自动反差：搜索高亮底上白字会被压成黑字
+      minimumContrastRatio: 0,
       cursorBlink:      true,
       cursorStyle:      'bar',
       cursorWidth:      1,
@@ -1819,9 +1815,14 @@ export default function Terminal({
     const term = termRef.current;
     if (term) {
       // xterm 背景保持透明，底色由 wrapper(--term-container-bg) 提供，壁纸才能叠在上面
-      term.options.theme = T.xterm;
-      // ponytail: 透明背景下自动对比度补偿以 #000 为背景计算，浅色主题反杀文字亮度，深色可正常增强
-      term.options.minimumContrastRatio = getAppThemeMode() === 'light' ? 0 : 3;
+      const xtermTheme = { ...T.xterm };
+      const darkTerm = isDarkTerminalSurface(T);
+      // 搜索/选区当前匹配常走 selectionForeground：深色终端强制白字，浅色终端强制深字
+      xtermTheme.selectionForeground = darkTerm ? '#ffffff' : '#0f172a';
+      term.options.theme = xtermTheme;
+      // ponytail: 对比度按终端底算。深色终端也关自动反差——搜索高亮底会参与计算，
+      // 否则白字会被压成黑字（浅色 UI + 复制深色终端时尤其明显）
+      term.options.minimumContrastRatio = 0;
       // 强制重绘已有缓冲，否则 ANSI 色板切换后旧行不更新
       try {
         const rows = Math.max(0, (term.rows || 1) - 1);
@@ -1842,6 +1843,7 @@ export default function Terminal({
       el.style.setProperty('--term-input-bar-border', c.inputBarBorder);
       el.style.setProperty('--term-input-bg', c.inputBg);
       el.style.setProperty('--term-input-color', c.inputColor);
+      el.style.setProperty('--term-input-placeholder', c.inputPlaceholder || c.mutedColor || '');
       el.style.setProperty('--term-btn-border', c.btnBorder);
       el.style.setProperty('--term-separator', c.separator);
       el.style.setProperty('--term-muted', c.mutedColor);
@@ -1932,8 +1934,9 @@ export default function Terminal({
   const getTermSearchOptions = useCallback((incremental = false) => ({
     caseSensitive: termSearchCaseSensitive,
     incremental,
-    decorations: getTermSearchDecorations(),
-  }), [termSearchCaseSensitive, themeToggle]);
+    // 高亮跟终端底色走，不跟界面 light/dark 走（浅色 UI + 深色终端时用深色方案）
+    decorations: getTermSearchDecorations(T),
+  }), [termSearchCaseSensitive, themeToggle, T]);
 
   const openTermSearch = useCallback((seedText) => {
     setShowTermSearch(true);
@@ -2731,6 +2734,7 @@ export default function Terminal({
               }
             }}
             placeholder={t('查找...')}
+            className="term-search-input"
             style={{
               flex: 1,
               minWidth: 0,
@@ -2982,6 +2986,7 @@ export default function Terminal({
             height: 32,
             minHeight: 32,
             background: 'var(--term-input-bg)',
+            color: 'var(--term-input-color)',
             borderColor: cmdInput ? 'var(--border-focus)' : 'var(--term-btn-border)',
           }}
         />

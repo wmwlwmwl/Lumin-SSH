@@ -4696,6 +4696,21 @@ body.theme-light .dashboard-server-editor {
   line-height: 1.4;
   white-space: pre-wrap;
   scrollbar-width: thin;
+  color: var(--term-input-color);
+  background: var(--term-input-bg);
+}
+.term-command-input::placeholder {
+  color: var(--term-input-placeholder, var(--term-muted));
+}
+.term-search-input::placeholder {
+  color: var(--term-input-placeholder, var(--term-muted));
+}
+
+/* ── xterm 搜索高亮：禁用 SearchAddon 默认 outline，避免脏黑边 ── */
+.xterm-find-result-decoration,
+.xterm-find-active-result-decoration {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ── 终端容器 CSS 变量默认值（JS 主题切换时覆盖） ── */

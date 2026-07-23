@@ -406,17 +406,18 @@ function buildDerivedComponentDefaults(modeHint, tokens = {}, terminalContainer 
     borderBottomColor: tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
     titleColor: tokens.textPrimary || (isLight ? '#111827' : '#eef3f9'),
   };
+  // 快捷命令是 UI 面板，跟界面 tokens 走；不要优先 terminal.popup（复制深色终端到浅色 UI 会整块变深）
   const quickCommands = {
-    panelBg: terminalContainer.popupBg || tokens.surfaceOverlay || (isLight ? '#ffffff' : '#1a2130'),
-    borderColor: terminalContainer.popupBorder || tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
-    textColor: terminalContainer.inputColor || tokens.textPrimary || (isLight ? '#111827' : '#eef3f9'),
-    secondaryTextColor: terminalContainer.statusBarColor || tokens.textSecondary || (isLight ? '#334155' : '#c8d1dd'),
-    mutedTextColor: terminalContainer.mutedColor || tokens.textMuted || (isLight ? '#6b7a8f' : '#7a8698'),
-    inputBg: terminalContainer.inputBg || tokens.surfaceSunken || (isLight ? '#e9ecef' : '#1b2230'),
-    inputBorderColor: terminalContainer.btnBorder || tokens.border || (isLight ? 'rgba(28, 35, 45, 0.14)' : 'rgba(72, 86, 110, 0.55)'),
-    menuBg: terminalContainer.contextBg || terminalContainer.popupBg || tokens.surfaceOverlay || (isLight ? '#ffffff' : '#1a2130'),
-    menuBorderColor: terminalContainer.contextBorder || terminalContainer.popupBorder || tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
-    separatorColor: terminalContainer.separator || tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
+    panelBg: tokens.surfaceOverlay || tokens.surfaceRaised || (isLight ? '#ffffff' : '#1a2130'),
+    borderColor: tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
+    textColor: tokens.textPrimary || (isLight ? '#111827' : '#eef3f9'),
+    secondaryTextColor: tokens.textSecondary || (isLight ? '#334155' : '#c8d1dd'),
+    mutedTextColor: tokens.textMuted || (isLight ? '#6b7a8f' : '#7a8698'),
+    inputBg: tokens.surfaceSunken || (isLight ? '#e9ecef' : '#1b2230'),
+    inputBorderColor: tokens.border || (isLight ? 'rgba(28, 35, 45, 0.14)' : 'rgba(72, 86, 110, 0.55)'),
+    menuBg: tokens.surfaceOverlay || tokens.surfaceRaised || (isLight ? '#ffffff' : '#1a2130'),
+    menuBorderColor: tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
+    separatorColor: tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
   };
   quickCommands.popupBg = quickCommands.panelBg;
   quickCommands.btnBorder = quickCommands.inputBorderColor;
@@ -424,17 +425,20 @@ function buildDerivedComponentDefaults(modeHint, tokens = {}, terminalContainer 
   quickCommands.statusBarColor = quickCommands.secondaryTextColor;
   quickCommands.mutedColor = quickCommands.mutedTextColor;
   quickCommands.separator = quickCommands.separatorColor;
+  // 连接中卡片是 UI 浮层，跟界面 tokens 走；不要优先 terminal.popup
   const connectingCard = {
-    overlayBg: 'rgba(0, 0, 0, 0.42)',
-    cardBg: terminalContainer.popupBg || tokens.surfaceOverlay || (isLight ? '#ffffff' : '#1a2130'),
-    borderColor: terminalContainer.btnBorder || tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
-    titleColor: terminalContainer.inputColor || tokens.textPrimary || (isLight ? '#111827' : '#eef3f9'),
-    secondaryTextColor: terminalContainer.statusBarColor || tokens.textSecondary || (isLight ? '#334155' : '#c8d1dd'),
-    mutedTextColor: terminalContainer.mutedColor || tokens.textMuted || (isLight ? '#6b7a8f' : '#7a8698'),
+    overlayBg: isLight ? 'rgba(15, 23, 42, 0.28)' : 'rgba(0, 0, 0, 0.42)',
+    cardBg: tokens.surfaceOverlay || tokens.surfaceRaised || (isLight ? '#ffffff' : '#1a2130'),
+    borderColor: tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
+    titleColor: tokens.textPrimary || (isLight ? '#111827' : '#eef3f9'),
+    secondaryTextColor: tokens.textSecondary || (isLight ? '#334155' : '#c8d1dd'),
+    mutedTextColor: tokens.textMuted || (isLight ? '#6b7a8f' : '#7a8698'),
     buttonBg: tokens.surfaceHover || (isLight ? '#e2e6eb' : '#243042'),
-    buttonTextColor: terminalContainer.statusBarColor || tokens.textSecondary || (isLight ? '#334155' : '#c8d1dd'),
-    progressTrackColor: terminalContainer.separator || tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
-    shadow: terminalContainer.contextShadow || '',
+    buttonTextColor: tokens.textSecondary || (isLight ? '#334155' : '#c8d1dd'),
+    progressTrackColor: tokens.borderSubtle || (isLight ? 'rgba(28, 35, 45, 0.10)' : 'rgba(72, 86, 110, 0.32)'),
+    shadow: isLight
+      ? '0 8px 32px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.06)'
+      : (terminalContainer.contextShadow || ''),
   };
   connectingCard.popupBg = connectingCard.cardBg;
   connectingCard.btnBorder = connectingCard.borderColor;
@@ -892,11 +896,96 @@ export function clearThemeToolPreviewPackage() {
   }
 }
 
+function relativeLuminanceFromThemeColor(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  let r;
+  let g;
+  let b;
+  if (/^#[\da-fA-F]{6}$/i.test(raw)) {
+    r = parseInt(raw.slice(1, 3), 16);
+    g = parseInt(raw.slice(3, 5), 16);
+    b = parseInt(raw.slice(5, 7), 16);
+  } else {
+    const match = raw.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (!match) return null;
+    r = Number(match[1]);
+    g = Number(match[2]);
+    b = Number(match[3]);
+  }
+  if (![r, g, b].every((n) => Number.isFinite(n))) return null;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+// 按终端输出区底色判断深浅（不要看 inputBar：浅色 UI 会改成浅色 chrome）
+export function isDarkTerminalSurface(terminalTheme) {
+  const container = terminalTheme?.container || {};
+  const xterm = terminalTheme?.xterm || {};
+  const bgCandidate = String(xterm.background || '').trim();
+  const solidXtermBg = bgCandidate
+    && !/^#00000000$/i.test(bgCandidate)
+    && !/rgba?\([^)]*,\s*0\s*\)$/i.test(bgCandidate)
+    ? bgCandidate
+    : '';
+  const bgLuma = relativeLuminanceFromThemeColor(solidXtermBg)
+    ?? relativeLuminanceFromThemeColor(container.containerBg);
+  if (bgLuma != null) return bgLuma < 0.45;
+  const fgLuma = relativeLuminanceFromThemeColor(xterm.foreground);
+  if (fgLuma != null) return fgLuma > 0.55;
+  return getAppThemeMode() !== 'light';
+}
+
 export function getTerminalTheme() {
   const activeThemePackage = getActiveThemePackage();
-  return activeThemePackage?.components?.terminal || {
+  const terminal = activeThemePackage?.components?.terminal || {
     xterm: {},
     container: {},
+  };
+  const sourceXterm = { ...(terminal.xterm || {}) };
+  // 搜索/选区字色始终跟终端底走（覆盖包内写死的 selectionForeground）
+  // 否则浅色 UI + 深色终端时，当前匹配会变成黑字
+  if (isDarkTerminalSurface({ xterm: sourceXterm, container: terminal.container || {} })) {
+    sourceXterm.selectionForeground = '#ffffff';
+    if (!sourceXterm.selectionBackground) sourceXterm.selectionBackground = '#2563eb';
+  } else {
+    sourceXterm.selectionForeground = '#0f172a';
+    if (!sourceXterm.selectionBackground) sourceXterm.selectionBackground = '#93c5fd';
+  }
+
+  // 浅色 UI：输入条/搜索栏等 chrome 跟界面一致，终端输出区仍用包内 xterm
+  if (normalizeModeHint(activeThemePackage?.modeHint) !== 'light') {
+    return { ...terminal, xterm: sourceXterm };
+  }
+  const tokens = activeThemePackage?.tokens || {};
+  const sourceContainer = terminal.container || {};
+  const raised = tokens.surfaceRaised || '#ffffff';
+  const sunken = tokens.surfaceSunken || '#e9ecef';
+  const textPrimary = tokens.textPrimary || '#111827';
+  const textMuted = tokens.textMuted || '#6b7a8f';
+  const borderSubtle = tokens.borderSubtle || 'rgba(28, 35, 45, 0.10)';
+  const border = tokens.border || 'rgba(28, 35, 45, 0.14)';
+  return {
+    ...terminal,
+    xterm: sourceXterm,
+    container: {
+      ...sourceContainer,
+      statusBarBg: raised,
+      statusBarBorder: `1px solid ${borderSubtle}`,
+      statusBarColor: tokens.accent || sourceContainer.statusBarColor || '#2563eb',
+      serverNameColor: textPrimary,
+      inputBarBg: raised,
+      inputBarBorder: `1px solid ${borderSubtle}`,
+      inputBg: sunken,
+      inputColor: textPrimary,
+      inputPlaceholder: textMuted,
+      btnBorder: border,
+      mutedColor: textMuted,
+      separator: borderSubtle,
+      popupBg: tokens.surfaceOverlay || raised,
+      popupBorder: `1px solid ${borderSubtle}`,
+      contextBg: tokens.surfaceOverlay || raised,
+      contextBorder: `1px solid ${borderSubtle}`,
+    },
   };
 }
 

@@ -1581,6 +1581,14 @@ func (a *App) DeleteThemePackage(themeID string) error {
 	return a.configManager.DeleteThemePackage(themeID)
 }
 
+func (a *App) CopyThemePackageToMode(themeID string, targetMode string) (map[string]interface{}, error) {
+	item, err := a.configManager.CopyThemePackageToMode(themeID, targetMode)
+	if err != nil {
+		return nil, err
+	}
+	return themePackageSummaryToMap(item), nil
+}
+
 func getGitHubContributorsOnce(client *http.Client) ([]GitHubContributor, error) {
 	request, err := http.NewRequest(http.MethodGet, githubContributorsAPIURL, nil)
 	if err != nil {

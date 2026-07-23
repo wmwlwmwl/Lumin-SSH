@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { t as $t } from '../../i18n.js';
-import { Sun, Monitor, Moon, Trash2 } from 'lucide-react';
+import { Sun, Monitor, Moon, Trash2, Copy } from 'lucide-react';
 import { ToggleSwitch } from './SharedComponents';
 
 export default function AppearanceTab({
@@ -33,6 +33,7 @@ export default function AppearanceTab({
   onImportThemePackages,
   onTuneActiveThemeWithAI,
   onDeleteThemePackage,
+  onCopyThemePackageToMode,
   themePackageBusy,
   showThemeQuickEntry, onToggleThemeQuickEntry,
   probePanelPosition, onProbePanelPositionChange,
@@ -347,6 +348,8 @@ export default function AppearanceTab({
               selectedThemePackageId={themePackageSettings?.lightThemePackageId}
               onSelectThemePackage={onSelectLightThemePackage}
               onDeleteThemePackage={onDeleteThemePackage}
+              onCopyThemePackageToMode={onCopyThemePackageToMode}
+              copyTargetMode="dark"
               themePackageBusy={themePackageBusy}
             />
             <ThemePackagePalette
@@ -356,6 +359,8 @@ export default function AppearanceTab({
               selectedThemePackageId={themePackageSettings?.darkThemePackageId}
               onSelectThemePackage={onSelectDarkThemePackage}
               onDeleteThemePackage={onDeleteThemePackage}
+              onCopyThemePackageToMode={onCopyThemePackageToMode}
+              copyTargetMode="light"
               themePackageBusy={themePackageBusy}
             />
           </div>
@@ -444,6 +449,8 @@ function ThemePackagePalette({
   selectedThemePackageId,
   onSelectThemePackage,
   onDeleteThemePackage,
+  onCopyThemePackageToMode,
+  copyTargetMode,
   themePackageBusy,
 }) {
   const normalizedPackages = Array.isArray(packages) ? packages : [];
@@ -451,6 +458,7 @@ function ThemePackagePalette({
     ...themePackage,
     preview: themePackage?.preview || {},
   })), [normalizedPackages]);
+  const copyLabel = copyTargetMode === 'light' ? $t('复制到浅色') : $t('复制到深色');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
@@ -508,6 +516,23 @@ function ThemePackagePalette({
                 <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 999, border: '1px solid var(--border)', color: 'var(--text-tertiary)', flexShrink: 0 }}>
                   {themePackage.source === 'builtin' ? $t('内置') : $t('用户')}
                 </span>
+                {copyTargetMode ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    aria-label={copyLabel}
+                    title={copyLabel}
+                    disabled={themePackageBusy}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onCopyThemePackageToMode?.(themePackage, copyTargetMode);
+                    }}
+                    style={{ width: 24, height: 24, color: 'var(--text-secondary)', flexShrink: 0 }}
+                  >
+                    <Copy size={12} />
+                  </button>
+                ) : null}
                 {canDelete ? (
                   <button
                     type="button"

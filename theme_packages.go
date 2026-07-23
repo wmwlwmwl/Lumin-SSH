@@ -1198,3 +1198,223 @@ func (c *ConfigManager) DeleteThemePackage(themeID string) error {
 	}
 	return fmt.Errorf("theme package not found: %s", normalizedThemeID)
 }
+
+func loadThemePackageFileByID(themeID string, userDirectory string) (ThemePackageFile, error) {
+	normalizedThemeID := normalizeThemePackageID(themeID)
+	if normalizedThemeID == "" {
+		return ThemePackageFile{}, fmt.Errorf("missing theme package id")
+	}
+	if item, ok := getBuiltinThemePackageByID(normalizedThemeID); ok {
+		return mergeThemePackageWithDefaults(item), nil
+	}
+	if strings.TrimSpace(userDirectory) == "" {
+		return ThemePackageFile{}, fmt.Errorf("theme package not found: %s", normalizedThemeID)
+	}
+	entries, err := os.ReadDir(userDirectory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ThemePackageFile{}, fmt.Errorf("theme package not found: %s", normalizedThemeID)
+		}
+		return ThemePackageFile{}, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != ".json" {
+			continue
+		}
+		targetPath := filepath.Join(userDirectory, entry.Name())
+		data, err := os.ReadFile(targetPath)
+		if err != nil {
+			continue
+		}
+		var item ThemePackageFile
+		if err := json.Unmarshal(data, &item); err != nil {
+			continue
+		}
+		if err := validateThemePackageFile(&item); err != nil {
+			continue
+		}
+		if normalizeThemePackageID(item.ID) != normalizedThemeID {
+			continue
+		}
+		return mergeThemePackageWithDefaults(item), nil
+	}
+	return ThemePackageFile{}, fmt.Errorf("theme package not found: %s", normalizedThemeID)
+}
+
+func uniqueUserThemePackageID(baseID string, targetMode string, usedIDs map[string]bool) string {
+	baseID = normalizeThemePackageID(baseID)
+	if baseID == "" {
+		baseID = "theme"
+	}
+	stripped := baseID
+	for {
+		if strings.HasSuffix(stripped, "-light") {
+			stripped = strings.TrimSuffix(stripped, "-light")
+			continue
+		}
+		if strings.HasSuffix(stripped, "-dark") {
+			stripped = strings.TrimSuffix(stripped, "-dark")
+			continue
+		}
+		break
+	}
+	if stripped == "" {
+		stripped = "theme"
+	}
+	candidates := []string{
+		stripped + "-" + targetMode,
+		stripped + "-copy-" + targetMode,
+	}
+	for i := 2; i < 100; i++ {
+		candidates = append(candidates, fmt.Sprintf("%s-copy-%s-%d", stripped, targetMode, i))
+	}
+	for _, candidate := range candidates {
+		if usedIDs[candidate] {
+			continue
+		}
+		return candidate
+	}
+	return fmt.Sprintf("%s-copy-%s-%d", stripped, targetMode, time.Now().Unix())
+}
+
+func listUsedThemePackageIDs(userDirectory string) (map[string]bool, error) {
+	used := map[string]bool{}
+	for _, item := range buildBuiltinThemePackages() {
+		used[item.ID] = true
+	}
+	if strings.TrimSpace(userDirectory) == "" {
+		return used, nil
+	}
+	entries, err := os.ReadDir(userDirectory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return used, nil
+		}
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != ".json" {
+			continue
+		}
+		summary, err := readThemePackageSummaryFromFile(filepath.Join(userDirectory, entry.Name()), "user")
+		if err != nil {
+			continue
+		}
+		if summary.ID != "" {
+			used[summary.ID] = true
+		}
+	}
+	return used, nil
+}
+
+func themePackageAccent(item ThemePackageFile, fallback string) string {
+	if accent := strings.TrimSpace(item.Tokens["accent"]); accent != "" {
+		return accent
+	}
+	if accent := themePackageNestedString(item.Components, "terminal", "container", "statusBarColor"); accent != "" {
+		return accent
+	}
+	if accent := themePackageNestedString(item.Components, "terminal", "xterm", "cursor"); accent != "" {
+		return accent
+	}
+	if strings.TrimSpace(fallback) != "" {
+		return fallback
+	}
+	if inferThemePackageModeHint(item) == "light" {
+		return "#2563eb"
+	}
+	return "#4d9eff"
+}
+
+// 目标侧浅/深色身份：只锁界面骨架（底/字/边框）。accent/success 等语义色保留源包。
+var themePackageModeIdentityTokenKeys = []string{
+	"surfaceBase", "surfaceRaised", "surfaceOverlay", "surfaceSunken", "surfaceHover", "surfaceActive",
+	"border", "borderLight", "borderSubtle",
+	"textPrimary", "textSecondary", "textTertiary", "textMuted",
+	"probeLabel", "probeDetail", "probeFaint",
+}
+
+func applyTargetModeIdentityTokens(tokens map[string]string, targetMode string) map[string]string {
+	next := cloneStringMap(tokens)
+	// buildBase 需要占位 accent；identity 列表不含 accent 键，源包 accent 会保留
+	placeholderAccent := themePackageAccent(ThemePackageFile{Tokens: tokens, ModeHint: targetMode}, "")
+	identity := buildBaseThemeTokens(targetMode, placeholderAccent)
+	for _, key := range themePackageModeIdentityTokenKeys {
+		if value := strings.TrimSpace(identity[key]); value != "" {
+			next[key] = value
+		}
+	}
+	return next
+}
+
+func rewriteThemePackageModeDescription(description string, sourceMode string, targetMode string) string {
+	description = strings.TrimSpace(description)
+	if description == "" || sourceMode == targetMode {
+		return description
+	}
+	if targetMode == "light" {
+		return strings.NewReplacer("深色", "浅色", "Dark", "Light", "dark", "light").Replace(description)
+	}
+	return strings.NewReplacer("浅色", "深色", "Light", "Dark", "light", "dark").Replace(description)
+}
+
+// CopyThemePackageToMode 复制到另一侧：
+// - 界面骨架（底/字/边框）与 tabs 结构用目标侧
+// - accent 与 terminal 等其余配色保留源包
+func (c *ConfigManager) CopyThemePackageToMode(themeID string, targetMode string) (ThemePackageSummary, error) {
+	targetMode = normalizeThemePackageModeHint(targetMode)
+	if targetMode == "" {
+		return ThemePackageSummary{}, fmt.Errorf("invalid target mode")
+	}
+	userDirectory, err := c.ensureUserThemePackagesDirectory()
+	if err != nil {
+		return ThemePackageSummary{}, err
+	}
+	source, err := loadThemePackageFileByID(themeID, userDirectory)
+	if err != nil {
+		return ThemePackageSummary{}, err
+	}
+	sourceMode := inferThemePackageModeHint(source)
+	if sourceMode == targetMode {
+		return ThemePackageSummary{}, fmt.Errorf("theme package already in %s mode", targetMode)
+	}
+	usedIDs, err := listUsedThemePackageIDs(userDirectory)
+	if err != nil {
+		return ThemePackageSummary{}, err
+	}
+	targetDefault := defaultThemePackageForMode(targetMode)
+	components := cloneAnyMap(source.Components)
+	// 标签栏结构跟随目标侧深浅；active 色走 --accent（源包主色）
+	components["tabs"] = buildTabsComponent(targetMode)
+	// terminal 等其余 component 保持源包
+	if _, ok := components["terminal"]; !ok {
+		if terminal, ok := targetDefault.Components["terminal"]; ok {
+			components["terminal"] = cloneAnyValue(terminal)
+		}
+	}
+	copied := ThemePackageFile{
+		SchemaVersion: themePackageSchemaVersion,
+		ID:            uniqueUserThemePackageID(source.ID, targetMode, usedIDs),
+		Name:          strings.TrimSpace(source.Name),
+		Description:   rewriteThemePackageModeDescription(source.Description, sourceMode, targetMode),
+		ModeHint:      targetMode,
+		Tokens:        applyTargetModeIdentityTokens(source.Tokens, targetMode),
+		Components:    components,
+		Resources:     cloneAnyMap(source.Resources),
+	}
+	if copied.Name == "" {
+		copied.Name = copied.ID
+	}
+	if err := validateThemePackageFile(&copied); err != nil {
+		return ThemePackageSummary{}, err
+	}
+	data, err := json.MarshalIndent(copied, "", "  ")
+	if err != nil {
+		return ThemePackageSummary{}, err
+	}
+	targetPath := filepath.Join(userDirectory, copied.ID+".json")
+	if err := atomicWriteFile(targetPath, data, 0o644); err != nil {
+		return ThemePackageSummary{}, err
+	}
+	return readThemePackageSummaryFromFile(targetPath, "user")
+}

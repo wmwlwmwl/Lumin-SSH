@@ -1522,4 +1522,11 @@ export default {
   "淡紫浅色": "Roxo suave claro",
   "粉紫深色": "Rosa-roxo escuro",
   "粉紫浅色": "Rosa-roxo claro",
+
+  // theme package copy actions
+  "复制到浅色": "Copiar para claro",
+  "复制到深色": "Copiar para escuro",
+  "主题包已复制到浅色": "Tema copiado para claro",
+  "主题包已复制到深色": "Tema copiado para escuro",
+  "主题包复制失败": "Falha ao copiar o tema",
 };
