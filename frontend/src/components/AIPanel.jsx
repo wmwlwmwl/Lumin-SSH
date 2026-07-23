@@ -185,6 +185,8 @@ function createEmptyPanelState() {
     skipNextAutomaticRequest: false,
     resumeAfterCancelRequestId: '',
     recoverableToolStopReason: '',
+    lastAssistantTurnId: '',
+    lastTurnBusinessMessageKind: '',
     contextTokens: 0,
     isCondensingContext: false,
     activeChangeReview: null,
@@ -570,6 +572,66 @@ function upsertMessageBeforeAssistant(messages, requestId, nextMessage) {
     return nextMessages
   }
   return insertMessageBeforeAssistant(list, requestId, nextMessage)
+}
+
+function isAIBusinessTurnMessageKind(kind) {
+  return Boolean(kind) && kind !== 'assistant' && kind !== 'reasoning' && kind !== 'user'
+}
+
+function updateAILastAssistantTurnState(currentState, message, fallbackTurnId = '') {
+  const kind = typeof message?.kind === 'string' ? message.kind.trim() : ''
+  if (!kind) {
+    return {}
+  }
+  if (kind === 'assistant') {
+    const turnId = typeof message?.turnId === 'string' && message.turnId.trim()
+      ? message.turnId.trim()
+      : typeof message?.id === 'string' && message.id.trim()
+        ? message.id.trim()
+        : typeof fallbackTurnId === 'string' ? fallbackTurnId.trim() : ''
+    return turnId ? { lastAssistantTurnId: turnId, lastTurnBusinessMessageKind: '' } : {}
+  }
+  if (!isAIBusinessTurnMessageKind(kind)) {
+    return {}
+  }
+  const turnId = typeof message?.turnId === 'string' && message.turnId.trim()
+    ? message.turnId.trim()
+    : typeof fallbackTurnId === 'string' && fallbackTurnId.trim()
+      ? fallbackTurnId.trim()
+      : typeof currentState?.lastAssistantTurnId === 'string' ? currentState.lastAssistantTurnId.trim() : ''
+  return turnId ? { lastAssistantTurnId: turnId, lastTurnBusinessMessageKind: kind } : {}
+}
+
+function computeAILastAssistantTurnState(messages) {
+  const list = Array.isArray(messages) ? messages : []
+  let lastAssistantTurnId = ''
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const message = list[index]
+    const kind = typeof message?.kind === 'string' ? message.kind.trim() : ''
+    if (kind !== 'assistant') {
+      continue
+    }
+    lastAssistantTurnId = typeof message?.turnId === 'string' && message.turnId.trim()
+      ? message.turnId.trim()
+      : typeof message?.id === 'string' ? message.id.trim() : ''
+    break
+  }
+  if (!lastAssistantTurnId) {
+    return { lastAssistantTurnId: '', lastTurnBusinessMessageKind: '' }
+  }
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const message = list[index]
+    const turnId = typeof message?.turnId === 'string' ? message.turnId.trim() : ''
+    if (turnId !== lastAssistantTurnId) {
+      continue
+    }
+    const kind = typeof message?.kind === 'string' ? message.kind.trim() : ''
+    if (!isAIBusinessTurnMessageKind(kind)) {
+      continue
+    }
+    return { lastAssistantTurnId, lastTurnBusinessMessageKind: kind }
+  }
+  return { lastAssistantTurnId, lastTurnBusinessMessageKind: '' }
 }
 
 const AI_CONVERSATION_DIFF_TOOL_NAMES = new Set(['apply_diff', 'write_to_file', 'search_replace', 'edit_file', 'apply_patch'])
@@ -1024,45 +1086,12 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const collaborationActive = Boolean(panelState.collaborationActive)
   const collaborationFollowupInteractionLocked = collaborationLocked && collaborationActive && panelState.collaborationMode === 'followup'
   const showAssistantCollaborationActiveImage = collaborationActive && Boolean(activeConversation)
-  const lastAssistantTurnId = useMemo(() => {
-    const messages = Array.isArray(panelState.messages) ? panelState.messages : []
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index]
-      const kind = typeof message?.kind === 'string' ? message.kind.trim() : ''
-      if (kind !== 'assistant') {
-        continue
-      }
-      const turnId = typeof message?.turnId === 'string' ? message.turnId.trim() : ''
-      const messageId = typeof message?.id === 'string' ? message.id.trim() : ''
-      return turnId || messageId
-    }
-    return ''
-  }, [panelState.messages])
-  const lastBusinessMessageKind = useMemo(() => {
-    if (!lastAssistantTurnId) {
-      return ''
-    }
-    const messages = Array.isArray(panelState.messages) ? panelState.messages : []
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index]
-      const turnId = typeof message?.turnId === 'string' ? message.turnId.trim() : ''
-      if (turnId !== lastAssistantTurnId) {
-        continue
-      }
-      const kind = typeof message?.kind === 'string' ? message.kind.trim() : ''
-      if (!kind || kind === 'assistant' || kind === 'reasoning') {
-        continue
-      }
-      return kind
-    }
-    return ''
-  }, [lastAssistantTurnId, panelState.messages])
   const toolResumeAvailable = Boolean(activeConversation)
     && panelState.requestPhase === 'idle'
     && runtimePhase === 'ready'
     && !panelState.queuedSubmission
     && !panelState.isFlushingQueuedSubmission
-    && (!lastBusinessMessageKind || (lastBusinessMessageKind !== 'completion' && lastBusinessMessageKind !== 'followup'))
+    && (!panelState.lastTurnBusinessMessageKind || (panelState.lastTurnBusinessMessageKind !== 'completion' && panelState.lastTurnBusinessMessageKind !== 'followup'))
   const playAISound = useCallback((type) => {
     if (normalizedGlobalAISettings.soundEnabled === false) {
       return
@@ -1741,6 +1770,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
             runtimePhase: 'api_request',
             messages: nextMessages,
             apiMessages: nextApiMessages,
+            lastAssistantTurnId: assistantMessageId,
+            lastTurnBusinessMessageKind: '',
           }
         })
         return
@@ -1832,6 +1863,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
                 },
               },
             ],
+            lastAssistantTurnId: payload.messageId,
+            lastTurnBusinessMessageKind: '',
           }
         })
         if (snapshotBeforeNextRequest) {
@@ -1841,12 +1874,16 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       }
 
       if (payload.kind === 'append_message' && payload.message) {
-        setPanelState(matchedPanelKey, (current) => ({
-          ...current,
-          messages: payload.message.kind === 'user'
-            ? [...(Array.isArray(current.messages) ? current.messages : []), payload.message]
-            : insertMessageBeforeAssistant(current.messages, current.activeAssistantMessageId || requestId, payload.message),
-        }))
+        setPanelState(matchedPanelKey, (current) => {
+          const fallbackTurnId = current.activeAssistantMessageId || requestId
+          return {
+            ...current,
+            messages: payload.message.kind === 'user'
+              ? [...(Array.isArray(current.messages) ? current.messages : []), payload.message]
+              : insertMessageBeforeAssistant(current.messages, fallbackTurnId, payload.message),
+            ...updateAILastAssistantTurnState(current, payload.message, fallbackTurnId),
+          }
+        })
         return
       }
 
@@ -1868,10 +1905,14 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
           }
           return normalizedMessage
         })()
-        setPanelState(matchedPanelKey, (current) => ({
-          ...current,
-          messages: upsertMessageBeforeAssistant(current.messages, current.activeAssistantMessageId || requestId, nextMessage),
-        }))
+        setPanelState(matchedPanelKey, (current) => {
+          const fallbackTurnId = current.activeAssistantMessageId || requestId
+          return {
+            ...current,
+            messages: upsertMessageBeforeAssistant(current.messages, fallbackTurnId, nextMessage),
+            ...updateAILastAssistantTurnState(current, nextMessage, fallbackTurnId),
+          }
+        })
         return
       }
 
@@ -1915,6 +1956,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
             activeChangeReview: null,
             conversation: nextConversation || current.conversation,
             messages: nextMessages,
+            lastAssistantTurnId: anchorAssistantMessageId,
+            lastTurnBusinessMessageKind: 'followup',
           }
         })
         if (nextConversation) {
@@ -1942,6 +1985,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
         let nextConversation = null
         setPanelState(matchedPanelKey, (current) => {
           const anchorAssistantMessageId = current.activeAssistantMessageId || requestId
+          const lastToolMessage = toolMessages.length > 0 ? toolMessages[toolMessages.length - 1] : null
           let nextMessages = Array.isArray(current.messages) ? [...current.messages] : []
           nextMessages = nextMessages.filter((message) => !toolMessages.some((toolMessage) => toolMessage.id && toolMessage.id === message.id))
           toolMessages.forEach((toolMessage) => {
@@ -1963,6 +2007,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
             activeChangeReview: typeof payload.approvalMode === 'string' && payload.approvalMode === 'change_review' ? current.activeChangeReview : null,
             conversation: nextConversation,
             messages: nextMessages,
+            ...updateAILastAssistantTurnState(current, lastToolMessage, anchorAssistantMessageId),
           }
         })
         if (nextConversation) {
@@ -1998,6 +2043,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
               allowTerminalAssignment: false,
             },
             messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, nextMessage),
+            ...updateAILastAssistantTurnState(current, nextMessage, anchorAssistantMessageId),
           }
         })
         return
@@ -2023,6 +2069,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
               allowTerminalAssignment: true,
             },
             messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, nextMessage),
+            ...updateAILastAssistantTurnState(current, nextMessage, anchorAssistantMessageId),
           }
         })
         return
@@ -2048,6 +2095,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
               allowTerminalAssignment: false,
             },
             messages: upsertMessageBeforeAssistant(current.messages, anchorAssistantMessageId, nextMessage),
+            ...updateAILastAssistantTurnState(current, nextMessage, anchorAssistantMessageId),
           }
         })
         return
@@ -2719,6 +2767,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       skipNextAutomaticRequest: false,
       resumeAfterCancelRequestId: '',
       recoverableToolStopReason: '',
+      ...computeAILastAssistantTurnState(nextSnapshot.messages),
       contextTokens: 0,
       isCondensingContext: false,
       activeChangeReview: null,
@@ -2763,6 +2812,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       skipNextAutomaticRequest: false,
       resumeAfterCancelRequestId: '',
       recoverableToolStopReason: '',
+      ...computeAILastAssistantTurnState(snapshot.messages),
       contextTokens: 0,
       isCondensingContext: false,
       activeChangeReview: null,
@@ -3311,6 +3361,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       activeAssistantMessageId: requestId,
       activeToolExecution: null,
       recoverableToolStopReason: '',
+      lastAssistantTurnId: requestId,
+      lastTurnBusinessMessageKind: '',
       requestPhase: 'streaming',
       runtimePhase: 'api_request',
       collaborationLocked: shouldLockAssistantCollaboration,
@@ -3520,6 +3572,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       skipNextAutomaticRequest: false,
       resumeAfterCancelRequestId: '',
       recoverableToolStopReason: '',
+      lastAssistantTurnId: nextRequestId,
+      lastTurnBusinessMessageKind: '',
       activeChangeReview: null,
       collaborationLocked: shouldLockAssistantCollaboration,
       collaborationActive: false,
@@ -3764,6 +3818,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       activeAssistantMessageId: requestId,
       activeToolExecution: null,
       recoverableToolStopReason: '',
+      lastAssistantTurnId: requestId,
+      lastTurnBusinessMessageKind: '',
       requestPhase: 'streaming',
       runtimePhase: 'api_request',
       collaborationLocked: shouldLockAssistantCollaboration,
@@ -3869,6 +3925,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       return
     }
     const nextConversation = truncateConversationAfterMessage(activeConversation, messageId)
+    const nextLastTurnState = computeAILastAssistantTurnState(nextConversation.messages)
     setPanelState(panelInstanceKey, (current) => ({
       ...current,
       conversation: nextConversation,
@@ -3884,6 +3941,7 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       skipNextAutomaticRequest: false,
       resumeAfterCancelRequestId: '',
       recoverableToolStopReason: '',
+      ...nextLastTurnState,
       collaborationLocked: false,
       collaborationActive: false,
       collaborationMode: '',
@@ -3980,6 +4038,8 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
       skipNextAutomaticRequest: false,
       resumeAfterCancelRequestId: '',
       recoverableToolStopReason: '',
+      lastAssistantTurnId: requestId,
+      lastTurnBusinessMessageKind: '',
       collaborationLocked: shouldLockAssistantCollaboration,
       collaborationActive: false,
       collaborationMode: '',
@@ -4088,11 +4148,10 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
   const handleResumeTask = useCallback(async () => {
     const currentPanel = terminalPanelsRef.current[panelInstanceKey] || null
     const conversationSnapshot = currentPanel?.conversation || activeConversation
-    const recoverableToolStopReason = typeof currentPanel?.recoverableToolStopReason === 'string' ? currentPanel.recoverableToolStopReason : ''
     if (!conversationSnapshot) {
       return false
     }
-    return resumeAIChatFromConversation(conversationSnapshot, panelInstanceKey, recoverableToolStopReason)
+    return resumeAIChatFromConversation(conversationSnapshot, panelInstanceKey)
   }, [activeConversation, panelInstanceKey, resumeAIChatFromConversation])
 
   const handleApproveTools = useCallback(async () => {
