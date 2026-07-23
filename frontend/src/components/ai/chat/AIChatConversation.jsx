@@ -83,6 +83,65 @@ function hasSubsequentAssistantTurn(entries, currentIndex) {
   return false
 }
 
+function isVerticallyScrollableElement(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false
+  }
+  if (element.scrollHeight <= element.clientHeight + 1) {
+    return false
+  }
+  const overflowY = window.getComputedStyle(element).overflowY
+  return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay'
+}
+
+function collectScrollableAncestorsWithinContainer(target, container) {
+  const ancestors = []
+  let current = target instanceof HTMLElement ? target : null
+  while (current && current !== container) {
+    if (isVerticallyScrollableElement(current)) {
+      ancestors.push(current)
+    }
+    current = current.parentElement
+  }
+  return ancestors
+}
+
+function canScrollableElementConsumeDelta(element, deltaY) {
+  if (!(element instanceof HTMLElement) || Math.abs(Number(deltaY) || 0) < 1) {
+    return false
+  }
+  const maxScrollTop = Math.max(element.scrollHeight - element.clientHeight, 0)
+  if (deltaY < 0) {
+    return element.scrollTop > 0
+  }
+  return element.scrollTop < maxScrollTop - 1
+}
+
+function shouldIgnoreConversationScrollIntentFromNestedScroller(target, container, deltaY = null) {
+  if (!(container instanceof HTMLElement)) {
+    return false
+  }
+  const scrollableAncestors = collectScrollableAncestorsWithinContainer(target, container)
+  if (scrollableAncestors.length <= 1) {
+    return false
+  }
+  const nearestScrollable = scrollableAncestors[0]
+  const outermostScrollable = scrollableAncestors[scrollableAncestors.length - 1]
+  if (nearestScrollable === outermostScrollable) {
+    return false
+  }
+  if (typeof deltaY === 'number') {
+    return canScrollableElementConsumeDelta(nearestScrollable, deltaY)
+  }
+  return true
+}
+
+function getTouchClientY(event) {
+  const touch = event?.touches?.[0] || event?.changedTouches?.[0]
+  const value = Number(touch?.clientY)
+  return Number.isFinite(value) ? value : null
+}
+
 export default function AIChatConversation({ messages = [], sessionId = '', terminalId = '', onSendUserMessage, onRetryUserMessage, onRetryAssistantMessage, onEditUserMessage, onDeleteMessage, onPreviewRestore, onApplyRestore, followupInteractionLocked = false, messageActionBarAtBottom = false, scrollToBottomSignal = 0 }) {
   const { t } = useTranslation()
   const containerRef = useRef(null)
@@ -94,6 +153,7 @@ export default function AIChatConversation({ messages = [], sessionId = '', term
   const hasHydratedRef = useRef(false)
   const lastContainerHeightRef = useRef(0)
   const lastUserScrollIntentAtRef = useRef(0)
+  const lastTouchClientYRef = useRef(null)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [highlightedEntryKey, setHighlightedEntryKey] = useState('')
   const groupedMessages = useMemo(() => groupConversationMessages(messages), [messages])
@@ -295,15 +355,40 @@ export default function AIChatConversation({ messages = [], sessionId = '', term
   }, [scrollToBottom])
 
   const handleUserWheelCapture = useCallback((event) => {
-    if (Math.abs(Number(event?.deltaY) || 0) < 1) {
+    const deltaY = Number(event?.deltaY) || 0
+    if (Math.abs(deltaY) < 1) {
+      return
+    }
+    if (shouldIgnoreConversationScrollIntentFromNestedScroller(event?.target, containerRef.current, deltaY)) {
       return
     }
     markUserScrollIntent()
   }, [markUserScrollIntent])
 
-  const handleUserTouchMoveCapture = useCallback(() => {
+  const handleUserTouchStartCapture = useCallback((event) => {
+    lastTouchClientYRef.current = getTouchClientY(event)
+  }, [])
+
+  const handleUserTouchMoveCapture = useCallback((event) => {
+    const nextTouchClientY = getTouchClientY(event)
+    const previousTouchClientY = lastTouchClientYRef.current
+    lastTouchClientYRef.current = nextTouchClientY
+    if (nextTouchClientY === null || previousTouchClientY === null) {
+      return
+    }
+    const deltaY = previousTouchClientY - nextTouchClientY
+    if (Math.abs(deltaY) < 1) {
+      return
+    }
+    if (shouldIgnoreConversationScrollIntentFromNestedScroller(event?.target, containerRef.current, deltaY)) {
+      return
+    }
     markUserScrollIntent()
   }, [markUserScrollIntent])
+
+  const handleUserTouchEndCapture = useCallback(() => {
+    lastTouchClientYRef.current = null
+  }, [])
 
   if (groupedMessages.length === 0) {
     return (
@@ -319,7 +404,10 @@ export default function AIChatConversation({ messages = [], sessionId = '', term
     <div
       ref={containerRef}
       onWheelCapture={handleUserWheelCapture}
+      onTouchStartCapture={handleUserTouchStartCapture}
       onTouchMoveCapture={handleUserTouchMoveCapture}
+      onTouchEndCapture={handleUserTouchEndCapture}
+      onTouchCancelCapture={handleUserTouchEndCapture}
       style={{ flex: 1, minHeight: 0, height: '100%', background: 'transparent', position: 'relative' }}>
       <style>{`
         @keyframes ai-chat-message-flash {
