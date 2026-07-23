@@ -379,6 +379,7 @@ export default function SettingsModal({
   const [termBgOpacity, setTermBgOpacity] = useState(parseFloat(localStorage.getItem('termBgOpacity') || '0.15'));
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
+  const [terminalCommandBlocks, setTerminalCommandBlocks] = useState(localStorage.getItem('terminalCommandBlocks') === 'true');
   const [rememberWindowSize, setRememberWindowSize] = useState(localStorage.getItem('rememberWindowSize') !== 'false');
   const [showThemeQuickEntry, setShowThemeQuickEntry] = useState(localStorage.getItem('showThemeQuickEntry') !== 'false');
   const [programFonts, setProgramFonts] = useState([]);
@@ -625,6 +626,12 @@ export default function SettingsModal({
     setTerminalTimestamps(enabled);
     localStorage.setItem('terminalTimestamps', String(enabled));
     window.dispatchEvent(new CustomEvent('terminal-timestamps-changed', { detail: enabled }));
+  };
+
+  const handleTerminalCommandBlocksChange = (enabled) => {
+    setTerminalCommandBlocks(enabled);
+    localStorage.setItem('terminalCommandBlocks', String(enabled));
+    window.dispatchEvent(new CustomEvent('terminal-command-blocks-changed', { detail: enabled }));
   };
 
   const handleTermBgUpload = (e) => {
@@ -1739,6 +1746,8 @@ export default function SettingsModal({
                 onTerminalLocalEchoChange={handleTerminalLocalEchoChange}
                 terminalTimestamps={terminalTimestamps}
                 onTerminalTimestampsChange={handleTerminalTimestampsChange}
+                terminalCommandBlocks={terminalCommandBlocks}
+                onTerminalCommandBlocksChange={handleTerminalCommandBlocksChange}
                 themePackages={themePackages}
                 themePackageSettings={themePackageSettings}
                 themeMode={forceDarkTheme ? 'dark' : themeMode}

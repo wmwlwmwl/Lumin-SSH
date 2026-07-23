@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Când este dezactivat, caracterele nu vor fi afișate atunci când introduceți conținut sensibil, cum ar fi parolele.",
   "每行显示时间": "Afișează timpul pe linie",
   "在终端每行输出前添加时间戳": "Adăugați marca temporală înainte de fiecare linie de ieșire a terminalului",
+  "命令块边框": "Blocuri de comenzi pliante",
+  "左侧显示可折叠命令块，点击收起输出": "Afișați blocurile de comenzi pliante pe stânga; faceți clic pentru a ascunde ieșirea",
   "界面主题": "Tema interfeței",
   "主题": "temă",
   "选择浅色、深色或跟随系统设置": "Alegeți lumina, întuneric sau urmați setările de sistem",

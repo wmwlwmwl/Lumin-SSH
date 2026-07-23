@@ -22,6 +22,7 @@ export default function AppearanceTab({
   terminalFontSize, onTerminalFontSizeChange,
   terminalLocalEcho, onTerminalLocalEchoChange,
   terminalTimestamps, onTerminalTimestampsChange,
+  terminalCommandBlocks, onTerminalCommandBlocksChange,
   themePackages,
   themePackageSettings,
   themeMode, onThemeChange,
@@ -249,6 +250,14 @@ export default function AppearanceTab({
               <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('在终端每行输出前添加时间戳')}</div>
             </div>
             <ToggleSwitch checked={terminalTimestamps} onChange={() => onTerminalTimestampsChange(!terminalTimestamps)} />
+          </div>
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('命令块边框')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('左侧显示可折叠命令块，点击收起输出')}</div>
+            </div>
+            <ToggleSwitch checked={terminalCommandBlocks} onChange={() => onTerminalCommandBlocksChange(!terminalCommandBlocks)} />
           </div>
         </div>
       </div>

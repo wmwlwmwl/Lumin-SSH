@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Kapatıldığında, şifreler gibi hassas içeriklere girilirken karakterler görüntülenmez.",
   "每行显示时间": "Satır başına görüntüleme süresi",
   "在终端每行输出前添加时间戳": "Terminal çıkışının her satırından önce zaman damgası ekleyin",
+  "命令块边框": "Daraltılabilir komut blokları",
+  "左侧显示可折叠命令块，点击收起输出": "Solda daraltılabilir komut bloklarını gösterin; çıktıyı gizlemek için tıklayın",
   "界面主题": "Arayüz teması",
   "主题": "tema",
   "选择浅色、深色或跟随系统设置": "Açık, koyu seçin veya sistem ayarlarını takip edin",

@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Als dit is uitgeschakeld, worden er geen tekens weergegeven bij het invoeren van gevoelige inhoud, zoals wachtwoorden.",
   "每行显示时间": "Weergavetijd per regel",
   "在终端每行输出前添加时间戳": "Voeg een tijdstempel toe vóór elke regel terminaluitvoer",
+  "命令块边框": "Inklapbare opdrachtblokken",
+  "左侧显示可折叠命令块，点击收起输出": "Toon inklapbare opdrachtblokken links; klik om de uitvoer te verbergen",
   "界面主题": "Interface-thema",
   "主题": "thema",
   "选择浅色、深色或跟随系统设置": "Kies licht, donker of volg de systeeminstellingen",

@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Quando desativado, os caracteres não serão exibidos ao inserir conteúdo confidencial, como senhas.",
   "每行显示时间": "Tempo de exibição por linha",
   "在终端每行输出前添加时间戳": "Adicione carimbo de data/hora antes de cada linha de saída do terminal",
+  "命令块边框": "Blocos de comando recolhíveis",
+  "左侧显示可折叠命令块，点击收起输出": "Mostrar blocos de comando recolhíveis à esquerda; clique para ocultar a saída",
   "界面主题": "Tema de interface",
   "主题": "tema",
   "选择浅色、深色或跟随系统设置": "Escolha claro, escuro ou siga as configurações do sistema",

@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Saat dimatikan, karakter tidak akan ditampilkan saat memasukkan konten sensitif seperti kata sandi.",
   "每行显示时间": "Menampilkan waktu per baris",
   "在终端每行输出前添加时间戳": "Tambahkan stempel waktu sebelum setiap baris keluaran terminal",
+  "命令块边框": "Blok perintah yang dapat dilipat",
+  "左侧显示可折叠命令块，点击收起输出": "Tampilkan blok perintah yang dapat dilipat di kiri; klik untuk menyembunyikan keluaran",
   "界面主题": "Tema antarmuka",
   "主题": "tema",
   "选择浅色、深色或跟随系统设置": "Pilih terang, gelap atau ikuti pengaturan sistem",

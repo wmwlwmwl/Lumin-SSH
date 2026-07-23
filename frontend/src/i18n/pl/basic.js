@@ -837,6 +837,8 @@ export default {
   "关闭后输入密码等敏感内容时不会显示字符": "Po wyłączeniu znaki nie będą wyświetlane podczas wprowadzania poufnych treści, takich jak hasła.",
   "每行显示时间": "Wyświetl czas w linii",
   "在终端每行输出前添加时间戳": "Dodaj znacznik czasu przed każdą linią wyjścia terminala",
+  "命令块边框": "Zwijane bloki poleceń",
+  "左侧显示可折叠命令块，点击收起输出": "Pokaż zwijane bloki poleceń po lewej; kliknij, aby ukryć wynik",
   "界面主题": "Motyw interfejsu",
   "主题": "temat",
   "选择浅色、深色或跟随系统设置": "Wybierz jasny, ciemny lub postępuj zgodnie z ustawieniami systemu",
