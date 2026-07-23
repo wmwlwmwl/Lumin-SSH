@@ -497,11 +497,11 @@ function ThemePackagePalette({
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: isActive ? 700 : 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {themePackage.name}
+                    {$t(themePackage.name)}
                   </div>
                   {themePackage.description ? (
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {themePackage.description}
+                      {$t(themePackage.description)}
                     </div>
                   ) : null}
                 </div>

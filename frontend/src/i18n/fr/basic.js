@@ -1479,4 +1479,21 @@ export default {
   "操作失败": "L'opération a échoué",
   "操作完成": "Opération terminée",
   "有操作正在进行，请稍候": "Une opération est en cours, veuillez patienter.",
+
+  // theme package color names
+  "天青": "Bleu ciel",
+  "晨雾": "Brume du matin",
+  "丁香": "Lilas",
+  "玫粉": "Rose",
+  "夜空": "Ciel nocturne",
+  "紫雾": "Brume violette",
+  "粉紫": "Rose pourpre",
+  "默认蓝调深色": "Bleu sombre par défaut",
+  "默认蓝调浅色": "Bleu clair par défaut",
+  "靛蓝夜色": "Nuit indigo",
+  "蓝灰浅色": "Gris-bleu clair",
+  "淡紫深色": "Violet doux sombre",
+  "淡紫浅色": "Violet doux clair",
+  "粉紫深色": "Rose-violet sombre",
+  "粉紫浅色": "Rose-violet clair",
 };
