@@ -1698,7 +1698,12 @@ export default function Terminal({
       termRef.current     = null;
       fitAddonRef.current = null;
       searchAddonRef.current = null;
-      try { term.dispose(); } catch (_) {}
+      // xterm Viewport 构造里 setTimeout(syncScrollArea) 无句柄；StrictMode 先 dispose 再触发会读空 renderer.dimensions
+      // 延后 dispose，让该 setTimeout 先跑完（同队列 FIFO）
+      const termToDispose = term;
+      setTimeout(() => {
+        try { termToDispose.dispose(); } catch (_) {}
+      }, 0);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);

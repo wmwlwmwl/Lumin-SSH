@@ -1,4 +1,3 @@
-console.log(1)
 function normalizeToken(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
