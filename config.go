@@ -1094,6 +1094,9 @@ func (c *ConfigManager) DeleteConnection(id string) bool {
 	c.bumpSnapshotTime()
 	c.connCacheDirty = true // 标记缓存需要刷新
 
+	// 清理该连接的延迟检测 Banner 状态，避免 pingStates 无限增长。
+	clearPingHostState(id)
+
 	// 清理该服务器的历史文件
 	histPath := filepath.Join(c.historyDir, id+".json")
 	os.Remove(histPath)
@@ -1157,6 +1160,7 @@ func (c *ConfigManager) BatchDeleteConnections(ids []string) {
 
 	for _, id := range ids {
 		os.Remove(filepath.Join(c.historyDir, id+".json"))
+		clearPingHostState(id) // 清理延迟检测 Banner 状态，避免 pingStates 无限增长。
 	}
 	go c.AutoSync()
 }

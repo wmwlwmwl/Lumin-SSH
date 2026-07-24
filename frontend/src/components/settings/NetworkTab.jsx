@@ -170,26 +170,31 @@ export default function NetworkTab({ pingEnabled, onTogglePingEnabled, pingMode,
             <ToggleSwitch checked={pingEnabled} onChange={onTogglePingEnabled} />
           </div>
         </div>
+        <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 8, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7, border: '1px solid rgba(245, 158, 11, 0.28)' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', marginRight: 4 }}><Lightbulb size={14} /></span>{' '}
+          <strong style={{ color: 'var(--text-secondary)' }}>{$t('安全说明：')}</strong>
+          {$t('延迟检测会在主页对列表中的服务器周期性探测 SSH 端口，仅做连通/延迟判断，不会使用密码或密钥登录。智能检测默认 2 秒刷新，直连只做 TCP；疑似 TUN/代理时约每 30 秒才做一次 Banner 确认以防假在线。选择「SSH Banner RTT」时会自动将间隔调整为至少 15 秒。若环境有登录失败告警策略，可关闭检测、增大间隔，或在纯内网使用 TCP Dial。')}
+        </div>
       </div>
       <div>
         <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{$t('检测方式')}</div>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('选择延迟检测的探测方式，不同方式适用于不同网络环境。')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            { id: 'auto', label: <><span style={{ fontSize: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontWeight: 700, marginRight: 6 }}>{$t('推荐')}</span>{$t('智能检测')}</>, desc: $t('根据连接类型自动选择：直连测 TCP 拨号延迟，TUN/代理强制读 SSH Banner 验证可达性') },
-            { id: 'banner', label: $t('SSH Banner RTT'), desc: $t('所有连接都读取 SSH 握手响应测速，准确反映真实可达性，能穿透 TUN/代理；不可达服务器需等待超时') },
+            { id: 'auto', label: <><span style={{ fontSize: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--accent)', padding: '1px 6px', borderRadius: 4, fontWeight: 700, marginRight: 6 }}>{$t('推荐')}</span>{$t('智能检测')}</>, desc: $t('直连用 TCP 测延迟；检测到代理/TUN 时低频 Banner 确认可达性，避免 Clash 等环境下不可达主机显示 0 毫秒在线') },
+            { id: 'banner', label: $t('SSH Banner RTT'), desc: $t('所有连接都读取 SSH 握手响应测速，准确反映真实可达性，能穿透 TUN/代理；选择后会自动将延迟检测间隔调整为至少 15 秒') },
             { id: 'tcp', label: $t('TCP Dial'), desc: $t('仅检测 TCP 端口连通性，速度最快，但在 TUN/代理下可能把不可达服务器误判为在线') },
           ].map((opt) => (
             <RadioOption key={opt.id} selected={pingMode === opt.id} label={opt.label} description={opt.desc} onClick={() => onPingModeChange(opt.id)} />
           ))}
         </div>
         <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--surface-overlay)', borderRadius: 8, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7, border: '1px solid var(--border-light)' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', marginRight: 4 }}><Lightbulb size={14} /></span> <strong style={{ color: 'var(--text-secondary)' }}>{$t('提示：')}</strong>{$t('使用 TUN 模式代理（Clash/V2Ray 等）时建议选「智能检测」或「SSH Banner RTT」，可准确识别不可达服务器；纯局域网或未开代理时选「TCP Dial」最快。')}
+          <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle', marginRight: 4 }}><Lightbulb size={14} /></span> <strong style={{ color: 'var(--text-secondary)' }}>{$t('提示：')}</strong>{$t('使用 TUN 模式代理（Clash/V2Ray 等）时建议选「智能检测」：可识别不可达主机且不会每 2 秒半开 SSH。纯局域网或未开代理时智能检测会优先 TCP Dial；若你强制选择 Banner，间隔会自动不低于 15 秒。')}
         </div>
       </div>
       <div>
         <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{$t('监控刷新频率')}</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('设置探针数据和延迟测试的自动刷新间隔。越高的频率越实时，但资源占用越大。')}</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>{$t('设置探针数据和延迟测试的自动刷新间隔。延迟检测默认 2 秒（适合 TCP/智能模式）；选择 Banner 时自动不低于 15 秒。')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', flexDirection: isMobileLayout ? 'column' : 'row', alignItems: isMobileLayout ? 'stretch' : 'center', justifyContent: 'space-between', gap: isMobileLayout ? 10 : 0 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{$t('探针刷新间隔')}</span>
@@ -217,26 +222,37 @@ export default function NetworkTab({ pingEnabled, onTogglePingEnabled, pingMode,
           <div style={{ display: 'flex', flexDirection: isMobileLayout ? 'column' : 'row', alignItems: isMobileLayout ? 'stretch' : 'center', justifyContent: 'space-between', gap: isMobileLayout ? 10 : 0 }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{$t('延迟检测间隔')}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: isMobileLayout ? 'flex-start' : 'flex-end' }}>
-              {[2, 5, 10, 30].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => onPingIntervalChange(s)}
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: 6,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    border: '1px solid',
-                    borderColor: pingInterval === s ? 'var(--success)' : 'var(--border)',
-                    background: pingInterval === s ? 'rgba(34,197,94,0.1)' : 'var(--surface-sunken)',
-                    color: pingInterval === s ? 'var(--success)' : 'var(--text-secondary)',
-                    transition: 'all 0.15s',
-                  }}
-                >{s}s</button>
-              ))}
+              {[2, 5, 10, 15, 30].map((s) => {
+                const disabled = pingMode === 'banner' && s < 15;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => !disabled && onPingIntervalChange(s)}
+                    disabled={disabled}
+                    title={disabled ? $t('Banner 模式下间隔不能低于 15 秒') : undefined}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      border: '1px solid',
+                      borderColor: pingInterval === s ? 'var(--success)' : 'var(--border)',
+                      background: pingInterval === s ? 'rgba(34,197,94,0.1)' : 'var(--surface-sunken)',
+                      color: disabled ? 'var(--text-tertiary)' : (pingInterval === s ? 'var(--success)' : 'var(--text-secondary)'),
+                      opacity: disabled ? 0.45 : 1,
+                      transition: 'all 0.15s',
+                    }}
+                  >{s}s</button>
+                );
+              })}
             </div>
           </div>
+          {pingMode === 'banner' && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+              {$t('当前为 Banner 模式：延迟检测间隔已限制为至少 15 秒，以降低安全设备将半开 SSH 记为登录失败的概率。')}
+            </div>
+          )}
         </div>
       </div>
       <div>

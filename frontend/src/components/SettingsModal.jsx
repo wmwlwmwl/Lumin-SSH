@@ -1538,8 +1538,28 @@ export default function SettingsModal({
     window.dispatchEvent(new Event('pingEnabledChanged'));
   };
   const handleProbeIntervalChange = (s) => { setProbeInterval(s); localStorage.setItem('probeInterval', String(s)); window.dispatchEvent(new Event('probeIntervalChanged')); };
-  const handlePingIntervalChange = (s) => { setPingInterval(s); localStorage.setItem('pingInterval', String(s)); window.dispatchEvent(new Event('pingIntervalChanged')); };
-  const handlePingModeChange = (mode) => { setPingMode(mode); localStorage.setItem('pingMode', mode); window.dispatchEvent(new Event('pingModeChanged')); };
+  const handlePingIntervalChange = (s) => {
+    // Banner 模式半开 SSH 成本更高：不允许低于 15s，避免短时间多次登录失败类告警。
+    const next = pingMode === 'banner' ? Math.max(15, Number(s) || 15) : s;
+    setPingInterval(next);
+    localStorage.setItem('pingInterval', String(next));
+    window.dispatchEvent(new Event('pingIntervalChanged'));
+  };
+  const handlePingModeChange = (mode) => {
+    setPingMode(mode);
+    localStorage.setItem('pingMode', mode);
+    window.dispatchEvent(new Event('pingModeChanged'));
+    // 用户选择强制 Banner 时，自动把延迟检测间隔抬到至少 15s。
+    if (mode === 'banner') {
+      const current = parseInt(localStorage.getItem('pingInterval') || String(pingInterval) || '2', 10);
+      if (!Number.isFinite(current) || current < 15) {
+        const next = 15;
+        setPingInterval(next);
+        localStorage.setItem('pingInterval', String(next));
+        window.dispatchEvent(new Event('pingIntervalChanged'));
+      }
+    }
+  };
   const handleSyncModeChange = async (mode) => { setSyncMode(mode); try { await AppGo.SetSyncMode(mode); } catch (_) {} };
   const handleAutoSyncEnabledChange = async (enabled) => { setAutoSyncEnabled(enabled); try { await AppGo.SetAutoSyncEnabled(enabled); } catch (_) {} };
   const handlePruneSyncTombstones = async (days) => {

@@ -1846,6 +1846,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   // ── 新增主页仪表盘状态 ──────────────────────────────────
   const [isRefreshingPing, setIsRefreshingPing] = useState(false);
+  // 默认 2s：智能模式下直连只做 TCP；疑似 TUN/代理时 Banner 由后端按约 30s 节流，前端仍可较快刷新。
   const [pingInterval, setPingInterval] = useState(parseInt(localStorage.getItem('pingInterval') || '2', 10));
   const [pingEnabled, setPingEnabled] = useState(localStorage.getItem('pingEnabled') !== 'false');
   const [pingMode, setPingMode] = useState(localStorage.getItem('pingMode') || 'auto');
