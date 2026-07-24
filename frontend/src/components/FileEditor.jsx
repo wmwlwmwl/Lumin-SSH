@@ -15,6 +15,20 @@ import { xml } from '@codemirror/lang-xml';
 import { sql } from '@codemirror/lang-sql';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { go } from '@codemirror/legacy-modes/mode/go';
+import { rust } from '@codemirror/legacy-modes/mode/rust';
+import { yaml } from '@codemirror/legacy-modes/mode/yaml';
+import { toml } from '@codemirror/legacy-modes/mode/toml';
+import { ruby } from '@codemirror/legacy-modes/mode/ruby';
+import { perl } from '@codemirror/legacy-modes/mode/perl';
+import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
+import { nginx } from '@codemirror/legacy-modes/mode/nginx';
+import { properties } from '@codemirror/legacy-modes/mode/properties';
+import { diff } from '@codemirror/legacy-modes/mode/diff';
+import { cmake } from '@codemirror/legacy-modes/mode/cmake';
+import { c, cpp, java, csharp } from '@codemirror/legacy-modes/mode/clike';
 import { X, Pencil, Save, SquarePen, Upload, ExternalLink, AppWindow } from 'lucide-react';
 import { Z } from '../constants/zIndex';
 import { getSessionWorkbenchState, setSessionWorkbenchState, subscribeSessionWorkbenchState } from '../utils/fileWorkbench.js';
@@ -74,28 +88,84 @@ const rhelRepo = StreamLanguage.define({
   }
 });
 
-// 根据文件扩展名返回对应的 CodeMirror 语言（带缓存，避免每次创建新实例）
+// 根据完整路径/文件名返回 CodeMirror 语言（带缓存）。
+// .conf 不能一律当 nginx：仅 nginx 相关路径用 nginx，其余 conf 走 ini/properties。
 const LANG_CACHE = {};
-function getLanguage(filename) {
-  const ext = (filename.split('.').pop() || '').toLowerCase();
-  if (LANG_CACHE[ext]) return LANG_CACHE[ext];
-  let lang = null;
-  switch (ext) {
-    case 'js': lang = javascript(); break;
-    case 'jsx': lang = javascript({ jsx: true }); break;
-    case 'ts': lang = javascript({ typescript: true }); break;
-    case 'tsx': lang = javascript({ jsx: true, typescript: true }); break;
-    case 'py': lang = python(); break;
-    case 'html': case 'htm': lang = html(); break;
-    case 'css': case 'scss': case 'less': lang = css(); break;
-    case 'json': lang = json(); break;
-    case 'xml': case 'svg': lang = xml(); break;
-    case 'sql': lang = sql(); break;
-    case 'sh': case 'bash': case 'zsh': lang = StreamLanguage.define(shell); break;
-    case 'list': case 'sources': lang = debianList; break;
-    case 'repo': lang = rhelRepo; break;
+
+function isNginxConfigPath(fullPath, baseName) {
+  const path = String(fullPath || '').replace(/\\/g, '/').toLowerCase();
+  const base = String(baseName || '').toLowerCase();
+  if (!base) return false;
+  if (base === 'nginx.conf' || base.endsWith('.nginx')) return true;
+  if (base.endsWith('.conf') && (path.includes('/nginx/') || path.includes('/nginx-') || path.includes('nginx'))) {
+    return true;
   }
-  LANG_CACHE[ext] = lang;
+  // common site config names under nginx trees
+  if ((base.endsWith('.conf') || base.endsWith('.vhost')) && /(^|\/)(sites-available|sites-enabled|conf\.d)(\/|$)/.test(path)) {
+    return true;
+  }
+  return false;
+}
+
+function getLanguage(filename) {
+  const raw = String(filename || '');
+  const normalized = raw.replace(/\\/g, '/');
+  const base = (normalized.split('/').pop() || '').toLowerCase();
+  const ext = (base.split('.').pop() || '').toLowerCase();
+  // cache by full path for .conf (same name can be nginx or ini in different dirs)
+  const cacheKey = (ext === 'conf' || base === 'nginx.conf' || base.endsWith('.nginx') || base === 'dockerfile' || base.startsWith('dockerfile.') || base === 'cmakelists.txt' || base.endsWith('.cmake'))
+    ? normalized.toLowerCase()
+    : ext;
+
+  if (Object.prototype.hasOwnProperty.call(LANG_CACHE, cacheKey)) return LANG_CACHE[cacheKey];
+
+  let lang = null;
+  // special filenames / path-sensitive first
+  if (base === 'dockerfile' || base.startsWith('dockerfile.')) {
+    lang = StreamLanguage.define(dockerFile);
+  } else if (base === 'cmakelists.txt' || base.endsWith('.cmake')) {
+    lang = StreamLanguage.define(cmake);
+  } else if (isNginxConfigPath(normalized, base) || ext === 'nginx') {
+    lang = StreamLanguage.define(nginx);
+  } else {
+    switch (ext) {
+      case 'js': case 'mjs': case 'cjs': lang = javascript(); break;
+      case 'jsx': lang = javascript({ jsx: true }); break;
+      case 'ts': lang = javascript({ typescript: true }); break;
+      case 'tsx': lang = javascript({ jsx: true, typescript: true }); break;
+      case 'py': case 'pyw': case 'pyi': lang = python(); break;
+      case 'html': case 'htm': lang = html(); break;
+      case 'css': case 'scss': case 'less': lang = css(); break;
+      case 'json': case 'jsonc': lang = json(); break;
+      case 'xml': case 'svg': case 'xsl': case 'xsd': lang = xml(); break;
+      case 'sql': lang = sql(); break;
+      case 'sh': case 'bash': case 'zsh': case 'ksh': lang = StreamLanguage.define(shell); break;
+      case 'lua': lang = StreamLanguage.define(lua); break;
+      case 'go': lang = StreamLanguage.define(go); break;
+      case 'rs': lang = StreamLanguage.define(rust); break;
+      case 'yml': case 'yaml': lang = StreamLanguage.define(yaml); break;
+      case 'toml': lang = StreamLanguage.define(toml); break;
+      case 'rb': case 'rake': case 'gemspec': lang = StreamLanguage.define(ruby); break;
+      case 'pl': case 'pm': case 't': lang = StreamLanguage.define(perl); break;
+      case 'ps1': case 'psm1': case 'psd1': lang = StreamLanguage.define(powerShell); break;
+      case 'dockerfile': lang = StreamLanguage.define(dockerFile); break;
+      // generic conf/cfg/ini/env → properties (ini-like). nginx-specific handled above.
+      case 'conf': case 'ini': case 'cfg': case 'env': case 'properties':
+        lang = StreamLanguage.define(properties); break;
+      case 'diff': case 'patch': lang = StreamLanguage.define(diff); break;
+      case 'cmake': lang = StreamLanguage.define(cmake); break;
+      case 'c': case 'h': lang = StreamLanguage.define(c); break;
+      case 'cc': case 'cpp': case 'cxx': case 'hpp': case 'hh': case 'hxx':
+        lang = StreamLanguage.define(cpp); break;
+      case 'java': lang = StreamLanguage.define(java); break;
+      case 'cs': lang = StreamLanguage.define(csharp); break;
+      case 'list': case 'sources': lang = debianList; break;
+      case 'repo': lang = rhelRepo; break;
+      default:
+        break;
+    }
+  }
+  LANG_CACHE[cacheKey] = lang;
   return lang;
 }
 
@@ -402,7 +472,10 @@ export default function FileEditor({
   };
 
   // memo 化 lang 和 extensions，避免每次渲染创建新的 LanguageSupport 实例导致 CodeMirror 重新装配
-  const lang = useMemo(() => activeFile ? getLanguage(activeFile.name) : null, [activeFile?.name]);
+  const lang = useMemo(
+    () => (activeFile ? getLanguage(activeFile.path || activeFile.name) : null),
+    [activeFile?.path, activeFile?.name],
+  );
   const extensions = useMemo(() => lang ? [lang] : [], [lang]);
   const ext = activeFile ? (activeFile.name.split('.').pop() || '').toLowerCase() : '';
 

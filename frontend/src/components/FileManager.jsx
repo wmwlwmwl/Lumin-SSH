@@ -76,51 +76,47 @@ function fmtDate(ts) {
   });
 }
 
-// 文件图标
+// 文件图标（颜色统一走 CSS 变量，浅/深色主题一致切换）
 const ICON_SIZE = 16;
 function fileIcon(name, isDir) {
-  if (isDir) return <Folder size={ICON_SIZE} style={{ color: 'var(--warning)' }} />;
-  const ext = (name.split('.').pop() || '').toLowerCase();
-  const colorMap = {
-    js: '#f7df1e', jsx: '#f7df1e', ts: '#3178c6', tsx: '#3178c6', vue: '#42b883',
-    py: '#3572a5', rb: '#cc342d', go: '#00add8', rs: '#dea584', java: '#b07219',
-    c: '#555555', cpp: '#f34b7d', h: '#555555', cs: '#178600',
-    html: '#e34c26', css: '#563d7c', scss: '#c6538c', less: '#1d365d',
-    json: '#4b5563', yaml: '#4b5563', yml: '#4b5563', toml: '#9c4221', ini: '#4b5563', env: '#4b5563',
-    md: '#083fa1', txt: '#4b5563', log: '#4b5563',
-    png: '#a855f7', jpg: '#a855f7', jpeg: '#a855f7', gif: '#a855f7', svg: '#a855f7', webp: '#a855f7',
-    zip: '#eab308', tar: '#eab308', gz: '#eab308', rar: '#eab308', '7z': '#eab308',
-    // Theme-aware via CSS variable so light/dark switch updates without remount
-    sh: 'var(--file-icon-shell)', bash: 'var(--file-icon-shell)', zsh: 'var(--file-icon-shell)',
-    pdf: '#ff0000', sql: '#e38c00', xml: '#f16529', php: '#4f5d95',
-    mp4: '#6366f1', mkv: '#6366f1', avi: '#6366f1',
-    mp3: '#1db954', wav: '#1db954',
-  };
-  const iconMap = {
-    js: Code, jsx: Code, ts: Code, tsx: Code, vue: Code,
-    py: Terminal, rb: HardDrive, go: Code, rs: Code, java: Code,
-    c: Code, cpp: Code, h: Code, cs: Code,
-    html: Globe, css: Palette, scss: Palette, less: Palette,
-    json: Settings, yaml: Settings, yml: Settings, toml: Settings, ini: Settings, env: Settings,
-    md: FileText, txt: File, log: ClipboardList,
-    png: Image, jpg: Image, jpeg: Image, gif: Image, svg: Image, webp: Image,
-    zip: FileArchive, tar: FileArchive, gz: FileArchive, rar: FileArchive, '7z': FileArchive,
-    sh: Wrench, bash: Wrench, zsh: Wrench,
-    pdf: BookOpen, sql: Database, xml: FileCode, php: Terminal,
-    mp4: Film, mkv: Film, avi: Film,
-    mp3: Music, wav: Music,
-  };
-  const IconComp = iconMap[ext] || File;
-  const color = colorMap[ext] || '#4b5563';
-  const isShellScript = ext === 'sh' || ext === 'bash' || ext === 'zsh';
-  if (isShellScript) {
+  if (isDir) {
     return (
-      <span className="file-icon-shell">
-        <IconComp size={ICON_SIZE} />
+      <span className="file-icon-themed file-icon-folder">
+        <Folder size={ICON_SIZE} />
       </span>
     );
   }
-  return <IconComp size={ICON_SIZE} style={{ color }} />;
+  const lowerName = String(name || '').toLowerCase();
+  let ext = (lowerName.split('.').pop() || '').toLowerCase();
+  if (lowerName === 'dockerfile' || lowerName.startsWith('dockerfile.')) ext = 'dockerfile';
+  if (lowerName === 'makefile') ext = 'makefile';
+  if (lowerName === 'cmakelists.txt') ext = 'cmake';
+  if (lowerName === 'nginx.conf') ext = 'nginx';
+
+  const iconMap = {
+    js: Code, jsx: Code, mjs: Code, cjs: Code, ts: Code, tsx: Code, vue: Code,
+    py: Terminal, pyw: Terminal, pyi: Terminal, rb: HardDrive, lua: Code, go: Code, rs: Code, java: Code,
+    c: Code, cc: Code, cpp: Code, cxx: Code, h: Code, hpp: Code, hh: Code, hxx: Code, cs: Code,
+    html: Globe, htm: Globe, css: Palette, scss: Palette, less: Palette,
+    json: Settings, yaml: Settings, yml: Settings, toml: Settings, ini: Settings, env: Settings, cfg: Settings, conf: Settings,
+    md: FileText, txt: File, log: ClipboardList,
+    png: Image, jpg: Image, jpeg: Image, gif: Image, svg: Image, webp: Image,
+    zip: FileArchive, tar: FileArchive, gz: FileArchive, rar: FileArchive, '7z': FileArchive, tgz: FileArchive, bz2: FileArchive,
+    sh: Wrench, bash: Wrench, zsh: Wrench, ksh: Wrench, ps1: Wrench, psm1: Wrench, psd1: Wrench,
+    pdf: BookOpen, sql: Database, xml: FileCode, php: Terminal,
+    mp4: Film, mkv: Film, avi: Film,
+    mp3: Music, wav: Music,
+    pl: Terminal, pm: Terminal, diff: FileCode, patch: FileCode,
+    dockerfile: FileCode, makefile: FileCode, cmake: FileCode, nginx: FileCode,
+  };
+  // Sanitize class fragment: keep alnum/._- only
+  const safeExt = (ext || 'default').replace(/[^a-z0-9._-]/gi, '') || 'default';
+  const IconComp = iconMap[ext] || File;
+  return (
+    <span className={`file-icon-themed file-icon-${safeExt}`}>
+      <IconComp size={ICON_SIZE} />
+    </span>
+  );
 }
 
 // 判断是否可以编辑（文本文件）
@@ -131,13 +127,18 @@ function isEditable(name) {
   if (lowerName.endsWith('.ca-bundle')) return true;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const editable = [
-    'txt', 'md', 'log', 'json', 'yaml', 'yml', 'toml', 'ini', 'env', 'conf', 'config',
+    'txt', 'md', 'log', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'env', 'conf', 'config',
     'cer', 'crt', 'cert', 'pem', 'key', 'csr', 'pub', 'header', 'ca-bundle',
-    'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'cs',
-    'php', 'html', 'css', 'scss', 'less', 'xml', 'sql', 'sh', 'bash', 'zsh', 'vue', 'svelte',
+    'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'pyw', 'pyi', 'rb', 'lua', 'go', 'rs', 'java', 'c', 'cc', 'cpp', 'cxx', 'h', 'hpp', 'hh', 'hxx', 'cs',
+    'php', 'html', 'htm', 'css', 'scss', 'less', 'xml', 'svg', 'sql', 'sh', 'bash', 'zsh', 'ksh', 'ps1', 'psm1', 'psd1',
+    'pl', 'pm', 'vue', 'svelte', 'diff', 'patch', 'cmake',
     'list', 'sources', 'repo', 'nginx', 'gitignore', 'dockerfile', 'makefile',
   ];
   if (editable.includes(ext)) return true;
+  // special filenames
+  if (lowerName === 'dockerfile' || lowerName.startsWith('dockerfile.') || lowerName === 'cmakelists.txt' || lowerName === 'makefile' || lowerName === 'nginx.conf') {
+    return true;
+  }
   // No extension (like Dockerfile, Makefile)
   if (!name.includes('.')) return true;
   return false;
@@ -1812,7 +1813,22 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   }, [sessionId]);
   const [editorMode, setEditorMode] = useState(() => localStorage.getItem('fileEditorMode') || 'modal');
   const [editorSplitPosition, setEditorSplitPosition] = useState(() => localStorage.getItem('editorSplitPosition') || 'right');
+  const [defaultOpenMode, setDefaultOpenMode] = useState(() => {
+    const mode = localStorage.getItem('fileManagerDefaultOpenMode') || 'builtin';
+    return ['builtin', 'system', 'external'].includes(mode) ? mode : 'builtin';
+  });
   const [externalOpening, setExternalOpening] = useState(false);
+
+  useEffect(() => {
+    const onMode = (event) => {
+      const mode = event?.detail;
+      if (['builtin', 'system', 'external'].includes(mode)) {
+        setDefaultOpenMode(mode);
+      }
+    };
+    window.addEventListener('file-manager-default-open-mode-changed', onMode);
+    return () => window.removeEventListener('file-manager-default-open-mode-changed', onMode);
+  }, []);
   const setTransferInfo = useCallback(() => {}, []);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -3334,13 +3350,29 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }
   }, [openExternalEditor, addToast, t]);
 
-  // Open file editor
+  // Open file editor / external editor according to settings default.
   const handleEdit = async (item) => {
     const remotePath = joinPath(currentPath, item.name);
 
     // 文件大小检查，避免加载过大文件导致卡顿
     if (item.size && item.size > MAX_EDIT_SIZE) {
       addToast(`${t('文件过大')} (${(item.size / 1024 / 1024).toFixed(1)}MB)，${t('最大支持 5MB 编辑')}`, 'error');
+      return;
+    }
+
+    const openMode = ['builtin', 'system', 'external'].includes(defaultOpenMode) ? defaultOpenMode : 'builtin';
+    if (openMode === 'system' || openMode === 'external') {
+      try {
+        const content = await AppGo.ReadFile(sessionId, remotePath);
+        const file = { path: remotePath, name: item.name, content };
+        if (openMode === 'system') {
+          await handleOpenSystemEditor(file, content);
+        } else {
+          await handleOpenWithEditor(file, content, false);
+        }
+      } catch (err) {
+        addToast(`${t('无法打开文件')}: ${err}`, 'error');
+      }
       return;
     }
 

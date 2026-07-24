@@ -18,9 +18,9 @@ import (
 )
 
 type AIChatRequestMessage struct {
-	Role         string                            `json:"role"`
-	Content      string                            `json:"content"`
-	Images       []string                          `json:"images,omitempty"`
+	Role         string                              `json:"role"`
+	Content      string                              `json:"content"`
+	Images       []string                            `json:"images,omitempty"`
 	CacheObjects *AIConversationProviderCacheObjects `json:"cacheObjects,omitempty"`
 }
 
@@ -75,12 +75,12 @@ type aiPendingToolBatch = PendingToolBatch
 type aiApprovalDecision string
 
 const (
-	aiApprovalDecisionAutoApprove aiApprovalDecision = "auto_approve"
-	aiApprovalDecisionAutoDeny    aiApprovalDecision = "auto_deny"
-	aiApprovalDecisionAskUser     aiApprovalDecision = "ask_user"
-	aiChatRequestMaxAttempts                         = 3
-	aiAssistantRetryMaxAttempts                      = 2
-	aiCollaborationRetryMaxAttempts                  = 2
+	aiApprovalDecisionAutoApprove   aiApprovalDecision = "auto_approve"
+	aiApprovalDecisionAutoDeny      aiApprovalDecision = "auto_deny"
+	aiApprovalDecisionAskUser       aiApprovalDecision = "ask_user"
+	aiChatRequestMaxAttempts                           = 3
+	aiAssistantRetryMaxAttempts                        = 2
+	aiCollaborationRetryMaxAttempts                    = 2
 )
 
 var aiSupportedToolNames = []string{
@@ -169,7 +169,22 @@ var (
 	aiRequestEnvironmentDetailsPattern             = regexp.MustCompile(`(?s)<environment_details>(.*?)</environment_details>`)
 	aiRequestConsiderationsPattern                 = regexp.MustCompile(`(?s)<considerations>\s*(.*?)\s*</considerations>`)
 	aiGenericXMLTagPattern                         = regexp.MustCompile(`</?[a-zA-Z_][^>]*>`)
+	// Models often wrap XML tools or leak stream end tokens; strip before protocol parse.
+	aiToolProtocolWrapperTagPattern = regexp.MustCompile(`(?is)</?\s*(?:tool_calls?|function_calls?|tool_reply|tools)\s*>`)
+	aiToolProtocolStreamJunkPattern = regexp.MustCompile(`(?is)(?:</\s*assistant\s*>|<\|(?:eos|end|endoftext|im_end|eot_id)\|>|</s>)+`)
+	aiBareToolOpenTagPattern        *regexp.Regexp
 )
+
+func init() {
+	// Bare open tags like "execute_command>" (missing '<') are a common model slip.
+	// Do not match already-correct "</name>" or "<name>".
+	quoted := make([]string, 0, len(aiSupportedToolNames))
+	for _, name := range aiSupportedToolNames {
+		quoted = append(quoted, regexp.QuoteMeta(name))
+	}
+	// Line-start only — avoids rewriting "echo execute_command>" inside command params.
+	aiBareToolOpenTagPattern = regexp.MustCompile(`(?m)^(\s*)(` + strings.Join(quoted, "|") + `)>`)
+}
 
 func normalizeAIChatRequestMessages(messages []AIChatRequestMessage) []AIChatRequestMessage {
 	normalized := make([]AIChatRequestMessage, 0, len(messages))
@@ -1342,6 +1357,30 @@ func stripParsedToolUsesFromText(content string, tools []aiParsedToolUse) string
 	return strings.TrimSpace(stripped)
 }
 
+func fixAIBareToolOpenTags(content string) string {
+	if aiBareToolOpenTagPattern == nil || !strings.Contains(content, ">") {
+		return content
+	}
+	// match groups: (indent)(name)>  → indent + "<" + name + ">"
+	return aiBareToolOpenTagPattern.ReplaceAllString(content, `${1}<${2}>`)
+}
+
+// sanitizeAIAssistantToolProtocolText repairs common model slips so valid tool XML can parse.
+// It does not invent tools; empty / non-tool text stays non-tool.
+func sanitizeAIAssistantToolProtocolText(content string) string {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return ""
+	}
+	text = aiToolProtocolStreamJunkPattern.ReplaceAllString(text, "")
+	text = aiToolProtocolWrapperTagPattern.ReplaceAllString(text, "")
+	text = fixAIBareToolOpenTags(text)
+	// Second pass: wrappers/junk may reappear after bare-tag fix edge cases; stream junk often trails.
+	text = aiToolProtocolWrapperTagPattern.ReplaceAllString(text, "")
+	text = aiToolProtocolStreamJunkPattern.ReplaceAllString(text, "")
+	return strings.TrimSpace(text)
+}
+
 func containsAINonToolXMLMarkup(content string) bool {
 	return aiGenericXMLTagPattern.MatchString(strings.TrimSpace(content))
 }
@@ -1359,8 +1398,22 @@ func containsAIRecognizedToolTag(content string) bool {
 	return false
 }
 
+// isAIAssistantToolProtocolIgnorableRemainder allows prose / already-stripped wrappers
+// when at least one tool already parsed successfully. Still rejects leftover tool tags
+// (malformed extra calls) so the model gets a protocol retry for those.
+func isAIAssistantToolProtocolIgnorableRemainder(remaining string) bool {
+	cleaned := sanitizeAIAssistantToolProtocolText(remaining)
+	if cleaned == "" {
+		return true
+	}
+	if containsAIRecognizedToolTag(cleaned) {
+		return false
+	}
+	return true
+}
+
 func parseAssistantToolUses(content string) ([]aiParsedToolUse, error) {
-	trimmedContent := strings.TrimSpace(content)
+	trimmedContent := sanitizeAIAssistantToolProtocolText(content)
 	if trimmedContent == "" {
 		return nil, fmt.Errorf("assistant response did not contain any tool calls")
 	}
@@ -1369,7 +1422,7 @@ func parseAssistantToolUses(content string) ([]aiParsedToolUse, error) {
 		return nil, fmt.Errorf("assistant response did not contain any recognized tool calls")
 	}
 	remainingText := stripParsedToolUsesFromText(trimmedContent, parsedTools)
-	if remainingText != "" {
+	if remainingText != "" && !isAIAssistantToolProtocolIgnorableRemainder(remainingText) {
 		return nil, fmt.Errorf("assistant response must contain only direct tool calls with no extra text or XML container")
 	}
 	if err := validateAIStandaloneOnlyBatchTools(parsedTools); err != nil {
@@ -1398,6 +1451,66 @@ func validateAIStandaloneOnlyBatchTools(tools []aiParsedToolUse) error {
 		return fmt.Errorf("%s must be the only tool call in the reply", strings.TrimSpace(tool.Name))
 	}
 	return nil
+}
+
+func isAIProtocolRetryUserMessage(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "[ERROR] You did not use a tool in your previous response.") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "[ERROR] Invalid tool protocol in your previous response:") {
+		return true
+	}
+	return false
+}
+
+// rebuildAIAssistantToolOnlyContent keeps only successfully parsed tool XML.
+// Used when replaying history so old wrapper/prose slips do not re-poison the model.
+func rebuildAIAssistantToolOnlyContent(content string) string {
+	tools, err := parseAssistantToolUses(content)
+	if err != nil || len(tools) == 0 {
+		return sanitizeAIAssistantToolProtocolText(content)
+	}
+	parts := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		raw := strings.TrimSpace(tool.RawXML)
+		if raw == "" {
+			continue
+		}
+		parts = append(parts, raw)
+	}
+	if len(parts) == 0 {
+		return sanitizeAIAssistantToolProtocolText(content)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// purgeAIProtocolRetryNoiseFromMessages drops ephemeral protocol-retry user prompts and
+// rewrites assistant history to clean tool XML so prior protocol failures do not loop.
+func purgeAIProtocolRetryNoiseFromMessages(messages []AIChatRequestMessage) []AIChatRequestMessage {
+	if len(messages) == 0 {
+		return messages
+	}
+	cleaned := make([]AIChatRequestMessage, 0, len(messages))
+	for _, message := range messages {
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		content := strings.TrimSpace(message.Content)
+		if role == "user" && isAIProtocolRetryUserMessage(content) {
+			continue
+		}
+		if role == "assistant" {
+			content = rebuildAIAssistantToolOnlyContent(content)
+			if content == "" {
+				continue
+			}
+			message.Content = content
+		}
+		cleaned = append(cleaned, message)
+	}
+	return cleaned
 }
 
 func buildNoToolRetryMessage(conversationID string) string {
@@ -1485,7 +1598,7 @@ func dedupeParsedToolUses(tools []aiParsedToolUse) []aiParsedToolUse {
 }
 
 func stripAssistantToolXML(content string) string {
-	trimmedContent := strings.TrimSpace(content)
+	trimmedContent := sanitizeAIAssistantToolProtocolText(content)
 	if trimmedContent == "" {
 		return ""
 	}
@@ -1527,14 +1640,27 @@ func replaceAILatestAssistantMessageContent(messages []AIChatRequestMessage, con
 }
 
 func normalizeAIAssistantRoundResultForToolProtocol(roundResult aiChatRoundResult) aiChatRoundResult {
-	trimmedText := strings.TrimSpace(roundResult.Text)
+	trimmedText := sanitizeAIAssistantToolProtocolText(roundResult.Text)
 	if trimmedText == "" {
 		return roundResult
 	}
-	if len(parseToolUsesFromXML(trimmedText)) > 0 {
+	// Prefer sanitized text when it actually exposes parseable tools (wrapper/bare-tag repairs).
+	if sanitizedTools := parseToolUsesFromXML(trimmedText); len(sanitizedTools) > 0 {
+		if trimmedText != strings.TrimSpace(roundResult.Text) {
+			roundResult.Text = trimmedText
+			if len(roundResult.NextRequestMessages) > 0 {
+				roundResult.NextRequestMessages = replaceAILatestAssistantMessageContent(roundResult.NextRequestMessages, trimmedText)
+			}
+		}
 		return roundResult
 	}
 	if containsAIRecognizedToolTag(trimmedText) || containsAINonToolXMLMarkup(trimmedText) {
+		if trimmedText != strings.TrimSpace(roundResult.Text) {
+			roundResult.Text = trimmedText
+			if len(roundResult.NextRequestMessages) > 0 {
+				roundResult.NextRequestMessages = replaceAILatestAssistantMessageContent(roundResult.NextRequestMessages, trimmedText)
+			}
+		}
 		return roundResult
 	}
 	wrappedText := buildAIAttemptCompletionToolText(trimmedText)
@@ -2314,6 +2440,8 @@ func (a *App) continueCompatibleAIChatAfterTools(ctx context.Context, requestID 
 }
 
 func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, payload AIChatRequestPayload, profile AIProviderProfile, requestMessages []AIChatRequestMessage, autoApprovalSettings AIConversationTaskSettings, assistantMessageID string, assistantRetryCount int, collaborationRetryCount int) {
+	// Drop historical protocol-retry noise before talking to the model.
+	requestMessages = purgeAIProtocolRetryNoiseFromMessages(normalizeAIChatRequestMessages(requestMessages))
 	consecutiveNoToolCount := 0
 	for round := 0; round < 6; round++ {
 		var roundResult aiChatRoundResult
@@ -2370,6 +2498,13 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 
 		isAssistantFirstReplyRound := shouldUseAIAssistantFirstReply(payload, requestMessages)
 
+		// Always sanitize known tool-protocol slips; pure-text→attempt_completion wrap stays first-round only.
+		if sanitized := sanitizeAIAssistantToolProtocolText(roundResult.Text); sanitized != "" && sanitized != strings.TrimSpace(roundResult.Text) {
+			roundResult.Text = sanitized
+			if len(roundResult.NextRequestMessages) > 0 {
+				roundResult.NextRequestMessages = replaceAILatestAssistantMessageContent(roundResult.NextRequestMessages, sanitized)
+			}
+		}
 		if round == 0 && !isAssistantFirstReplyRound {
 			roundResult = normalizeAIAssistantRoundResultForToolProtocol(roundResult)
 		}
@@ -2416,20 +2551,8 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			visibleText := strings.TrimSpace(roundResult.Text)
 
 			if isAssistantFirstReplyRound {
-				nextRequestMessages := buildAINextRequestMessagesWithAssistant(requestMessages, roundResult)
-				assistantCacheObjects := extractAILatestAssistantCacheObjects(nextRequestMessages)
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "api_message_append",
-					"requestId": requestID,
-					"message": map[string]interface{}{
-						"messageId":    fmt.Sprintf("api-assistant-%d", time.Now().UnixNano()),
-						"turnId":       assistantMessageID,
-						"role":         "assistant",
-						"content":      roundResult.Text,
-						"cacheObjects": assistantCacheObjects,
-						"ts":           time.Now().UnixMilli(),
-					},
-				})
+				// UI-only first reply: do not inject protocol ERROR after local greeting.
+				// Some gateways return 400 on user->assistant(prose)->user([ERROR] force tools).
 				a.emitAIChatEvent(map[string]interface{}{
 					"kind":            "assistant_replace",
 					"requestId":       requestID,
@@ -2445,23 +2568,11 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					a.skipCompatibleAIChatAfterResolvedTools(requestID)
 					return
 				}
-				noToolRetryPrompt := buildNoToolRetryMessage(payload.ConversationID)
-				requestMessages = append(nextRequestMessages,
-					AIChatRequestMessage{
-						Role:    "user",
-						Content: noToolRetryPrompt,
-					},
-				)
-				a.emitAIChatEvent(map[string]interface{}{
-					"kind":      "api_message_append",
-					"requestId": requestID,
-					"message": map[string]interface{}{
-						"messageId": fmt.Sprintf("api-user-notool-%d", time.Now().UnixNano()),
-						"role":      "user",
-						"content":   noToolRetryPrompt,
-						"ts":        time.Now().UnixMilli(),
-					},
-				})
+				// Keep original user messages only for the first real model request.
+				// Clear first-reply text so later rounds hit the real upstream model.
+				// Otherwise shouldUseAIAssistantFirstReply stays true and local greeting spins.
+				payload.AssistantFirstReplyText = ""
+				requestMessages = normalizeAIChatRequestMessages(requestMessages)
 				nextAssistantMessageID := fmt.Sprintf("%s-cont-%d", requestID, time.Now().UnixNano())
 				a.emitAIChatEvent(map[string]interface{}{
 					"kind":      "assistant_continue",
@@ -2514,7 +2625,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					"kind":      "api_message_append",
 					"requestId": requestID,
 					"message": map[string]interface{}{
-						"messageId": fmt.Sprintf("api-user-notool-%d", time.Now().UnixNano()),
+						"messageId": fmt.Sprintf("api-user-protocol-retry-%d", time.Now().UnixNano()),
 						"role":      "user",
 						"content":   protocolRetryPrompt,
 						"ts":        time.Now().UnixMilli(),
@@ -2573,7 +2684,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 					"kind":      "api_message_append",
 					"requestId": requestID,
 					"message": map[string]interface{}{
-						"messageId": fmt.Sprintf("api-user-notool-%d", time.Now().UnixNano()),
+						"messageId": fmt.Sprintf("api-user-protocol-retry-%d", time.Now().UnixNano()),
 						"role":      "user",
 						"content":   protocolRetryPrompt,
 						"ts":        time.Now().UnixMilli(),

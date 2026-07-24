@@ -823,6 +823,13 @@ export default function SettingsModal({
   const [fileManagerUploadMaxChunksPerFile, setFileManagerUploadMaxChunksPerFile] = useState(localStorage.getItem('fileManagerUploadMaxChunksPerFile') || '8');
   const [fileManagerUploadGlobalInflightLimit, setFileManagerUploadGlobalInflightLimit] = useState(localStorage.getItem('fileManagerUploadGlobalInflightLimit') || '24');
   const [fileManagerChmodAutoApplyLastSettings, setFileManagerChmodAutoApplyLastSettings] = useState(false);
+  const [fileManagerDefaultOpenMode, setFileManagerDefaultOpenMode] = useState(() => {
+    const mode = localStorage.getItem('fileManagerDefaultOpenMode') || 'builtin';
+    return ['builtin', 'system', 'external'].includes(mode) ? mode : 'builtin';
+  });
+  const [fileManagerPreferredExternalApp, setFileManagerPreferredExternalApp] = useState(
+    () => (localStorage.getItem('fileEditorPreferredApp') || '').trim(),
+  );
   const [runtimeEnvironmentEnabled, setRuntimeEnvironmentEnabled] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.enabled);
   const [runtimeEnvironmentType, setRuntimeEnvironmentType] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.environmentType);
   const [runtimeEnvironmentTargetPathTemplate, setRuntimeEnvironmentTargetPathTemplate] = useState(DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS.targetPathTemplate);
@@ -964,6 +971,31 @@ export default function SettingsModal({
     setter(next);
     if (next === '') localStorage.removeItem(key);
     else localStorage.setItem(key, next);
+  };
+  const handleFileManagerDefaultOpenModeChange = (value) => {
+    const mode = ['builtin', 'system', 'external'].includes(value) ? value : 'builtin';
+    setFileManagerDefaultOpenMode(mode);
+    if (mode === 'builtin') localStorage.removeItem('fileManagerDefaultOpenMode');
+    else localStorage.setItem('fileManagerDefaultOpenMode', mode);
+    window.dispatchEvent(new CustomEvent('file-manager-default-open-mode-changed', { detail: mode }));
+  };
+  const handlePickFileManagerPreferredExternalApp = async () => {
+    try {
+      const editorPath = await AppGo.SelectExternalEditor();
+      if (!editorPath) return;
+      const cleaned = String(editorPath || '').trim();
+      if (!cleaned) return;
+      localStorage.setItem('fileEditorPreferredApp', cleaned);
+      setFileManagerPreferredExternalApp(cleaned);
+      window.dispatchEvent(new CustomEvent('file-editor-preferred-app-changed', { detail: cleaned }));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  const handleClearFileManagerPreferredExternalApp = () => {
+    localStorage.removeItem('fileEditorPreferredApp');
+    setFileManagerPreferredExternalApp('');
+    window.dispatchEvent(new CustomEvent('file-editor-preferred-app-changed', { detail: '' }));
   };
   const handleToggleFileManagerChmodAutoApplyLastSettings = async () => {
     const next = !fileManagerChmodAutoApplyLastSettings;
@@ -1733,6 +1765,11 @@ export default function SettingsModal({
                 onToggleFileManagerHideTabCloseButton={handleToggleFileManagerHideTabCloseButton}
                 fileManagerChmodAutoApplyLastSettings={fileManagerChmodAutoApplyLastSettings}
                 onToggleFileManagerChmodAutoApplyLastSettings={handleToggleFileManagerChmodAutoApplyLastSettings}
+                fileManagerDefaultOpenMode={fileManagerDefaultOpenMode}
+                onFileManagerDefaultOpenModeChange={handleFileManagerDefaultOpenModeChange}
+                fileManagerPreferredExternalApp={fileManagerPreferredExternalApp}
+                onPickFileManagerPreferredExternalApp={() => { void handlePickFileManagerPreferredExternalApp(); }}
+                onClearFileManagerPreferredExternalApp={handleClearFileManagerPreferredExternalApp}
                 fileManagerInitialPathMode={fileManagerInitialPathMode}
                 onFileManagerInitialPathModeChange={handleFileManagerInitialPathModeChange}
                 fileManagerNewTabPathMode={fileManagerNewTabPathMode}

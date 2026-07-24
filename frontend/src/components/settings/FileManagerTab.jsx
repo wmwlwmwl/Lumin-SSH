@@ -25,6 +25,11 @@ export default function FileManagerTab({
   onToggleFileManagerHideTabCloseButton,
   fileManagerChmodAutoApplyLastSettings,
   onToggleFileManagerChmodAutoApplyLastSettings,
+  fileManagerDefaultOpenMode = 'builtin',
+  onFileManagerDefaultOpenModeChange,
+  fileManagerPreferredExternalApp = '',
+  onPickFileManagerPreferredExternalApp,
+  onClearFileManagerPreferredExternalApp,
   fileManagerInitialPathMode,
   onFileManagerInitialPathModeChange,
   fileManagerNewTabPathMode,
@@ -86,6 +91,50 @@ export default function FileManagerTab({
             description={$t('开启后,修改权限弹窗会默认套用上次保存的权限模式和包含子目录选项')}
             action={<ToggleSwitch checked={fileManagerChmodAutoApplyLastSettings} onChange={onToggleFileManagerChmodAutoApplyLastSettings} />}
           />
+          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('打开文件默认方式')}</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('双击或点“编辑”时的默认打开方式；编辑器内仍可随时切换到系统/指定编辑器')}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+              <RadioOption
+                selected={fileManagerDefaultOpenMode === 'builtin'}
+                label={$t('内置编辑器')}
+                description={$t('使用 Lumin 内置编辑器打开，支持高亮与保存回远端')}
+                onClick={() => onFileManagerDefaultOpenModeChange?.('builtin')}
+              />
+              <RadioOption
+                selected={fileManagerDefaultOpenMode === 'system'}
+                label={$t('系统编辑器')}
+                description={$t('用系统默认程序打开临时文件，保存后自动同步回远端')}
+                onClick={() => onFileManagerDefaultOpenModeChange?.('system')}
+              />
+              <RadioOption
+                selected={fileManagerDefaultOpenMode === 'external'}
+                label={$t('指定外部编辑器')}
+                description={$t('始终使用你选择的编辑器程序打开，例如 VS Code / Notepad++')}
+                onClick={() => onFileManagerDefaultOpenModeChange?.('external')}
+              />
+            </div>
+            {fileManagerDefaultOpenMode === 'external' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--surface)' }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                  {$t('当前外部编辑器')}：{fileManagerPreferredExternalApp
+                    ? fileManagerPreferredExternalApp
+                    : $t('未选择（首次打开时会提示选择）')}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-secondary" style={{ fontSize: 12, padding: '6px 10px' }} onClick={() => onPickFileManagerPreferredExternalApp?.()}>
+                    {fileManagerPreferredExternalApp ? $t('更换外部编辑器') : $t('选择外部编辑器')}
+                  </button>
+                  {fileManagerPreferredExternalApp ? (
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={() => onClearFileManagerPreferredExternalApp?.()}>
+                      {$t('清除')}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('进入服务器默认路径')}</div>
