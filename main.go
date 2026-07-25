@@ -20,11 +20,16 @@ var assets embed.FS
 //go:embed all:module
 var embeddedModuleFS embed.FS
 
-// forceShowWindow 唤醒隐藏到托盘的窗口，带 recover 防止 panic 导致托盘 goroutine 挂死
+// forceShowWindow 唤醒隐藏到托盘的窗口。
+// 不先 Hide 再 Show：久置后 Show 失败会把窗口永久卡在隐藏态。
+// 先走 Wails 恢复，再用平台原生激活抢前台（Windows 久置后 SetForeground 常被拒）。
 func forceShowWindow(ctx context.Context) {
 	defer func() { recover() }()
-	runtime.WindowHide(ctx)
-	runtime.WindowShow(ctx)
+	if ctx != nil {
+		runtime.WindowUnminimise(ctx)
+		runtime.WindowShow(ctx)
+	}
+	platformForceShowWindow()
 }
 
 var systrayOnce sync.Once
@@ -38,11 +43,13 @@ func setupSystray(app *App) {
 		mShow := systray.AddMenuItem("显示主窗口", "Show Main Window")
 		mQuit := systray.AddMenuItem("完全退出", "Quit Lumin")
 
+		showMain := func() {
+			forceShowWindow(app.ctx)
+		}
+
 		// 左键点击托盘图标：显示窗口
 		systray.SetOnClick(func(menu systray.IMenu) {
-			if app.ctx != nil {
-				forceShowWindow(app.ctx)
-			}
+			showMain()
 		})
 
 		// 右键点击托盘图标：显示菜单
@@ -51,9 +58,7 @@ func setupSystray(app *App) {
 		})
 
 		mShow.Click(func() {
-			if app.ctx != nil {
-				forceShowWindow(app.ctx)
-			}
+			showMain()
 		})
 
 		mQuit.Click(func() {

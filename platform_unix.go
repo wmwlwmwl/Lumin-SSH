@@ -21,6 +21,9 @@ var singletonLock *os.File
 // findAndShowWindow 在 Linux 上为空实现
 func findAndShowWindow() {}
 
+// platformForceShowWindow Linux 暂无原生兜底，依赖 Wails WindowShow
+func platformForceShowWindow() {}
+
 // ensureSingleInstance 使用 flock 检查是否已有实例运行
 func ensureSingleInstance() {
 	lockFile := filepath.Join(os.TempDir(), "lumin-ssh.lock")

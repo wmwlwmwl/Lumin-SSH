@@ -22,6 +22,9 @@ var singletonLock *os.File
 // findAndShowWindow 在 macOS 上为空实现
 func findAndShowWindow() {}
 
+// platformForceShowWindow macOS 暂无原生兜底，依赖 Wails WindowShow
+func platformForceShowWindow() {}
+
 // ensureSingleInstance 使用 flock 检查是否已有实例运行（macOS 支持 flock）
 func ensureSingleInstance() {
 	lockFile := filepath.Join(os.TempDir(), "lumin-ssh.lock")
