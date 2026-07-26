@@ -1,4 +1,4 @@
-import { BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, RefreshCw, Database, CheckSquare, Folder, FolderOpen, Copy, Download, Trash2, X, Plus } from 'lucide-react';
+import { BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, RefreshCw, Database, CheckSquare, Folder, FolderOpen, Download, Trash2, X, Plus, History, Clock } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from '../i18n.js';
 import AddServerModal from './AddServerModal.jsx';
@@ -13,6 +13,11 @@ export default function Dashboard({
   serverListViewMode, onViewModeChange,
   servers, pingEnabled, pingCounts, isRefreshingPing, onRefreshPing,
   filteredServers, pings, sessions, activeSessionId,
+  recentConnectionIds = [],
+  hostPageMode: hostPageModeProp,
+  onHostPageModeChange,
+  onClearRecentConnections,
+  onRemoveRecentConnection,
   onConnect, onStartAdd, onEdit, onClone, onDelete, onMoveGroup, addToast,
   onOpenImportExport,
   selectionMode = false,
@@ -32,7 +37,48 @@ export default function Dashboard({
   const [showMoveGroupDropdown, setShowMoveGroupDropdown] = useState(false);
   const [groupSearchQuery, setGroupSearchQuery] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  // 'hosts' | 'recent' — 由 App 持有，便于主页 ping 仅在 hosts 时运行
+  const hostPageMode = hostPageModeProp === 'recent' ? 'recent' : 'hosts';
   const moveGroupMenuRef = useRef(null);
+
+  const switchHostPageMode = (mode) => {
+    onHostPageModeChange?.(mode === 'recent' ? 'recent' : 'hosts');
+  };
+
+  const recentServers = useMemo(() => {
+    if (!Array.isArray(recentConnectionIds) || recentConnectionIds.length === 0) return [];
+    const byId = new Map(servers.map((s) => [s.id, s]));
+    return recentConnectionIds.map((id) => byId.get(id)).filter(Boolean);
+  }, [recentConnectionIds, servers]);
+
+  const filteredRecentServers = useMemo(() => {
+    const query = String(searchQuery || '').trim().toLowerCase();
+    if (!query) return recentServers;
+    return recentServers.filter((server) => {
+      const haystack = [
+        server.name,
+        server.host,
+        server.username,
+        server.group,
+        String(server.port || ''),
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [recentServers, searchQuery]);
+
+  const mask = (value) => {
+    const text = String(value || '');
+    if (!text) return '';
+    if (text.length <= 2) return '*'.repeat(text.length);
+    return `${text.slice(0, 1)}${'*'.repeat(Math.min(text.length - 2, 8))}${text.slice(-1)}`;
+  };
+
+  const handleClearRecent = async () => {
+    if (!recentServers.length) return;
+    const ok = await window.luminDialog?.confirm?.(t('确定清空最近连接列表吗？'), t('操作确认'));
+    if (!ok) return;
+    onClearRecentConnections?.();
+  };
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -113,15 +159,42 @@ export default function Dashboard({
 
       </div>
 
-      {/* 右半栏：历史会话与主机目录 */}
+      {/* 右半栏：主机目录 / 最近连接 */}
       <div className="dashboard-right">
-        {/* 🖥 全部主机目录 */}
         <div className="hosts-section-container">
           <div className="section-title-container">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-              <span className="section-title-icon"><Monitor size={14} /></span>
-              <span className="section-title">{t('主机')}</span>
-              {/* 搜索框 */}
+              {/* 主机 / 最近连接 切换 */}
+              <div className="segment-control dashboard-page-switch">
+                <Tiptop text={t('主机')} placement="bottom">
+                  <button
+                    type="button"
+                    onClick={() => switchHostPageMode('hosts')}
+                    aria-label={t('主机')}
+                    aria-pressed={hostPageMode === 'hosts'}
+                    className={hostPageMode === 'hosts' ? 'active' : ''}
+                  >
+                    <Monitor size={13} />
+                    <span>{t('主机')}</span>
+                  </button>
+                </Tiptop>
+                <div className="segment-control-divider" />
+                <Tiptop text={t('最近连接')} placement="bottom">
+                  <button
+                    type="button"
+                    onClick={() => switchHostPageMode('recent')}
+                    aria-label={t('最近连接')}
+                    aria-pressed={hostPageMode === 'recent'}
+                    className={hostPageMode === 'recent' ? 'active' : ''}
+                  >
+                    <History size={13} />
+                    <span>{t('最近连接')}</span>
+                    {recentServers.length > 0 && (
+                      <span className="dashboard-page-switch-count">{recentServers.length}</span>
+                    )}
+                  </button>
+                </Tiptop>
+              </div>
               <div style={{ position: 'relative', flex: 1, maxWidth: 240, minWidth: 120 }}>
                 <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
                 <input
@@ -134,105 +207,149 @@ export default function Dashboard({
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
-              {/* 选择模式开关 */}
-              <Tiptop text={selectionMode ? t('退出选择') : t('选择模式')} placement="bottom">
-                <button
-                  className={`btn btn-ghost btn-icon${selectionMode ? ' active' : ''}`}
-                  onClick={onSelectionModeToggle}
-                  aria-label={selectionMode ? t('退出选择') : t('选择模式')}
-                  aria-pressed={selectionMode}
-                >
-                  <CheckSquare size={14} />
-                </button>
-              </Tiptop>
-              {/* 视图切换 - 分段控件 */}
-              <div className="segment-control">
-                <Tiptop text={t('卡片视图')} placement="bottom">
-                  <button
-                    onClick={() => onViewModeChange('grid')}
-                    aria-label={t('卡片视图')}
-                    className={serverListViewMode === 'grid' ? 'active' : ''}
-                  >
-                    <LayoutGrid size={13} />
-                  </button>
-                </Tiptop>
-                <div className="segment-control-divider" />
-                <Tiptop text={t('列表视图')} placement="bottom">
-                  <button
-                    onClick={() => onViewModeChange('table')}
-                    aria-label={t('列表视图')}
-                    className={serverListViewMode === 'table' ? 'active' : ''}
-                  >
-                    <List size={13} />
-                  </button>
-                </Tiptop>
-              </div>
-              {/* 隐藏敏感信息 */}
-              <Tiptop text={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')} placement="bottom">
-                <button
-                  className={`btn btn-ghost btn-icon${hideSensitive ? ' active' : ''}`}
-                  onClick={onHideSensitiveToggle}
-                  aria-label={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')}
-                  aria-pressed={hideSensitive}
-                  style={hideSensitive ? { background: 'var(--warning-dim)', color: 'var(--warning)', borderColor: 'rgba(var(--warning-rgb), 0.35)' } : undefined}
-                >
-                  {hideSensitive ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-              </Tiptop>
-              {hasVisibleGroupHeaders && (
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    if (allCollapsed) {
-                      setCollapsedGroups(new Set());
-                    } else {
-                      setCollapsedGroups(new Set(visibleGroupNames));
-                    }
-                  }}
-                  style={{
-                    height: 28,
-                    padding: '0 10px',
-                    fontSize: 12,
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--surface-overlay)',
-                    color: 'var(--text-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    fontWeight: 500,
-                  }}
-                >
-                  {allCollapsed ? <Folder size={13} /> : <FolderOpen size={13} />}
-                  <span>{allCollapsed ? t('打开分组') : t('收起分组')}</span>
-                </button>
+              {hostPageMode === 'hosts' ? (
+                <>
+                  {/* 选择模式开关 */}
+                  <Tiptop text={selectionMode ? t('退出选择') : t('选择模式')} placement="bottom">
+                    <button
+                      className={`btn btn-ghost btn-icon${selectionMode ? ' active' : ''}`}
+                      onClick={onSelectionModeToggle}
+                      aria-label={selectionMode ? t('退出选择') : t('选择模式')}
+                      aria-pressed={selectionMode}
+                    >
+                      <CheckSquare size={14} />
+                    </button>
+                  </Tiptop>
+                  {/* 视图切换 - 分段控件 */}
+                  <div className="segment-control">
+                    <Tiptop text={t('卡片视图')} placement="bottom">
+                      <button
+                        onClick={() => onViewModeChange('grid')}
+                        aria-label={t('卡片视图')}
+                        className={serverListViewMode === 'grid' ? 'active' : ''}
+                      >
+                        <LayoutGrid size={13} />
+                      </button>
+                    </Tiptop>
+                    <div className="segment-control-divider" />
+                    <Tiptop text={t('列表视图')} placement="bottom">
+                      <button
+                        onClick={() => onViewModeChange('table')}
+                        aria-label={t('列表视图')}
+                        className={serverListViewMode === 'table' ? 'active' : ''}
+                      >
+                        <List size={13} />
+                      </button>
+                    </Tiptop>
+                  </div>
+                  {/* 隐藏敏感信息 */}
+                  <Tiptop text={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')} placement="bottom">
+                    <button
+                      className={`btn btn-ghost btn-icon${hideSensitive ? ' active' : ''}`}
+                      onClick={onHideSensitiveToggle}
+                      aria-label={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')}
+                      aria-pressed={hideSensitive}
+                      style={hideSensitive ? { background: 'var(--warning-dim)', color: 'var(--warning)', borderColor: 'rgba(var(--warning-rgb), 0.35)' } : undefined}
+                    >
+                      {hideSensitive ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                  </Tiptop>
+                  {hasVisibleGroupHeaders && (
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        if (allCollapsed) {
+                          setCollapsedGroups(new Set());
+                        } else {
+                          setCollapsedGroups(new Set(visibleGroupNames));
+                        }
+                      }}
+                      style={{
+                        height: 28,
+                        padding: '0 10px',
+                        fontSize: 12,
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--surface-overlay)',
+                        color: 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {allCollapsed ? <Folder size={13} /> : <FolderOpen size={13} />}
+                      <span>{allCollapsed ? t('打开分组') : t('收起分组')}</span>
+                    </button>
+                  )}
+                  {/* 数据管理（导入/导出） */}
+                  <Tiptop text={t('数据管理')} placement="bottom">
+                    <button
+                      className="btn btn-ghost"
+                      onClick={onOpenImportExport}
+                      aria-label={t('数据管理')}
+                      style={{
+                        height: 28,
+                        padding: '0 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--surface-overlay)',
+                        color: 'var(--text-secondary)',
+                        fontWeight: 500,
+                      }}
+                    >
+                      <Database size={13} />
+                      <span style={{ fontSize: 12 }}>{t('数据管理')}</span>
+                    </button>
+                  </Tiptop>
+                </>
+              ) : (
+                <>
+                  <Tiptop text={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')} placement="bottom">
+                    <button
+                      className={`btn btn-ghost btn-icon${hideSensitive ? ' active' : ''}`}
+                      onClick={onHideSensitiveToggle}
+                      aria-label={hideSensitive ? t('显示敏感信息') : t('隐藏敏感信息')}
+                      aria-pressed={hideSensitive}
+                      style={hideSensitive ? { background: 'var(--warning-dim)', color: 'var(--warning)', borderColor: 'rgba(var(--warning-rgb), 0.35)' } : undefined}
+                    >
+                      {hideSensitive ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                  </Tiptop>
+                  <Tiptop text={t('清空')} placement="bottom">
+                    <button
+                      className="btn btn-ghost"
+                      onClick={handleClearRecent}
+                      disabled={recentServers.length === 0}
+                      aria-label={t('清空最近连接')}
+                      style={{
+                        height: 28,
+                        padding: '0 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--surface-overlay)',
+                        color: recentServers.length === 0 ? 'var(--text-tertiary)' : 'var(--text-secondary)',
+                        fontWeight: 500,
+                        opacity: recentServers.length === 0 ? 0.55 : 1,
+                        cursor: recentServers.length === 0 ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      <span style={{ fontSize: 12 }}>{t('清空')}</span>
+                    </button>
+                  </Tiptop>
+                </>
               )}
-              {/* 数据管理（导入/导出） */}
-              <Tiptop text={t('数据管理')} placement="bottom">
-                <button
-                  className="btn btn-ghost"
-                  onClick={onOpenImportExport}
-                  aria-label={t('数据管理')}
-                  style={{
-                    height: 28,
-                    padding: '0 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--surface-overlay)',
-                    color: 'var(--text-secondary)',
-                    fontWeight: 500,
-                  }}
-                >
-                  <Database size={13} />
-                  <span style={{ fontSize: 12 }}>{t('数据管理')}</span>
-                </button>
-              </Tiptop>
             </div>
           </div>
 
+          {hostPageMode === 'hosts' ? (
           <div className={`hosts-scroll-area ${selectionMode ? 'batch-mode-active' : ''}`}>
             <ServerList
               servers={filteredServers}
@@ -263,9 +380,96 @@ export default function Dashboard({
               onCollapsedGroupsChange={setCollapsedGroups}
             />
           </div>
+          ) : (
+          <div className="hosts-scroll-area">
+            {recentServers.length === 0 ? (
+              <div className="empty-state" style={{ marginTop: '12vh' }}>
+                <div className="empty-state-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Clock size={48} strokeWidth={1.5} />
+                </div>
+                <div className="empty-state-text">{t('暂无最近连接')}</div>
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  {t('连接成功后会出现在这里，方便快速再连')}
+                </div>
+              </div>
+            ) : filteredRecentServers.length === 0 ? (
+              <div className="empty-state" style={{ marginTop: '12vh' }}>
+                <div className="empty-state-text">{t('无匹配结果')}</div>
+              </div>
+            ) : (
+              <div className="server-table-container">
+                <table className="server-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 48 }}>#</th>
+                      <th>{t('别名')}</th>
+                      <th>{t('主机地址')}</th>
+                      <th>{t('用户名')}</th>
+                      <th>{t('分组')}</th>
+                      <th style={{ width: 88 }}>{t('操作')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRecentServers.map((server, index) => {
+                      const connected = sessions?.some((s) => s.serverId === server.id && s.status === 'connected');
+                      const active = sessions?.some((s) => s.serverId === server.id && s.id === activeSessionId);
+                      const displayName = server.name || server.host;
+                      const hostText = hideSensitive
+                        ? mask(server.host)
+                        : `${server.host}${server.port && server.port !== 22 ? `:${server.port}` : ''}`;
+                      const userText = hideSensitive ? mask(server.username) : (server.username || '');
+                      const groupText = server.group || t('未分组');
+                      return (
+                        <tr
+                          key={server.id}
+                          className={`server-table-row${active ? ' active' : ''}`}
+                          onClick={() => onConnect?.(server)}
+                        >
+                          <td style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                            {index + 1}
+                          </td>
+                          <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {displayName}
+                            </span>
+                            {connected && (
+                              <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--success)', padding: '2px 4px', background: 'var(--success-dim)', borderRadius: 4 }}>
+                                {t('已连接')}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-secondary)' }}>
+                            {hostText}
+                          </td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{userText || '-'}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                            {groupText}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-sm recent-remove-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveRecentConnection?.(server.id);
+                              }}
+                            >
+                              <X size={12} />
+                              {t('移除')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          )}
 
           {/* Batch Operation Bar */}
-          {selectionMode && onBatchDelete && (
+          {hostPageMode === 'hosts' && selectionMode && onBatchDelete && (
             <div className="batch-operation-bar">
               <div className="selected-info">
                 <span className="selected-count-badge">{selectedIds.length}</span>

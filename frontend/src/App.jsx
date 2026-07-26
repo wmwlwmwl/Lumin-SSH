@@ -571,6 +571,41 @@ export default function App() {
   const [probeSnapshots, setProbeSnapshots] = useState({}); // { [sessionId]: { info, hist } }
   const [serverListViewMode, setServerListViewMode] = useState(localStorage.getItem('serverListViewMode') || 'grid'); // 'grid' | 'table'
   const [hideSensitive, setHideSensitive] = useState(localStorage.getItem('hideSensitive') === 'true');
+  // 'hosts' | 'recent' — 主页右侧视图；仅 hosts 时跑延迟探测
+  const [dashboardHostPageMode, setDashboardHostPageMode] = useState(
+    () => (localStorage.getItem('dashboardHostPageMode') === 'recent' ? 'recent' : 'hosts')
+  );
+  // ponytail: 最近连接只存 serverId 顺序；上限 30，避免无限膨胀。升级：云同步/按时间分组。
+  const RECENT_CONNECTIONS_KEY = 'recentConnectionIds';
+  const RECENT_CONNECTIONS_MAX = 30;
+  const [recentConnectionIds, setRecentConnectionIds] = useState(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RECENT_CONNECTIONS_KEY) || '[]');
+      return Array.isArray(raw) ? raw.filter((id) => typeof id === 'string' && id) : [];
+    } catch {
+      return [];
+    }
+  });
+  const recordRecentConnection = useCallback((serverId) => {
+    if (!serverId) return;
+    setRecentConnectionIds((prev) => {
+      const next = [serverId, ...prev.filter((id) => id !== serverId)].slice(0, RECENT_CONNECTIONS_MAX);
+      localStorage.setItem(RECENT_CONNECTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  const clearRecentConnections = useCallback(() => {
+    setRecentConnectionIds([]);
+    localStorage.removeItem(RECENT_CONNECTIONS_KEY);
+  }, []);
+  const removeRecentConnection = useCallback((serverId) => {
+    if (!serverId) return;
+    setRecentConnectionIds((prev) => {
+      const next = prev.filter((id) => id !== serverId);
+      localStorage.setItem(RECENT_CONNECTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
   const [fileManagerPosition, setFileManagerPosition] = useState(() => {
     const saved = localStorage.getItem('fileManagerPosition') || 'tab';
     return saved === 'tab' || saved === 'left' || saved === 'right' || saved === 'bottom' ? saved : 'tab';
@@ -2454,6 +2489,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         setSessions((prev) => prev.map((s) => s.id === sessionId ? { ...s, osInfo: staticInfo } : s));
       }
       if (serverId) {
+        recordRecentConnection(serverId);
         setServers(prevServers => {
           const currentServer = prevServers.find(s => s.id === serverId);
           if (currentServer) {
@@ -2471,7 +2507,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       // 启用监控
       setMonitoringEnabled((prev) => ({ ...prev, [sessionId]: true }));
     } catch (_) {}
-  }, []);
+  }, [recordRecentConnection]);
 
   // ── Load servers ───────────────────────────────────────────
   const loadServers = useCallback(async () => {
@@ -2579,6 +2615,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
   useEffect(() => {
     if (activeSessionId !== null) return; // ponytail: 不在主页时不 ping
+    if (dashboardHostPageMode !== 'hosts') return; // ponytail: 最近连接页不 ping
     if (!pingEnabled) {
       setPings({});
       pingFailCountRef.current = {};
@@ -2588,7 +2625,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     // 修改为动态刷新延迟，降低后台消耗或提高实时性
     pingTimerRef.current = setInterval(pingAll, pingInterval * 1000);
     return () => clearInterval(pingTimerRef.current);
-  }, [pingAll, pingInterval, activeSessionId, pingEnabled]);
+  }, [pingAll, pingInterval, activeSessionId, pingEnabled, dashboardHostPageMode]);
 
   // ── 取消连接 ──────────────────────────────────────────────
   const handleCancelConnection = useCallback((sessionId) => {
@@ -3032,7 +3069,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             'success'
           );
 
-          await postConnectSetup(sessionId);
+          const matched = sessionsRef.current.find((s) => s.id === sessionId);
+          await postConnectSetup(sessionId, matched?.serverId);
         } else {
           updateSessionStatus(sessionId, 'error');
           setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
@@ -3046,7 +3084,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     return () => {
       if (unbind) unbind();
     };
-  }, [addToast]);
+  }, [addToast, postConnectSetup, t]);
 
   // ── 监听认证失败事件（密码错误等） ──────────────────────────
   useEffect(() => {
@@ -3095,8 +3133,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
 
         await postConnectSetup(sessionId, connId, { password: newPassword });
 
-        // 加入最近连接
-      } catch (retryErr) {
+        } catch (retryErr) {
         updateSessionStatus(sessionId, 'error');
         setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
         addToast(`${t('重新连接失败')}: ${String(retryErr)}`, 'error', 5000);
@@ -3297,6 +3334,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   // ── Connect to server ──────────────────────────────────────
   const connectServer = useCallback(async (server) => {
     markWorkspaceRestoreNavigationOverride();
+    // 用户主动点连即记入最近，已连接仅切换焦点时也置顶
+    recordRecentConnection(server?.id);
     const existing = sessionsRef.current.find((s) => s.serverId === server.id && s.status !== 'closed' && s.status !== 'error');
     if (existing) {
       setActiveSessionId(existing.id);
@@ -3390,7 +3429,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     } catch (err) {
       handleConnectError(sessionId, err);
     }
-  }, [fileManagerPosition, handleConnectError, loadServerWorkspaceSessionSnapshot, markWorkspaceRestoreNavigationOverride, postConnectSetup, reconnectSession, rememberWorkspace, resolveSessionContentTab, resolveSessionRootTerminalId, t, workspacePersistenceLevel]);
+  }, [fileManagerPosition, handleConnectError, loadServerWorkspaceSessionSnapshot, markWorkspaceRestoreNavigationOverride, postConnectSetup, reconnectSession, recordRecentConnection, rememberWorkspace, resolveSessionContentTab, resolveSessionRootTerminalId, t, workspacePersistenceLevel]);
 
   // ── Close session ──────────────────────────────────────────
   // ponytail: 内部关闭逻辑，不带确认弹窗，供 closeSession 和右键菜单共用
@@ -4735,18 +4774,25 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     try {
       await AppGo.DeleteConnection(id);
       setServers((prev) => prev.filter((s) => s.id !== id));
+      removeRecentConnection(id);
       // 若正在编辑被删服务器，清空左侧表单，避免残留已删除配置
       setServerEditor((current) => (current?.id === id ? null : current));
       addToast(t('服务器已删除'), 'success');
     } catch {
       addToast(t('删除失败'), 'error');
     }
-  }, [addToast, t]);
+  }, [addToast, removeRecentConnection, t]);
 
   const handleBatchDelete = useCallback(async (ids) => {
     try {
       await AppGo.BatchDeleteConnections(ids);
       setServers((prev) => prev.filter((s) => !ids.includes(s.id)));
+      setRecentConnectionIds((prev) => {
+        const idSet = new Set(ids);
+        const next = prev.filter((id) => !idSet.has(id));
+        localStorage.setItem(RECENT_CONNECTIONS_KEY, JSON.stringify(next));
+        return next;
+      });
       setSelectedServerIds([]);
       // 批量删除含当前编辑项时，同步清空表单
       setServerEditor((current) => (current?.id && ids.includes(current.id) ? null : current));
@@ -5771,6 +5817,15 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             pings={pings}
             sessions={sessions}
             activeSessionId={activeSessionId}
+            recentConnectionIds={recentConnectionIds}
+            hostPageMode={dashboardHostPageMode}
+            onHostPageModeChange={(mode) => {
+              const next = mode === 'recent' ? 'recent' : 'hosts';
+              setDashboardHostPageMode(next);
+              localStorage.setItem('dashboardHostPageMode', next);
+            }}
+            onClearRecentConnections={clearRecentConnections}
+            onRemoveRecentConnection={removeRecentConnection}
             onConnect={connectServer}
             onStartAdd={startAddGuideAnimation}
             onEdit={startEditFlyAnimation}
