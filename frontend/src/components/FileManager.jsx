@@ -2131,8 +2131,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const normalizedTargetWorkspaceTabPath = normalizePath(targetWorkspaceTab?.path) || '/';
     const displayedTabId = String(displayedTabIdRef.current || '').trim();
     const isSwitchingDisplayedTab = !!(targetTabId && displayedTabId && targetTabId !== displayedTabId);
+    // 固定标签禁止原地改路径：仅在已 hydrate 后的用户导航时开新标签。
+    // 首次初始化若误走此分支，会在 open-new-tab 里因 currentPath 仍是默认 '/' 直接 return，列表永远不加载。
     if (
-      targetWorkspaceTab?.pinned === true
+      currentPathHydratedRef.current
+      && targetWorkspaceTab?.pinned === true
       && normalizedPath !== normalizedTargetWorkspaceTabPath
       && !isSwitchingDisplayedTab
       && typeof openFileManagerPathInNewTabRef.current === 'function'
@@ -2343,6 +2346,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const currentTabs = Array.isArray(workspace?.tabs) ? workspace.tabs.filter((tab) => tab && typeof tab === 'object') : [];
     const currentActiveTabId = typeof workspace?.activeTabId === 'string' ? workspace.activeTabId : '';
     const homeSystemTab = currentTabs.find((tab) => getFileManagerSystemTabType(tab) === FILE_MANAGER_SYSTEM_TAB_KIND_HOME) || null;
+    // 首页固定标签路径与首次加载目标保持一致，避免 pane 默认 '/' 与 tab '/root' 分叉后误走开新标签
     const homeTabPath = normalizePath(homeSystemTab?.path) || normalizedForcedPath;
     const baseHomeTab = homeSystemTab || createFileManagerTab(homeTabPath, {
       pinned: true,
@@ -2368,16 +2372,38 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       nextTabs.push(tab);
     });
     const nextActiveTabId = nextTabs.some((tab) => tab.id === currentActiveTabId) ? currentActiveTabId : nextHomeTab.id;
+    const activeTabPath = normalizePath(nextTabs.find((tab) => tab.id === nextActiveTabId)?.path) || homeTabPath;
+    const currentPanes = workspace?.panes && typeof workspace.panes === 'object' ? workspace.panes : {};
+    const alignPane = (paneKey, fallbackTabId) => {
+      const currentPane = currentPanes?.[paneKey] && typeof currentPanes[paneKey] === 'object' ? currentPanes[paneKey] : {};
+      const paneTabId = String(currentPane.tabId || fallbackTabId || nextActiveTabId || '').trim();
+      const matchedTab = nextTabs.find((tab) => tab.id === paneTabId) || nextTabs.find((tab) => tab.id === nextActiveTabId) || nextHomeTab;
+      const matchedPath = normalizePath(matchedTab?.path) || activeTabPath;
+      return {
+        ...currentPane,
+        tabId: matchedTab?.id || nextActiveTabId,
+        path: matchedPath,
+      };
+    };
+    const nextPanes = {
+      left: alignPane('left', nextActiveTabId),
+      right: alignPane('right', nextActiveTabId),
+    };
     const changed = currentTabs.length !== nextTabs.length
       || nextActiveTabId !== currentActiveTabId
       || currentTabs.some((tab, index) => !areFileManagerTabStatesEqual(tab, nextTabs[index]))
-      || nextTabs.some((tab, index) => !areFileManagerTabStatesEqual(tab, currentTabs[index]));
+      || nextTabs.some((tab, index) => !areFileManagerTabStatesEqual(tab, currentTabs[index]))
+      || normalizePath(currentPanes?.left?.path) !== normalizePath(nextPanes.left.path)
+      || normalizePath(currentPanes?.right?.path) !== normalizePath(nextPanes.right.path)
+      || String(currentPanes?.left?.tabId || '') !== String(nextPanes.left.tabId || '')
+      || String(currentPanes?.right?.tabId || '') !== String(nextPanes.right.tabId || '');
     if (!changed) {
       return workspace;
     }
     return {
       activeTabId: nextActiveTabId,
       tabs: nextTabs,
+      panes: nextPanes,
     };
   }, [normalizePath]);
 
@@ -2465,7 +2491,10 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         const nextSelectedPaths = Array.isArray(existingPane.selectedPaths)
           ? existingPane.selectedPaths
           : (Array.isArray(existingTab.selectedPaths) ? existingTab.selectedPaths : []);
-        const targetPath = normalizePath(existingPane.path || existingTab.path) || '/';
+        // 优先 tab 路径：空 workspace 的 pane 默认 '/' 会与首页 tab 的 '/root' 分叉
+        const targetPath = normalizePath(existingTab.path || existingPane.path) || '/';
+        activeFileManagerTabIdRef.current = existingTab.id;
+        displayedTabIdRef.current = existingTab.id;
         setSortField(nextSortField);
         setSortDir(nextSortDir);
         if (targetPath === currentPathRef.current) {
@@ -4022,7 +4051,13 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     }));
     setSortField(nextTab.sortField);
     setSortDir(nextTab.sortDir);
-    if (candidatePaths[0] === currentPathRef.current) {
+    // 仅在已 hydrate 且当前列表就是目标路径时跳过网络请求；未 hydrate 时必须 ListDir
+    if (
+      currentPathHydratedRef.current
+      && candidatePaths[0] === currentPathRef.current
+      && Array.isArray(items)
+      && items.length > 0
+    ) {
       displayedTabIdRef.current = nextTab.id;
       cacheCurrentTabItems(nextTab.id, candidatePaths[0], items);
       setSelectedPaths([]);
