@@ -205,18 +205,37 @@ func (h *ClientHub) ensureConnection(name string, config ServerConfig, source Se
 	}
 	connection.transport = transport
 	connection.runtime.Status = "connecting"
+	// 网络握手放到后台：内置 context7 等远端 MCP 同步初始化会卡住应用启动十余秒。
+	go h.finishConnection(connection, config, transport)
+}
+
+func (h *ClientHub) finishConnection(connection *serverConnection, config ServerConfig, transport rpcTransport) {
+	if h == nil || connection == nil || transport == nil {
+		return
+	}
+	// 若已被更新的 ensureConnection 替换，直接退出，避免写脏状态。
+	if !h.isCurrentConnection(connection, transport) {
+		return
+	}
 	initializeCtx, initializeCancel := context.WithTimeout(context.Background(), connectionInitializeTimeout(config))
 	initializeResult, err := initializeRPCTransport(initializeCtx, transport)
 	initializeCancel()
 	if err != nil {
-		h.markConnectionError(connection, err)
+		if h.isCurrentConnection(connection, transport) {
+			h.markConnectionError(connection, err)
+		}
+		return
+	}
+	if !h.isCurrentConnection(connection, transport) {
 		return
 	}
 	toolsCtx, toolsCancel := context.WithTimeout(context.Background(), connectionInitializeTimeout(config))
 	tools, err := listServerTools(toolsCtx, transport, config)
 	toolsCancel()
 	if err != nil {
-		h.markConnectionError(connection, err)
+		if h.isCurrentConnection(connection, transport) {
+			h.markConnectionError(connection, err)
+		}
 		return
 	}
 	resources := []ServerResource{}
@@ -237,16 +256,32 @@ func (h *ClientHub) ensureConnection(name string, config ServerConfig, source Se
 	} else {
 		resourceTemplates = listedResourceTemplates
 	}
-	connection.runtime.Status = "connected"
-	connection.runtime.Error = ""
-	connection.runtime.Tools = tools
-	connection.runtime.Resources = resources
-	connection.runtime.ResourceTemplates = resourceTemplates
-	connection.runtime.Instructions = strings.TrimSpace(initializeResult.Instructions)
-	connection.runtime.Config = MarshalServerConfig(config)
-	connection.runtime.Disabled = config.Disabled
-	connection.runtime.DisabledForPrompts = config.DisabledForPrompts
-	connection.runtime.Timeout = config.Timeout
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	current := h.connections[connection.key]
+	if current != connection || current.transport != transport {
+		return
+	}
+	current.runtime.Status = "connected"
+	current.runtime.Error = ""
+	current.runtime.Tools = tools
+	current.runtime.Resources = resources
+	current.runtime.ResourceTemplates = resourceTemplates
+	current.runtime.Instructions = strings.TrimSpace(initializeResult.Instructions)
+	current.runtime.Config = MarshalServerConfig(config)
+	current.runtime.Disabled = config.Disabled
+	current.runtime.DisabledForPrompts = config.DisabledForPrompts
+	current.runtime.Timeout = config.Timeout
+}
+
+func (h *ClientHub) isCurrentConnection(connection *serverConnection, transport rpcTransport) bool {
+	if h == nil || connection == nil {
+		return false
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	current := h.connections[connection.key]
+	return current == connection && current.transport == transport
 }
 
 func (h *ClientHub) appendServerLog(connection *serverConnection, message string, level string) {

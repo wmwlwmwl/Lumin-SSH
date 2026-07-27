@@ -18,6 +18,7 @@ var icon []byte
 var (
 	user32                       = syscall.NewLazyDLL("user32.dll")
 	kernel32                     = syscall.NewLazyDLL("kernel32.dll")
+	shell32                      = syscall.NewLazyDLL("shell32.dll")
 	procEnumWindows              = user32.NewProc("EnumWindows")
 	procGetWindowTextW           = user32.NewProc("GetWindowTextW")
 	procGetWindowTextLengthW     = user32.NewProc("GetWindowTextLengthW")
@@ -34,6 +35,7 @@ var (
 	procAttachThreadInput        = user32.NewProc("AttachThreadInput")
 	procGetCurrentThreadId       = kernel32.NewProc("GetCurrentThreadId")
 	procGetCurrentProcessId      = kernel32.NewProc("GetCurrentProcessId")
+	procShellNotifyIconW         = shell32.NewProc("Shell_NotifyIconW")
 )
 
 const (
@@ -45,10 +47,71 @@ const (
 	swpNosize       = 0x0001
 	swpNomove       = 0x0002
 	swpShowWindow   = 0x0040
+	nimDelete       = 0x00000002
+	// energye/systray 固定 uID=100；NIM_DELETE 靠 hWnd+uID 定位图标
+	systrayIconID   = 100
 	mainWindowTitle = "Lumin"
 	wailsFormClass  = "winc_Form"
 	systrayClass    = "SystrayClass"
 )
+
+// trayNotifyIconData 对齐官方 NOTIFYICONDATA（uTimeout/uVersion 为 union，占 4 字节）。
+// 仅用于退出时同步 NIM_DELETE；定位图标只靠 hWnd + uID。
+type trayNotifyIconData struct {
+	Size            uint32
+	Wnd             uintptr
+	ID              uint32
+	Flags           uint32
+	CallbackMessage uint32
+	Icon            uintptr
+	Tip             [128]uint16
+	State           uint32
+	StateMask       uint32
+	Info            [256]uint16
+	Timeout         uint32
+	InfoTitle       [64]uint16
+	InfoFlags       uint32
+	GuidItem        [16]byte
+	BalloonIcon     uintptr
+}
+
+// findSystrayHWND 找本进程 energye 托盘隐藏窗（class=SystrayClass）
+func findSystrayHWND(matchPID uint32) syscall.Handle {
+	var found syscall.Handle
+	callback := syscall.NewCallback(func(hwnd syscall.Handle, lParam uintptr) uintptr {
+		if windowClass(hwnd) != systrayClass {
+			return 1
+		}
+		if matchPID != 0 {
+			var pid uint32
+			procGetWindowThreadProcessId.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
+			if pid != matchPID {
+				return 1
+			}
+		}
+		found = hwnd
+		return 0
+	})
+	procEnumWindows.Call(callback, 0)
+	return found
+}
+
+// removeTrayIconSync 退出前同步删托盘图标。
+// energye 的 systray.Quit 只 PostMessage(WM_CLOSE)，NIM_DELETE 异步；
+// 进程若先退出，Shell 会留下幽灵图标，鼠标扫过托盘才消失。
+func removeTrayIconSync() {
+	pid, _, _ := procGetCurrentProcessId.Call()
+	hwnd := findSystrayHWND(uint32(pid))
+	if hwnd == 0 {
+		return
+	}
+	nid := trayNotifyIconData{
+		Wnd: uintptr(hwnd),
+		ID:  systrayIconID,
+	}
+	nid.Size = uint32(unsafe.Sizeof(nid))
+	_, _, _ = procShellNotifyIconW.Call(uintptr(nimDelete), uintptr(unsafe.Pointer(&nid)))
+}
 
 func windowText(hwnd syscall.Handle) string {
 	textLen, _, _ := procGetWindowTextLengthW.Call(uintptr(hwnd))

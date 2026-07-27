@@ -24,6 +24,9 @@ func findAndShowWindow() {}
 // platformForceShowWindow Linux 暂无原生兜底，依赖 Wails WindowShow
 func platformForceShowWindow() {}
 
+// removeTrayIconSync Windows 幽灵托盘修复专用；Linux 无此问题
+func removeTrayIconSync() {}
+
 // ensureSingleInstance 使用 flock 检查是否已有实例运行
 func ensureSingleInstance() {
 	lockFile := filepath.Join(os.TempDir(), "lumin-ssh.lock")

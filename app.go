@@ -245,8 +245,8 @@ func (a *App) startup(ctx context.Context) {
 	a.configManager.CleanupOrphanedHistory()
 	go a.configManager.AutoSync()
 	applyMCPOutputCompressionSettings(a.configManager.GetMCPOutputCompressionSettings())
-	initializeMCPClientHub(a)
-	startMCPServer(a)
+	// MCP 客户端会连远端（内置 context7），同步握手会拖慢首屏；后台启动即可。
+	go startMCPServer(a)
 }
 
 // AckClose 前端响应了关闭弹窗（tray/cancel），取消 5s 兜底强制退出

@@ -73,9 +73,19 @@ func main() {
 
 	// Create an instance of the app structure
 	app := NewApp()
-	app.onBeforeQuit = func() { systray.Quit() }
 
 	systrayEnd := prepareSystray(app)
+
+	// 退出时先同步删托盘图标，再 systray.Quit。
+	// Windows 上纯异步 Quit 常在 NIM_DELETE 前进程已死，留下幽灵图标。
+	var trayCleanupOnce sync.Once
+	cleanupTray := func() {
+		trayCleanupOnce.Do(func() {
+			removeTrayIconSync()
+			systrayEnd()
+		})
+	}
+	app.onBeforeQuit = cleanupTray
 
 	// Create application with options
 	opts := &options.App{
@@ -91,12 +101,14 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 8, G: 12, B: 20, A: 255}, // #080c14
 		OnStartup: func(ctx context.Context) {
-			app.startup(ctx)
+			// 先挂托盘：startup 里 MCP 等可能阻塞，托盘若排后面会出现「窗口已能关到托盘但图标很久才出」。
+			app.ctx = ctx
 			startSystray(app)
+			app.startup(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
 			stopMCPServer(app)
-			systrayEnd()
+			cleanupTray()
 		},
 		// 拦截窗口关闭：弹出对话框让用户选择退出 / 系统托盘 / 取消
 		OnBeforeClose: func(ctx context.Context) bool {
@@ -111,6 +123,7 @@ func main() {
 				time.Sleep(5 * time.Second)
 				if !app.quitting.Load() && !app.closeAck.Load() {
 					app.quitting.Store(true)
+					cleanupTray()
 					runtime.Quit(ctx)
 				}
 			}()
