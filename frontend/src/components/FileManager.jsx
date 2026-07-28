@@ -2181,6 +2181,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (resizer) {
       resizer.style.display = '';
       resizer.style.order = '1';
+      // 上传面板在右侧：热区偏右，避免终端划词误触
+      resizer.classList.remove('hotzone-left', 'hotzone-right');
+      resizer.classList.add('hotzone-right');
     }
     container.style.flexDirection = 'row';
     host.style.width = '42%';

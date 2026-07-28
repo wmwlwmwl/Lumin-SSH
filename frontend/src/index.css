@@ -4538,21 +4538,39 @@ body.theme-light .dashboard-server-editor {
   background: transparent;
   flex-shrink: 0;
 }
-/* 视觉 0，热区 ~8px；悬停/拖拽时画 1px 强调线 */
+/*
+ * 视觉 0。热区偏侧栏，终端侧仅 1px，避免划词误触拖宽。
+ * hotzone-left：左侧侧栏右缘（热区主要在左）
+ * hotzone-right：右侧侧栏左缘（热区主要在右）
+ */
 .split-resizer-v::after {
   content: '';
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -4px;
-  width: 8px;
+  left: -5px;
+  width: 6px;
   background: transparent;
   transition: background-color 0.15s;
+}
+.split-resizer-v.hotzone-left::after {
+  left: -5px;
+  width: 6px;
+}
+.split-resizer-v.hotzone-right::after {
+  left: -1px;
+  width: 6px;
 }
 .split-resizer-v:hover::after,
 .split-resizer-v.dragging::after,
 .split-resizer-v.armed::after {
-  background: linear-gradient(90deg, transparent 3.5px, var(--accent) 3.5px, var(--accent) 4.5px, transparent 4.5px);
+  /* 默认/偏左：强调线贴分隔缝（热区右缘内侧） */
+  background: linear-gradient(90deg, transparent 4.5px, var(--accent) 4.5px, var(--accent) 5.5px, transparent 5.5px);
+}
+.split-resizer-v.hotzone-right:hover::after,
+.split-resizer-v.hotzone-right.dragging::after,
+.split-resizer-v.hotzone-right.armed::after {
+  background: linear-gradient(90deg, transparent 0.5px, var(--accent) 0.5px, var(--accent) 1.5px, transparent 1.5px);
 }
 
 .split-resizer-h {
@@ -4563,20 +4581,34 @@ body.theme-light .dashboard-server-editor {
   background: transparent;
   flex-shrink: 0;
 }
+/* 默认偏下（底部面板上缘），终端侧仅 1px */
 .split-resizer-h::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
-  top: -4px;
-  height: 8px;
+  top: -1px;
+  height: 6px;
   background: transparent;
   transition: background-color 0.15s;
+}
+.split-resizer-h.hotzone-top::after {
+  top: -5px;
+  height: 6px;
+}
+.split-resizer-h.hotzone-bottom::after {
+  top: -1px;
+  height: 6px;
 }
 .split-resizer-h:hover::after,
 .split-resizer-h.dragging::after,
 .split-resizer-h.armed::after {
-  background: linear-gradient(180deg, transparent 3.5px, var(--accent) 3.5px, var(--accent) 4.5px, transparent 4.5px);
+  background: linear-gradient(180deg, transparent 0.5px, var(--accent) 0.5px, var(--accent) 1.5px, transparent 1.5px);
+}
+.split-resizer-h.hotzone-top:hover::after,
+.split-resizer-h.hotzone-top.dragging::after,
+.split-resizer-h.hotzone-top.armed::after {
+  background: linear-gradient(180deg, transparent 4.5px, var(--accent) 4.5px, var(--accent) 5.5px, transparent 5.5px);
 }
 
 /* ── 终端主题选择卡片 ────────────────────────────────────────── */

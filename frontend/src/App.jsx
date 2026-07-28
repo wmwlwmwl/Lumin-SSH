@@ -5866,7 +5866,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               {showAIPanel ? (
                 <Tiptop text={t('收起 AI 助手面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
-                    className={`split-resizer-v${collapseDragIntent === 'ai' ? ' armed' : ''}`}
+                    className={`split-resizer-v hotzone-left${collapseDragIntent === 'ai' ? ' armed' : ''}`}
                     onMouseDown={(e) => startDrag(e, 'ai')}
                     onClick={() => {
                       if (shouldIgnoreResizerClick()) return;
@@ -5928,7 +5928,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 </div>
                 <Tiptop text={t('收起监控面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
-                    className={`split-resizer-v probe-resizer${collapseDragIntent === 'probe' ? ' armed' : ''}`}
+                    className={`split-resizer-v hotzone-left probe-resizer${collapseDragIntent === 'probe' ? ' armed' : ''}`}
                     onMouseDown={(e) => startDrag(e, 'probe')}
                     onClick={() => {
                       if (shouldIgnoreResizerClick()) return;
@@ -6248,7 +6248,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                           >
                             {/* 拖条放在面板顶部内部，不再与终端「历史/命令」按钮重叠 */}
                             <div
-                              className={`split-resizer-h${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
+                              className={`split-resizer-h hotzone-bottom${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 startDrag(e, 'bottom');
@@ -6262,8 +6262,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                                 position: 'absolute',
                                 left: 0,
                                 right: 0,
-                                top: -2,
-                                height: 6,
+                                top: 0,
+                                height: 0,
                                 zIndex: 5,
                                 margin: 0,
                               }}
@@ -6284,7 +6284,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                         )}
                         {showLeftFileManager && (
                           <div
-                            className={`split-resizer-v${collapseDragIntent === 'left' ? ' armed' : ''}`}
+                            className={`split-resizer-v hotzone-left${collapseDragIntent === 'left' ? ' armed' : ''}`}
                             onMouseDown={(e) => startDrag(e, 'left')}
                             onClick={() => {
                               if (shouldIgnoreResizerClick()) return;
@@ -6305,7 +6305,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                         )}
                         {showRightFileManager && (
                           <div
-                            className={`split-resizer-v${collapseDragIntent === 'right' ? ' armed' : ''}`}
+                            className={`split-resizer-v hotzone-right${collapseDragIntent === 'right' ? ' armed' : ''}`}
                             onMouseDown={(e) => startDrag(e, 'right')}
                             onClick={() => {
                               if (shouldIgnoreResizerClick()) return;
@@ -6326,7 +6326,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                         {/* 仅文件管理器底部模式用外部分隔条；快捷命令用面板内拖条 */}
                         {showBottomFileManager && !showBottomQuickCommands && (
                           <div
-                            className={`split-resizer-h${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
+                            className={`split-resizer-h hotzone-bottom${collapseDragIntent === 'bottom' ? ' armed' : ''}`}
                             onMouseDown={(e) => startDrag(e, 'bottom')}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -6595,7 +6595,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               ))}
               {/* 文件编辑器分栏 host（由 FileEditor 通过 Portal 渲染） */}
               <div
-                className="split-resizer-v"
+                className="split-resizer-v hotzone-right"
                 style={{ display: 'none', order: 1 }}
                 id="editor-split-resizer"
                 onMouseDown={(e) => {
@@ -6710,7 +6710,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               <>
                 <Tiptop text={t('收起监控面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
-                    className={`split-resizer-v probe-resizer${collapseDragIntent === 'probe' ? ' armed' : ''}`}
+                    className={`split-resizer-v hotzone-right probe-resizer${collapseDragIntent === 'probe' ? ' armed' : ''}`}
                     onMouseDown={(e) => startDrag(e, 'probe')}
                     onClick={() => {
                       if (shouldIgnoreResizerClick()) return;
@@ -6748,7 +6748,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               {showAIPanel ? (
                 <Tiptop text={t('收起 AI 助手面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
-                    className={`split-resizer-v${collapseDragIntent === 'ai' ? ' armed' : ''}`}
+                    className={`split-resizer-v hotzone-right${collapseDragIntent === 'ai' ? ' armed' : ''}`}
                     onMouseDown={(e) => startDrag(e, 'ai')}
                     onClick={() => {
                       if (shouldIgnoreResizerClick()) return;

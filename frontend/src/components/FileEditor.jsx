@@ -490,6 +490,9 @@ export default function FileEditor({
     const mainContent = document.getElementById('editor-main-content');
     if (resizer) {
       resizer.style.display = '';
+      // 热区偏编辑器侧，减少终端划词误触
+      resizer.classList.remove('hotzone-left', 'hotzone-right');
+      resizer.classList.add(splitPosition === 'left' ? 'hotzone-left' : 'hotzone-right');
     }
     if (splitPosition === 'left') {
       host.style.order = '0';

@@ -341,7 +341,7 @@ export default function NetworkPage({ sessionId, active }) {
 
       {detailConnections.length > 0 ? (
         <>
-          <div className="split-resizer-h" onMouseDown={startDetailDrag} style={{ flexShrink: 0, zIndex: 10 }} />
+          <div className="split-resizer-h hotzone-bottom" onMouseDown={startDetailDrag} style={{ flexShrink: 0, zIndex: 10 }} />
           <div style={{ height: detailHeight, flexShrink: 0, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--surface-sunken)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', borderBottom: '1px solid var(--border-light)', background: 'var(--surface-raised)', gap: 4 }}>
             <div style={{ display: 'flex', gap: 3, overflow: 'hidden', flex: 1 }}>

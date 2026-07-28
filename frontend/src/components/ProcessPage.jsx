@@ -619,7 +619,7 @@ export default function ProcessPage({ sessionId, addToast, active }) {
       {detailState.processes.length > 0 && (
         <>
           <div
-            className="split-resizer-h"
+            className="split-resizer-h hotzone-bottom"
             onMouseDown={startDetailDrag}
             style={{ flexShrink: 0, zIndex: 10 }}
           />
