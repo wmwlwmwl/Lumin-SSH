@@ -5007,7 +5007,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             t('密文需要密码请输入'),
             '',
             t('导入密码'),
-            t(' ')
+            ''
           );
           if (pwd === null) { return; } // 用户取消密码框
           const pwdStr = typeof pwd === 'object' ? pwd.value : pwd;

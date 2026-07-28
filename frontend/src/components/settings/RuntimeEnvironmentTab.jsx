@@ -53,7 +53,6 @@ export default function RuntimeEnvironmentTab() {
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
           <h3 style={{ fontSize: 24, color: 'var(--text-primary)', fontWeight: 700, margin: 0 }}>{$t('环境依赖')}</h3>
-          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{$t('1')}</span>
         </div>
         <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>{$t('管理应用运行所需的二进制工具与运行时依赖。')}</div>
       </div>
