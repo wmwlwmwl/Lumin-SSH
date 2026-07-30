@@ -2647,6 +2647,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     const tab = normalizeWorkspaceContentTab(lastContentTabRef.current[sessionId] || 'terminal');
     // 文件管理器已停靠时，files 页签不可用，回落终端
     if (tab === 'files' && fileManagerPosition !== 'tab') return 'terminal';
+    // 串口会话不支持文件管理/进程/网络（无 SFTP/probe），回落终端
+    const sess = sessionsRef.current.find((s) => s.id === sessionId);
+    if (sess?.isSerial && (tab === 'files' || tab === 'process' || tab === 'network')) return 'terminal';
     return tab;
   }, [fileManagerPosition]);
 
@@ -4728,7 +4731,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     }).filter(Boolean);
   }, [fileManagerDockPreview, getFileManagerDockConfirmRect]);
   const isCreatingTerminal = creatingTerminalSessionId !== null;
-  const probeSessions = useMemo(() => sessions.filter((s) => (
+  const probeSessions = useMemo(() => sessions.filter((s) => !s.isSerial && (
     s.status === 'connected' || (s.status === 'closed' && monitoringEnabled[s.id])
   )), [monitoringEnabled, sessions]);
   const shouldShowProbePanel = probeSessions.some((s) => s.id === activeSessionId);
@@ -6221,7 +6224,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       <div className={`file-manager-dock-preview-dropzone file-manager-dock-preview-dropzone-inline${fileManagerDockConfirmTarget === 'tab' ? ' active' : ''}`} />
                     </div>
                   )}
-                  {fileManagerPosition === 'tab' && (
+                  {fileManagerPosition === 'tab' && !activeSession?.isSerial && (
                     <button
                       className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'files' ? 'active' : ''}`}
                       onMouseDown={(e) => startDrag(e, 'tab')}
@@ -6234,20 +6237,24 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       {t('文件管理')}
                     </button>
                   )}
-                  <button
-                    className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'process' ? 'active' : ''}`}
-                    onClick={() => setContentTab(contentTab === 'process' ? 'terminal' : 'process')}
-                  >
-                    <Cpu size={14} />
-                    {t('进程管理')}
-                  </button>
-                  <button
-                    className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'network' ? 'active' : ''}`}
-                    onClick={() => setContentTab(contentTab === 'network' ? 'terminal' : 'network')}
-                  >
-                    <Globe size={14} />
-                    {t('网络监控')}
-                  </button>
+                  {activeSession?.isSerial ? null : (
+                    <button
+                      className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'process' ? 'active' : ''}`}
+                      onClick={() => setContentTab(contentTab === 'process' ? 'terminal' : 'process')}
+                    >
+                      <Cpu size={14} />
+                      {t('进程管理')}
+                    </button>
+                  )}
+                  {activeSession?.isSerial ? null : (
+                    <button
+                      className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'network' ? 'active' : ''}`}
+                      onClick={() => setContentTab(contentTab === 'network' ? 'terminal' : 'network')}
+                    >
+                      <Globe size={14} />
+                      {t('网络监控')}
+                    </button>
+                  )}
                   <button
                     className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'history' ? 'active' : ''}`}
                     onClick={() => setContentTab(contentTab === 'history' ? 'terminal' : 'history')}
@@ -6278,7 +6285,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                 <div id="editor-main-content" style={{ flex: 1, position: 'relative', overflow: 'hidden', order: 1 }}>
                   {sessions.map((s) => {
                     const shouldMountFileManager = s.status === 'connected'
-                      && mountedSessions.has(s.id);
+                      && mountedSessions.has(s.id)
+                      && !s.isSerial;
                     const showSplitFileManager = shouldMountFileManager
                       && contentTab !== 'process'
                       && contentTab !== 'network'
@@ -6711,7 +6719,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               />
                             </div>
                           )}
-                          {s.status === 'connected' && mountedSessions.has(s.id) && (
+                          {s.status === 'connected' && mountedSessions.has(s.id) && !s.isSerial && (
                             <div style={{ display: contentTab === 'process' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
                               <ProcessPage
                                 sessionId={s.id}
@@ -6720,7 +6728,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               />
                             </div>
                           )}
-                          {s.status === 'connected' && mountedSessions.has(s.id) && (
+                          {s.status === 'connected' && mountedSessions.has(s.id) && !s.isSerial && (
                             <div style={{ display: contentTab === 'network' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
                               <NetworkPage
                                 sessionId={s.id}
