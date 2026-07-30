@@ -415,6 +415,16 @@ function normalizeWorkspaceContentTab(value) {
     : 'terminal';
 }
 
+// Windows-native local shells (PowerShell/CMD) have no probe backend (the monitor
+// probe is a POSIX sh script run via WSL/Unix only), so system monitoring, process
+// and network panels are unavailable for them — mirrors backend WSLDistro=="" gating.
+// WSL/Unix-local sessions are supported and unaffected.
+function isUnsupportedMonitorSession(session) {
+  if (!session?.isLocal) return false;
+  const shell = (session.shellPath || '').toLowerCase();
+  return shell.includes('powershell') || shell.includes('pwsh') || shell.includes('cmd');
+}
+
 function remapSessionWorkspaceLayouts(layouts, idMap, targetSessionId) {
   const sourceMap = idMap && typeof idMap === 'object' ? idMap : {};
   const next = {};
@@ -2506,8 +2516,11 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           return prevServers;
         });
       }
-      // 启用监控
-      setMonitoringEnabled((prev) => ({ ...prev, [sessionId]: true }));
+      // 启用监控（PowerShell/CMD 无 probe 后端，跳过以避免无效轮询与误导标记）
+      const sess = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!isUnsupportedMonitorSession(sess)) {
+        setMonitoringEnabled((prev) => ({ ...prev, [sessionId]: true }));
+      }
     } catch (_) {}
   }, [recordRecentConnection]);
 
@@ -2650,6 +2663,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     // 串口会话不支持文件管理/进程/网络（无 SFTP/probe），回落终端
     const sess = sessionsRef.current.find((s) => s.id === sessionId);
     if (sess?.isSerial && (tab === 'files' || tab === 'process' || tab === 'network')) return 'terminal';
+    // PowerShell/CMD 无 probe 后端，进程/网络监控不可用（文件管理仍可用），回落终端
+    if (isUnsupportedMonitorSession(sess) && (tab === 'process' || tab === 'network')) return 'terminal';
     return tab;
   }, [fileManagerPosition]);
 
@@ -4731,7 +4746,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     }).filter(Boolean);
   }, [fileManagerDockPreview, getFileManagerDockConfirmRect]);
   const isCreatingTerminal = creatingTerminalSessionId !== null;
-  const probeSessions = useMemo(() => sessions.filter((s) => !s.isSerial && (
+  const probeSessions = useMemo(() => sessions.filter((s) => !s.isSerial && !isUnsupportedMonitorSession(s) && (
     s.status === 'connected' || (s.status === 'closed' && monitoringEnabled[s.id])
   )), [monitoringEnabled, sessions]);
   const shouldShowProbePanel = probeSessions.some((s) => s.id === activeSessionId);
@@ -6237,7 +6252,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       {t('文件管理')}
                     </button>
                   )}
-                  {activeSession?.isSerial ? null : (
+                  {activeSession?.isSerial || isUnsupportedMonitorSession(activeSession) ? null : (
                     <button
                       className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'process' ? 'active' : ''}`}
                       onClick={() => setContentTab(contentTab === 'process' ? 'terminal' : 'process')}
@@ -6246,7 +6261,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       {t('进程管理')}
                     </button>
                   )}
-                  {activeSession?.isSerial ? null : (
+                  {activeSession?.isSerial || isUnsupportedMonitorSession(activeSession) ? null : (
                     <button
                       className={`btn btn-ghost btn-sm terminal-create-btn terminal-tool-btn ${contentTab === 'network' ? 'active' : ''}`}
                       onClick={() => setContentTab(contentTab === 'network' ? 'terminal' : 'network')}
@@ -6719,7 +6734,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               />
                             </div>
                           )}
-                          {s.status === 'connected' && mountedSessions.has(s.id) && !s.isSerial && (
+                          {s.status === 'connected' && mountedSessions.has(s.id) && !s.isSerial && !isUnsupportedMonitorSession(s) && (
                             <div style={{ display: contentTab === 'process' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
                               <ProcessPage
                                 sessionId={s.id}
@@ -6728,7 +6743,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               />
                             </div>
                           )}
-                          {s.status === 'connected' && mountedSessions.has(s.id) && !s.isSerial && (
+                          {s.status === 'connected' && mountedSessions.has(s.id) && !s.isSerial && !isUnsupportedMonitorSession(s) && (
                             <div style={{ display: contentTab === 'network' ? 'flex' : 'none', height: '100%', flex: 1, minWidth: 0, minHeight: 0 }}>
                               <NetworkPage
                                 sessionId={s.id}
