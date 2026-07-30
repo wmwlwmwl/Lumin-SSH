@@ -14,13 +14,33 @@ import (
 )
 
 // wslPathMapper returns a path mapper that translates SFTP Unix-style paths to
-// Windows UNC paths for a WSL distro: /home/user -> \\wsl.localhost\Ubuntu\home\user
+// OS-native paths for a WSL distro:
+//   - /home/user -> \\wsl.localhost\Ubuntu\home\user  (the WSL ext4 filesystem, via UNC)
+//   - /mnt/d/foo -> D:\foo                            (a drvfs-mounted Windows drive)
+//
+// drvfs mount points (e.g. /mnt/d) are NOT reachable via \\wsl.localhost\Ubuntu\mnt\d
+// (that UNC path does not exist); they are the host's own drive letters, so they map
+// directly to <drive>:\. Only single-letter mount names are treated as drives; other
+// /mnt entries fall back to the UNC path.
 func wslPathMapper(distro string) func(string) string {
 	uncBase := `\\wsl.localhost\` + distro
 	return func(sftpPath string) string {
 		rel := strings.TrimPrefix(sftpPath, "/")
 		if rel == "" {
 			return uncBase + `\`
+		}
+		// /mnt/<drive-letter>[/<rest>] -> <drive-letter>:\[<rest>]
+		if strings.HasPrefix(rel, "mnt/") {
+			rest := rel[len("mnt/"):]
+			parts := strings.SplitN(rest, "/", 2)
+			name := parts[0]
+			if len(name) == 1 {
+				drive := strings.ToUpper(name) + ":"
+				if len(parts) == 1 || parts[1] == "" {
+					return drive + `\`
+				}
+				return drive + `\` + filepath.FromSlash(parts[1])
+			}
 		}
 		return uncBase + `\` + filepath.FromSlash(rel)
 	}

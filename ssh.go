@@ -3705,6 +3705,18 @@ func (m *SSHManager) CopyItemContext(ctx context.Context, sessionId string, srcP
 	if isDangerousPath(srcPath) || isDangerousPath(dstPath) {
 		return fmt.Errorf("refusing to copy dangerous path")
 	}
+	// Local sessions (WSL/PowerShell) have an embedded SFTP-only server with no
+	// shell channel, so cp -a would fail. Copy via SFTP instead.
+	m.mu.RLock()
+	sd, hasSd := m.sessions[sessionId]
+	m.mu.RUnlock()
+	if hasSd && sd.IsLocal {
+		sftpClient, err := m.getSFTPClient(sessionId)
+		if err != nil {
+			return err
+		}
+		return copyViaSFTP(sftpClient, srcPath, dstPath)
+	}
 	client, _, err := m.getClientEntry(sessionId)
 	if err != nil {
 		return err
@@ -3729,6 +3741,22 @@ func (m *SSHManager) MoveItemContext(ctx context.Context, sessionId string, srcP
 	}
 	if isDangerousPath(srcPath) || isDangerousPath(dstPath) {
 		return fmt.Errorf("refusing to move dangerous path")
+	}
+	// Local sessions (WSL/PowerShell) have an embedded SFTP-only server with no
+	// shell channel, so mv would fail. Move via SFTP Rename instead.
+	m.mu.RLock()
+	sd, hasSd := m.sessions[sessionId]
+	m.mu.RUnlock()
+	if hasSd && sd.IsLocal {
+		sftpClient, err := m.getSFTPClient(sessionId)
+		if err != nil {
+			return err
+		}
+		// Prefer PosixRename (atomic); fall back to Rename if unsupported.
+		if err := sftpClient.PosixRename(srcPath, dstPath); err != nil {
+			return sftpClient.Rename(srcPath, dstPath)
+		}
+		return nil
 	}
 	client, _, err := m.getClientEntry(sessionId)
 	if err != nil {
