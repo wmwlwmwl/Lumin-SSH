@@ -90,8 +90,12 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	cptyEnv := os.Environ()
 
 	if isWSL {
-		commandLine = fmt.Sprintf("wsl.exe -d %s", distroName)
-		cmd = exec.Command("wsl.exe", "-d", distroName)
+		// Launch an interactive login bash that first cds to $HOME, so the session
+		// starts in the WSL user's home dir rather than the Windows working dir
+		// (wsl.exe otherwise inherits /mnt/c/... from the host CWD). The
+		// PROMPT_COMMAND hook arrives via WSLENV, unaffected by this command line.
+		commandLine = fmt.Sprintf("wsl.exe -d %s -- bash -lc \"cd; exec bash -il\"", distroName)
+		cmd = exec.Command("wsl.exe", "-d", distroName, "--", "bash", "-lc", "cd; exec bash -il")
 		cptyEnv = append(cptyEnv,
 			"PROMPT_COMMAND="+wslPromptCommandHook(),
 			// WSLENV forwards the Windows-side PROMPT_COMMAND into WSL ('/u' = path-style unset, plain var).
