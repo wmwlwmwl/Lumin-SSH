@@ -964,8 +964,14 @@ func (m *SSHManager) pipeLocalOutput(sessionId string, cptyHandle any, stdoutPip
 			}
 
 			m.mu.RLock()
-			oscParser := m.sessions[sessionId].OSCCwdParser
+			// Disconnect removes the session from the map; guard against the
+			// pipe goroutine still reading after teardown (nil map value panic).
+			curSd, hasSd := m.sessions[sessionId]
 			m.mu.RUnlock()
+			if !hasSd {
+				return
+			}
+			oscParser := curSd.OSCCwdParser
 
 			var data []byte
 			if oscParser != nil {
