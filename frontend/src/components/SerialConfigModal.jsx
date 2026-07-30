@@ -100,7 +100,7 @@ export default function SerialConfigModal({ onClose, onConnect }) {
                 onChange={(e) => setForm({ ...form, baudRate: parseInt(e.target.value) })}
                 style={{ width: '100%' }}
               >
-                {[115200, 9600, 57600, 38400, 19200, 9600, 4800, 2400, 1200].map((b) => (
+                {[1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200].map((b) => (
                   <option key={b} value={b}>
                     {b}
                   </option>
