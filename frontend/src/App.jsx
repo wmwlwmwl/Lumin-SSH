@@ -3554,11 +3554,14 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
         );
         setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+        // 与 SSH 连接保持一致：连接成功后查询静态信息并自动启用系统监控。
+        // postConnectSetup 内部对 serverId 相关调用有兜底，本地 serverId 无副作用。
+        void postConnectSetup(sessionId, newSession.serverId);
       })
       .catch((err) => {
         handleConnectError(sessionId, err);
       });
-  }, [handleConnectError, markWorkspaceRestoreNavigationOverride]);
+  }, [handleConnectError, markWorkspaceRestoreNavigationOverride, postConnectSetup]);
 
   const connectSerial = useCallback((config) => {
     markWorkspaceRestoreNavigationOverride();
