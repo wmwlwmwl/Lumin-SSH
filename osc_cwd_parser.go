@@ -18,8 +18,8 @@ import (
 // The parser is stateful across Process() calls because a marker may be split
 // across multiple reads.
 type oscCwdParser struct {
-	mu       sync.Mutex
-	carry    []byte // bytes held back because they may be the start of a marker
+	mu    sync.Mutex
+	carry []byte // bytes held back because they may be the start of a marker
 }
 
 // OSC 733 framing: "\x1b]733;" <payload> "\x07" (BEL) or "\x1b\\" (ST).

@@ -63,6 +63,7 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		LocalPTYUnix: ptyFile,
 		Stdin:        ptyFile,
 		Cmd:          cmd,
+		ShellPath:    shellPath,
 		PromptReady:  true,
 	}
 
@@ -92,21 +93,12 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		a.sshManager.disconnectAndNotify(sessionId)
 	}()
 
-	// Pipe output from local pty file to WebSocket
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := ptyFile.Read(buf)
-			if n > 0 {
-				data := make([]byte, n)
-				copy(data, buf[:n])
-				a.WriteWsOutput(sessionId, data)
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
+	// Pipe output from local pty file to WebSocket. Reuses pipeLocalOutput (the
+	// same path as Windows) so the per-session output taps stay fed (AI command
+	// execution captures output via these taps) and teardown is guarded against
+	// a trailing read after Disconnect. Unix sessions set no OSCCwdParser, so the
+	// parser branch is skipped and this behaves as a plain passthrough.
+	a.sshManager.pipeLocalOutput(sessionId, ptyFile, nil)
 
 	return nil
 }

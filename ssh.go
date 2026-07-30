@@ -91,15 +91,15 @@ type SessionData struct {
 	CurrentCwd          string
 	PromptReady         bool
 	// Local terminal & Serial support
-	IsLocal             bool
-	IsSerial            bool
-	LocalPTYWindows     any
-	LocalPTYUnix        *os.File
-	SerialPort          io.ReadWriteCloser
-	Cmd                 *exec.Cmd
-	WSLDistro           string
-	LocalSFTPSrv        *localSFTPServer // embedded SFTP server; non-nil when file manager is available
-	OSCCwdParser        *oscCwdParser    // WSL-only: parses ESC]733;<b64>BEL CWD markers from the ConPTY stream
+	IsLocal         bool
+	IsSerial        bool
+	LocalPTYWindows any
+	LocalPTYUnix    *os.File
+	SerialPort      io.ReadWriteCloser
+	Cmd             *exec.Cmd
+	WSLDistro       string
+	LocalSFTPSrv    *localSFTPServer // embedded SFTP server; non-nil when file manager is available
+	OSCCwdParser    *oscCwdParser    // WSL-only: parses ESC]733;<b64>BEL CWD markers from the ConPTY stream
 }
 
 type SSHManager struct {
@@ -2583,7 +2583,6 @@ func parseProbeOutput(out string, includeNetworkConnections bool) (map[string]in
 	}, nil
 }
 
-
 // GetFullProcessList 获取服务器上所有进程列表（无 head 限制）
 func (m *SSHManager) GetFullProcessList(sessionId string) ([]map[string]interface{}, error) {
 	// For local sessions run ps directly.
@@ -3348,11 +3347,11 @@ func rmRfCmd(path string) string {
 const remoteCmdLongTimeout = 30 * time.Minute
 
 const (
-	smartUncompressConflictStrategyOverwrite = "overwrite"
+	smartUncompressConflictStrategyOverwrite  = "overwrite"
 	smartUncompressConflictStrategyAutoRename = "auto_rename"
-	smartUncompressConflictStrategyPrompt = "prompt"
-	smartUncompressModeDirect = "direct"
-	smartUncompressModeFolder = "folder"
+	smartUncompressConflictStrategyPrompt     = "prompt"
+	smartUncompressModeDirect                 = "direct"
+	smartUncompressModeFolder                 = "folder"
 )
 
 type smartUncompressPlan struct {
@@ -4023,11 +4022,11 @@ func (m *SSHManager) PreviewSmartUncompressItem(sessionId string, remotePath str
 		return nil, err
 	}
 	return map[string]interface{}{
-		"mode":        plan.Mode,
-		"reason":      plan.Reason,
-		"targetName":  plan.TargetName,
-		"targetPath":  plan.TargetPath,
-		"targetKind":  plan.TargetKind,
+		"mode":         plan.Mode,
+		"reason":       plan.Reason,
+		"targetName":   plan.TargetName,
+		"targetPath":   plan.TargetPath,
+		"targetKind":   plan.TargetKind,
 		"targetExists": plan.TargetExists,
 	}, nil
 }
