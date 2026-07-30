@@ -63,6 +63,8 @@ func (a *App) connectSerial(sessionId string, name string, portName string, baud
 		PromptReady: true,
 	}
 
+	// 重连复用同一 sessionId：覆盖会话映射。正常断开路径已由 disconnectAndNotify
+	// 清理旧条目并关闭旧串口、退出旧读循环，因此这里直接覆盖即可。
 	a.sshManager.mu.Lock()
 	a.sshManager.sessions[sessionId] = sd
 	a.sshManager.mu.Unlock()

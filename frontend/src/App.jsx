@@ -2737,9 +2737,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       setConnectingServers((prev) => [...prev, { server: serverObj, sessionId: session.id, startTime: Date.now() }]);
       try {
         await window.go.main.App.ConnectLocal(session.id, session.serverName, session.shellPath, '');
+        // 本地/串口复用同一 sessionId 重连：自增 wsRebuildKey 让 Terminal 重建 WebSocket
         if (!deferState) {
           setSessions((prev) =>
-            prev.map((s) => (s.id === session.id ? { ...s, status: 'connected' } : s))
+            prev.map((s) => (s.id === session.id ? { ...s, status: 'connected', wsRebuildKey: (s.wsRebuildKey || 0) + 1 } : s))
           );
         }
         setConnectingServers((prev) => prev.filter((s) => s.sessionId !== session.id));
@@ -2770,9 +2771,10 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           config.stopBits,
           config.parity
         );
+        // 本地/串口复用同一 sessionId 重连：自增 wsRebuildKey 让 Terminal 重建 WebSocket
         if (!deferState) {
           setSessions((prev) =>
-            prev.map((s) => (s.id === session.id ? { ...s, status: 'connected' } : s))
+            prev.map((s) => (s.id === session.id ? { ...s, status: 'connected', wsRebuildKey: (s.wsRebuildKey || 0) + 1 } : s))
           );
         }
         setConnectingServers((prev) => prev.filter((s) => s.sessionId !== session.id));
@@ -3539,6 +3541,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       terminals: [{ id: sessionId, label: name }],
       isLocal: true,
       shellPath: shellPath,
+      wsRebuildKey: 0,
     };
     const nextSessions = [...sessionsRef.current, newSession];
     sessionsRef.current = nextSessions;
@@ -3576,6 +3579,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       terminals: [{ id: sessionId, label: displayName }],
       isSerial: true,
       serialConfig: config,
+      wsRebuildKey: 0,
     };
     const nextSessions = [...sessionsRef.current, newSession];
     sessionsRef.current = nextSessions;
@@ -4915,6 +4919,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
         host: savedServer.host,
         status: 'connecting',
         terminals: [{ id: sessionId, label: `${t('终端')}1` }],
+        wsRebuildKey: 0,
       };
 
       const nextSessions = [...sessionsRef.current, newSession];
@@ -6639,6 +6644,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                                             showCommands={showQuickCommands && isTermVisible}
                                             onQuickCommandsOpenChange={handleQuickCommandsOpenChange}
                                             quickCmdsRef={quickCmdsRef}
+                                            wsRebuildKey={s.wsRebuildKey || 0}
                                           />
                                         </ErrorBoundary>
                                       </div>
@@ -6668,6 +6674,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                                         showCommands={showQuickCommands && activeSessionId === s.id && activeTerminalId === t.id}
                                         onQuickCommandsOpenChange={handleQuickCommandsOpenChange}
                                         quickCmdsRef={quickCmdsRef}
+                                        wsRebuildKey={s.wsRebuildKey || 0}
                                       />
                                     </ErrorBoundary>
                                   </div>

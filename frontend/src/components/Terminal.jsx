@@ -394,6 +394,9 @@ export default function Terminal({
   showCommands = false,
   onQuickCommandsOpenChange,
   quickCmdsRef,
+  // 重连触发器：串口/本地复用同一 sessionId 重连时，wsRebuildKey 自增，
+  // 让下方建立 xterm+WebSocket 的主 effect 重跑，重建 WS（对齐 SSH 重连靠新 terminalId 触发的行为）。
+  wsRebuildKey = 0,
 }) {
   const { t } = useTranslation();
   const containerRef   = useRef(null);
@@ -1754,7 +1757,7 @@ export default function Terminal({
       }, 0);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, wsRebuildKey]);
 
   // ── 监听字体大小修改事件 ──────────────────────────────────────
   useEffect(() => {
