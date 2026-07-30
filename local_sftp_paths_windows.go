@@ -128,7 +128,9 @@ func wslGetCwd(distro string) (string, error) {
 // localGetCwd returns the current working directory for a Windows local session.
 // For WSL sessions it queries the shell CWD inside WSL; for native Windows
 // shells it returns the user home directory converted to SFTP path format.
-func localGetCwd(s *SessionData) (string, error) {
+// cmd is a locked snapshot of s.Cmd (unused on Windows, which reads WSLDistro).
+func localGetCwd(s *SessionData, cmd *exec.Cmd) (string, error) {
+	_ = cmd
 	if s.WSLDistro != "" {
 		return wslGetCwd(s.WSLDistro)
 	}

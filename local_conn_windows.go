@@ -244,23 +244,31 @@ func wslPromptCommandHook() string {
 
 // ResizeLocal handles Windows ConPTY resizing.
 func (m *SSHManager) ResizeLocal(s *SessionData, cols, rows int) {
-	if s.LocalPTYWindows != nil {
-		if c, ok := s.LocalPTYWindows.(*conpty.ConPty); ok {
-			_ = c.Resize(cols, rows)
-		}
+	// Snapshot under the lock: CloseLocal may nil the field concurrently.
+	m.mu.RLock()
+	ptyAny := s.LocalPTYWindows
+	m.mu.RUnlock()
+	if c, ok := ptyAny.(*conpty.ConPty); ok {
+		_ = c.Resize(cols, rows)
 	}
 }
 
 // CloseLocal kills processes and closes PTY on Windows.
+// Field mutation happens under m.mu so concurrent readers (ResizeLocal, the
+// CWD monitor) never observe a half-nilled session. The actual Close/Kill calls
+// run outside the lock since they may block.
 func (m *SSHManager) CloseLocal(s *SessionData) {
-	if s.LocalPTYWindows != nil {
-		if c, ok := s.LocalPTYWindows.(*conpty.ConPty); ok {
-			_ = c.Close()
-		}
-		s.LocalPTYWindows = nil
+	m.mu.Lock()
+	ptyAny := s.LocalPTYWindows
+	s.LocalPTYWindows = nil
+	cmd := s.Cmd
+	s.Cmd = nil
+	m.mu.Unlock()
+
+	if c, ok := ptyAny.(*conpty.ConPty); ok {
+		_ = c.Close()
 	}
-	if s.Cmd != nil && s.Cmd.Process != nil {
-		_ = s.Cmd.Process.Kill()
-		s.Cmd = nil
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
 	}
 }

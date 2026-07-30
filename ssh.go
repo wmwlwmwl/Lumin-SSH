@@ -1413,7 +1413,7 @@ func (m *SSHManager) GetTerminalCwd(sessionId string) (string, error) {
 	// For local sessions, query OS process tree instead of SSH.
 	if sessionData.IsLocal {
 		m.mu.RUnlock()
-		return getLocalCwdForSession(sessionData)
+		return m.getLocalCwdForSession(sessionData)
 	}
 	m.mu.RUnlock()
 
@@ -1455,12 +1455,17 @@ func (m *SSHManager) GetTerminalCwd(sessionId string) (string, error) {
 
 // getLocalCwdForSession returns the CWD for a local terminal session by
 // querying the OS process tree (platform-specific implementation).
-func getLocalCwdForSession(s *SessionData) (string, error) {
+// It snapshots s.Cmd under the lock because CloseLocal may nil it concurrently
+// (the Unix localGetCwd path reads the shell pid from s.Cmd).
+func (m *SSHManager) getLocalCwdForSession(s *SessionData) (string, error) {
 	if s == nil {
 		home, _ := os.UserHomeDir()
 		return home, nil
 	}
-	return localGetCwd(s)
+	m.mu.RLock()
+	cmd := s.Cmd
+	m.mu.RUnlock()
+	return localGetCwd(s, cmd)
 }
 
 // getLocalFullProcessList returns the process list for a local session.
@@ -1498,7 +1503,7 @@ func (m *SSHManager) StartLocalCwdMonitor(sessionId string) {
 				if !ok || !s.IsLocal || s.RemoteHistoryActive {
 					return
 				}
-				cwd, err := getLocalCwdForSession(s)
+				cwd, err := m.getLocalCwdForSession(s)
 				if err != nil {
 					continue
 				}

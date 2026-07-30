@@ -47,11 +47,13 @@ func getLocalUnixCwd(pid int) (string, error) {
 }
 
 // localGetCwd returns the current working directory for a Unix local session
-// by reading the shell process CWD directly from the OS.
-func localGetCwd(s *SessionData) (string, error) {
-	if s.Cmd == nil || s.Cmd.Process == nil {
+// by reading the shell process CWD directly from the OS. cmd is a locked
+// snapshot of s.Cmd taken by the caller (CloseLocal may nil it concurrently).
+func localGetCwd(s *SessionData, cmd *exec.Cmd) (string, error) {
+	_ = s
+	if cmd == nil || cmd.Process == nil {
 		home, _ := os.UserHomeDir()
 		return home, nil
 	}
-	return getLocalUnixCwd(s.Cmd.Process.Pid)
+	return getLocalUnixCwd(cmd.Process.Pid)
 }

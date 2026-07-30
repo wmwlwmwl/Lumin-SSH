@@ -105,8 +105,12 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 
 // ResizeLocal handles resizing on UNIX platforms.
 func (m *SSHManager) ResizeLocal(s *SessionData, cols, rows int) {
-	if s.LocalPTYUnix != nil {
-		_ = pty.Setsize(s.LocalPTYUnix, &pty.Winsize{
+	// Snapshot under the lock: CloseLocal may nil the field concurrently.
+	m.mu.RLock()
+	ptyFile := s.LocalPTYUnix
+	m.mu.RUnlock()
+	if ptyFile != nil {
+		_ = pty.Setsize(ptyFile, &pty.Winsize{
 			Cols: uint16(cols),
 			Rows: uint16(rows),
 		})
@@ -114,13 +118,21 @@ func (m *SSHManager) ResizeLocal(s *SessionData, cols, rows int) {
 }
 
 // CloseLocal closes the UNIX PTY handle and kills the process.
+// Field mutation happens under m.mu so concurrent readers (ResizeLocal, the
+// CWD monitor's localGetCwd) never observe a half-nulled session. The actual
+// Close/Kill calls run outside the lock since they may block.
 func (m *SSHManager) CloseLocal(s *SessionData) {
-	if s.LocalPTYUnix != nil {
-		_ = s.LocalPTYUnix.Close()
-		s.LocalPTYUnix = nil
+	m.mu.Lock()
+	ptyFile := s.LocalPTYUnix
+	s.LocalPTYUnix = nil
+	cmd := s.Cmd
+	s.Cmd = nil
+	m.mu.Unlock()
+
+	if ptyFile != nil {
+		_ = ptyFile.Close()
 	}
-	if s.Cmd != nil && s.Cmd.Process != nil {
-		_ = s.Cmd.Process.Kill()
-		s.Cmd = nil
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
 	}
 }
