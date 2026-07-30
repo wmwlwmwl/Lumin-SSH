@@ -3,6 +3,8 @@ module luminssh-go
 go 1.26
 
 require (
+	github.com/UserExistsError/conpty v0.1.4
+	github.com/creack/pty v1.1.24
 	github.com/energye/systray v1.0.3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/websocket v1.5.3
@@ -12,6 +14,7 @@ require (
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/studio-b12/gowebdav v0.12.0
 	github.com/wailsapp/wails/v2 v2.12.0
+	go.bug.st/serial v1.7.1
 	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.54.0
 	modernc.org/sqlite v1.53.0

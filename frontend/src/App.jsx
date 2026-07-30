@@ -30,6 +30,7 @@ import { formatUpdateError, useUpdateChecker } from './hooks/useUpdateChecker.js
 import ConnectingCard from './components/ConnectingCard.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import Dashboard from './components/Dashboard.jsx';
+import SerialConfigModal from './components/SerialConfigModal.jsx';
 import ImportExportDialog from './components/ImportExportDialog.jsx';
 import ExportSelectedDialog from './components/ExportSelectedDialog.jsx';
 import Tiptop from './components/Tiptop.jsx';
@@ -486,6 +487,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState('general');
   const [showCredentials, setShowCredentials] = useState(false);
+  const [showSerialModal, setShowSerialModal] = useState(false);
   const [tabContextMenu, setTabContextMenu] = useState(null);
   const [terminalTabContextMenu, setTerminalTabContextMenu] = useState(null);
   useEffect(() => {
@@ -2729,6 +2731,64 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
   const reconnectSession = useCallback(async (session, requestingTerminalId, options = {}) => {
     const deferState = options?.deferState === true;
     updateSessionStatus(session.id, 'connecting');
+
+    if (session.isLocal) {
+      const serverObj = { id: session.serverId, name: session.serverName, host: 'localhost' };
+      setConnectingServers((prev) => [...prev, { server: serverObj, sessionId: session.id, startTime: Date.now() }]);
+      try {
+        await window.go.main.App.ConnectLocal(session.id, session.serverName, session.shellPath, '');
+        if (!deferState) {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === session.id ? { ...s, status: 'connected' } : s))
+          );
+        }
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== session.id));
+        return { oldToNew: { [session.id]: session.id }, newTerminals: session.terminals };
+      } catch (err) {
+        setSessions((prev) =>
+          prev.map((s) => (s.id === session.id ? { ...s, status: 'error' } : s))
+        );
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== session.id));
+        if (!deferState) {
+          addToast(`${t('重新连接失败')}: ${err}`, 'error', 5000);
+        }
+        return null;
+      }
+    }
+
+    if (session.isSerial) {
+      const serverObj = { id: session.serverId, name: session.serverName, host: session.serialConfig?.port || '' };
+      setConnectingServers((prev) => [...prev, { server: serverObj, sessionId: session.id, startTime: Date.now() }]);
+      try {
+        const config = session.serialConfig;
+        await window.go.main.App.ConnectSerial(
+          session.id,
+          session.serverName,
+          config.port,
+          config.baudRate,
+          config.dataBits,
+          config.stopBits,
+          config.parity
+        );
+        if (!deferState) {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === session.id ? { ...s, status: 'connected' } : s))
+          );
+        }
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== session.id));
+        return { oldToNew: { [session.id]: session.id }, newTerminals: session.terminals };
+      } catch (err) {
+        setSessions((prev) =>
+          prev.map((s) => (s.id === session.id ? { ...s, status: 'error' } : s))
+        );
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== session.id));
+        if (!deferState) {
+          addToast(`${t('重新连接失败')}: ${err}`, 'error', 5000);
+        }
+        return null;
+      }
+    }
+
     const serverObj = serversRef.current.find((sv) => sv.id === session.serverId);
     if (serverObj) {
       setConnectingServers((prev) => [...prev, { server: serverObj, sessionId: session.id, startTime: Date.now() }]);
@@ -3466,6 +3526,82 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       handleConnectError(sessionId, err);
     }
   }, [fileManagerPosition, handleConnectError, loadServerWorkspaceSessionSnapshot, markWorkspaceRestoreNavigationOverride, postConnectSetup, reconnectSession, recordRecentConnection, rememberWorkspace, resolveSessionContentTab, resolveSessionRootTerminalId, t, workspacePersistenceLevel]);
+
+  const connectLocal = useCallback((name, shellPath) => {
+    markWorkspaceRestoreNavigationOverride();
+    const sessionId = `session_${Date.now()}`;
+    const newSession = {
+      id: sessionId,
+      serverId: `local_${shellPath}`,
+      serverName: name,
+      host: 'localhost',
+      status: 'connecting',
+      terminals: [{ id: sessionId, label: name }],
+      isLocal: true,
+      shellPath: shellPath,
+    };
+    const nextSessions = [...sessionsRef.current, newSession];
+    sessionsRef.current = nextSessions;
+    setSessions(nextSessions);
+    setActiveSessionId(sessionId);
+    setActiveTerminalId(sessionId);
+    setContentTab('terminal');
+    setConnectingServers((prev) => [...prev, { server: { id: newSession.serverId, name: name, host: 'localhost' }, sessionId, startTime: Date.now() }]);
+
+    window.go.main.App.ConnectLocal(sessionId, name, shellPath, '')
+      .then(() => {
+        setSessions((prev) =>
+          prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
+        );
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      })
+      .catch((err) => {
+        handleConnectError(sessionId, err);
+      });
+  }, [handleConnectError, markWorkspaceRestoreNavigationOverride]);
+
+  const connectSerial = useCallback((config) => {
+    markWorkspaceRestoreNavigationOverride();
+    const sessionId = `session_${Date.now()}`;
+    const displayName = `${config.port}@${config.baudRate}`;
+    const newSession = {
+      id: sessionId,
+      serverId: `serial_${config.port}`,
+      serverName: displayName,
+      host: config.port,
+      status: 'connecting',
+      terminals: [{ id: sessionId, label: displayName }],
+      isSerial: true,
+      serialConfig: config,
+    };
+    const nextSessions = [...sessionsRef.current, newSession];
+    sessionsRef.current = nextSessions;
+    setSessions(nextSessions);
+    setActiveSessionId(sessionId);
+    setActiveTerminalId(sessionId);
+    setContentTab('terminal');
+    setConnectingServers((prev) => [...prev, { server: { id: newSession.serverId, name: displayName, host: config.port }, sessionId, startTime: Date.now() }]);
+
+    window.go.main.App.ConnectSerial(
+      sessionId,
+      displayName,
+      config.port,
+      config.baudRate,
+      config.dataBits,
+      config.stopBits,
+      config.parity
+    )
+      .then(() => {
+        setSessions((prev) =>
+          prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
+        );
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      })
+      .catch((err) => {
+        handleConnectError(sessionId, err);
+      });
+  }, [handleConnectError, markWorkspaceRestoreNavigationOverride]);
+
 
   // ── Close session ──────────────────────────────────────────
   // ponytail: 内部关闭逻辑，不带确认弹窗，供 closeSession 和右键菜单共用
@@ -5892,6 +6028,9 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
               if (!prev) return true;
               return false;
             })}
+            onConnectLocal={connectLocal}
+            onConnectSerial={connectSerial}
+            setShowSerialModal={setShowSerialModal}
           />
         </div>
 
@@ -6856,6 +6995,16 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
           onClose={() => { setShowCredentials(false); loadServers(); }}
           onChange={loadServers}
           addToast={addToast}
+        />
+      )}
+
+      {showSerialModal && (
+        <SerialConfigModal
+          onClose={() => setShowSerialModal(false)}
+          onConnect={(config) => {
+            setShowSerialModal(false);
+            connectSerial(config);
+          }}
         />
       )}
 

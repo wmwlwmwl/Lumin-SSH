@@ -1,4 +1,4 @@
-import { BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, RefreshCw, Database, CheckSquare, Folder, FolderOpen, Download, Trash2, X, Plus, History, Clock } from 'lucide-react';
+import { BarChart3, Monitor, Search, LayoutGrid, List, Eye, EyeOff, RefreshCw, Database, CheckSquare, Folder, FolderOpen, Download, Trash2, X, Plus, History, Clock, Terminal } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from '../i18n.js';
 import AddServerModal from './AddServerModal.jsx';
@@ -31,15 +31,31 @@ export default function Dashboard({
   onSelectionModeToggle,
   onBatchExport,
   onExitSelectionMode,
+  onConnectLocal,
+  onConnectSerial,
+  setShowSerialModal,
 }) {
   const { t } = useTranslation();
 
   const [showMoveGroupDropdown, setShowMoveGroupDropdown] = useState(false);
   const [groupSearchQuery, setGroupSearchQuery] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const [localMenuOpen, setLocalMenuOpen] = useState(false);
+  const [localShells, setLocalShells] = useState([]);
   // 'hosts' | 'recent' — 由 App 持有，便于主页 ping 仅在 hosts 时运行
   const hostPageMode = hostPageModeProp === 'recent' ? 'recent' : 'hosts';
   const moveGroupMenuRef = useRef(null);
+  const localMenuRef = useRef(null);
+
+  useEffect(() => {
+    window.go?.main?.App?.GetLocalShells?.()
+      .then((list) => {
+        setLocalShells(list || []);
+      })
+      .catch((err) => {
+        console.error('Failed to load local shells:', err);
+      });
+  }, []);
 
   const switchHostPageMode = (mode) => {
     onHostPageModeChange?.(mode === 'recent' ? 'recent' : 'hosts');
@@ -84,6 +100,9 @@ export default function Dashboard({
     function handleClickOutside(event) {
       if (moveGroupMenuRef.current && !moveGroupMenuRef.current.contains(event.target)) {
         setShowMoveGroupDropdown(false);
+      }
+      if (localMenuRef.current && !localMenuRef.current.contains(event.target)) {
+        setLocalMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -207,6 +226,71 @@ export default function Dashboard({
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+              {/* 本地连接 / 串口 快速连接下拉菜单 */}
+              <div ref={localMenuRef} style={{ position: 'relative' }}>
+                <Tiptop text={t('本地终端 & 串口')} placement="bottom">
+                  <button
+                    className={`btn btn-ghost btn-icon${localMenuOpen ? ' active' : ''}`}
+                    onClick={() => setLocalMenuOpen(prev => !prev)}
+                    aria-label={t('本地连接')}
+                    aria-pressed={localMenuOpen}
+                  >
+                    <Terminal size={14} />
+                  </button>
+                </Tiptop>
+                {localMenuOpen && (
+                  <div
+                    className="context-menu"
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: 4,
+                      zIndex: 1000,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      minWidth: 200,
+                      padding: '6px 8px',
+                    }}
+                  >
+                    <div style={{ padding: '2px 4px 6px 4px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', marginBottom: 6 }}>
+                      {t('选择本地终端或串口')}
+                    </div>
+                    {localShells.map((sh) => {
+                      const displayName = sh.startsWith('wsl://') 
+                        ? `WSL - ${sh.slice(6)}` 
+                        : sh === 'powershell.exe' 
+                        ? 'PowerShell' 
+                        : sh === 'cmd.exe' 
+                        ? 'Command Prompt' 
+                        : sh;
+                      return (
+                        <div
+                          key={sh}
+                          className="context-menu-item"
+                          onClick={() => {
+                            setLocalMenuOpen(false);
+                            onConnectLocal?.(displayName, sh);
+                          }}
+                        >
+                          {displayName}
+                        </div>
+                      );
+                    })}
+                    <div className="context-menu-divider" style={{ margin: '4px 0' }} />
+                    <div
+                      className="context-menu-item"
+                      onClick={() => {
+                        setLocalMenuOpen(false);
+                        setShowSerialModal?.(true);
+                      }}
+                    >
+                      {t('串口终端...')}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {hostPageMode === 'hosts' ? (
                 <>
                   {/* 选择模式开关 */}

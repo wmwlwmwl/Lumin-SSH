@@ -778,6 +778,26 @@ func (a *App) ResizeTerminal(sessionId string, cols, rows int) {
 	a.sshManager.Resize(sessionId, cols, rows)
 }
 
+// GetLocalShells lists detected shells on the local system.
+func (a *App) GetLocalShells() ([]string, error) {
+	return a.getLocalShells()
+}
+
+// ListSerialPorts returns the list of available serial port names.
+func (a *App) ListSerialPorts() ([]string, error) {
+	return a.listSerialPorts()
+}
+
+// ConnectLocal spawns a local command process and pipes it to the WebSocket path.
+func (a *App) ConnectLocal(sessionId string, name string, shellPath string, cwd string) error {
+	return a.connectLocal(sessionId, name, shellPath, cwd)
+}
+
+// ConnectSerial connects to a local serial port and pipes it to the WebSocket path.
+func (a *App) ConnectSerial(sessionId string, name string, portName string, baudRate int, dataBits int, stopBits float64, parity string) error {
+	return a.connectSerial(sessionId, name, portName, baudRate, dataBits, stopBits, parity)
+}
+
 // SystemInfo retrieves basic system probe info
 func (a *App) SystemInfo(sessionId string) (map[string]interface{}, error) {
 	return a.sshManager.GetSystemInfo(sessionId)
