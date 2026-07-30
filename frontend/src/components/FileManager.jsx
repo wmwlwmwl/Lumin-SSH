@@ -4272,6 +4272,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       activeTabId: nextTab.id,
       tabs: [...(Array.isArray(current?.tabs) ? current.tabs : []), nextTab],
     }));
+    // 同步更新 ref：activeFileManagerTabIdRef 依赖 React 重渲染才从 prop 同步，
+    // 但下方 loadDir 在 ListDir 返回时即调用 canApplyResult 校验 targetTabId 与
+    // activeFileManagerTabIdRef 是否一致；若不在此同步，新标签的首次加载结果会因
+    // ref 仍指向旧标签而被判定 tab-mismatch 丢弃（终端 cd 后文件管理器不刷新）。
+    activeFileManagerTabIdRef.current = nextTab.id;
+    displayedTabIdRef.current = nextTab.id;
     setSortField(nextTab.sortField);
     setSortDir(nextTab.sortDir);
     // 仅在已 hydrate 且当前列表就是目标路径时跳过网络请求；未 hydrate 时必须 ListDir
