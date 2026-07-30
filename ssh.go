@@ -52,8 +52,10 @@ const (
 	postAuthSlowNoticeTimeout = 10 * time.Second
 	postAuthChannelTimeout    = 30 * time.Second
 	sftpInitWaitTimeout       = 5 * time.Second
-	sshKeepaliveInterval      = 5 * time.Second
-	sshKeepaliveTimeout       = 10 * time.Second
+	// 保活略松：单次超时不立刻拆线，连续失败达阈值才清理共享连接。
+	sshKeepaliveInterval = 15 * time.Second
+	sshKeepaliveTimeout  = 20 * time.Second
+	sshKeepaliveFailMax  = 3
 )
 
 // PendingHostKey 保存等待用户确认的主机密钥变更信息
@@ -439,7 +441,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			go m.watchClient(connKey, client)
 			go func() {
 				_ = client.Wait()
-				m.cleanupClientTransport(connKey, client)
+				m.cleanupClientTransport(connKey, client, "transport")
 			}()
 		}
 	}
@@ -602,7 +604,7 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 	go m.pipeOutput(sessionId, stderr, nil)
 	go func() {
 		_ = session.Wait()
-		m.disconnectAndNotify(sessionId)
+		m.disconnectAndNotify(sessionId, "session_end")
 	}()
 
 	return nil
@@ -641,19 +643,44 @@ func (m *SSHManager) initSFTPClient(sessionId string, connKey string, conn Conne
 func (m *SSHManager) watchClient(connKey string, client *ssh.Client) {
 	ticker := time.NewTicker(sshKeepaliveInterval)
 	defer ticker.Stop()
+	fails := 0
 	for range ticker.C {
-		if !m.checkClientKeepalive(connKey, client, sshKeepaliveTimeout) {
+		tracked, probeOK := m.checkClientKeepalive(connKey, client, sshKeepaliveTimeout)
+		var stop bool
+		fails, stop = m.handleKeepaliveProbeResult(connKey, client, fails, tracked, probeOK)
+		if stop {
 			return
 		}
 	}
 }
 
-func (m *SSHManager) checkClientKeepalive(connKey string, client *ssh.Client, timeout time.Duration) bool {
+// handleKeepaliveProbeResult 根据单次探活结果更新连续失败计数。
+// 返回 (新失败次数, 是否结束 watch)。达 sshKeepaliveFailMax 才拆共享连接。
+func (m *SSHManager) handleKeepaliveProbeResult(connKey string, client *ssh.Client, fails int, tracked, probeOK bool) (int, bool) {
+	if !tracked {
+		return fails, true
+	}
+	if probeOK {
+		return 0, false
+	}
+	fails++
+	if fails >= sshKeepaliveFailMax {
+		m.cleanupClientTransport(connKey, client, "keepalive")
+		return fails, true
+	}
+	return fails, false
+}
+
+// checkClientKeepalive 发起一次 SSH 层探活。
+// tracked=false：该 client 已不在 map（停止 watch，勿重复 cleanup）。
+// tracked=true 且 probeOK=true：通路正常（含服务端拒绝未知 keepalive 名但仍有响应）。
+// tracked=true 且 probeOK=false：超时或传输错误——不在此处拆线，由 watch 累计失败。
+func (m *SSHManager) checkClientKeepalive(connKey string, client *ssh.Client, timeout time.Duration) (tracked bool, probeOK bool) {
 	m.mu.RLock()
 	entry, ok := m.clients[connKey]
 	if !ok || entry.Client != client || entry.NetConn == nil {
 		m.mu.RUnlock()
-		return false
+		return false, false
 	}
 	m.mu.RUnlock()
 
@@ -672,15 +699,49 @@ func (m *SSHManager) checkClientKeepalive(connKey string, client *ssh.Client, ti
 			current, currentOK := m.clients[connKey]
 			alive := currentOK && current.Client == client
 			m.mu.RUnlock()
-			return alive
+			if !alive {
+				return false, false
+			}
+			return true, true
 		}
+		// 有响应但 request 失败（如未知类型被拒）：golang.org/x/crypto/ssh 对 want-reply
+		// 被拒通常仍 err==nil 且 reply=false；若将来变成 err，仍视为通路可达。
+		m.mu.RLock()
+		current, currentOK := m.clients[connKey]
+		alive := currentOK && current.Client == client
+		m.mu.RUnlock()
+		if !alive {
+			return false, false
+		}
+		// 传输层错误（连接已断）→ 计失败；纯协议拒绝在 SendRequest 成功路径已覆盖。
+		if isSSHKeepaliveTransportError(err) {
+			return true, false
+		}
+		return true, true
 	case <-timer.C:
+		m.mu.RLock()
+		current, currentOK := m.clients[connKey]
+		alive := currentOK && current.Client == client
+		m.mu.RUnlock()
+		if !alive {
+			return false, false
+		}
+		return true, false
 	}
-	m.cleanupClientTransport(connKey, client)
-	return false
 }
 
-func (m *SSHManager) cleanupClientTransport(connKey string, client *ssh.Client) {
+func isSSHKeepaliveTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// 连接已死、reset、EOF 等：算探活失败。其它错误偏协议层，保守当通路仍在。
+	return isTransientNetError(err) ||
+		errors.Is(err, io.EOF) ||
+		strings.Contains(err.Error(), "connection lost") ||
+		strings.Contains(err.Error(), "use of closed network connection")
+}
+
+func (m *SSHManager) cleanupClientTransport(connKey string, client *ssh.Client, reason string) {
 	m.mu.Lock()
 	entry, ok := m.clients[connKey]
 	if !ok || entry.Client != client {
@@ -699,22 +760,94 @@ func (m *SSHManager) cleanupClientTransport(connKey string, client *ssh.Client) 
 	delete(m.probeFailed, connKey)
 	m.mu.Unlock()
 
+	if reason == "" {
+		reason = "transport"
+	}
 	if netConn != nil {
 		_ = netConn.Close()
 	}
+	// 静默拆各终端 session，再发一次「整机连接断开」事件，避免 N 次误报
+	parentSessionId := ""
 	for _, terminalId := range terminalIds {
-		m.disconnectAndNotify(terminalId)
+		if parentSessionId == "" {
+			parentSessionId = m.sessionParentID(terminalId)
+		}
+		_ = m.Disconnect(terminalId)
 	}
 	if sftpClient != nil {
 		closeWithTimeout(sftpClient, 3*time.Second)
 	}
 	closeWithTimeout(client, 3*time.Second)
+
+	if m.ctx != nil && len(terminalIds) > 0 {
+		if parentSessionId == "" {
+			parentSessionId = terminalIds[0]
+		}
+		runtime.EventsEmit(m.ctx, "ssh-disconnected", map[string]interface{}{
+			"sessionId":         terminalIds[0],
+			"parentSessionId":   parentSessionId,
+			"terminalIds":       terminalIds,
+			"reason":            reason,
+			"connectionClosed":  true,
+		})
+	}
 }
 
-func (m *SSHManager) disconnectAndNotify(sessionId string) {
-	if m.Disconnect(sessionId) && m.ctx != nil {
-		runtime.EventsEmit(m.ctx, "ssh-disconnected", sessionId)
+// sessionParentID 返回前端 tab 用的父会话 id（子终端用 GroupSessionId）。
+func (m *SSHManager) sessionParentID(sessionId string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.sessions[sessionId]; ok {
+		if s.GroupSessionId != "" {
+			return s.GroupSessionId
+		}
+		return sessionId
 	}
+	return sessionId
+}
+
+// disconnectAndNotify 结束单个 terminal 并通知前端。
+// reason=session_end：shell 正常/异常退出；connectionClosed 表示是否同时拆掉了共享 TCP。
+func (m *SSHManager) disconnectAndNotify(sessionId string, reason string) {
+	if reason == "" {
+		reason = "session_end"
+	}
+	parentSessionId := m.sessionParentID(sessionId)
+
+	m.mu.RLock()
+	s, ok := m.sessions[sessionId]
+	connKey := ""
+	terminalsBefore := 0
+	if ok {
+		connKey = s.ConnKey
+		terminalsBefore = len(m.connTerminals[connKey])
+	}
+	m.mu.RUnlock()
+
+	if !m.Disconnect(sessionId) {
+		return
+	}
+	if m.ctx == nil {
+		return
+	}
+
+	connectionClosed := false
+	if ok && connKey != "" {
+		m.mu.RLock()
+		_, clientAlive := m.clients[connKey]
+		terminalsAfter := len(m.connTerminals[connKey])
+		m.mu.RUnlock()
+		// 断开前是该连接上最后一个终端，或 client 已不在
+		connectionClosed = !clientAlive || (terminalsBefore > 0 && terminalsAfter == 0)
+	}
+
+	runtime.EventsEmit(m.ctx, "ssh-disconnected", map[string]interface{}{
+		"sessionId":        sessionId,
+		"parentSessionId":  parentSessionId,
+		"terminalIds":      []string{sessionId},
+		"reason":           reason,
+		"connectionClosed": connectionClosed,
+	})
 }
 
 func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *commandHistoryStream) {

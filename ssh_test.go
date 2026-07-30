@@ -114,7 +114,7 @@ func newTestSSHClient(t *testing.T, reply *bool) (*ssh.Client, net.Conn) {
 	return client, clientConn
 }
 
-func TestClientKeepaliveTimeoutCleansSharedConnection(t *testing.T) {
+func TestClientKeepaliveTimeoutDoesNotCleanOnSingleFailure(t *testing.T) {
 	client, netConn := newTestSSHClient(t, nil)
 	manager := NewSSHManager()
 	manager.clients["server"] = &sshClientEntry{Client: client, NetConn: netConn}
@@ -123,15 +123,64 @@ func TestClientKeepaliveTimeoutCleansSharedConnection(t *testing.T) {
 	manager.sessions["terminal-2"] = &SessionData{ConnKey: "server"}
 
 	started := time.Now()
-	if manager.checkClientKeepalive("server", client, 50*time.Millisecond) {
-		t.Fatal("无响应的保活不应被判定为存活")
-	}
+	tracked, probeOK := manager.checkClientKeepalive("server", client, 50*time.Millisecond)
 	if time.Since(started) > time.Second {
 		t.Fatal("保活超时未在限定时间内结束")
+	}
+	if !tracked || probeOK {
+		t.Fatalf("无响应超时应 tracked=true probeOK=false，实际 tracked=%v probeOK=%v", tracked, probeOK)
+	}
+	fails, stop := manager.handleKeepaliveProbeResult("server", client, 0, tracked, probeOK)
+	if stop || fails != 1 {
+		t.Fatalf("单次失败不应拆线: fails=%d stop=%v", fails, stop)
+	}
+	if len(manager.clients) != 1 || len(manager.sessions) != 2 {
+		t.Fatalf("单次超时不应清理连接: clients=%d sessions=%d", len(manager.clients), len(manager.sessions))
+	}
+}
+
+func TestClientKeepaliveConsecutiveFailuresCleanSharedConnection(t *testing.T) {
+	client, netConn := newTestSSHClient(t, nil)
+	manager := NewSSHManager()
+	manager.clients["server"] = &sshClientEntry{Client: client, NetConn: netConn}
+	manager.connTerminals["server"] = []string{"terminal-1", "terminal-2"}
+	manager.sessions["terminal-1"] = &SessionData{ConnKey: "server"}
+	manager.sessions["terminal-2"] = &SessionData{ConnKey: "server"}
+
+	fails := 0
+	for i := 0; i < sshKeepaliveFailMax; i++ {
+		tracked, probeOK := manager.checkClientKeepalive("server", client, 50*time.Millisecond)
+		if !tracked || probeOK {
+			t.Fatalf("第 %d 次超时期望 tracked=true probeOK=false", i+1)
+		}
+		var stop bool
+		fails, stop = manager.handleKeepaliveProbeResult("server", client, fails, tracked, probeOK)
+		if i < sshKeepaliveFailMax-1 {
+			if stop {
+				t.Fatalf("第 %d 次失败不应结束 watch", i+1)
+			}
+			continue
+		}
+		if !stop || fails < sshKeepaliveFailMax {
+			t.Fatalf("达到失败阈值应拆线: fails=%d stop=%v", fails, stop)
+		}
 	}
 	if len(manager.clients) != 0 || len(manager.connTerminals) != 0 || len(manager.sessions) != 0 {
 		t.Fatalf("连接清理不完整: clients=%d terminals=%d sessions=%d", len(manager.clients), len(manager.connTerminals), len(manager.sessions))
 	}
+}
+
+func TestHandleKeepaliveProbeResultResetsOnSuccess(t *testing.T) {
+	manager := NewSSHManager()
+	fails, stop := manager.handleKeepaliveProbeResult("server", nil, 2, true, true)
+	if stop || fails != 0 {
+		t.Fatalf("探活成功应清零失败计数: fails=%d stop=%v", fails, stop)
+	}
+	fails, stop = manager.handleKeepaliveProbeResult("server", nil, 1, false, false)
+	if !stop {
+		t.Fatal("未跟踪的 client 应结束 watch")
+	}
+	_ = fails
 }
 
 func TestClientKeepaliveRejectionKeepsConnection(t *testing.T) {
@@ -142,8 +191,13 @@ func TestClientKeepaliveRejectionKeepsConnection(t *testing.T) {
 	manager.connTerminals["server"] = []string{"terminal"}
 	manager.sessions["terminal"] = &SessionData{ConnKey: "server"}
 
-	if !manager.checkClientKeepalive("server", client, time.Second) {
-		t.Fatal("服务端拒绝未知保活请求仍应证明 SSH 传输存活")
+	tracked, probeOK := manager.checkClientKeepalive("server", client, time.Second)
+	if !tracked || !probeOK {
+		t.Fatalf("服务端拒绝未知保活请求仍应证明 SSH 传输存活: tracked=%v probeOK=%v", tracked, probeOK)
+	}
+	fails, stop := manager.handleKeepaliveProbeResult("server", client, 2, tracked, probeOK)
+	if stop || fails != 0 {
+		t.Fatalf("成功探活后不应拆线: fails=%d stop=%v", fails, stop)
 	}
 	if manager.clients["server"].Client != client || manager.sessions["terminal"] == nil {
 		t.Fatal("成功收到保活响应后不应清理连接")
@@ -183,7 +237,7 @@ func TestStaleClientCleanupKeepsReplacement(t *testing.T) {
 	manager.connTerminals["server"] = []string{"terminal"}
 	manager.sessions["terminal"] = &SessionData{ConnKey: "server"}
 
-	manager.cleanupClientTransport("server", oldClient)
+	manager.cleanupClientTransport("server", oldClient, "transport")
 	if manager.clients["server"].Client != newClient || manager.sessions["terminal"] == nil {
 		t.Fatal("旧连接的迟到清理不应删除快速重连后的新连接")
 	}

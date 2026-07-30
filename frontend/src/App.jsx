@@ -2734,6 +2734,13 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
       setConnectingServers((prev) => [...prev, { server: serverObj, sessionId: session.id, startTime: Date.now() }]);
     }
     try {
+      // 先拆旧 SSH（保留前端 terminals 列表用于恢复），避免脏 connTerminals / 重复登记
+      const priorTerminals = session.terminals?.length
+        ? session.terminals
+        : [{ id: session.id }];
+      const disconnectIds = new Set([session.id, ...priorTerminals.map((term) => term.id).filter(Boolean)]);
+      await Promise.all([...disconnectIds].map((id) => AppGo.DisconnectSSH(id).catch(() => {})));
+
       await AppGo.ConnectSSH(session.id, session.serverId);
 
       const savedTerminals = session.terminals?.length > 0 ? session.terminals : [{ id: session.id, label: `${t('终端')}1` }];
@@ -2984,30 +2991,59 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     });
   }, [rememberWorkspace, rememberWorkspaceLoaded, reconnectSession, resolveSessionRootTerminalId, serversLoaded, t]);
 
-  // ── 监听 SSH 意外断开事件 ────────────────────────────────────
+  // ── 监听 SSH 断开事件（整机意外断 vs 单终端结束）────────────────
   useEffect(() => {
-    const unbind = EventsOn('ssh-disconnected', (sessionId) => {
+    const unbind = EventsOn('ssh-disconnected', (payload) => {
+      // 兼容旧版纯 string sessionId
+      const data = (payload && typeof payload === 'object')
+        ? payload
+        : { sessionId: payload, parentSessionId: payload, connectionClosed: true, reason: 'transport' };
+      const sessionId = data.sessionId;
+      const parentSessionId = data.parentSessionId || sessionId;
+      const connectionClosed = data.connectionClosed !== false && data.connectionClosed !== 'false';
+      const reason = data.reason || '';
+      const endedTerminalIds = Array.isArray(data.terminalIds) && data.terminalIds.length
+        ? data.terminalIds
+        : (sessionId ? [sessionId] : []);
+
       const sessionList = sessionsRef.current;
-      const matchedSession = sessionList.find((item) => item.id === sessionId)
-        || sessionList.find((item) => item.terminals?.some((terminal) => terminal.id === sessionId))
+      const matchedSession = sessionList.find((item) => item.id === parentSessionId || item.id === sessionId)
+        || sessionList.find((item) => item.terminals?.some((terminal) => terminal.id === sessionId || terminal.id === parentSessionId || endedTerminalIds.includes(terminal.id)))
         || null;
-      setSessions((prev) => {
-        const serverSession = prev.find(s => s.id === sessionId);
-        if (serverSession) {
-          return prev.map((s) => (s.id === sessionId ? { ...s, status: 'closed' } : s));
+      if (!matchedSession) {
+        return;
+      }
+      const parentId = matchedSession.id;
+
+      const transportDead = reason === 'transport' || reason === 'keepalive';
+      if (connectionClosed || transportDead) {
+        setSessions((prev) => prev.map((s) => (s.id === parentId ? { ...s, status: 'closed' } : s)));
+        // 仅传输/保活导致的整机断开视为「意外」；最后一终端正常 exit 只标 closed，不误报
+        if (transportDead) {
+          addToast(t('SSH 连接已意外断开'), 'error', 4000);
         }
-        const parent = prev.find(s => s.terminals?.some(t => t.id === sessionId));
-        if (parent) {
-          return prev.map((s) => (s.id === parent.id ? { ...s, status: 'closed' } : s));
+        return;
+      }
+
+      // 单终端 channel 结束：只移除该终端；若已无终端再标 closed
+      setSessions((prev) => prev.map((s) => {
+        if (s.id !== parentId) return s;
+        const nextTerminals = (s.terminals || []).filter((term) => !endedTerminalIds.includes(term.id));
+        if (nextTerminals.length === 0) {
+          return { ...s, status: 'closed', terminals: [{ id: s.id, label: `${t('终端')}1` }] };
         }
-        return prev;
-      });
-      addToast(t('SSH 连接已意外断开'), 'error', 4000);
+        // 根终端 id 常等于 session.id；若根 shell 结束但子终端还在，保留子终端
+        const stillHasRoot = nextTerminals.some((term) => term.id === s.id);
+        const terminals = stillHasRoot
+          ? nextTerminals
+          : [{ id: s.id, label: nextTerminals[0]?.label || `${t('终端')}1` }, ...nextTerminals.filter((term) => term.id !== s.id)];
+        return { ...s, status: 'connected', terminals };
+      }));
     });
     return () => {
       if (unbind) unbind();
     };
-  }, [addToast]);
+  }, [addToast, t]);
 
   // ── 监听主机密钥变更事件 ────────────────────────────────────
   useEffect(() => {

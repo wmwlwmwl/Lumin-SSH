@@ -191,8 +191,11 @@ func connectionUsesProxy(conn Connection) bool {
 
 func dialConnectionTargetContext(ctx context.Context, conn Connection, target string, timeout time.Duration) (net.Conn, error) {
 	if !connectionUsesProxy(conn) {
-		var d net.Dialer
-		d.Timeout = timeout
+		// 显式 TCP KeepAlive，减轻空闲被 NAT/中间设备静默丢连接。
+		d := net.Dialer{
+			Timeout:   timeout,
+			KeepAlive: 30 * time.Second,
+		}
 		return d.DialContext(ctx, "tcp", target)
 	}
 
@@ -205,8 +208,10 @@ func dialConnectionTargetContext(ctx context.Context, conn Connection, target st
 }
 
 func dialHTTPProxyContext(ctx context.Context, conn Connection, target string, timeout time.Duration) (net.Conn, error) {
-	var d net.Dialer
-	d.Timeout = timeout
+	d := net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+	}
 	proxyTarget := dialAddr(conn.ProxyHost, normalizeConnectionProxyPort(conn.ProxyPort))
 	netConn, err := d.DialContext(ctx, "tcp", proxyTarget)
 	if err != nil {

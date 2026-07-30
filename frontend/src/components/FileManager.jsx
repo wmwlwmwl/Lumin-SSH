@@ -3353,8 +3353,17 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   }, [sessionId, sessionGroupId, currentPath, getUploadSettings, addToast, t, markUploadAborted, openTransferQueueIfNeeded, normalizePath, refreshDirectoryAfterTransfer]);
 
   useEffect(() => {
-    const off = EventsOn('ssh-disconnected', (disconnectedSessionId) => {
-      abortActiveUploadsForSession(disconnectedSessionId, t('已终止'));
+    const off = EventsOn('ssh-disconnected', (payload) => {
+      const data = (payload && typeof payload === 'object')
+        ? payload
+        : { sessionId: payload, terminalIds: payload ? [payload] : [] };
+      const ids = new Set();
+      if (data.sessionId) ids.add(data.sessionId);
+      if (data.parentSessionId) ids.add(data.parentSessionId);
+      if (Array.isArray(data.terminalIds)) {
+        data.terminalIds.forEach((id) => id && ids.add(id));
+      }
+      ids.forEach((id) => abortActiveUploadsForSession(id, t('已终止')));
     });
     return () => {
       off?.();
