@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -101,6 +102,14 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 			// WSLENV forwards the Windows-side PROMPT_COMMAND into WSL ('/u' = path-style unset, plain var).
 			"WSLENV=PROMPT_COMMAND",
 		)
+	} else if isPowerShell(shellPath) {
+		// PowerShell: launch with the prompt hook preloaded via -EncodedCommand so
+		// the shell reports its CWD as OSC 733 markers on every prompt. -NoExit keeps
+		// it interactive. OSCCwdParser (attached below) parses those markers so the
+		// file manager follows cd, without relying on the home-dir polling fallback.
+		encodedHook := base64.StdEncoding.EncodeToString(utf16Encode(powershellPromptHookScript()))
+		commandLine = fmt.Sprintf(`%s -NoLogo -NoExit -EncodedCommand %s`, shellPath, encodedHook)
+		cmd = exec.Command(shellPath, "-NoLogo", "-NoExit", "-EncodedCommand", encodedHook)
 	} else {
 		commandLine = buildCommandLine(shellPath)
 		cmd = exec.Command(shellPath)
@@ -149,8 +158,17 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		sd.RemoteHistoryActive = true
 		sd.OSCCwdParser = newOSCCwdParser()
 		sd.PromptReady = false
+	} else if isPowerShell(shellPath) {
+		// PowerShell emits OSC 733 markers via the injected prompt hook. Parse them
+		// the same way as WSL. NOTE: RemoteHistoryActive is deliberately NOT set — it
+		// would enable the AI command-execution idle gate (ssh_command_exec.go),
+		// which needs a LUMIN_CMD marker stream PowerShell doesn't have, leaving the
+		// session stuck "busy". PromptReady stays true so the gate/busy state is
+		// unaffected; CWD still flows through the OSCCwdParser path independently.
+		sd.OSCCwdParser = newOSCCwdParser()
+		sd.PromptReady = true
 	} else {
-		// PowerShell/CMD: no shell hook available, keep the home-dir fallback.
+		// CMD: no shell hook available, keep the home-dir fallback.
 		sd.PromptReady = true
 	}
 
@@ -240,6 +258,62 @@ func wslPromptCommandHook() string {
 	return `LUMIN_CWD="$(pwd 2>/dev/null | tr -d '\r\n' | base64 | tr -d '\r\n')"; ` +
 		`[ -n "$LUMIN_CWD" ] && printf '\033]733;%s\007' "$LUMIN_CWD"; ` +
 		`[ -n "${LUMIN_OLD_PROMPT_COMMAND:-}" ] && eval "$LUMIN_OLD_PROMPT_COMMAND"`
+}
+
+// powershellPromptHookScript returns the PowerShell script that overrides the
+// `prompt` function so every prompt reports the current directory as an OSC 733
+// marker (ESC]733;<base64>SFTP-path>BEL). This is the PowerShell equivalent of
+// wslPromptCommandHook: it lets pipeLocalOutput (via oscCwdParser) track CWD and
+// drive the file manager's follow, since PowerShell has no /proc/<pid>/cwd to poll.
+//
+// The new prompt chains to the user's pre-existing prompt ScriptBlock (their
+// $PROFILE may customize it), only prepending the marker — so the visible prompt
+// is unchanged. If there is no prior prompt, it falls back to the PS default.
+//
+// The marker payload is the SFTP-style path produced by an in-script equivalent
+// of windowsPathToSFTP (C:\Users\foo -> /c/Users/foo), so it lines up with
+// winPathMapper without any backend-side remapping.
+func powershellPromptHookScript() string {
+	return strings.Join([]string{
+		// Capture the user's prompt (set by their $PROFILE, which runs because we
+		// don't pass -NoProfile). Get-Command returns the default prompt too, so
+		// $__LuminPrevPrompt is normally non-null.
+		`try { $__LuminPrevPrompt = (Get-Command prompt -ErrorAction Stop).ScriptBlock } catch { $__LuminPrevPrompt = $null }`,
+		``,
+		`function prompt {`,
+		`  try {`,
+		`    $loc = (Get-Location).Path`,
+		// Convert drive-letter path to SFTP style (mirrors windowsPathToSFTP).
+		`    if ($loc.Length -ge 2 -and $loc[1] -eq ':') {`,
+		`      $sftp = '/' + $loc[0].ToString().ToLower() + $loc.Substring(2).Replace('\','/')`,
+		`    } else { $sftp = '/' + ($loc -replace '^/','').Replace('\','/') }`,
+		`    $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($sftp))`,
+		// Emit OSC 733 marker; [Console]::Write avoids the trailing newline that
+		// Write-Output would add. ConPTY passes OSC sequences through intact.
+		`    [Console]::Write([char]27 + "]733;" + $b64 + [char]7)`,
+		`  } catch {}`,
+		`  if ($__LuminPrevPrompt) { & $__LuminPrevPrompt } else { "PS $(Get-Location)> " }`,
+		`}`,
+	}, "\r\n")
+}
+
+// utf16Encode converts a UTF-8 Go string to its UTF-16LE little-endian byte
+// representation, the format PowerShell's -EncodedCommand expects.
+func utf16Encode(s string) []byte {
+	runes := []rune(s)
+	codes := utf16.Encode(runes)
+	buf := make([]byte, len(codes)*2)
+	for i, c := range codes {
+		buf[i*2] = byte(c)
+		buf[i*2+1] = byte(c >> 8)
+	}
+	return buf
+}
+
+// isPowerShell reports whether shellPath names a PowerShell executable.
+func isPowerShell(shellPath string) bool {
+	lower := strings.ToLower(shellPath)
+	return strings.Contains(lower, "powershell") || strings.Contains(lower, "pwsh")
 }
 
 // ResizeLocal handles Windows ConPTY resizing.

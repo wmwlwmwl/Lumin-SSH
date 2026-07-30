@@ -1497,10 +1497,12 @@ func (m *SSHManager) StartLocalCwdMonitor(sessionId string) {
 				m.mu.RLock()
 				s, ok := m.sessions[sessionId]
 				m.mu.RUnlock()
-				// WSL sessions report CWD via the PROMPT_COMMAND marker stream
-				// (RemoteHistoryActive + commandHistoryStream), not via polling.
-				// PowerShell/CMD/Unix-local still rely on this poll loop.
-				if !ok || !s.IsLocal || s.RemoteHistoryActive {
+				// Sessions that report CWD via a marker stream (WSL via
+				// RemoteHistoryActive, PowerShell via an OSCCwdParser) are driven by
+				// pipeLocalOutput instead of this poll loop. Without this guard the
+				// poller would overwrite their CurrentCwd with the home-dir fallback.
+				// CMD/Unix-local still rely on this poll loop.
+				if !ok || !s.IsLocal || s.RemoteHistoryActive || s.OSCCwdParser != nil {
 					return
 				}
 				cwd, err := m.getLocalCwdForSession(s)
