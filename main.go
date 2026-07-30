@@ -20,11 +20,13 @@ var assets embed.FS
 //go:embed all:module
 var embeddedModuleFS embed.FS
 
-// forceShowWindow 唤醒隐藏到托盘的窗口。
+// forceShowWindow 唤醒隐藏到托盘/久置最小化的窗口。
 // 不先 Hide 再 Show：久置后 Show 失败会把窗口永久卡在隐藏态。
 // 先走 Wails 恢复，再用平台原生激活抢前台（Windows 久置后 SetForeground 常被拒）。
+// 原生激活放前后各一次：覆盖「仅最小化」和「托盘隐藏」两种状态。
 func forceShowWindow(ctx context.Context) {
 	defer func() { recover() }()
+	platformForceShowWindow()
 	if ctx != nil {
 		runtime.WindowUnminimise(ctx)
 		runtime.WindowShow(ctx)
@@ -52,8 +54,11 @@ func setupSystray(app *App) {
 			showMain()
 		})
 
-		// 右键点击托盘图标：显示菜单
+		// 右键点击托盘图标：显示菜单。
+		// Windows 久置后 TrackPopupMenu 常因托盘窗抢不到前台而不弹出；
+		// 先解锁前台再 ShowMenu（与主窗久置唤起同源限制）。
 		systray.SetOnRClick(func(menu systray.IMenu) {
+			platformPrepareTrayMenu()
 			menu.ShowMenu()
 		})
 

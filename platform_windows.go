@@ -27,28 +27,52 @@ var (
 	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
 	procGetWindow                = user32.NewProc("GetWindow")
 	procIsIconic                 = user32.NewProc("IsIconic")
+	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procShowWindow               = user32.NewProc("ShowWindow")
+	procShowWindowAsync          = user32.NewProc("ShowWindowAsync")
 	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	procBringWindowToTop         = user32.NewProc("BringWindowToTop")
 	procSetFocus                 = user32.NewProc("SetFocus")
+	procSetActiveWindow          = user32.NewProc("SetActiveWindow")
 	procSetWindowPos             = user32.NewProc("SetWindowPos")
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
 	procAttachThreadInput        = user32.NewProc("AttachThreadInput")
+	procAllowSetForegroundWindow = user32.NewProc("AllowSetForegroundWindow")
+	procLockSetForegroundWindow  = user32.NewProc("LockSetForegroundWindow")
+	procRedrawWindow             = user32.NewProc("RedrawWindow")
+	procUpdateWindow             = user32.NewProc("UpdateWindow")
 	procGetCurrentThreadId       = kernel32.NewProc("GetCurrentThreadId")
 	procGetCurrentProcessId      = kernel32.NewProc("GetCurrentProcessId")
 	procShellNotifyIconW         = shell32.NewProc("Shell_NotifyIconW")
 )
 
 const (
+	swHide          = 0
+	swShowNormal    = 1
 	swShow          = 5
+	swMinimize      = 6
 	swRestore       = 9
+	swShowDefault   = 10
 	gwOwner         = 4
 	hwndTopmost     = ^uintptr(0) // -1
 	hwndNotopmost   = ^uintptr(1) // -2
 	swpNosize       = 0x0001
 	swpNomove       = 0x0002
+	swpNozorder     = 0x0004
+	swpNoactivate   = 0x0010
 	swpShowWindow   = 0x0040
-	nimDelete       = 0x00000002
+	swpFramechanged = 0x0020
+	// RedrawWindow
+	rdwInvalidate = 0x0001
+	rdwErase      = 0x0004
+	rdwFrame      = 0x0400
+	rdwAllChildren = 0x0080
+	rdwUpdatenow  = 0x0100
+	// LockSetForegroundWindow
+	lsfwUnlock = 2
+	// AllowSetForegroundWindow(-1) = ASFW_ANY
+	asfwAny = ^uint32(0)
+	nimDelete = 0x00000002
 	// energye/systray 固定 uID=100；NIM_DELETE 靠 hWnd+uID 定位图标
 	systrayIconID   = 100
 	mainWindowTitle = "Lumin"
@@ -138,22 +162,37 @@ func isTopLevelWindow(hwnd syscall.Handle) bool {
 	return owner == 0
 }
 
-// activateHWND 用 SW_RESTORE + 短暂 TOPMOST + AttachThreadInput 抢前台。
-// 纯 SetForegroundWindow 在托盘久置后常被 Windows 前台限制静默拒绝。
+// activateHWND 久置后强拉主窗到前台。
+// Windows 最小化/托盘隐藏久了，纯 SetForegroundWindow 常被拒；
+// 再叠加透明 WebView，可能出现「任务栏有项但点了空白/无响应」。
 func activateHWND(hwnd syscall.Handle) {
 	if hwnd == 0 {
 		return
 	}
+
+	// 放宽前台锁，降低久置后 SetForeground 被拒概率
+	_, _, _ = procLockSetForegroundWindow.Call(uintptr(lsfwUnlock))
+	_, _, _ = procAllowSetForegroundWindow.Call(uintptr(asfwAny))
+
 	iconic, _, _ := procIsIconic.Call(uintptr(hwnd))
+	visible, _, _ := procIsWindowVisible.Call(uintptr(hwnd))
 	if iconic != 0 {
+		// 任务栏最小化：先异步再同步 restore，覆盖部分 WebView 卡住场景
+		procShowWindowAsync.Call(uintptr(hwnd), uintptr(swRestore))
 		procShowWindow.Call(uintptr(hwnd), uintptr(swRestore))
+	} else if visible == 0 {
+		// 托盘 SW_HIDE：restore + show
+		procShowWindowAsync.Call(uintptr(hwnd), uintptr(swRestore))
+		procShowWindow.Call(uintptr(hwnd), uintptr(swRestore))
+		procShowWindow.Call(uintptr(hwnd), uintptr(swShow))
+		procShowWindow.Call(uintptr(hwnd), uintptr(swShowNormal))
 	} else {
-		// 隐藏到托盘时窗口是 SW_HIDE，不是最小化；RESTORE/SHOW 都能拉回
+		// 已显示但无前台/内容空白：仍走 restore/show 刷新
 		procShowWindow.Call(uintptr(hwnd), uintptr(swRestore))
 		procShowWindow.Call(uintptr(hwnd), uintptr(swShow))
 	}
 
-	flags := uintptr(swpNomove | swpNosize | swpShowWindow)
+	flags := uintptr(swpNomove | swpNosize | swpShowWindow | swpFramechanged)
 	procSetWindowPos.Call(uintptr(hwnd), hwndTopmost, 0, 0, 0, 0, flags)
 	procSetWindowPos.Call(uintptr(hwnd), hwndNotopmost, 0, 0, 0, 0, flags)
 
@@ -177,7 +216,12 @@ func activateHWND(hwnd syscall.Handle) {
 
 	procBringWindowToTop.Call(uintptr(hwnd))
 	procSetForegroundWindow.Call(uintptr(hwnd))
+	procSetActiveWindow.Call(uintptr(hwnd))
 	procSetFocus.Call(uintptr(hwnd))
+	// 强制重绘，缓解透明 WebView 久置后「窗在但内容不刷」
+	rdwFlags := uintptr(rdwInvalidate | rdwErase | rdwFrame | rdwAllChildren | rdwUpdatenow)
+	procRedrawWindow.Call(uintptr(hwnd), 0, 0, rdwFlags)
+	procUpdateWindow.Call(uintptr(hwnd))
 
 	if attachedTarget {
 		procAttachThreadInput.Call(curThread, targetThread, 0)
@@ -187,14 +231,11 @@ func activateHWND(hwnd syscall.Handle) {
 	}
 }
 
-// findMainWindowHWND 枚举顶层窗找 Lumin 主窗。
-// matchPID!=0：限本进程，优先 winc_Form，再标题 "Lumin"。
-// matchPID==0：跨进程二次启动用，只认标题 "Lumin"（避免误激活其他 Wails 应用）。
-func findMainWindowHWND(matchPID uint32) syscall.Handle {
-	var (
-		byClass syscall.Handle
-		byTitle syscall.Handle
-	)
+// findMainWindowCandidates 枚举本进程/跨进程可能的 Lumin 主窗。
+// 久置+多次点击时任务栏可能出现多个条目，唤醒时优先可见/未最小化的 winc_Form。
+func findMainWindowCandidates(matchPID uint32) []syscall.Handle {
+	found := make([]syscall.Handle, 0, 4)
+	seen := map[syscall.Handle]struct{}{}
 	callback := syscall.NewCallback(func(hwnd syscall.Handle, lParam uintptr) uintptr {
 		if !isTopLevelWindow(hwnd) {
 			return 1
@@ -211,42 +252,111 @@ func findMainWindowHWND(matchPID uint32) syscall.Handle {
 			}
 		}
 		title := windowText(hwnd)
-		if title == mainWindowTitle && byTitle == 0 {
-			byTitle = hwnd
-			// 跨进程场景只靠标题即可结束
-			if matchPID == 0 {
-				return 0
-			}
+		hit := false
+		if matchPID != 0 && class == wailsFormClass {
+			hit = true
 		}
-		if matchPID != 0 && class == wailsFormClass && byClass == 0 {
-			byClass = hwnd
-			// 本进程找到主窗类即可
-			if byTitle != 0 {
-				return 0
-			}
+		if title == mainWindowTitle {
+			hit = true
 		}
+		// 跨进程二次启动：只认标题，避免误激活其他 Wails 应用
+		if matchPID == 0 {
+			hit = title == mainWindowTitle
+		}
+		if !hit {
+			return 1
+		}
+		if _, ok := seen[hwnd]; ok {
+			return 1
+		}
+		seen[hwnd] = struct{}{}
+		found = append(found, hwnd)
 		return 1
 	})
 	procEnumWindows.Call(callback, 0)
-	// 本进程优先类名（隐藏后标题偶发读不到时仍可命中）
-	if matchPID != 0 && byClass != 0 {
-		return byClass
+	return found
+}
+
+// pickBestMainWindow 多窗口时选最该激活的那个：可见且非最小化 > 仅最小化 > 其它。
+func pickBestMainWindow(windows []syscall.Handle) syscall.Handle {
+	if len(windows) == 0 {
+		return 0
 	}
-	return byTitle
+	var bestVisible, bestIconic, bestAny syscall.Handle
+	for _, hwnd := range windows {
+		if hwnd == 0 {
+			continue
+		}
+		if bestAny == 0 {
+			bestAny = hwnd
+		}
+		iconic, _, _ := procIsIconic.Call(uintptr(hwnd))
+		visible, _, _ := procIsWindowVisible.Call(uintptr(hwnd))
+		if visible != 0 && iconic == 0 && bestVisible == 0 {
+			bestVisible = hwnd
+		}
+		if iconic != 0 && bestIconic == 0 {
+			bestIconic = hwnd
+		}
+	}
+	if bestVisible != 0 {
+		return bestVisible
+	}
+	if bestIconic != 0 {
+		return bestIconic
+	}
+	return bestAny
+}
+
+// findMainWindowHWND 枚举顶层窗找 Lumin 主窗。
+// matchPID!=0：限本进程；matchPID==0：跨进程二次启动，只认标题。
+func findMainWindowHWND(matchPID uint32) syscall.Handle {
+	return pickBestMainWindow(findMainWindowCandidates(matchPID))
 }
 
 // findAndShowWindow 二次启动时唤醒已有实例窗口（按标题，跨进程）
 func findAndShowWindow() {
-	if hwnd := findMainWindowHWND(0); hwnd != 0 {
+	cands := findMainWindowCandidates(0)
+	if hwnd := pickBestMainWindow(cands); hwnd != 0 {
 		activateHWND(hwnd)
 	}
 }
 
-// platformForceShowWindow 托盘点击/菜单唤醒：按本进程主窗激活
+// platformPrepareTrayMenu 托盘右键菜单弹出前调用。
+// energye ShowMenu 内部会对托盘隐藏窗 SetForegroundWindow 再 TrackPopupMenu；
+// 久置后前台被拒时菜单直接不显示。这里先解锁前台并激活托盘窗。
+func platformPrepareTrayMenu() {
+	_, _, _ = procLockSetForegroundWindow.Call(uintptr(lsfwUnlock))
+	_, _, _ = procAllowSetForegroundWindow.Call(uintptr(asfwAny))
+	pid, _, _ := procGetCurrentProcessId.Call()
+	hwnd := findSystrayHWND(uint32(pid))
+	if hwnd == 0 {
+		return
+	}
+	procSetForegroundWindow.Call(uintptr(hwnd))
+	procBringWindowToTop.Call(uintptr(hwnd))
+}
+
+// platformForceShowWindow 托盘/任务栏久置后唤醒：激活本进程主窗，并尽量恢复其它最小化副本。
 func platformForceShowWindow() {
 	pid, _, _ := procGetCurrentProcessId.Call()
-	if hwnd := findMainWindowHWND(uint32(pid)); hwnd != 0 {
-		activateHWND(hwnd)
+	cands := findMainWindowCandidates(uint32(pid))
+	if len(cands) == 0 {
+		return
+	}
+	best := pickBestMainWindow(cands)
+	activateHWND(best)
+	// 多次点击可能留下多个最小化条目：一并 restore，减少「点了没反应/点到空白副本」
+	for _, hwnd := range cands {
+		if hwnd == 0 || hwnd == best {
+			continue
+		}
+		iconic, _, _ := procIsIconic.Call(uintptr(hwnd))
+		visible, _, _ := procIsWindowVisible.Call(uintptr(hwnd))
+		if iconic != 0 || visible == 0 {
+			procShowWindowAsync.Call(uintptr(hwnd), uintptr(swRestore))
+			procShowWindow.Call(uintptr(hwnd), uintptr(swRestore))
+		}
 	}
 }
 

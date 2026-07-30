@@ -28,6 +28,9 @@ func platformForceShowWindow() {}
 // removeTrayIconSync Windows 幽灵托盘修复专用；macOS 无此问题
 func removeTrayIconSync() {}
 
+// platformPrepareTrayMenu Windows 托盘右键菜单前台解锁专用；macOS 无此问题
+func platformPrepareTrayMenu() {}
+
 // ensureSingleInstance 使用 flock 检查是否已有实例运行（macOS 支持 flock）
 func ensureSingleInstance() {
 	lockFile := filepath.Join(os.TempDir(), "lumin-ssh.lock")
