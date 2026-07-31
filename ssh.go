@@ -878,16 +878,33 @@ func (m *SSHManager) disconnectAndNotify(sessionId string, reason string) {
 // reconnect, so a stale background goroutine (e.g. the previous serial read
 // loop) would otherwise find the *new* session under that id and kill it.
 // If a newer instance has taken over, this is a no-op.
+//
+// 事件载荷与 disconnectAndNotify 对齐（对象而非纯 string）：本地/串口单会话，
+// connectionClosed 恒 true；reason=session_end，避免前端把 string 兼容路径
+// 当成 transport 误报「SSH 连接已意外断开」。
 func (m *SSHManager) disconnectCurrentGen(sessionId string, gen uint64) {
 	m.mu.RLock()
 	cur, ok := m.sessions[sessionId]
-	m.mu.RUnlock()
 	if !ok || cur.Gen != gen {
+		m.mu.RUnlock()
 		return
 	}
-	if m.Disconnect(sessionId) && m.ctx != nil {
-		runtime.EventsEmit(m.ctx, "ssh-disconnected", sessionId)
+	parentSessionId := sessionId
+	if cur.GroupSessionId != "" {
+		parentSessionId = cur.GroupSessionId
 	}
+	m.mu.RUnlock()
+
+	if !m.Disconnect(sessionId) || m.ctx == nil {
+		return
+	}
+	runtime.EventsEmit(m.ctx, "ssh-disconnected", map[string]interface{}{
+		"sessionId":        sessionId,
+		"parentSessionId":  parentSessionId,
+		"terminalIds":      []string{sessionId},
+		"reason":           "session_end",
+		"connectionClosed": true,
+	})
 }
 
 func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *commandHistoryStream) {
