@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -68,6 +67,8 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	}
 
 	a.sshManager.mu.Lock()
+	a.sshManager.nextGen++
+	sd.Gen = a.sshManager.nextGen
 	a.sshManager.sessions[sessionId] = sd
 	a.sshManager.mu.Unlock()
 
@@ -87,10 +88,11 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	// Start background CWD polling monitor for file manager sync
 	a.sshManager.StartLocalCwdMonitor(sessionId)
 
-	// Wait and notify exit
+	// Wait and notify exit. Capture gen so a fast reconnect that reused sessionId
+	// (a newer entry now sits in the map) doesn't get torn down by this stale waiter.
 	go func() {
 		_ = cmd.Wait()
-		a.sshManager.disconnectAndNotify(sessionId)
+		a.sshManager.disconnectCurrentGen(sessionId, sd.Gen)
 	}()
 
 	// Pipe output from local pty file to WebSocket. Reuses pipeLocalOutput (the

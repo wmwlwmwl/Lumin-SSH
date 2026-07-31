@@ -65,7 +65,11 @@ func (a *App) connectSerial(sessionId string, name string, portName string, baud
 
 	// 重连复用同一 sessionId：覆盖会话映射。正常断开路径已由 disconnectAndNotify
 	// 清理旧条目并关闭旧串口、退出旧读循环，因此这里直接覆盖即可。
+	// Gen 在写 map 时分配新代次：旧读 goroutine 若仍存活，退出时会发现自己的
+	// gen 已过时（map 里的会话是新一代），从而静默退出，不会误关新的 serial 会话。
 	a.sshManager.mu.Lock()
+	a.sshManager.nextGen++
+	sd.Gen = a.sshManager.nextGen
 	a.sshManager.sessions[sessionId] = sd
 	a.sshManager.mu.Unlock()
 
@@ -80,7 +84,7 @@ func (a *App) connectSerial(sessionId string, name string, portName string, baud
 				a.WriteWsOutput(sessionId, data)
 			}
 			if err != nil {
-				a.sshManager.disconnectAndNotify(sessionId)
+				a.sshManager.disconnectCurrentGen(sessionId, sd.Gen)
 				return
 			}
 		}

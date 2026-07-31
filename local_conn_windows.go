@@ -179,6 +179,8 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	}
 
 	a.sshManager.mu.Lock()
+	a.sshManager.nextGen++
+	sd.Gen = a.sshManager.nextGen
 	a.sshManager.sessions[sessionId] = sd
 	a.sshManager.mu.Unlock()
 
@@ -206,14 +208,15 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	// (WSL sessions skip this — they report CWD via the marker stream below.)
 	a.sshManager.StartLocalCwdMonitor(sessionId)
 
-	// Wait and notify exit
+	// Wait and notify exit. Capture gen so a fast reconnect that reused sessionId
+	// (a newer entry now sits in the map) doesn't get torn down by this stale waiter.
 	go func() {
 		if cptyHandle != nil {
 			_, _ = cptyHandle.Wait(context.Background())
 		} else {
 			_ = cmd.Wait()
 		}
-		a.sshManager.disconnectAndNotify(sessionId)
+		a.sshManager.disconnectCurrentGen(sessionId, sd.Gen)
 	}()
 
 	// Pipe output from local pty to WebSocket. For WSL sessions the stream is
@@ -322,7 +325,11 @@ func (m *SSHManager) ResizeLocal(s *SessionData, cols, rows int) {
 	m.mu.RLock()
 	ptyAny := s.LocalPTYWindows
 	m.mu.RUnlock()
-	if c, ok := ptyAny.(*conpty.ConPty); ok {
+	// Guard against the typed-nil case: when ConPTY is unavailable connectLocal
+	// stores a nil *conpty.ConPty into the any field. The type assertion succeeds
+	// (concrete type matches) but the value is nil, and c.Resize would dereference
+	// a nil receiver and panic.
+	if c, ok := ptyAny.(*conpty.ConPty); ok && c != nil {
 		_ = c.Resize(cols, rows)
 	}
 }

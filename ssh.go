@@ -100,6 +100,13 @@ type SessionData struct {
 	WSLDistro       string
 	LocalSFTPSrv    *localSFTPServer // embedded SFTP server; non-nil when file manager is available
 	OSCCwdParser    *oscCwdParser    // WSL-only: parses ESC]733;<b64>BEL CWD markers from the ConPTY stream
+	// Gen is a per-session-instance generation counter incremented each time a
+	// local/serial session reuses the same sessionId (fast reconnect). Background
+	// goroutines (the serial read loop, the local cmd-waiter, pipeLocalOutput)
+	// capture gen at startup and, on teardown, only clean up if the entry still
+	// carries the same gen — otherwise a newer instance has replaced it and the
+	// old goroutine must leave the map alone to avoid killing the new session.
+	Gen uint64
 }
 
 type SSHManager struct {
@@ -118,6 +125,10 @@ type SSHManager struct {
 	pendingMu        sync.Mutex
 	uploadMu         sync.Mutex
 	bufPool          sync.Pool
+	// nextGen is the monotonic source of SessionData.Gen values, used to tell
+	// apart two local/serial sessions that reused the same sessionId (fast
+	// reconnect). Guarded by mu.
+	nextGen uint64
 }
 
 // dialAddr 拼接 host:port，自动处理 IPv6 地址
@@ -861,6 +872,24 @@ func (m *SSHManager) disconnectAndNotify(sessionId string, reason string) {
 	})
 }
 
+// disconnectCurrentGen tears down the session for sessionId, but only if the
+// entry currently in the map is still the same generation (gen) the caller
+// started with. Local/serial sessions reuse the same sessionId on fast
+// reconnect, so a stale background goroutine (e.g. the previous serial read
+// loop) would otherwise find the *new* session under that id and kill it.
+// If a newer instance has taken over, this is a no-op.
+func (m *SSHManager) disconnectCurrentGen(sessionId string, gen uint64) {
+	m.mu.RLock()
+	cur, ok := m.sessions[sessionId]
+	m.mu.RUnlock()
+	if !ok || cur.Gen != gen {
+		return
+	}
+	if m.Disconnect(sessionId) && m.ctx != nil {
+		runtime.EventsEmit(m.ctx, "ssh-disconnected", sessionId)
+	}
+}
+
 func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *commandHistoryStream) {
 	bufPtr := m.bufPool.Get().(*[]byte)
 	defer m.bufPool.Put(bufPtr)
@@ -1168,13 +1197,27 @@ func (m *SSHManager) Disconnect(sessionId string) bool {
 	// 2. 在锁外关闭资源（服务器挂了时这些操作可能阻塞，但不会锁住其他 goroutine）
 	if isLocal {
 		// Close the embedded SFTP server and remove its client entry from the map.
-		if s.LocalSFTPSrv != nil {
-			_ = s.LocalSFTPSrv.Close()
-		}
+		// The sshClientEntry's SFTP client and underlying ssh.Client were dialed
+		// into the in-process server; LocalSFTPSrv.Close only stops the listener,
+		// so we must also close them or the per-session TCP conn + goroutines leak.
 		if s.ConnKey != "" {
 			m.mu.Lock()
-			delete(m.clients, s.ConnKey)
+			localEntry, entryOk := m.clients[s.ConnKey]
+			if entryOk {
+				delete(m.clients, s.ConnKey)
+			}
 			m.mu.Unlock()
+			if entryOk {
+				if localEntry.SFTP != nil {
+					closeWithTimeout(localEntry.SFTP, 3*time.Second)
+				}
+				if localEntry.Client != nil {
+					closeWithTimeout(localEntry.Client, 3*time.Second)
+				}
+			}
+		}
+		if s.LocalSFTPSrv != nil {
+			_ = s.LocalSFTPSrv.Close()
 		}
 		m.CloseLocal(s)
 	} else if isSerial {
