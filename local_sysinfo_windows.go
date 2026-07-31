@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -18,22 +19,42 @@ func getLocalSystemInfoImpl(s *SessionData, includeNetwork bool) (map[string]int
 		return nil, fmt.Errorf("system info not available for Windows-native local sessions")
 	}
 
-	// Run the probe script inline inside WSL — no file deployment needed.
-	// Ensure LF line endings to avoid CRLF issues when passing to sh.
-	script := strings.ReplaceAll(dynamicProbeScript, "\r\n", "\n")
-	probeArg := ""
-	if includeNetwork {
-		probeArg = " network"
+	// IMPORTANT: the probe script is run from a file, NOT via `wsl.exe -- sh -c "<script>"`.
+	// Passing the multi-line script inline through wsl.exe's interop layer corrupts it on
+	// some WSL installs: dash reports `Syntax error: "(" unexpected (expecting "fi")`
+	// because the interop mangles the `$()`, `\n` and quote structure. Writing the script
+	// to a temp file and running `sh <file> network` sidesteps the interop entirely, and
+	// also lets the "network" flag reach the script as $1 (argv after a script file is
+	// preserved by interop, unlike argv after `sh -c`).
+	winPath, cleanup, err := deployLocalProbeScript()
+	if err != nil {
+		return nil, fmt.Errorf("deploy probe script: %w", err)
 	}
-	// Pass script as a single sh -c argument; append the optional probe argument.
-	fullScript := script + probeArg
-	cmd := exec.Command("wsl.exe", "-d", s.WSLDistro, "--", "sh", "-c", fullScript)
+	defer cleanup()
+	wslPath := windowsPathToWSL(winPath)
+
+	args := []string{"-d", s.WSLDistro, "--", "sh", wslPath}
+	if includeNetwork {
+		args = append(args, "network")
+	}
+	cmd := exec.Command("wsl.exe", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("probe exec in WSL %q: %w", s.WSLDistro, err)
 	}
 	return parseProbeOutput(string(out), includeNetwork)
+}
+
+// windowsPathToWSL converts a Windows path (C:\Users\foo) to its WSL drvfs form
+// (/mnt/c/Users/foo). Done in-process rather than via `wslpath` because wslpath,
+// when invoked as a bare wsl.exe argv, loses the backslashes to interop.
+func windowsPathToWSL(p string) string {
+	if len(p) >= 2 && p[1] == ':' {
+		drive := strings.ToLower(string(p[0]))
+		return "/mnt/" + drive + filepath.ToSlash(p[2:])
+	}
+	return filepath.ToSlash(p)
 }
 
 // getLocalFullProcessListImpl queries the full process list for local Windows sessions.

@@ -12,13 +12,22 @@ import (
 )
 
 // getLocalSystemInfoImpl runs the dynamic probe script locally on macOS or Linux.
-// The script is the same POSIX sh probe used for SSH sessions, executed directly.
+// The script is written to a temp file and run via `sh <file> network` (not
+// `sh -c "<script> network"`), so the "network" flag reaches the script as $1 —
+// argv after a script file is positional, whereas `$1` is always empty under
+// `sh -c` with no trailing argv.
 func getLocalSystemInfoImpl(s *SessionData, includeNetwork bool) (map[string]interface{}, error) {
-	probeArg := ""
-	if includeNetwork {
-		probeArg = " network"
+	scriptPath, cleanup, err := deployLocalProbeScript()
+	if err != nil {
+		return nil, fmt.Errorf("deploy probe script: %w", err)
 	}
-	out, err := exec.Command("sh", "-c", dynamicProbeScript+probeArg).Output()
+	defer cleanup()
+
+	args := []string{scriptPath}
+	if includeNetwork {
+		args = append(args, "network")
+	}
+	out, err := exec.Command("sh", args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("local probe exec: %w", err)
 	}
