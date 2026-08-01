@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Eye, EyeOff, Clipboard } from 'lucide-react';
 import { useTranslation, t } from '../i18n.js';
 import Tiptop from './Tiptop.jsx';
@@ -6,6 +6,22 @@ import { Z } from '../constants/zIndex';
 
 export default function GlobalDialog() {
   const [dialogs, setDialogs] = useState([]);
+  // ponytail: 队列同时存一份 ref。去重判定必须同步进行——同一 tick 内连续调用时
+  // state 尚未更新，只比对 state 会漏判；ref 与 state 始终同步写入，二者不会漂移。
+  const dialogsRef = useRef([]);
+
+  // 入队；命中去重返回 false。调用方据此立即 resolve，避免 Promise 永久挂起。
+  const pushDialog = useCallback((dialog, isDuplicate) => {
+    if (dialogsRef.current.some(isDuplicate)) return false;
+    dialogsRef.current = [...dialogsRef.current, dialog];
+    setDialogs(dialogsRef.current);
+    return true;
+  }, []);
+
+  const shiftDialog = useCallback(() => {
+    dialogsRef.current = dialogsRef.current.slice(1);
+    setDialogs(dialogsRef.current);
+  }, []);
 
   useEffect(() => {
     // 注册全局 API
@@ -13,79 +29,70 @@ export default function GlobalDialog() {
       alert: (message, title = t('提示'), options = {}) => {
         const normalizedMessage = typeof message === 'string' ? message : String(message ?? '');
         return new Promise((resolve) => {
-          setDialogs(prev => {
-            if (prev.some(d => d.type === 'alert' && d.message === normalizedMessage && d.title === title)) return prev;
-            return [...prev, {
-              id: Date.now() + Math.random(),
-              type: 'alert',
-              title,
-              message: normalizedMessage,
-              copyable: options?.copyable !== false,
-              onClose: () => resolve()
-            }];
-          });
+          const queued = pushDialog({
+            id: Date.now() + Math.random(),
+            type: 'alert',
+            title,
+            message: normalizedMessage,
+            copyable: options?.copyable !== false,
+            onClose: () => resolve()
+          }, d => d.type === 'alert' && d.message === normalizedMessage && d.title === title);
+          if (!queued) resolve();
         });
       },
       confirm: (message, title = t('操作确认'), checkboxLabel = '') => {
         return new Promise((resolve) => {
-          setDialogs(prev => {
-            // 防止重复弹窗
-            if (prev.some(d => d.type === 'confirm' && d.message === message)) return prev;
-            return [...prev, {
-              id: Date.now() + Math.random(),
-              type: 'confirm',
-              title,
-              message,
-              checkboxLabel,
-              onConfirm: (_, checked) => resolve(checkboxLabel ? { confirmed: true, checked } : true),
-              onCancel: () => resolve(checkboxLabel ? { confirmed: false, checked: false } : false)
-            }];
-          });
+          const queued = pushDialog({
+            id: Date.now() + Math.random(),
+            type: 'confirm',
+            title,
+            message,
+            checkboxLabel,
+            onConfirm: (_, checked) => resolve(checkboxLabel ? { confirmed: true, checked } : true),
+            onCancel: () => resolve(checkboxLabel ? { confirmed: false, checked: false } : false)
+          }, d => d.type === 'confirm' && d.message === message);
+          // 去重丢弃按「取消」处理：不确认即不执行破坏性操作
+          if (!queued) resolve(checkboxLabel ? { confirmed: false, checked: false } : false);
         });
       },
       prompt: (message, defaultValue = '', title = t('输入信息'), checkboxLabel = '', options = {}) => {
         return new Promise((resolve) => {
-          setDialogs(prev => {
-            if (prev.some(d => d.type === 'prompt' && d.message === message)) return prev;
-            return [...prev, {
-              id: Date.now() + Math.random(),
-              type: 'prompt',
-              title,
-              message,
-              defaultValue,
-              checkboxLabel,
-              inputType: options?.inputType === 'password' ? 'password' : 'text',
-              // validate(value) => null/undefined 通过；返回字符串则保留弹窗并展示错误
-              validate: typeof options?.validate === 'function' ? options.validate : null,
-              onConfirm: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
-              onCancel: () => resolve(null)
-            }];
-          });
+          const queued = pushDialog({
+            id: Date.now() + Math.random(),
+            type: 'prompt',
+            title,
+            message,
+            defaultValue,
+            checkboxLabel,
+            inputType: options?.inputType === 'password' ? 'password' : 'text',
+            // validate(value) => null/undefined 通过；返回字符串则保留弹窗并展示错误
+            validate: typeof options?.validate === 'function' ? options.validate : null,
+            onConfirm: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
+            onCancel: () => resolve(null)
+          }, d => d.type === 'prompt' && d.message === message);
+          if (!queued) resolve(null);
         });
       },
       choice: (message, title, buttons, checkboxLabel = '') => {
         return new Promise((resolve) => {
-          setDialogs(prev => {
-            // 防止重复弹窗
-            if (prev.some(d => d.type === 'choice' && d.title === title)) return prev;
-            return [...prev, {
-              id: Date.now() + Math.random(),
-              type: 'choice',
-              title,
-              message,
-              buttons,
-              checkboxLabel,
-              onChoice: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
-              onClose: () => resolve(null)
-            }];
-          });
+          const queued = pushDialog({
+            id: Date.now() + Math.random(),
+            type: 'choice',
+            title,
+            message,
+            buttons,
+            checkboxLabel,
+            onChoice: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
+            onClose: () => resolve(null)
+          }, d => d.type === 'choice' && d.title === title);
+          if (!queued) resolve(null);
         });
       }
     };
     return () => {
       delete window.luminDialog;
     };
-  }, []);
+  }, [pushDialog]);
 
   if (dialogs.length === 0) return null;
 
@@ -94,17 +101,17 @@ export default function GlobalDialog() {
   const handleClose = () => {
     if (current.onClose) current.onClose();
     if (current.onCancel && current.type !== 'alert') current.onCancel();
-    setDialogs(prev => prev.slice(1));
+    shiftDialog();
   };
 
   const handleConfirm = (val, checked) => {
     if (current.onConfirm) current.onConfirm(val, checked);
-    setDialogs(prev => prev.slice(1));
+    shiftDialog();
   };
 
   const handleChoice = (val, checked) => {
     if (current.onChoice) current.onChoice(val, checked);
-    setDialogs(prev => prev.slice(1));
+    shiftDialog();
   };
 
   return (

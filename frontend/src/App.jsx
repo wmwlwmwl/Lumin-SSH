@@ -28,6 +28,7 @@ import { useTranslation } from './i18n.js';
 import { getTerminalTheme, hexToRgb } from './utils/theme.js';
 import { formatUpdateError, useUpdateChecker } from './hooks/useUpdateChecker.js';
 import ConnectingCard from './components/ConnectingCard.jsx';
+import SessionAuthCard from './components/SessionAuthCard.jsx';
 import UpdateModal from './components/UpdateModal.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import SerialConfigModal from './components/SerialConfigModal.jsx';
@@ -517,6 +518,20 @@ export default function App() {
   const [sshChannelUsage, setSshChannelUsage] = useState({}); // sessionId -> { terminals, sharedSftp, uploadPool, total, maxSessions }
   const connectingServersRef = useRef([]);
   useEffect(() => { connectingServersRef.current = connectingServers; }, [connectingServers]);
+  // 会话内待处理的交互：主机密钥确认 / 认证失败重输密码。
+  // 按 sessionId 分键，批量连接时每个会话各自渲染一张卡片，不再走全局单例弹窗。
+  const [sessionAuthPrompts, setSessionAuthPrompts] = useState({}); // sessionId -> { kind, title, message, ... }
+  // 同一会话可能连续多次要求输入（密码输错重试），token 递增作为 React key，
+  // 强制重建卡片，避免复用旧实例导致输入框残留旧值 / 提交守卫失效。
+  const authPromptTokenRef = useRef(0);
+  const clearSessionAuthPrompt = useCallback((sessionId) => {
+    setSessionAuthPrompts((prev) => {
+      if (!prev[sessionId]) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, []);
   const [toasts, setToasts] = useState([]);
   const TOAST_EXIT_DURATION = 1080;
   const toastIdRef = useRef(0);
@@ -2708,7 +2723,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setActiveSessionId(null);
     setActiveTerminalId(null);
     setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-  }, [disconnectSessionTerminals, registerServerDisconnect]);
+    clearSessionAuthPrompt(sessionId);
+  }, [clearSessionAuthPrompt, disconnectSessionTerminals, registerServerDisconnect]);
 
   // ── 切换到下一个可用 session ──────────────────────────────
   const resolveSessionContentTab = useCallback((sessionId) => {
@@ -3180,15 +3196,54 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     };
   }, [addToast, t]);
 
+  // ── 主机密钥确认：用户在会话卡片上做出选择后 ──────────────────
+  // chosen: 0=取消, 1=仅本次接受, 2=接受并保存
+  const resolveHostKeyChoice = useCallback(async (sessionId, chosen) => {
+    clearSessionAuthPrompt(sessionId);
+    try {
+      await AppGo.AcceptHostKeyChange(sessionId, chosen);
+      if (chosen >= 1) {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sessionId ? { ...s, status: 'connected' } : s
+          )
+        );
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+        addToast(
+          chosen === 2 ? t('主机密钥已保存，连接成功') : t('本次已接受，连接成功'),
+          'success'
+        );
+
+        const matched = sessionsRef.current.find((s) => s.id === sessionId);
+        await postConnectSetup(sessionId, matched?.serverId);
+      } else {
+        updateSessionStatus(sessionId, 'error');
+        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+        addToast(t('用户取消连接'), 'warning', 3000);
+      }
+    } catch (err) {
+      // 取消分支后端固定返回「用户取消了主机密钥验证」，属预期结果，不作失败提示
+      if (chosen >= 1) {
+        addToast(`${t('连接失败')}: ${err}`, 'error', 5000);
+      } else {
+        addToast(t('用户取消连接'), 'warning', 3000);
+      }
+      updateSessionStatus(sessionId, 'error');
+      setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+    }
+  }, [addToast, clearSessionAuthPrompt, postConnectSetup, t, updateSessionStatus]);
+
   // ── 监听主机密钥变更事件 ────────────────────────────────────
+  // 只写入该会话的待确认状态，由会话面板内的 SessionAuthCard 呈现，
+  // 批量连接时 N 台主机就有 N 张卡片，各自独立。
   useEffect(() => {
-    const unbind = EventsOn('ssh-host-key-changed', async (data) => {
+    const unbind = EventsOn('ssh-host-key-changed', (data) => {
       const {
-        sessionId, hostname, host, port, newFingerprint, oldFingerprints, isNew
+        sessionId, host, port, newFingerprint, oldFingerprints, isNew
       } = data;
 
       const oldFpList = (oldFingerprints || []).join('\n');
-      const msg = isNew
+      const message = isNew
         ? [
             t('首次连接到此主机，请确认密钥指纹：'),
             ``,
@@ -3213,107 +3268,89 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
             t('如果确认这是预期的变更（如服务器重装），点击"接受并保存"。'),
           ].join('\n');
 
-      const action = await window.luminDialog?.choice?.(
-        msg,
-        isNew ? t('主机密钥确认') : t('主机密钥已变更'),
-        [
-          { label: t('只接受本次'), value: 1, secondary: true },
-          { label: t('接受并保存'), value: 2, primary: true },
-          { label: t('取消'), value: 0, secondary: true },
-        ]
-      );
-
-      // action: 0/取消或null → 取消连接, 1 → 仅本次, 2 → 保存
-      const chosen = action ?? 0;
-
-      try {
-        await AppGo.AcceptHostKeyChange(sessionId, chosen);
-        if (chosen >= 1) {
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === sessionId ? { ...s, status: 'connected' } : s
-            )
-          );
-          setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-          addToast(
-            chosen === 2 ? t('主机密钥已保存，连接成功') : t('本次已接受，连接成功'),
-            'success'
-          );
-
-          const matched = sessionsRef.current.find((s) => s.id === sessionId);
-          await postConnectSetup(sessionId, matched?.serverId);
-        } else {
-          updateSessionStatus(sessionId, 'error');
-          setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-        }
-      } catch (err) {
-        updateSessionStatus(sessionId, 'error');
-        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-        addToast(`${t('连接失败')}: ${err}`, 'error', 5000);
-      }
+      setSessionAuthPrompts((prev) => ({
+        ...prev,
+        [sessionId]: {
+          kind: 'hostkey',
+          token: ++authPromptTokenRef.current,
+          title: isNew ? t('主机密钥确认') : t('主机密钥已变更'),
+          message,
+          danger: !isNew, // 密钥变更（疑似中间人）默认焦点落在「取消」
+        },
+      }));
     });
     return () => {
       if (unbind) unbind();
     };
-  }, [addToast, postConnectSetup, t]);
+  }, [t]);
+
+  // ── 认证失败：用户在会话卡片上重输密码后 ──────────────────
+  // result: null=取消 | { value, persist }
+  const resolvePasswordPrompt = useCallback(async (sessionId, connId, result) => {
+    clearSessionAuthPrompt(sessionId);
+    if (result === null) {
+      // 用户取消
+      updateSessionStatus(sessionId, 'error');
+      setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      addToast(t('用户取消连接'), 'warning', 3000);
+      return;
+    }
+
+    const { value: newPassword, persist } = result;
+    if (!newPassword) {
+      updateSessionStatus(sessionId, 'error');
+      setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      return;
+    }
+
+    try {
+      await AppGo.ReconnectWithPassword(sessionId, connId, newPassword, persist);
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
+      );
+      setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      addToast(persist ? t('密码已保存，连接成功') : t('连接成功'), 'success', 3000);
+
+      await postConnectSetup(sessionId, connId, { password: newPassword });
+    } catch (retryErr) {
+      updateSessionStatus(sessionId, 'error');
+      setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      addToast(`${t('重新连接失败')}: ${String(retryErr)}`, 'error', 5000);
+    }
+  }, [addToast, clearSessionAuthPrompt, postConnectSetup, t, updateSessionStatus]);
 
   // ── 监听认证失败事件（密码错误等） ──────────────────────────
+  // 只写入该会话的待确认状态，由会话面板内的 SessionAuthCard 呈现
   useEffect(() => {
-    const unbind = EventsOn('ssh-auth-failed', async (data) => {
+    const unbind = EventsOn('ssh-auth-failed', (data) => {
       const { sessionId, connId, host, port, username, error } = data;
       const usesCredential = serversRef.current.some(s => s.id === connId && s.credentialId);
 
-      const password = await window.luminDialog?.prompt?.(
-        [
-          t('认证失败，请输入正确的密码重试：'),
-          ``,
-          `${t('主机:')} ${host}:${port}`,
-          `${t('用户')}: ${username}`,
-          ``,
-          `${t('错误')}: ${error}`,
-        ].join('\n'),
-        '',
-        t('认证失败'),
-        usesCredential ? t('更新凭据密码') : t('记住密码')
-      );
+      const message = [
+        t('认证失败，请输入正确的密码重试：'),
+        ``,
+        `${t('主机:')} ${host}:${port}`,
+        `${t('用户')}: ${username}`,
+        ``,
+        `${t('错误')}: ${error}`,
+      ].join('\n');
 
-      if (password === null) {
-        // 用户取消
-        updateSessionStatus(sessionId, 'error');
-        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-        addToast(t('用户取消连接'), 'warning', 3000);
-        return;
-      }
-
-      const newPassword = typeof password === 'object' ? password.value : password;
-      const persist = typeof password === 'object' ? password.checked : false;
-
-      if (!newPassword) {
-        updateSessionStatus(sessionId, 'error');
-        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-        return;
-      }
-
-      try {
-        await AppGo.ReconnectWithPassword(sessionId, connId, newPassword, persist);
-        setSessions((prev) =>
-          prev.map((s) => (s.id === sessionId ? { ...s, status: 'connected' } : s))
-        );
-        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-        addToast(persist ? t('密码已保存，连接成功') : t('连接成功'), 'success', 3000);
-
-        await postConnectSetup(sessionId, connId, { password: newPassword });
-
-        } catch (retryErr) {
-        updateSessionStatus(sessionId, 'error');
-        setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
-        addToast(`${t('重新连接失败')}: ${String(retryErr)}`, 'error', 5000);
-      }
+      setSessionAuthPrompts((prev) => ({
+        ...prev,
+        [sessionId]: {
+          kind: 'password',
+          token: ++authPromptTokenRef.current,
+          title: t('认证失败'),
+          message,
+          connId,
+          checkboxLabel: usesCredential ? t('更新凭据密码') : t('记住密码'),
+        },
+      }));
     });
     return () => {
       if (unbind) unbind();
     };
-  }, [addToast]);
+  }, [t]);
 
   // ── 关闭窗口通用处理 ──────────────────────────────────────────
   const handleCloseWindow = useCallback(async () => {
@@ -3747,7 +3784,8 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     if (connectingServersRef.current.some((s) => s.sessionId === sessionId)) {
       setConnectingServers((prev) => prev.filter((s) => s.sessionId !== sessionId));
     }
-  }, [disconnectSessionTerminals, persistServerWorkspaceSessionSnapshot, registerServerDisconnect, switchToNextSession]);
+    clearSessionAuthPrompt(sessionId);
+  }, [clearSessionAuthPrompt, disconnectSessionTerminals, persistServerWorkspaceSessionSnapshot, registerServerDisconnect, switchToNextSession]);
 
   const closeSession = useCallback(async (sessionId, e) => {
     e?.stopPropagation();
@@ -3794,6 +3832,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
     setActiveSessionId(null);
     setActiveTerminalId(null);
     setConnectingServers([]);
+    setSessionAuthPrompts({});
   }, [disconnectSessionTerminals, persistServerWorkspaceSessionSnapshot, registerServerDisconnect, t]);
 
   // ── 在当前服务器上新建终端标签 ──────────────────────────────
@@ -5847,7 +5886,12 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                         });
                       }}
                     >
-                      <span className={`status-dot ${s.status === 'connecting' ? 'connecting' : s.status === 'connected' ? 'online' : 'offline'}`} />
+                      <span
+                        className={`status-dot ${sessionAuthPrompts[s.id] ? 'attention' : s.status === 'connecting' ? 'connecting' : s.status === 'connected' ? 'online' : 'offline'}`}
+                        role={sessionAuthPrompts[s.id] ? 'img' : undefined}
+                        aria-label={sessionAuthPrompts[s.id] ? sessionAuthPrompts[s.id].title : undefined}
+                        title={sessionAuthPrompts[s.id] ? sessionAuthPrompts[s.id].title : undefined}
+                      />
                       {(() => {
                         const usage = sshChannelUsage[s.id];
                         if (!usage || usage.total <= 0 || s.status !== 'connected') return null;
@@ -6432,6 +6476,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                       && fileManagerPosition === 'tab'
                       && contentTab === 'files';
                     const sessionConnectingServer = connectingServers.find((item) => item.sessionId === s.id) || null;
+                    const sessionAuthPrompt = sessionAuthPrompts[s.id] || null;
                     const showLeftFileManager = showSplitFileManager && fileManagerPosition === 'left' && !fileManagerCollapsed;
                     const showRightFileManager = showSplitFileManager && fileManagerPosition === 'right' && !fileManagerCollapsed;
                     const showSideFileManager = showLeftFileManager || showRightFileManager;
@@ -6873,11 +6918,27 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                               />
                             </div>
                           )}
-                          {sessionConnectingServer && s.status === 'connecting' && (
+                          {/* 有待确认交互时让位给 SessionAuthCard，二者 z-index 相同不可重叠 */}
+                          {sessionConnectingServer && s.status === 'connecting' && !sessionAuthPrompt && (
                             <ConnectingCard
                               connectingServer={sessionConnectingServer}
                               t={t}
                               onCancel={() => handleCancelConnection(s.id)}
+                            />
+                          )}
+                          {sessionAuthPrompt && (
+                            <SessionAuthCard
+                              key={sessionAuthPrompt.token}
+                              prompt={sessionAuthPrompt}
+                              isActive={activeSessionId === s.id}
+                              t={t}
+                              onResolve={(result) => {
+                                if (sessionAuthPrompt.kind === 'password') {
+                                  void resolvePasswordPrompt(s.id, sessionAuthPrompt.connId, result);
+                                } else {
+                                  void resolveHostKeyChoice(s.id, result);
+                                }
+                              }}
                             />
                           )}
                         </div>
@@ -7511,7 +7572,7 @@ const getFileManagerDockConfirmRect = useCallback((target) => {
                   onClick={() => { handleTabClick(s.id); setShowSessionList(false); }}
                   style={{ fontWeight: activeSessionId === s.id ? 700 : 400, color: activeSessionId === s.id ? 'var(--accent)' : 'var(--text-secondary)' }}
                 >
-                  <span className={`status-dot ${s.status === 'connecting' ? 'connecting' : s.status === 'connected' ? 'online' : 'offline'}`} />
+                  <span className={`status-dot ${sessionAuthPrompts[s.id] ? 'attention' : s.status === 'connecting' ? 'connecting' : s.status === 'connected' ? 'online' : 'offline'}`} />
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.serverName}</span>
                   <Tiptop text={t('关闭')} placement="bottom">
                     <span

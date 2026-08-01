@@ -778,10 +778,22 @@ input::-ms-clear {
   animation: pulse-warning 1s infinite;
 }
 .status-dot.just-connected { background: var(--success); }
+/* 等待用户确认（主机密钥 / 重输密码）：非活动标签页也能看出哪个会话在等输入。
+   连接中已是「警告色 + 透明度脉冲」，这里用不透明实心点 + 扩散光环区分开。 */
+.status-dot.attention {
+  background: var(--warning);
+  animation: pulse-attention 1.4s ease-out infinite;
+}
 
 @keyframes pulse-warning {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes pulse-attention {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.55); }
+  70%  { box-shadow: 0 0 0 5px rgba(var(--warning-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0); }
 }
 
 /* ── 模态框 ─────────────────────────────────────────────────── */
@@ -5034,12 +5046,17 @@ body.theme-light .dashboard-server-editor {
   .status-dot.just-connected,
   .status-dot.online,
   .status-dot.connecting,
+  .status-dot.attention,
   .modal,
   .modal-overlay,
   .tab-context-menu,
   .update-bubble,
   .update-bubble-pulse {
     animation: none;
+  }
+  /* 动画关闭后 .attention 会与 .connecting 长得一样，用静态光环保留区分 */
+  .status-dot.attention {
+    box-shadow: 0 0 0 3px rgba(var(--warning-rgb), 0.35);
   }
   .file-list-body-live.switch-waiting {
     opacity: 0;
