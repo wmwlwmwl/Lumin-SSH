@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "După închidere, doar pictograma directorului este ascunsă și pictograma fixată este în continuare afișată.",
   "文件资源管理器不显示关闭图标按钮": "File Explorer nu afișează butonul de închidere",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "După deschidere, fila File Explorer nu afișează butonul pictogramă de închidere și poate fi închisă doar făcând dublu clic pe ea.",
+  "固定标签跨终端共享": "S-a rezolvat partajarea etichetelor între terminale",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Când sunt pornite, toate terminalele de pe același server partajează un set de etichete fixe ale exploratorului de fișiere.",
   "文件资源管理器视图": "Vizualizare File Explorer",
   "选择顶部标签单栏,或左侧标签双面板视图": "Alegeți fila de sus o singură coloană sau vizualizarea panoului dublu din fila din stânga",
   "经典顶部标签": "etichetă de top clasică",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Repornire",
   "已停止": "Oprit",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Avertisment: 0.0.0.0, :: sau alte adrese non-locale pot expune porturile de ascultare",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Avertisment: 127.0.0.1/localhost/::1 reprezintă însăși gazda curentă",
 };

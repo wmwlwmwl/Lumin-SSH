@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Po zamknięciu ukrywana jest tylko ikona katalogu, a ikona przypięta jest nadal wyświetlana.",
   "文件资源管理器不显示关闭图标按钮": "Eksplorator plików nie wyświetla ikony przycisku zamykania",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Po otwarciu zakładka Eksplorator plików nie wyświetla ikony przycisku zamykania i można ją zamknąć jedynie poprzez dwukrotne kliknięcie.",
+  "固定标签跨终端共享": "Naprawiono udostępnianie etykiet pomiędzy terminalami",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Po włączeniu wszystkie terminale w ramach tego samego serwera mają wspólny zestaw stałych etykiet eksploratora plików.",
   "文件资源管理器视图": "Widok Eksploratora plików",
   "选择顶部标签单栏,或左侧标签双面板视图": "Wybierz pojedynczą kolumnę górnej karty lub widok podwójnego panelu po lewej stronie",
   "经典顶部标签": "klasyczna górna etykieta",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Uruchom ponownie",
   "已停止": "Zatrzymany",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Ostrzeżenie: 0.0.0.0, :: lub inne adresy nielokalne mogą odsłonić porty nasłuchujące",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Ostrzeżenie: 127.0.0.1/localhost/::1 reprezentuje samego bieżącego hosta",
 };

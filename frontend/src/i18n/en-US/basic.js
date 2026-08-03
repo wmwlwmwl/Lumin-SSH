@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "After closing, only the directory icon is hidden and the pinned icon is still displayed.",
   "文件资源管理器不显示关闭图标按钮": "File Explorer not showing close icon button",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "After opening, the File Explorer tab does not display the close icon button and can only be closed by double-clicking it.",
+  "固定标签跨终端共享": "Fixed label sharing across terminals",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "After turning it on, all terminals under the same server share a set of file explorer fixed labels.",
   "文件资源管理器视图": "File Explorer View",
   "选择顶部标签单栏,或左侧标签双面板视图": "Choose top tab single column, or left tab double panel view",
   "经典顶部标签": "classic top label",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Restart",
   "已停止": "Stopped",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Warning: 0.0.0.0, ::, or other non-local addresses may expose listening ports",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Warning: 127.0.0.1/localhost/::1 represents the current host itself",
 };

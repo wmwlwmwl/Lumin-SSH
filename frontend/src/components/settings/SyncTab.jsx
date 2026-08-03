@@ -2,6 +2,7 @@ import React from 'react';
 import { t as $t } from '../../i18n.js';
 import * as AppGo from '../../../wailsjs/go/main/App.js';
 import { Save, Cloud, Database, Folder, FolderOpen, Lock, RefreshCw, Sparkles, Plug } from 'lucide-react';
+import { SettingsPanel, SettingsSectionTitle, SettingsTabRoot } from './SharedComponents';
 
 const PROVIDER_ICON_CMP = { webdav: Cloud, r2: Database, ftp: Folder, sftp: Lock };
 
@@ -18,7 +19,7 @@ function ProviderCard({ provider, providerKey, form, configured, editing, onEdit
   const accentRgb = provider.accentRgb;
   const IC = PROVIDER_ICON_CMP[providerKey];
   return (
-    <div style={{ background: 'var(--surface-overlay)', padding: 24, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+    <SettingsPanel style={{ padding: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--surface-sunken)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>{IC ? <IC size={20} /> : null}</div>
         <div>
@@ -33,7 +34,7 @@ function ProviderCard({ provider, providerKey, form, configured, editing, onEdit
           background: 'var(--surface-raised)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-md)',
-          padding: '24px',
+          padding: '14px',
           display: 'flex',
           flexDirection: 'column',
           gap: 20,
@@ -66,7 +67,7 @@ function ProviderCard({ provider, providerKey, form, configured, editing, onEdit
             {provider.summaryFields(form).map((sf, i) => (
               <div key={i} style={{
                 display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--surface-overlay)',
-                padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
+                padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
                 ...(sf.fullWidth ? { gridColumn: '1 / -1' } : {})
               }}>
                 <span style={{ fontSize: 12, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{sf.label}</span>
@@ -95,7 +96,7 @@ function ProviderCard({ provider, providerKey, form, configured, editing, onEdit
           </div>
         </div>
       )}
-    </div>
+    </SettingsPanel>
   );
 }
 
@@ -117,10 +118,10 @@ export default function SyncTab({
   const tombstoneTotal = tombstoneConnections + tombstoneCredentials;
   const [tombstoneDays, setTombstoneDays] = React.useState(30);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <SettingsTabRoot>
 
       {/* 自动同步 */}
-      <div style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <SettingsPanel style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginRight: 4 }}>{$t('自动同步')}</span>
           <button className={autoSyncEnabled ? 'btn btn-primary' : 'btn btn-secondary'} onClick={() => onAutoSyncEnabledChange(!autoSyncEnabled)}>
@@ -216,10 +217,10 @@ export default function SyncTab({
             <div style={{ marginTop: 4, color: 'var(--warning)' }}>{$t('未开启加密同步时会以明文保存到云端；如需保护云端备份，请选择加密并设置恢复密码。')}</div>
           )}
         </div>
-      </div>
+      </SettingsPanel>
 
       {/* Provider Selector */}
-      <div style={{ display: 'flex', gap: 8, background: 'var(--surface-overlay)', padding: 8, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+      <SettingsPanel style={{ display: 'flex', gap: 8, padding: 8 }}>
         {providerList.map(p => (
           <button
             key={p.id}
@@ -237,7 +238,7 @@ export default function SyncTab({
             {(() => { const IC = PROVIDER_ICON_CMP[p.id]; return IC ? <IC size={16} /> : null; })()} {p.label}
           </button>
         ))}
-      </div>
+      </SettingsPanel>
 
       {/* WebDAV Config */}
       {syncProvider === 'webdav' && (
@@ -452,7 +453,7 @@ export default function SyncTab({
       )}
 
       {/* 云端同步 */}
-      <div style={{ background: 'var(--surface-overlay)', padding: 24, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+      <SettingsPanel style={{ padding: 14 }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>{$t('云端同步')}</div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 20 }}>
           {hasRecoveryPassword ? $t('同步将写入 .lumin2 加密备份') : $t('未开启同步加密时写入明文 .json 备份')}
@@ -534,7 +535,7 @@ export default function SyncTab({
             {loadingBackups ? $t('加载备份列表中...') : <><RefreshCw size={14} /> {$t('从云端恢复')}</>}
           </button>
         </div>
-      </div>
-    </div>
+      </SettingsPanel>
+    </SettingsTabRoot>
   );
 }

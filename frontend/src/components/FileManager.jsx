@@ -12,12 +12,15 @@ import Tiptop from './Tiptop.jsx';
 import {
   getSessionCachedFileManagerPathItems,
   getSessionFileManagerWorkspace,
+  getSessionSharedPinnedTabs,
   getSessionUploadQueue,
   getSessionWorkbenchState,
   setSessionCachedFileManagerPathItems,
   setSessionFileManagerWorkspace,
+  setSessionSharedPinnedTabs,
   setSessionWorkbenchState,
   subscribeSessionFileManagerWorkspace,
+  subscribeSessionSharedPinnedTabs,
   subscribeSessionUploadQueue,
   subscribeSessionWorkbenchState,
   updateSessionUploadQueue,
@@ -261,6 +264,10 @@ function getFileManagerLayoutMode() {
     : FILE_MANAGER_LAYOUT_MODE_CLASSIC;
 }
 
+function isFileManagerSharedPinnedTabsEnabled() {
+  return localStorage.getItem('fileManagerSharedPinnedTabs') === 'true';
+}
+
 function isFileManagerDualPaneDragTransferEnabled() {
   return localStorage.getItem('fileManagerDualPaneDragTransferEnabled') !== 'false';
 }
@@ -287,6 +294,65 @@ function createFileManagerTab(path = '', options = {}) {
     systemPinned: options.systemPinned === true,
     systemPinnedType: options.systemPinned === true ? FILE_MANAGER_SYSTEM_TAB_KIND_HOME : '',
   };
+}
+
+function extractManualPinnedTabsFromWorkspace(workspace) {
+  const tabs = Array.isArray(workspace?.tabs) ? workspace.tabs : [];
+  return tabs
+    .filter((tab) => tab && tab.pinned === true && tab.systemPinned !== true)
+    .map((tab) => ({
+      id: String(tab.id || '').trim(),
+      path: String(tab.path || '').trim(),
+      customTitle: typeof tab.customTitle === 'string' ? tab.customTitle.trim() : '',
+    }))
+    .filter((tab) => tab.id);
+}
+
+function mergeSharedPinnedTabsIntoWorkspaceTabs(localTabs, sharedPinnedTabs) {
+  const tabs = Array.isArray(localTabs) ? localTabs : [];
+  const shared = Array.isArray(sharedPinnedTabs) ? sharedPinnedTabs : [];
+  const homeTabs = tabs.filter((tab) => tab && tab.systemPinned === true);
+  const localPinnedById = new Map();
+  const localPinnedByPath = new Map();
+  tabs.forEach((tab) => {
+    if (tab && tab.systemPinned !== true && tab.pinned === true) {
+      const id = String(tab.id || '').trim();
+      const path = String(tab.path || '').trim();
+      if (id) localPinnedById.set(id, tab);
+      if (path && !localPinnedByPath.has(path)) localPinnedByPath.set(path, tab);
+    }
+  });
+  const sharedIds = new Set(shared.map((tab) => String(tab.id || '').trim()).filter(Boolean));
+  const sharedPaths = new Set(shared.map((tab) => String(tab.path || '').trim()).filter(Boolean));
+  const mappedPinnedTabs = shared.map((sharedTab) => {
+    const sharedId = String(sharedTab.id || '').trim();
+    const sharedPath = String(sharedTab.path || '').trim();
+    const existing = localPinnedById.get(sharedId) || localPinnedByPath.get(sharedPath) || null;
+    return {
+      id: existing ? (String(existing.id || '').trim() || sharedId) : sharedId,
+      path: sharedPath,
+      customTitle: String(sharedTab.customTitle || '').trim(),
+      sortField: typeof existing?.sortField === 'string' ? existing.sortField : 'name',
+      sortDir: existing?.sortDir === 'desc' ? 'desc' : 'asc',
+      selectedPaths: Array.isArray(existing?.selectedPaths) ? existing.selectedPaths : [],
+      scrollTop: Number.isFinite(Number(existing?.scrollTop)) ? Number(existing.scrollTop) : 0,
+      pinned: true,
+      systemPinned: false,
+      systemPinnedType: '',
+    };
+  });
+  const remainderTabs = tabs
+    .filter((tab) => {
+      if (!tab || tab.systemPinned === true) return false;
+      if (tab.pinned === true) {
+        const id = String(tab.id || '').trim();
+        const path = String(tab.path || '').trim();
+        return !(sharedIds.has(id) || sharedPaths.has(path));
+      }
+      return true;
+    })
+    .map((tab) => (tab.pinned === true ? { ...tab, pinned: false } : tab));
+  return [...homeTabs, ...mappedPinnedTabs, ...remainderTabs];
 }
 
 function getFileManagerTabLabel(path, t, customTitle = '') {
@@ -1259,6 +1325,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const [showFileManagerTabIcons, setShowFileManagerTabIcons] = useState(() => shouldShowFileManagerTabIcons());
   const [hideFileManagerTabCloseButton, setHideFileManagerTabCloseButton] = useState(() => shouldHideFileManagerTabCloseButton());
   const [fileManagerLayoutMode, setFileManagerLayoutMode] = useState(() => getFileManagerLayoutMode());
+  const [fileManagerSharedPinnedTabsEnabled, setFileManagerSharedPinnedTabsEnabled] = useState(() => isFileManagerSharedPinnedTabsEnabled());
+  const fileManagerSharedPinnedTabsEnabledRef = useRef(fileManagerSharedPinnedTabsEnabled);
+  const applyingSharedPinnedTabsRef = useRef(false);
   const [fileManagerDualPaneDragTransferEnabled, setFileManagerDualPaneDragTransferEnabled] = useState(() => isFileManagerDualPaneDragTransferEnabled());
   const [fileManagerDualPaneDragPromptOnDirectory, setFileManagerDualPaneDragPromptOnDirectory] = useState(() => shouldPromptFileManagerDualPaneDragDirectory());
   const [fileManagerDualPaneDragInvertModifier, setFileManagerDualPaneDragInvertModifier] = useState(() => shouldInvertFileManagerDualPaneDragModifier());
@@ -1289,6 +1358,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     );
     window.addEventListener('file-manager-layout-mode-changed', handleChange);
     return () => window.removeEventListener('file-manager-layout-mode-changed', handleChange);
+  }, []);
+  useEffect(() => { fileManagerSharedPinnedTabsEnabledRef.current = fileManagerSharedPinnedTabsEnabled; }, [fileManagerSharedPinnedTabsEnabled]);
+  useEffect(() => {
+    const handleChange = (e) => setFileManagerSharedPinnedTabsEnabled(e.detail === true);
+    window.addEventListener('file-manager-shared-pinned-tabs-changed', handleChange);
+    return () => window.removeEventListener('file-manager-shared-pinned-tabs-changed', handleChange);
   }, []);
   useEffect(() => {
     const handleChange = (e) => setFileManagerDualPaneDragTransferEnabled(e.detail !== false);
@@ -1607,6 +1682,39 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     setFileManagerWorkspaceState(next);
     return next;
   }, [sessionId]);
+  const publishSharedPinnedTabsFromWorkspace = useCallback((workspace) => {
+    if (!fileManagerSharedPinnedTabsEnabledRef.current || !sessionGroupId || applyingSharedPinnedTabsRef.current) {
+      return;
+    }
+    setSessionSharedPinnedTabs(sessionGroupId, extractManualPinnedTabsFromWorkspace(workspace));
+  }, [sessionGroupId]);
+  useEffect(() => {
+    if (!fileManagerSharedPinnedTabsEnabled || !sessionGroupId) {
+      return undefined;
+    }
+    const localManualPinned = extractManualPinnedTabsFromWorkspace(fileManagerWorkspaceRef.current);
+    if (localManualPinned.length > 0) {
+      setSessionSharedPinnedTabs(sessionGroupId, (currentShared) => {
+        const seenPaths = new Set(currentShared.map((tab) => tab.path).filter(Boolean));
+        const appended = localManualPinned.filter((tab) => tab.path && !seenPaths.has(tab.path));
+        if (appended.length === 0) {
+          return currentShared;
+        }
+        return [...currentShared, ...appended];
+      });
+    }
+    return subscribeSessionSharedPinnedTabs(sessionGroupId, (sharedTabs) => {
+      applyingSharedPinnedTabsRef.current = true;
+      try {
+        commitFileManagerWorkspace((current) => ({
+          ...current,
+          tabs: mergeSharedPinnedTabsIntoWorkspaceTabs(current?.tabs, sharedTabs),
+        }));
+      } finally {
+        applyingSharedPinnedTabsRef.current = false;
+      }
+    });
+  }, [commitFileManagerWorkspace, fileManagerSharedPinnedTabsEnabled, sessionGroupId]);
   const triggerCwdSystemTabHighlight = useCallback((tabId) => {
     const normalizedTabId = String(tabId || '').trim();
     if (!normalizedTabId) {
@@ -4750,7 +4858,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (!draggedTabId || !targetTabId || draggedTabId === targetTabId) {
       return;
     }
-    commitFileManagerWorkspace((current) => {
+    const nextWorkspace = commitFileManagerWorkspace((current) => {
       const currentTabs = Array.isArray(current?.tabs) ? current.tabs.filter((tab) => tab && typeof tab === 'object') : [];
       const draggedTab = currentTabs.find((tab) => tab.id === draggedTabId);
       const targetTab = currentTabs.find((tab) => tab.id === targetTabId);
@@ -4776,10 +4884,11 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         tabs: [...systemPinnedTabs, ...pinnedTabs, ...normalTabs],
       };
     });
-  }, [commitFileManagerWorkspace]);
+    publishSharedPinnedTabsFromWorkspace(nextWorkspace);
+  }, [commitFileManagerWorkspace, publishSharedPinnedTabsFromWorkspace]);
 
   const handleToggleFileManagerTabPinned = useCallback((tabId) => {
-    commitFileManagerWorkspace((current) => ({
+    const nextWorkspace = commitFileManagerWorkspace((current) => ({
       activeTabId: current?.activeTabId || '',
       tabs: (current?.tabs || []).map((tab) => (
         tab.id === tabId && tab.systemPinned !== true
@@ -4787,7 +4896,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           : tab
       )),
     }));
-  }, [commitFileManagerWorkspace]);
+    publishSharedPinnedTabsFromWorkspace(nextWorkspace);
+  }, [commitFileManagerWorkspace, publishSharedPinnedTabsFromWorkspace]);
 
   const handleCloseFileManagerTab = useCallback(async (tabId, event) => {
     event?.stopPropagation();
@@ -5223,7 +5333,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (resolvedCustomTitle === currentCustomTitle) {
       return;
     }
-    commitFileManagerWorkspace((current) => ({
+    const nextWorkspace = commitFileManagerWorkspace((current) => ({
       activeTabId: current?.activeTabId || '',
       tabs: (current?.tabs || []).map((tab) => (
         tab.id === tabId
@@ -5231,7 +5341,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           : tab
       )),
     }));
-  }, [addToast, commitFileManagerWorkspace, t]);
+    publishSharedPinnedTabsFromWorkspace(nextWorkspace);
+  }, [addToast, commitFileManagerWorkspace, publishSharedPinnedTabsFromWorkspace, t]);
 
   const handleDeleteTabDirectory = useCallback(async (tabId, targetPath, useShell = false) => {
     const normalizedTargetPath = normalizePath(targetPath) || '/';

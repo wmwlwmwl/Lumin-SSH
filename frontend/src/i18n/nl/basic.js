@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Na het sluiten is alleen het mappictogram verborgen en wordt het vastgezette pictogram nog steeds weergegeven.",
   "文件资源管理器不显示关闭图标按钮": "Bestandsverkenner toont de knop Sluiten niet",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Na het openen geeft het tabblad Bestandsverkenner niet de knop Sluiten weer en kan het alleen worden gesloten door erop te dubbelklikken.",
+  "固定标签跨终端共享": "Vaste labeldeling tussen terminals",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Wanneer ingeschakeld, delen alle terminals op dezelfde server een set vaste labels van de bestandsverkenner.",
   "文件资源管理器视图": "Bestandsverkenner-weergave",
   "选择顶部标签单栏,或左侧标签双面板视图": "Kies een enkele kolom op het bovenste tabblad of een dubbele paneelweergave op het linkertabblad",
   "经典顶部标签": "klassiek toplabel",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Opnieuw opstarten",
   "已停止": "Gestopt",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Waarschuwing: 0.0.0.0, :: of andere niet-lokale adressen kunnen luisterpoorten blootleggen",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Waarschuwing: 127.0.0.1/localhost/::1 vertegenwoordigt de huidige host zelf",
 };

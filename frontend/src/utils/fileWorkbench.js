@@ -3,6 +3,8 @@ const UPLOAD_QUEUE_STATE_KEY = '__luminFileUploadQueueState';
 const FILE_MANAGER_WORKSPACE_STATE_KEY = '__luminFileManagerWorkspaceState';
 const FILE_MANAGER_PATH_CACHE_STATE_KEY = '__luminFileManagerPathCacheState';
 const FILE_MANAGER_WORKSPACE_CHANGED_EVENT = 'lumin-file-manager-workspace-changed';
+const FILE_MANAGER_SHARED_PINNED_STATE_KEY = '__luminFileManagerSharedPinnedState';
+const FILE_MANAGER_SHARED_PINNED_CHANGED_EVENT = 'lumin-file-manager-shared-pinned-changed';
 
 function getRoot() {
   if (typeof window !== 'undefined') return window;
@@ -306,6 +308,72 @@ export function subscribeSessionFileManagerWorkspace(sessionId, callback) {
   callback(getSessionFileManagerWorkspace(key));
   root.addEventListener(fileManagerWorkspaceEventName(key), handler);
   return () => root.removeEventListener(fileManagerWorkspaceEventName(key), handler);
+}
+
+function fileManagerSharedPinnedEventName(sessionGroupId) {
+  return `lumin-file-manager-shared-pinned:${normalizeSessionGroupId(sessionGroupId)}`;
+}
+
+function ensureFileManagerSharedPinnedStore() {
+  const root = getRoot();
+  if (!root[FILE_MANAGER_SHARED_PINNED_STATE_KEY]) root[FILE_MANAGER_SHARED_PINNED_STATE_KEY] = {};
+  return root[FILE_MANAGER_SHARED_PINNED_STATE_KEY];
+}
+
+function normalizeSharedPinnedTab(tab) {
+  if (!tab || typeof tab !== 'object') return null;
+  const id = String(tab.id || '').trim();
+  if (!id) return null;
+  return {
+    id,
+    path: normalizeFileManagerTabPath(tab.path) || '/',
+    customTitle: typeof tab.customTitle === 'string' ? tab.customTitle.trim() : '',
+  };
+}
+
+function normalizeSharedPinnedTabs(tabs) {
+  const seenIds = new Set();
+  const seenPaths = new Set();
+  return (Array.isArray(tabs) ? tabs : [])
+    .map(normalizeSharedPinnedTab)
+    .filter((tab) => {
+      if (!tab) return false;
+      if (seenIds.has(tab.id)) return false;
+      if (tab.path && seenPaths.has(tab.path)) return false;
+      seenIds.add(tab.id);
+      if (tab.path) seenPaths.add(tab.path);
+      return true;
+    });
+}
+
+export function getSessionSharedPinnedTabs(sessionGroupId) {
+  const store = ensureFileManagerSharedPinnedStore();
+  const key = normalizeSessionGroupId(sessionGroupId);
+  return normalizeSharedPinnedTabs(store[key]);
+}
+
+export function setSessionSharedPinnedTabs(sessionGroupId, updater) {
+  const root = getRoot();
+  const store = ensureFileManagerSharedPinnedStore();
+  const key = normalizeSessionGroupId(sessionGroupId);
+  const current = getSessionSharedPinnedTabs(key);
+  const nextRaw = typeof updater === 'function' ? updater(current) : updater;
+  const next = normalizeSharedPinnedTabs(nextRaw);
+  store[key] = next;
+  root.dispatchEvent(new CustomEvent(fileManagerSharedPinnedEventName(key), { detail: next }));
+  root.dispatchEvent(new CustomEvent(FILE_MANAGER_SHARED_PINNED_CHANGED_EVENT, {
+    detail: { sessionGroupId: key, tabs: next },
+  }));
+  return next;
+}
+
+export function subscribeSessionSharedPinnedTabs(sessionGroupId, callback) {
+  const root = getRoot();
+  const key = normalizeSessionGroupId(sessionGroupId);
+  const handler = (event) => callback(event.detail);
+  callback(getSessionSharedPinnedTabs(key));
+  root.addEventListener(fileManagerSharedPinnedEventName(key), handler);
+  return () => root.removeEventListener(fileManagerSharedPinnedEventName(key), handler);
 }
 
 export function getAllSessionFileManagerWorkspaces() {

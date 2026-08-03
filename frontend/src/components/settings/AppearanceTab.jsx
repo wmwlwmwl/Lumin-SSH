@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { t as $t } from '../../i18n.js';
 import { Sun, Monitor, Moon, Trash2, Copy } from 'lucide-react';
-import { ToggleSwitch } from './SharedComponents';
+import { SettingRow, SettingsDivider, SettingsPanel, SettingsSectionTitle, SettingsTabRoot, ToggleSwitch } from './SharedComponents';
 
 export default function AppearanceTab({
   programFonts,
@@ -81,10 +81,10 @@ export default function AppearanceTab({
   const darkThemePackages = normalizedThemePackages.filter((themePackage) => themePackage?.modeHint !== 'light');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <SettingsTabRoot>
       <div>
-        <h3 style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 10, fontWeight: 600 }}>{$t('终端显示')}</h3>
-        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+        <SettingsSectionTitle>{$t('终端显示')}</SettingsSectionTitle>
+        <SettingsPanel style={{ padding: 12, border: '1px solid var(--border-subtle)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div>
@@ -219,63 +219,55 @@ export default function AppearanceTab({
               </div>
             </div>
           </div>
-          <div className="divider" style={{ margin: '16px 0 12px', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('终端字体大小')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('调节终端的字符显示大小')}</div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input
-                type="range"
-                min="10"
-                max="28"
-                step="1"
-                value={terminalFontSize}
-                onChange={onTerminalFontSizeChange}
-                style={{ cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{terminalFontSize}px</span>
-            </div>
-          </div>
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('终端输入回显')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('关闭后输入密码等敏感内容时不会显示字符')}</div>
-            </div>
-            <ToggleSwitch checked={terminalLocalEcho} onChange={() => onTerminalLocalEchoChange(!terminalLocalEcho)} />
-          </div>
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('每行显示时间')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('在终端每行输出前添加时间戳')}</div>
-            </div>
-            <ToggleSwitch checked={terminalTimestamps} onChange={() => onTerminalTimestampsChange(!terminalTimestamps)} />
-          </div>
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('命令块边框')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('左侧显示可折叠命令块，点击收起输出')}</div>
-            </div>
-            <ToggleSwitch checked={terminalCommandBlocks} onChange={() => onTerminalCommandBlocksChange(!terminalCommandBlocks)} />
-          </div>
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('终端输出保持默认鼠标指针')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标')}</div>
-            </div>
-            <ToggleSwitch checked={terminalDefaultMouseCursor} onChange={() => onTerminalDefaultMouseCursorChange(!terminalDefaultMouseCursor)} />
-          </div>
-        </div>
+          <SettingsDivider margin="12px 0 8px" />
+          <SettingRow
+            title={$t('终端字体大小')}
+            description={$t('调节终端的字符显示大小')}
+            action={(
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <input
+                  type="range"
+                  min="10"
+                  max="28"
+                  step="1"
+                  value={terminalFontSize}
+                  onChange={onTerminalFontSizeChange}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{terminalFontSize}px</span>
+              </div>
+            )}
+          />
+          <SettingsDivider />
+          <SettingRow
+            title={$t('终端输入回显')}
+            description={$t('关闭后输入密码等敏感内容时不会显示字符')}
+            action={<ToggleSwitch checked={terminalLocalEcho} onChange={() => onTerminalLocalEchoChange(!terminalLocalEcho)} />}
+          />
+          <SettingsDivider />
+          <SettingRow
+            title={$t('每行显示时间')}
+            description={$t('在终端每行输出前添加时间戳')}
+            action={<ToggleSwitch checked={terminalTimestamps} onChange={() => onTerminalTimestampsChange(!terminalTimestamps)} />}
+          />
+          <SettingsDivider />
+          <SettingRow
+            title={$t('命令块边框')}
+            description={$t('左侧显示可折叠命令块，点击收起输出')}
+            action={<ToggleSwitch checked={terminalCommandBlocks} onChange={() => onTerminalCommandBlocksChange(!terminalCommandBlocks)} />}
+          />
+          <SettingsDivider />
+          <SettingRow
+            title={$t('终端输出保持默认鼠标指针')}
+            description={$t('开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标')}
+            action={<ToggleSwitch checked={terminalDefaultMouseCursor} onChange={() => onTerminalDefaultMouseCursorChange(!terminalDefaultMouseCursor)} />}
+          />
+        </SettingsPanel>
       </div>
 
       <div>
-        <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('主题包')}</h3>
-        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+        <SettingsSectionTitle>{$t('主题包')}</SettingsSectionTitle>
+        <SettingsPanel>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('主题')}</div>
@@ -340,7 +332,7 @@ export default function AppearanceTab({
             </div>
           </div>
 
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <SettingsDivider />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-secondary btn-sm" onClick={onReloadThemePackages} disabled={themePackageBusy}>{$t('重新扫描')}</button>
@@ -375,35 +367,33 @@ export default function AppearanceTab({
             />
           </div>
 
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('监控面板位置')}</div>
-            </div>
-            <div style={{ display: 'flex', background: 'var(--surface-raised)', borderRadius: 'var(--radius-xl)', padding: 4, border: '1px solid var(--border)' }}>
-              <button className={`btn btn-sm ${probePanelPosition === 'left' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onProbePanelPositionChange('left')} style={{ borderRadius: 'var(--radius-xl)', background: probePanelPosition === 'left' ? 'var(--surface-sunken)' : 'transparent' }}>{$t('左侧')}</button>
-              <button className={`btn btn-sm ${probePanelPosition === 'right' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onProbePanelPositionChange('right')} style={{ borderRadius: 'var(--radius-xl)', background: probePanelPosition === 'right' ? 'var(--surface-sunken)' : 'transparent' }}>{$t('右侧')}</button>
-            </div>
-          </div>
-        </div>
+          <SettingsDivider />
+          <SettingRow
+            title={$t('监控面板位置')}
+            action={(
+              <div style={{ display: 'flex', background: 'var(--surface-raised)', borderRadius: 'var(--radius-xl)', padding: 4, border: '1px solid var(--border)' }}>
+                <button className={`btn btn-sm ${probePanelPosition === 'left' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onProbePanelPositionChange('left')} style={{ borderRadius: 'var(--radius-xl)', background: probePanelPosition === 'left' ? 'var(--surface-sunken)' : 'transparent' }}>{$t('左侧')}</button>
+                <button className={`btn btn-sm ${probePanelPosition === 'right' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onProbePanelPositionChange('right')} style={{ borderRadius: 'var(--radius-xl)', background: probePanelPosition === 'right' ? 'var(--surface-sunken)' : 'transparent' }}>{$t('右侧')}</button>
+              </div>
+            )}
+          />
+        </SettingsPanel>
       </div>
 
       <div>
-        <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('偏好设置')}</h3>
-        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('终端工具栏仅显示图标')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('开启后终端工具栏的进程管理、网络监控等按钮只显示图标')}</div>
-            </div>
-            <ToggleSwitch checked={terminalToolbarIconOnly} onChange={onToggleTerminalToolbarIconOnly} />
-          </div>
-        </div>
+        <SettingsSectionTitle>{$t('偏好设置')}</SettingsSectionTitle>
+        <SettingsPanel>
+          <SettingRow
+            title={$t('终端工具栏仅显示图标')}
+            description={$t('开启后终端工具栏的进程管理、网络监控等按钮只显示图标')}
+            action={<ToggleSwitch checked={terminalToolbarIconOnly} onChange={onToggleTerminalToolbarIconOnly} />}
+          />
+        </SettingsPanel>
       </div>
 
       <div>
-        <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('终端背景')}</h3>
-        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+        <SettingsSectionTitle>{$t('终端背景')}</SettingsSectionTitle>
+        <SettingsPanel>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('自定义终端壁纸')}</div>
@@ -421,7 +411,7 @@ export default function AppearanceTab({
               </label>
             </div>
           </div>
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
+          <SettingsDivider />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('壁纸可见度')}</div>
@@ -439,29 +429,25 @@ export default function AppearanceTab({
               <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{Math.round(termBgOpacity * 100)}%</span>
             </div>
           </div>
-        </div>
+        </SettingsPanel>
       </div>
 
       <div>
-        <h3 style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 12, fontWeight: 600 }}>{$t('窗口大小')}</h3>
-        <div className="form-group" style={{ background: 'var(--surface-overlay)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('记住窗口大小')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('下次启动时恢复上次调整的窗口尺寸')}</div>
-            </div>
-            <ToggleSwitch checked={rememberWindowSize} onChange={onToggleRememberWindowSize} />
-          </div>
-          <div className="divider" style={{ margin: '12px 0', borderTop: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('下次启动时恢复上次调整的窗口尺寸')}</div>
-            <button className="btn btn-secondary btn-sm" onClick={onResetWindowSize} style={{ fontSize: 12, borderRadius: 'var(--radius-sm)' }}>
-              {$t('恢复默认大小')}
-            </button>
-          </div>
-        </div>
+        <SettingsSectionTitle>{$t('窗口大小')}</SettingsSectionTitle>
+        <SettingsPanel>
+          <SettingRow
+            title={$t('记住窗口大小')}
+            description={$t('下次启动时恢复上次调整的窗口尺寸')}
+            action={<ToggleSwitch checked={rememberWindowSize} onChange={onToggleRememberWindowSize} />}
+          />
+          <SettingsDivider />
+          <SettingRow
+            description={$t('下次启动时恢复上次调整的窗口尺寸')}
+            action={<button className="btn btn-secondary btn-sm" onClick={onResetWindowSize} style={{ fontSize: 12, borderRadius: 'var(--radius-sm)' }}>{$t('恢复默认大小')}</button>}
+          />
+        </SettingsPanel>
       </div>
-    </div>
+    </SettingsTabRoot>
   );
 }
 

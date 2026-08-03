@@ -882,6 +882,7 @@ export default function SettingsModal({
   const [fileManagerAutoOpenTransferQueue, setFileManagerAutoOpenTransferQueue] = useState(localStorage.getItem('fileManagerAutoOpenTransferQueue') !== 'false');
   const [fileManagerShowTabIcons, setFileManagerShowTabIcons] = useState(localStorage.getItem('fileManagerShowTabIcons') !== 'false');
   const [fileManagerHideTabCloseButton, setFileManagerHideTabCloseButton] = useState(localStorage.getItem('fileManagerHideTabCloseButton') === 'true');
+  const [fileManagerSharedPinnedTabs, setFileManagerSharedPinnedTabs] = useState(localStorage.getItem('fileManagerSharedPinnedTabs') === 'true');
   const [fileManagerLayoutMode, setFileManagerLayoutMode] = useState(localStorage.getItem('fileManagerLayoutMode') === 'sidebar_dual' ? 'sidebar_dual' : 'classic');
   const [fileManagerDualPaneDragTransferEnabled, setFileManagerDualPaneDragTransferEnabled] = useState(localStorage.getItem('fileManagerDualPaneDragTransferEnabled') !== 'false');
   const [fileManagerDualPaneDragPromptOnDirectory, setFileManagerDualPaneDragPromptOnDirectory] = useState(localStorage.getItem('fileManagerDualPaneDragPromptOnDirectory') !== 'false');
@@ -1012,6 +1013,13 @@ export default function SettingsModal({
     if (next) localStorage.setItem('fileManagerHideTabCloseButton', 'true');
     else localStorage.removeItem('fileManagerHideTabCloseButton');
     window.dispatchEvent(new CustomEvent('file-manager-hide-tab-close-button-changed', { detail: next }));
+  };
+  const handleToggleFileManagerSharedPinnedTabs = () => {
+    const next = !fileManagerSharedPinnedTabs;
+    setFileManagerSharedPinnedTabs(next);
+    if (next) localStorage.setItem('fileManagerSharedPinnedTabs', 'true');
+    else localStorage.removeItem('fileManagerSharedPinnedTabs');
+    window.dispatchEvent(new CustomEvent('file-manager-shared-pinned-tabs-changed', { detail: next }));
   };
   const handleFileManagerLayoutModeChange = (value) => {
     const next = value === 'sidebar_dual' ? 'sidebar_dual' : 'classic';
@@ -1986,6 +1994,8 @@ export default function SettingsModal({
                 onToggleFileManagerShowTabIcons={handleToggleFileManagerShowTabIcons}
                 fileManagerHideTabCloseButton={fileManagerHideTabCloseButton}
                 onToggleFileManagerHideTabCloseButton={handleToggleFileManagerHideTabCloseButton}
+                fileManagerSharedPinnedTabs={fileManagerSharedPinnedTabs}
+                onToggleFileManagerSharedPinnedTabs={handleToggleFileManagerSharedPinnedTabs}
                 fileManagerLayoutMode={fileManagerLayoutMode}
                 onFileManagerLayoutModeChange={handleFileManagerLayoutModeChange}
                 fileManagerDualPaneDragTransferEnabled={fileManagerDualPaneDragTransferEnabled}

@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Sau khi đóng chỉ có biểu tượng thư mục bị ẩn còn biểu tượng đã ghim vẫn hiển thị.",
   "文件资源管理器不显示关闭图标按钮": "File Explorer không hiển thị nút biểu tượng đóng",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Sau khi mở, tab File Explorer không hiển thị nút biểu tượng đóng và chỉ có thể đóng bằng cách nhấp đúp vào tab đó.",
+  "固定标签跨终端共享": "Đã sửa lỗi chia sẻ nhãn trên các thiết bị đầu cuối",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Khi được bật, tất cả các thiết bị đầu cuối trong cùng một máy chủ sẽ chia sẻ một bộ nhãn cố định của trình khám phá tệp.",
   "文件资源管理器视图": "Chế độ xem tệp Explorer",
   "选择顶部标签单栏,或左侧标签双面板视图": "Chọn chế độ xem bảng đơn tab trên cùng hoặc chế độ xem bảng điều khiển kép của tab bên trái",
   "经典顶部标签": "nhãn hàng đầu cổ điển",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Khởi động lại",
   "已停止": "Đã dừng",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Cảnh báo: 0.0.0.0, :: hoặc các địa chỉ không cục bộ khác có thể làm lộ các cổng nghe",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Cảnh báo: 127.0.0.1/localhost/::1 đại diện cho chính máy chủ hiện tại",
 };

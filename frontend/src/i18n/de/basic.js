@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Nach dem Schließen wird nur das Verzeichnissymbol ausgeblendet und das angeheftete Symbol weiterhin angezeigt.",
   "文件资源管理器不显示关闭图标按钮": "Der Datei-Explorer zeigt die Schaltfläche zum Schließen des Symbols nicht an",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Nach dem Öffnen zeigt die Registerkarte „Datei-Explorer“ nicht die Schaltfläche „Schließen“ an und kann nur durch Doppelklicken geschlossen werden.",
+  "固定标签跨终端共享": "Die gemeinsame Nutzung von Etiketten zwischen Terminals wurde behoben",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Wenn diese Option aktiviert ist, verwenden alle Terminals unter demselben Server einen Satz fester Datei-Explorer-Bezeichnungen gemeinsam.",
   "文件资源管理器视图": "Datei-Explorer-Ansicht",
   "选择顶部标签单栏,或左侧标签双面板视图": "Wählen Sie die Einzelspaltenansicht des oberen Tabs oder die Doppelbereichsansicht des linken Tabs",
   "经典顶部标签": "klassisches Top-Label",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Neustart",
   "已停止": "Angehalten",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Warnung: 0.0.0.0, :: oder andere nicht lokale Adressen können Überwachungsports offenlegen",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Warnung: 127.0.0.1/localhost/::1 repräsentiert den aktuellen Host selbst",
 };

@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Dopo la chiusura, solo l'icona della directory viene nascosta e l'icona bloccata viene ancora visualizzata.",
   "文件资源管理器不显示关闭图标按钮": "Esplora file non mostra il pulsante dell'icona di chiusura",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Dopo l'apertura, la scheda Esplora file non visualizza il pulsante con l'icona di chiusura e può essere chiusa solo facendo doppio clic su di essa.",
+  "固定标签跨终端共享": "Risolta la condivisione delle etichette tra i terminali",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Quando sono accesi, tutti i terminali sotto lo stesso server condividono una serie di etichette fisse di Esplora file.",
   "文件资源管理器视图": "Visualizzazione Esplora file",
   "选择顶部标签单栏,或左侧标签双面板视图": "Scegli la visualizzazione a colonna singola della scheda superiore o la visualizzazione a doppio pannello della scheda sinistra",
   "经典顶部标签": "etichetta superiore classica",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Ricomincia",
   "已停止": "Fermato",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Avvertenza: 0.0.0.0, :: o altri indirizzi non locali potrebbero esporre le porte in ascolto",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Avvertenza: 127.0.0.1/localhost/::1 rappresenta l'host corrente stesso",
 };

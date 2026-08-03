@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Setelah ditutup, hanya ikon direktori yang disembunyikan dan ikon yang disematkan masih ditampilkan.",
   "文件资源管理器不显示关闭图标按钮": "File Explorer tidak menampilkan tombol ikon tutup",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Setelah dibuka, tab File Explorer tidak menampilkan tombol ikon tutup dan hanya dapat ditutup dengan mengklik dua kali.",
+  "固定标签跨终端共享": "Memperbaiki pembagian label di seluruh terminal",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Saat dihidupkan, semua terminal di bawah server yang sama berbagi satu set label tetap penjelajah file.",
   "文件资源管理器视图": "Tampilan Penjelajah File",
   "选择顶部标签单栏,或左侧标签双面板视图": "Pilih tampilan panel ganda tab atas, atau tampilan panel ganda tab kiri",
   "经典顶部标签": "label atas klasik",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Mulai ulang",
   "已停止": "Berhenti",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Peringatan: 0.0.0.0, ::, atau alamat non-lokal lainnya dapat mengekspos port pendengaran",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Peringatan: 127.0.0.1/localhost/::1 mewakili host saat ini",
 };

@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Kapattıktan sonra yalnızca dizin simgesi gizlenir ve sabitlenmiş simge görüntülenmeye devam eder.",
   "文件资源管理器不显示关闭图标按钮": "Dosya Gezgini kapat simgesi düğmesini göstermiyor",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Dosya Gezgini sekmesi açıldıktan sonra kapat simgesi düğmesi görüntülenmez ve yalnızca çift tıklanarak kapatılabilir.",
+  "固定标签跨终端共享": "Terminaller arasında sabit etiket paylaşımı",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Açıldığında, aynı sunucunun altındaki tüm terminaller bir dizi dosya gezgini sabit etiketini paylaşır.",
   "文件资源管理器视图": "Dosya Gezgini Görünümü",
   "选择顶部标签单栏,或左侧标签双面板视图": "Üst sekmede tek sütun veya sol sekmede çift panel görünümü seçin",
   "经典顶部标签": "klasik üst etiket",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Tekrar başlat",
   "已停止": "Durduruldu",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Uyarı: 0.0.0.0, :: veya diğer yerel olmayan adresler dinleme bağlantı noktalarını açığa çıkarabilir",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Uyarı: 127.0.0.1/localhost/::1 mevcut ana bilgisayarın kendisini temsil eder",
 };

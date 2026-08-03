@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Após fechar, apenas o ícone do diretório fica oculto e o ícone fixado ainda é exibido.",
   "文件资源管理器不显示关闭图标按钮": "O File Explorer não mostra o botão do ícone Fechar",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Após a abertura, a aba Explorador de Arquivos não exibe o botão do ícone fechar e só pode ser fechada clicando duas vezes nela.",
+  "固定标签跨终端共享": "Compartilhamento de rótulo fixo entre terminais",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Quando ativado, todos os terminais no mesmo servidor compartilham um conjunto de rótulos fixos do explorador de arquivos.",
   "文件资源管理器视图": "Visualização do Explorador de Arquivos",
   "选择顶部标签单栏,或左侧标签双面板视图": "Escolha a visualização de coluna única na guia superior ou painel duplo na guia esquerda",
   "经典顶部标签": "rótulo superior clássico",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Reiniciar",
   "已停止": "Parou",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Aviso: 0.0.0.0, :: ou outros endereços não locais podem expor portas de escuta",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Aviso: 127.0.0.1/localhost/::1 representa o próprio host atual",
 };

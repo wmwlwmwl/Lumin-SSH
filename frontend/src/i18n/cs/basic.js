@@ -1369,6 +1369,8 @@ export default {
   "关闭后只隐藏目录图标,仍显示置顶图标": "Po zavření se skryje pouze ikona adresáře a připnutá ikona se stále zobrazuje.",
   "文件资源管理器不显示关闭图标按钮": "Průzkumník souborů nezobrazuje tlačítko zavřít",
   "开启后,文件资源管理器标签页不显示关闭图标按钮,仅可双击关闭": "Po otevření se na kartě Průzkumník nezobrazuje tlačítko s ikonou zavření a lze ji zavřít pouze dvojitým kliknutím.",
+  "固定标签跨终端共享": "Opraveno sdílení štítků mezi terminály",
+  "开启后,同一服务器下所有终端共用一组文件资源管理器固定标签": "Po zapnutí sdílejí všechny terminály na stejném serveru sadu pevných štítků průzkumníka souborů.",
   "文件资源管理器视图": "Zobrazení Průzkumníka souborů",
   "选择顶部标签单栏,或左侧标签双面板视图": "Vyberte horní kartu s jedním sloupcem nebo levou kartu s dvojitým panelem",
   "经典顶部标签": "klasický vrchní štítek",
@@ -1759,5 +1761,4 @@ export default {
   "重启": "Restartujte",
   "已停止": "Zastaveno",
   "警告: 0.0.0.0、:: 或其他非本地地址可能暴露监听端口": "Upozornění: 0.0.0.0, :: nebo jiné nelokální adresy mohou odhalit naslouchající porty",
-  "警告: 127.0.0.1 / localhost / ::1 表示当前这一侧主机自身": "Upozornění: 127.0.0.1/localhost/::1 představuje samotného aktuálního hostitele",
 };
