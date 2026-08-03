@@ -13,7 +13,7 @@ require (
 	github.com/pkg/sftp v1.13.10
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/studio-b12/gowebdav v0.12.0
-	github.com/wailsapp/wails/v2 v2.12.0
+	github.com/wailsapp/wails/v2 v2.13.0
 	go.bug.st/serial v1.7.1
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
