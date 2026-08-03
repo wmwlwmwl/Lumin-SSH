@@ -562,13 +562,17 @@ export default function App() {
   const [showPortForwardDialog, setShowPortForwardDialog] = useState(false);
   const [portForwardDialogSessionId, setPortForwardDialogSessionId] = useState(null);
   const [portForwardInitialMapping, setPortForwardInitialMapping] = useState(null);
-  const [portListeningEnabled, setPortListeningEnabled] = useState(
-    () => localStorage.getItem('portForwardRealtimeListening') === 'true'
-  );
+  // 自动监听尚不稳定，暂时强制关闭，避免已保存的设置重新启用它。
+  const [portListeningEnabled, setPortListeningEnabled] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('portForwardRealtimeListening', 'false');
+  }, []);
 
   const handlePortListeningEnabledChange = useCallback((enabled) => {
-    setPortListeningEnabled(enabled);
-    localStorage.setItem('portForwardRealtimeListening', enabled ? 'true' : 'false');
+    // 保留接口，待自动监听稳定后再开放；当前不允许重新开启。
+    setPortListeningEnabled(false);
+    localStorage.setItem('portForwardRealtimeListening', 'false');
   }, []);
 
   const openPortForwardDialog = useCallback((sessionId, port = null) => {

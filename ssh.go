@@ -4311,6 +4311,37 @@ func (m *SSHManager) UncompressItem(sessionId string, remotePath string) error {
 	return m.UncompressItemWithStrategy(sessionId, remotePath, smartUncompressConflictStrategyAutoRename)
 }
 
+// InstallUnzip installs unzip using the package manager available on the remote host.
+// Non-root users must have passwordless sudo because this temporary SSH session cannot
+// provide an interactive password prompt.
+func (m *SSHManager) InstallUnzip(sessionId string) error {
+	client, _, err := m.getClientEntry(sessionId)
+	if err != nil {
+		return err
+	}
+	cmd := `if [ "$(id -u)" -eq 0 ]; then SUDO=""; elif command -v sudo >/dev/null 2>&1; then SUDO="sudo -n"; else echo "root privileges or passwordless sudo are required" >&2; exit 1; fi
+if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y unzip
+elif command -v dnf >/dev/null 2>&1; then $SUDO dnf install -y unzip
+elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y unzip
+elif command -v apk >/dev/null 2>&1; then $SUDO apk add unzip
+elif command -v zypper >/dev/null 2>&1; then $SUDO zypper --non-interactive install unzip
+elif command -v pacman >/dev/null 2>&1; then $SUDO pacman --noconfirm -S unzip
+else echo "no supported package manager found" >&2; exit 1
+fi
+command -v unzip >/dev/null 2>&1`
+	// Package-index refreshes can take longer than regular file-manager commands.
+	session, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	out, err := runCommandWithSessionContext(context.Background(), session, cmd, 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("install unzip failed: %w, output: %s", err, out)
+	}
+	return nil
+}
+
 func (m *SSHManager) UncompressUploadedArchive(sessionId string, remotePath string) error {
 	client, _, err := m.getClientEntry(sessionId)
 	if err != nil {

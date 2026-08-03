@@ -135,13 +135,14 @@ export default function PortForwardDialog({
                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.92rem' }}>
                             {t('本地端口映射到远程；远程端口映射到本地。')}
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: 'var(--text-tertiary)', fontSize: 13, cursor: 'not-allowed' }}>
                             <input
                                 type="checkbox"
                                 checked={portListeningEnabled}
                                 onChange={(event) => onPortListeningEnabledChange?.(event.target.checked)}
+                                disabled
                             />
-                            {t('命令后实时检测新增监听端口')}
+                            {t('命令后实时检测新增监听端口（暂已关闭）')}
                         </label>
                     </div>
                     <button className="btn btn-ghost btn-sm" type="button" onClick={onClose} aria-label={t('关闭')}>

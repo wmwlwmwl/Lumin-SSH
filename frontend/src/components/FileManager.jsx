@@ -78,6 +78,12 @@ function fmtDate(ts) {
   });
 }
 
+function isMissingUnzipError(error) {
+  const message = String(error || '').toLowerCase();
+  return /(?:bash|sh):\s*unzip:\s*command not found/.test(message)
+    || (message.includes('unzip') && message.includes('status 127'));
+}
+
 // 文件图标（颜色统一走 CSS 变量，浅/深色主题一致切换）
 const ICON_SIZE = 16;
 function fileIcon(name, isDir, isSymlink = false) {
@@ -5297,6 +5303,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const handleUncompress = async (item, options = {}) => {
     const basePath = typeof options === 'string' ? options : (options.basePath || currentPath);
     const remotePath = joinPath(basePath, item.name);
+    const isZip = String(item.name || '').toLowerCase().endsWith('.zip');
     try {
       const previewSmartUncompressItem = window?.go?.main?.App?.PreviewSmartUncompressItem;
       const uncompressItemWithStrategy = window?.go?.main?.App?.UncompressItemWithStrategy;
@@ -5333,7 +5340,28 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         await loadDir(currentPathRef.current, { preserveView: true, showLoading: false });
       }
     } catch (err) {
-      addToast(`${t('解压失败')}: ${err}`, 'error');
+      if (!isZip || !isMissingUnzipError(err)) {
+        addToast(`${t('解压失败')}: ${err}`, 'error');
+        return;
+      }
+      const confirmed = await window.luminDialog?.confirm?.(
+        t('服务器未安装 unzip，无法解压 ZIP 文件。是否自动安装 unzip？'),
+        t('缺少 unzip')
+      );
+      if (!confirmed) return;
+      try {
+        addToast(t('正在自动安装 unzip...'), 'info');
+        await AppGo.InstallUnzip(sessionId);
+        addToast(t('unzip 安装成功，正在重新解压...'), 'info');
+        await handleUncompress(item, options);
+      } catch (installErr) {
+        const message = t('自动安装 unzip 失败，请手动解压');
+        if (typeof window.luminDialog?.alert === 'function') {
+          await window.luminDialog.alert(message, t('解压失败'));
+        } else {
+          addToast(message, 'error');
+        }
+      }
     }
   };
 
