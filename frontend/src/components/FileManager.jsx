@@ -2910,6 +2910,17 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     if (!activeTab) {
       return null;
     }
+    // 激活标签是固定标签且路径与 cwd 不一致时，优先复用已存在的同路径标签（通常是系统 home 标签），
+    // 避免命中 loadDir 的“固定标签禁止原地改路径就开新标签”分支而冒出与现成标签重复的冗余标签。
+    if (activeTab.pinned === true && (normalizePath(activeTab.path) || '/') !== normalizedCwdPath) {
+      const samePathTab = currentTabs.find((tab) => tab && (normalizePath(tab.path) || '/') === normalizedCwdPath);
+      if (samePathTab) {
+        return {
+          path: normalizedCwdPath,
+          tabId: String(samePathTab.id || '').trim(),
+        };
+      }
+    }
     return {
       path: normalizedCwdPath,
       tabId: String(activeTab.id || '').trim(),
@@ -2931,6 +2942,39 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       return false;
     }
     pendingTerminalCwdRef.current = '';
+    const currentActiveTabId = String(activeFileManagerTabIdRef.current || '').trim();
+    if (followTarget.tabId !== currentActiveTabId) {
+      const currentWorkspace = syncCurrentTabToWorkspace({ scrollTop: fileListRef.current?.scrollTop || 0 }) || fileManagerWorkspaceRef.current;
+      const currentPanes = currentWorkspace?.panes && typeof currentWorkspace.panes === 'object'
+        ? currentWorkspace.panes
+        : {};
+      const currentPane = currentPanes[activePaneKey] && typeof currentPanes[activePaneKey] === 'object'
+        ? currentPanes[activePaneKey]
+        : {};
+      const targetTab = Array.isArray(currentWorkspace?.tabs)
+        ? currentWorkspace.tabs.find((tab) => tab.id === followTarget.tabId) || null
+        : null;
+      commitFileManagerWorkspace({
+        activePane: activePaneKey,
+        activeTabId: followTarget.tabId,
+        panes: {
+          ...currentPanes,
+          [activePaneKey]: {
+            ...currentPane,
+            tabId: followTarget.tabId,
+            path: followTarget.path,
+            selectedPaths: [],
+            scrollTop: 0,
+          },
+        },
+      });
+      activeFileManagerTabIdRef.current = followTarget.tabId;
+      displayedTabIdRef.current = followTarget.tabId;
+      setSortField(targetTab?.sortField || 'name');
+      setSortDir(targetTab?.sortDir === 'desc' ? 'desc' : 'asc');
+      setSelectedPaths([]);
+      lastClickedPathRef.current = null;
+    }
     if (followTarget.path === currentPathRef.current && followTarget.tabId === String(activeFileManagerTabIdRef.current || '').trim()) {
       return true;
     }
@@ -2942,7 +2986,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       showLoading: options.showLoading === true,
       transitionMode: options.transitionMode || 'directory',
     });
-  }, [loadDir, resolveTerminalCwdFollowTarget]);
+  }, [activePaneKey, commitFileManagerWorkspace, loadDir, resolveTerminalCwdFollowTarget, syncCurrentTabToWorkspace]);
 
   useEffect(() => {
     if (!isActive) {
