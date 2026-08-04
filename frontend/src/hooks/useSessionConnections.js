@@ -723,7 +723,9 @@ export default function useSessionConnections(deps) {
           { label: t('仍然退出'), value: 'quit', primary: true },
           { label: t('重试同步'), value: 'retry', secondary: true },
           { label: t('取消'), value: 'cancel', secondary: true },
-        ]
+        ],
+        '',
+        { priority: 'system' },
       );
       if (choice === 'quit') {
         AppGo.DoQuit();
@@ -747,7 +749,8 @@ export default function useSessionConnections(deps) {
         { label: t('系统托盘'), value: 'tray', secondary: true },
         { label: t('取消'), value: 'cancel', secondary: true },
       ],
-      t('记住选择')
+      t('记住选择'),
+      { priority: 'system' },
     );
     if (!result) return;
     const { value, checked } = result;

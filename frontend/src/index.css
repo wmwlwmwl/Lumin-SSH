@@ -431,7 +431,7 @@ textarea:focus:not(:focus-visible) {
   --wails-draggable: drag;
   flex-shrink: 0;
   position: relative;
-  z-index: 10000; /* Z.TOPBAR */
+  z-index: 30000; /* Z.TOPBAR — window controls must remain reachable above every dialog */
   /* 顶栏双击最大化/点按钮时禁止划词，避免 WebView2 弹出 AI 搜索工具条 */
   user-select: none;
   -webkit-user-select: none;
@@ -833,7 +833,7 @@ input::-ms-clear {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999; /* Z.MODAL — must outrank terminal/panels/menus */
+  z-index: 9500; /* Z.MODAL */
   animation: fadeIn 0.12s ease;
 }
 
@@ -3019,7 +3019,7 @@ body.theme-light .batch-operation-bar {
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
   box-shadow: var(--shadow-md);
-  z-index: 10003; /* Z.TOAST */
+  z-index: 20003; /* Z.TOAST */
   min-width: 260px;
   animation: slideUp 0.2s ease;
 }
@@ -3911,7 +3911,7 @@ body.theme-light .editor-mode-banner {
   position: fixed;
   top: calc(var(--topbar-h) + var(--space-3));
   right: var(--space-5);
-  z-index: 10003; /* Z.TOAST */
+  z-index: 20003; /* Z.TOAST */
   display: flex;
   flex-direction: column;
   pointer-events: none;

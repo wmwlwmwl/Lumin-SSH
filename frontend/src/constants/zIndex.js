@@ -33,19 +33,25 @@ export const Z = {
   // ── Editor toolbars ──
   EDITOR_TOOLBAR: 998,
 
-  // ── System panels (tray, fullscreen overlays) ──
+  // ── System panels / workspace overlays ──
   TRAY_PANEL: 8000,
   FULLSCREEN_OVERLAY: 9000,
+  FLOATING_EDITOR: 9001,
+  FLOATING_EDITOR_MENU: 9002,
 
   // ── Global modals ──
-  MODAL: 9999,
+  MODAL: 9500,
+  GLOBAL_DIALOG: 9800,
+  SETTINGS: 9999,
 
-  // ── Chrome / search / floating editor ──
-  TOPBAR: 10000,
+  // ── Chrome / search ──
+  TOPBAR: 30000,
   SEARCH_PANEL: 10000,
-  FLOATING_EDITOR: 10001,
-  FLOATING_EDITOR_MENU: 10002,
+
+  // ── Critical app dialogs ──
+  SETTINGS_DIALOG: 20001,
+  SYSTEM_DIALOG: 20002,
 
   // ── Absolute top (toasts / system notices) ──
-  TOAST: 10003,
+  TOAST: 20003,
 };

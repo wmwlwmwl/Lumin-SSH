@@ -1,10 +1,33 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useId, useRef, useCallback } from 'react';
 import { Eye, EyeOff, Clipboard } from 'lucide-react';
 import { useTranslation, t } from '../i18n.js';
 import Tiptop from './Tiptop.jsx';
 import { Z } from '../constants/zIndex';
 
-export default function GlobalDialog() {
+const DIALOG_PRIORITY = {
+  default: 0,
+  settings: 1,
+  system: 2,
+};
+
+const getDialogPriority = (options) => DIALOG_PRIORITY[options?.priority] ?? DIALOG_PRIORITY.default;
+
+const insertDialogByPriority = (dialogs, dialog) => {
+  const insertAt = dialogs.findIndex((queued) => queued.priority < dialog.priority);
+  return insertAt === -1
+    ? [...dialogs, dialog]
+    : [...dialogs.slice(0, insertAt), dialog, ...dialogs.slice(insertAt)];
+};
+
+if (import.meta.env.DEV) {
+  const ordered = [0, 2, 1, 1].reduce(
+    (dialogs, priority) => insertDialogByPriority(dialogs, { priority }),
+    [],
+  );
+  console.assert(ordered.map(({ priority }) => priority).join(',') === '2,1,1,0', '弹窗优先级排序自检失败');
+}
+
+export default function GlobalDialog({ suspendDefault = false }) {
   const [dialogs, setDialogs] = useState([]);
   // ponytail: 队列同时存一份 ref。去重判定必须同步进行——同一 tick 内连续调用时
   // state 尚未更新，只比对 state 会漏判；ref 与 state 始终同步写入，二者不会漂移。
@@ -13,13 +36,13 @@ export default function GlobalDialog() {
   // 入队；命中去重返回 false。调用方据此立即 resolve，避免 Promise 永久挂起。
   const pushDialog = useCallback((dialog, isDuplicate) => {
     if (dialogsRef.current.some(isDuplicate)) return false;
-    dialogsRef.current = [...dialogsRef.current, dialog];
+    dialogsRef.current = insertDialogByPriority(dialogsRef.current, dialog);
     setDialogs(dialogsRef.current);
     return true;
   }, []);
 
-  const shiftDialog = useCallback(() => {
-    dialogsRef.current = dialogsRef.current.slice(1);
+  const removeDialog = useCallback((id) => {
+    dialogsRef.current = dialogsRef.current.filter((dialog) => dialog.id !== id);
     setDialogs(dialogsRef.current);
   }, []);
 
@@ -32,25 +55,27 @@ export default function GlobalDialog() {
           const queued = pushDialog({
             id: Date.now() + Math.random(),
             type: 'alert',
+            priority: getDialogPriority(options),
             title,
             message: normalizedMessage,
             copyable: options?.copyable !== false,
             onClose: () => resolve()
-          }, d => d.type === 'alert' && d.message === normalizedMessage && d.title === title);
+          }, d => d.type === 'alert' && d.priority === getDialogPriority(options) && d.message === normalizedMessage && d.title === title);
           if (!queued) resolve();
         });
       },
-      confirm: (message, title = t('操作确认'), checkboxLabel = '') => {
+      confirm: (message, title = t('操作确认'), checkboxLabel = '', options = {}) => {
         return new Promise((resolve) => {
           const queued = pushDialog({
             id: Date.now() + Math.random(),
             type: 'confirm',
+            priority: getDialogPriority(options),
             title,
             message,
             checkboxLabel,
             onConfirm: (_, checked) => resolve(checkboxLabel ? { confirmed: true, checked } : true),
             onCancel: () => resolve(checkboxLabel ? { confirmed: false, checked: false } : false)
-          }, d => d.type === 'confirm' && d.message === message);
+          }, d => d.type === 'confirm' && d.priority === getDialogPriority(options) && d.message === message);
           // 去重丢弃按「取消」处理：不确认即不执行破坏性操作
           if (!queued) resolve(checkboxLabel ? { confirmed: false, checked: false } : false);
         });
@@ -60,6 +85,7 @@ export default function GlobalDialog() {
           const queued = pushDialog({
             id: Date.now() + Math.random(),
             type: 'prompt',
+            priority: getDialogPriority(options),
             title,
             message,
             defaultValue,
@@ -69,22 +95,23 @@ export default function GlobalDialog() {
             validate: typeof options?.validate === 'function' ? options.validate : null,
             onConfirm: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
             onCancel: () => resolve(null)
-          }, d => d.type === 'prompt' && d.message === message);
+          }, d => d.type === 'prompt' && d.priority === getDialogPriority(options) && d.message === message);
           if (!queued) resolve(null);
         });
       },
-      choice: (message, title, buttons, checkboxLabel = '') => {
+      choice: (message, title, buttons, checkboxLabel = '', options = {}) => {
         return new Promise((resolve) => {
           const queued = pushDialog({
             id: Date.now() + Math.random(),
             type: 'choice',
+            priority: getDialogPriority(options),
             title,
             message,
             buttons,
             checkboxLabel,
             onChoice: (val, checked) => resolve(checkboxLabel ? { value: val, checked } : val),
             onClose: () => resolve(null)
-          }, d => d.type === 'choice' && d.title === title);
+          }, d => d.type === 'choice' && d.priority === getDialogPriority(options) && d.title === title);
           if (!queued) resolve(null);
         });
       }
@@ -96,47 +123,97 @@ export default function GlobalDialog() {
 
   if (dialogs.length === 0) return null;
 
-  const current = dialogs[0]; // 每次只显示队首的弹窗
-
-  const handleClose = () => {
-    if (current.onClose) current.onClose();
-    if (current.onCancel && current.type !== 'alert') current.onCancel();
-    shiftDialog();
-  };
-
-  const handleConfirm = (val, checked) => {
-    if (current.onConfirm) current.onConfirm(val, checked);
-    shiftDialog();
-  };
-
-  const handleChoice = (val, checked) => {
-    if (current.onChoice) current.onChoice(val, checked);
-    shiftDialog();
-  };
+  const current = dialogs[0];
+  const currentSuspended = suspendDefault && current.priority === DIALOG_PRIORITY.default;
+  const dialogZIndex = current.priority === DIALOG_PRIORITY.system
+    ? Z.SYSTEM_DIALOG
+    : current.priority === DIALOG_PRIORITY.settings
+      ? Z.SETTINGS_DIALOG
+      : Z.GLOBAL_DIALOG;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: Z.MODAL }}>
-      <DialogContent key={current.id} current={current} onClose={handleClose} onConfirm={handleConfirm} onChoice={handleChoice} />
+    <div
+      className="modal-overlay"
+      data-global-dialog-active={currentSuspended ? undefined : 'true'}
+      style={{ zIndex: dialogZIndex, display: currentSuspended ? 'none' : 'flex' }}
+    >
+      {dialogs.map((dialog, index) => {
+        const dialogActive = index === 0 && !(suspendDefault && dialog.priority === DIALOG_PRIORITY.default);
+        const handleClose = () => {
+          if (dialog.onClose) dialog.onClose();
+          if (dialog.onCancel && dialog.type !== 'alert') dialog.onCancel();
+          removeDialog(dialog.id);
+        };
+        const handleConfirm = (val, checked) => {
+          if (dialog.onConfirm) dialog.onConfirm(val, checked);
+          removeDialog(dialog.id);
+        };
+        const handleChoice = (val, checked) => {
+          if (dialog.onChoice) dialog.onChoice(val, checked);
+          removeDialog(dialog.id);
+        };
+        return (
+          <div key={dialog.id} style={{ display: dialogActive ? 'contents' : 'none' }}>
+            <DialogContent
+              current={dialog}
+              active={dialogActive}
+              onClose={handleClose}
+              onConfirm={handleConfirm}
+              onChoice={handleChoice}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function DialogContent({ current, onClose, onConfirm, onChoice }) {
+function DialogContent({ current, active, onClose, onConfirm, onChoice }) {
   const { t } = useTranslation();
+  const controlId = useId();
+  const dialogRef = useRef(null);
+  const lastFocusedRef = useRef(null);
+  const wasActiveRef = useRef(false);
   const [inputValue, setInputValue] = useState(current.defaultValue || '');
   const [inputError, setInputError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [checked, setChecked] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   // confirm: 默认落在「取消」，避免回车误关连接；左右切换后回车确认
-  const [focusAction, setFocusAction] = useState(() => (
-    current.type === 'confirm' ? 'cancel' : current.type === 'choice' ? 0 : 'confirm'
-  ));
+  const [focusAction, setFocusAction] = useState(() => {
+    if (current.type === 'confirm') return 'cancel';
+    if (current.type === 'choice') {
+      const primaryIdx = current.buttons?.findIndex((btn) => btn.primary);
+      return primaryIdx >= 0 ? primaryIdx : 0;
+    }
+    return 'confirm';
+  });
   const messageText = typeof current.message === 'string' ? current.message : String(current.message ?? '');
   const showCopyButton = current.copyable === true && !!messageText;
   const isPasswordInput = current.inputType === 'password' || !!current.checkboxLabel;
   const isLongTextAlert = current.type === 'alert' && (messageText.includes('\n') || messageText.length > 160);
   const choiceCount = current.type === 'choice' ? (current.buttons?.length || 0) : 0;
+
+  useEffect(() => {
+    const wasActive = wasActiveRef.current;
+    wasActiveRef.current = active;
+    if (!active || wasActive) return undefined;
+
+    const frame = window.requestAnimationFrame(() => {
+      const previous = lastFocusedRef.current;
+      const selector = current.type === 'prompt'
+        ? 'input:not(:disabled)'
+        : current.type === 'confirm'
+          ? '[data-dialog-action="cancel"]'
+          : current.type === 'choice'
+            ? `[data-dialog-choice="${focusAction}"]`
+            : 'textarea:not(:disabled), button:not(:disabled)';
+      const fallback = dialogRef.current?.querySelector(selector);
+      const target = previous?.isConnected ? previous : fallback;
+      target?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active]);
 
   useEffect(() => {
     if (current.type === 'confirm') {
@@ -173,9 +250,11 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
   };
 
   useEffect(() => {
+    if (!active) return undefined;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopImmediatePropagation();
         onClose();
         return;
       }
@@ -222,7 +301,7 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [current, inputValue, checked, focusAction, choiceCount, submitting, onClose, onConfirm, onChoice]);
+  }, [active, current, inputValue, checked, focusAction, choiceCount, submitting, onClose, onConfirm, onChoice]);
 
   const handleCopyMessage = async () => {
     if (!messageText) {
@@ -240,6 +319,8 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
 
   return (
     <div
+      ref={dialogRef}
+      onFocusCapture={(event) => { lastFocusedRef.current = event.target; }}
       className={isLongTextAlert ? 'modal modal-md' : 'modal modal-sm'}
       style={{
         padding: 32,
@@ -273,7 +354,7 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
       </div>
       {isLongTextAlert ? (
         <textarea
-          id="global-dialog-long-text"
+          id={`${controlId}-long-text`}
           name="global-dialog-long-text"
           readOnly
           value={messageText}
@@ -317,11 +398,10 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
         <>
           <div style={{ position: 'relative', marginBottom: inputError ? 8 : (current.checkboxLabel ? 12 : 28) }}>
             <input 
-              id="global-dialog-input"
+              id={`${controlId}-input`}
               name="global-dialog-input"
               autoComplete="off"
-              autoFocus
-              className="input" 
+              className="input"
               style={{
                 width: '100%',
                 textAlign: 'center',
@@ -409,8 +489,8 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
             </div>
           ) : null}
           {current.checkboxLabel && current.checkboxLabel.trim() && (
-            <label htmlFor="global-dialog-checkbox-prompt" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 28, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
-              <input id="global-dialog-checkbox-prompt" name="global-dialog-checkbox-prompt" autoComplete="off" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+            <label htmlFor={`${controlId}-prompt-checkbox`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 28, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+              <input id={`${controlId}-prompt-checkbox`} name="global-dialog-checkbox-prompt" autoComplete="off" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
               {current.checkboxLabel}
             </label>
           )}
@@ -423,6 +503,7 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
           {current.buttons.map((btn, i) => (
             <button
               key={i}
+              data-dialog-choice={i}
               className={btn.primary ? 'btn btn-primary' : btn.secondary ? 'btn btn-secondary' : 'btn btn-secondary'}
               onClick={() => onChoice(btn.value, checked)}
               onMouseEnter={() => setFocusAction(i)}
@@ -440,8 +521,8 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
           ))}
         </div>
         {current.checkboxLabel && (
-          <label htmlFor="global-dialog-checkbox-choice" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
-            <input id="global-dialog-checkbox-choice" name="global-dialog-checkbox-choice" autoComplete="off" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+          <label htmlFor={`${controlId}-choice-checkbox`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+            <input id={`${controlId}-choice-checkbox`} name="global-dialog-checkbox-choice" autoComplete="off" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
             {current.checkboxLabel}
           </label>
         )}
@@ -449,14 +530,15 @@ function DialogContent({ current, onClose, onConfirm, onChoice }) {
       ) : (
       <>
       {current.type === 'confirm' && current.checkboxLabel && (
-        <label htmlFor="global-dialog-checkbox-confirm" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
-          <input id="global-dialog-checkbox-confirm" name="global-dialog-checkbox-confirm" autoComplete="off" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+        <label htmlFor={`${controlId}-confirm-checkbox`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+          <input id={`${controlId}-confirm-checkbox`} name="global-dialog-checkbox-confirm" autoComplete="off" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
           {current.checkboxLabel}
         </label>
       )}
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
         {current.type !== 'alert' && (
           <button
+            data-dialog-action="cancel"
             className="btn btn-secondary"
             onClick={onClose}
             onMouseEnter={() => current.type === 'confirm' && setFocusAction('cancel')}

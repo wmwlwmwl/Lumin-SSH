@@ -1074,7 +1074,7 @@ export default function FileEditor({
   // modal mode (default) — portal to body so file-manager stacking context cannot bury the editor
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div className="modal-overlay" style={{ zIndex: Z.MODAL }} onContextMenu={handleContextMenu}>
+    <div className="modal-overlay" style={{ zIndex: Z.FULLSCREEN_OVERLAY }} onContextMenu={handleContextMenu}>
       <div className="modal modal-xl" style={{ display: 'flex', flexDirection: 'column', maxHeight: '90vh', marginTop: 48 }}>
         {editorContent}
       </div>

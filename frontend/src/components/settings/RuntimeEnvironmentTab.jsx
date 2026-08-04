@@ -43,7 +43,11 @@ export default function RuntimeEnvironmentTab() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || '')
       if (message.trim()) {
-        window.alert(message)
+        if (window.luminDialog?.alert) {
+          void window.luminDialog.alert(message, $t('提示'), { priority: 'settings' })
+        } else {
+          window.alert(message)
+        }
       }
       await refreshRuntimeEnvironmentStatus()
     } finally {

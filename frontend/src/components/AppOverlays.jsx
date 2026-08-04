@@ -239,7 +239,7 @@ export default function AppOverlays({ dialogs = {}, importExport = {}, notificat
 
       {/* ── Toasts ────────────────────────────────────────── */}
       <Toast toasts={toasts} onClose={removeToast} onAction={handleToastAction} closeLabel={t('关闭')} />
-      <GlobalDialog />
+      <GlobalDialog suspendDefault={showSettings} />
 
 
       {/* ── 自动更新弹窗 ──────────────────────────────── */}

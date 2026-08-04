@@ -23,6 +23,17 @@ import SyncTab from './settings/SyncTab';
 import { DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS, getRuntimeEnvironmentSettings, resolveRuntimeEnvironmentPathPreview, saveRuntimeEnvironmentSettings } from './settings/runtimeEnvironmentBridge.js';
 import { SETTINGS_SEARCH_DEFINITIONS, SETTINGS_SECTIONS } from './settings/settingDefinitions';
 
+const SETTINGS_DIALOG_OPTIONS = { priority: 'settings' };
+const settingsConfirm = (message, title = $t('操作确认'), checkboxLabel = '') => (
+  window.luminDialog?.confirm?.(message, title, checkboxLabel, SETTINGS_DIALOG_OPTIONS)
+);
+const settingsChoice = (message, title, buttons, checkboxLabel = '') => (
+  window.luminDialog?.choice?.(message, title, buttons, checkboxLabel, SETTINGS_DIALOG_OPTIONS)
+);
+const settingsPrompt = (message, defaultValue = '', title = $t('输入信息'), checkboxLabel = '', options = {}) => (
+  window.luminDialog?.prompt?.(message, defaultValue, title, checkboxLabel, { ...options, ...SETTINGS_DIALOG_OPTIONS })
+);
+
 const TAB_ICON = { general: SlidersHorizontal, network: Globe, fileManager: Folder, runtimeEnvironment: Database, appearance: Palette, shortcuts: Keyboard, sync: Cloud, app: Info };
 
 const TAB_LABELS = { general: '通用', network: '网络', fileManager: '文件管理器', runtimeEnvironment: '运行环境', appearance: '外观', shortcuts: '快捷键', sync: '同步与云', app: '关于' };
@@ -440,7 +451,8 @@ export default function SettingsModal({
   // Esc 关闭模态框（仅在未监听快捷键时生效）
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && !listeningKey) {
+      if (e.key === 'Escape' && !e.defaultPrevented && !listeningKey) {
+        if (document.querySelector('[data-global-dialog-active="true"]')) return;
         e.preventDefault();
         handleClose();
       }
@@ -688,7 +700,7 @@ export default function SettingsModal({
     if (!themePackage?.id || themePackage.source === 'builtin') {
       return;
     }
-    const ok = await window.luminDialog?.confirm?.(`${$t('确定删除')}${$t(themePackage.name)}${$t('？此操作不可撤销')}`);
+    const ok = await settingsConfirm(`${$t('确定删除')}${$t(themePackage.name)}${$t('？此操作不可撤销')}`);
     if (!ok) {
       return;
     }
@@ -1642,7 +1654,7 @@ export default function SettingsModal({
     if (!certificate) return;
 
     const names = [...(certificate.dnsNames || []), ...(certificate.ipAddresses || [])].join(', ') || '-';
-    const action = await window.luminDialog?.choice?.(
+    const action = await settingsChoice(
       [
         $t('FTPS 服务器证书不受系统信任。'),
         $t('请先通过可信渠道核对证书指纹，再决定是否接受。'),
@@ -1674,7 +1686,7 @@ export default function SettingsModal({
     const mismatch = result?.hostKeyMismatch;
     if (!mismatch) return;
 
-    const action = await window.luminDialog?.choice?.(
+    const action = await settingsChoice(
       [
         $t('远程主机密钥已变更，可能存在中间人攻击！'),
         '',
@@ -1839,7 +1851,7 @@ export default function SettingsModal({
           if (connNames.length) lines.push(`${$t('服务器')}：${connNames.slice(0, 8).join('、')}${connNames.length > 8 ? '…' : ''}`);
           if (credNames.length) lines.push(`${$t('凭据')}：${credNames.slice(0, 8).join('、')}${credNames.length > 8 ? '…' : ''}`);
           const body = `${$t('目标云上仍存在以下项，本地删除记录同步后将删除它们：')}\n${lines.join('\n')}\n\n${$t('请选择：删除它们，或保留它们并与本地合并。')}`;
-          const action = await window.luminDialog?.choice?.(
+          const action = await settingsChoice(
             body,
             $t('同步删除确认'),
             [
@@ -1857,7 +1869,7 @@ export default function SettingsModal({
           }
         }
       } catch (previewErr) {
-        const cont = await window.luminDialog?.choice?.(
+        const cont = await settingsChoice(
           `${$t('无法检查删除冲突，仍继续同步可能按本地删除记录静默删除目标云上的项。')}\n${previewErr}`,
           $t('预检失败'),
           [
@@ -1874,7 +1886,7 @@ export default function SettingsModal({
       const { result: res, cancelled } = await syncWithRecoveryPassword({
         sync,
         retry: (password) => AppGo.SyncWithRecoveryPassword(password),
-        prompt: (...args) => window.luminDialog.prompt(...args),
+        prompt: (...args) => settingsPrompt(...args),
         t: $t,
       });
       if (cancelled) return;
@@ -1925,7 +1937,7 @@ export default function SettingsModal({
     if (total <= 0) return;
     const dayNum = Number(days);
     const label = dayNum > 0 ? `${$t('清理超过')} ${dayNum} ${$t('天的删除记录')}` : $t('清理全部删除记录');
-    const action = await window.luminDialog?.choice?.(
+    const action = await settingsChoice(
       $t('将清理本地并上传到当前同步模式对应的云端，避免下次同步再次合并回来。确定？'),
       label,
       [
@@ -1958,7 +1970,7 @@ export default function SettingsModal({
         await AppGo.ChangeRecoveryPassword(password);
       } catch (e) {
         if (!String(e).includes('RECOVERY_PASSWORD_RESET_REQUIRED')) throw e;
-        const action = await window.luminDialog?.choice?.(
+        const action = await settingsChoice(
           $t('旧密码和新密码都无法解密云端备份。继续将不读取或合并云端数据，而是以本机当前数据覆盖所有已配置的云端同步目标。旧备份会保留，但其他设备尚未同步到本机的数据可能丢失。'),
           $t('确认强制重置恢复密码'),
           [
@@ -1986,7 +1998,7 @@ export default function SettingsModal({
   const isAnyConfigured = isConfigured || r2Configured || ftpConfigured || sftpConfigured;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: Z.MODAL }}>
+    <div className="modal-overlay" style={{ zIndex: Z.SETTINGS }}>
       <style>{`[data-settings-highlight="true"]{outline:2px solid var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),0.18);border-radius:var(--radius-md);}`}</style>
       <div className="modal modal-xl" style={{ display: 'flex', flexDirection: 'column', height: '80vh', background: 'var(--surface-raised)' }}>
         
