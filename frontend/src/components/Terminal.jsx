@@ -22,7 +22,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useTranslation } from '../i18n.js';
 import defaultTermBg from '../assets/term_bg.webp';
 import { Z } from '../constants/zIndex';
-import { getTerminalTheme, getAppThemeMode, isDarkTerminalSurface } from '../utils/theme.js';
+import { getTerminalTheme, getAppThemeMode, isDarkTerminalSurface, getSolidTerminalBackground } from '../utils/theme.js';
 import { getResolvedProgramFontPreferences } from '../utils/programFonts.js';
 
 const textDecoder = new TextDecoder();
@@ -1170,8 +1170,9 @@ export default function Terminal({
     const fontSize = parseInt(localStorage.getItem('terminalFontSize') || '13', 10);
 
     const term = new XTerm({
-      // background 保持透明，让底层主题色 + 壁纸透出来
-      theme:            T.xterm,
+      // background 用不透明的容器底色：nano/vim 的反转显示（SGR 7）需要真实的背景色参与
+      // 互换，透明底会退化成黑字黑底；壁纸/色调层改为叠在内容上方保持观感
+      theme:            { ...T.xterm, background: getSolidTerminalBackground(T) },
       fontFamily:       getResolvedProgramFontPreferences().terminalFontFamily,
       fontSize:         fontSize,
       fontWeight:       500,
@@ -1184,7 +1185,6 @@ export default function Terminal({
       cursorStyle:      'bar',
       cursorWidth:      1,
       scrollback:       5000,
-      allowTransparency: true,
       // SearchAddon 高亮装饰依赖 proposed API
       allowProposedApi: true,
       fastScrollModifier: 'alt',
@@ -1890,8 +1890,9 @@ export default function Terminal({
   useEffect(() => {
     const term = termRef.current;
     if (term) {
-      // xterm 背景保持透明，底色由 wrapper(--term-container-bg) 提供，壁纸才能叠在上面
+      // xterm 背景用不透明容器底色（反转显示需要真实背景色），壁纸/色调层叠在内容上方
       const xtermTheme = { ...T.xterm };
+      xtermTheme.background = getSolidTerminalBackground(T);
       const darkTerm = isDarkTerminalSurface(T);
       // 搜索/选区当前匹配常走 selectionForeground：深色终端强制白字，浅色终端强制深字
       xtermTheme.selectionForeground = darkTerm ? '#ffffff' : '#0f172a';
@@ -3088,15 +3089,15 @@ export default function Terminal({
         overflow: 'hidden',
       }}
     >
-      {/* 主题色调层：深色下拉开 Lumin/Tokyo/Catppuccin/Dracula 差异 */}
+      {/* 主题色调层：xterm 背景已不透明，叠在内容上方才能生效（弹出层 fixed+zIndex 更高，不受影响） */}
       <div style={{
         position: 'absolute',
         inset: 0,
         background: 'var(--term-tint, transparent)',
         pointerEvents: 'none',
-        zIndex: Z.BG,
+        zIndex: Z.STACK,
       }} />
-      {/* 壁纸层：正常叠加，保留质感 */}
+      {/* 壁纸层：叠在内容上方，保留质感 */}
       <div style={{
         position: 'absolute',
         inset: 0,
@@ -3105,7 +3106,7 @@ export default function Terminal({
         backgroundPosition: 'center',
         opacity: Number.isFinite(bgInfo.opacity) ? bgInfo.opacity : 0.15,
         pointerEvents: 'none',
-        zIndex: Z.BG,
+        zIndex: Z.STACK,
       }} />
       
       {/* 内容层（置于背景之上) */}

@@ -969,6 +969,25 @@ function relativeLuminanceFromThemeColor(value) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
+// 颜色是否为「全透明」值（#00000000 / 任意 alpha=0 的 8 位 hex / rgba(...,0) / transparent）
+function isFullyTransparentColor(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.toLowerCase() === 'transparent') return true;
+  if (/^#[\da-f]{8}$/i.test(raw)) return raw.slice(7).toLowerCase() === '00';
+  return /rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/i.test(raw);
+}
+
+// xterm 的默认背景必须是不透明色：nano/vim 等 TUI 的反转显示（SGR 7，如 nano 底部
+// 快捷键栏、粘贴/选区高亮）会用主题 background 与前景互换；若 background 是透明值，
+// 互换结果退化成黑色，浅色模式下出现「黑字黑底」完全不可见
+export function getSolidTerminalBackground(terminalTheme) {
+  const xterm = terminalTheme?.xterm || {};
+  const container = terminalTheme?.container || {};
+  if (!isFullyTransparentColor(xterm.background)) return xterm.background;
+  if (!isFullyTransparentColor(container.containerBg)) return container.containerBg;
+  return isDarkTerminalSurface(terminalTheme) ? '#0e1218' : '#f3f4f6';
+}
+
 // 按终端输出区底色判断深浅（不要看 inputBar：浅色 UI 会改成浅色 chrome）
 export function isDarkTerminalSurface(terminalTheme) {
   const container = terminalTheme?.container || {};
