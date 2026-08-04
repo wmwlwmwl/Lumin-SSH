@@ -31,6 +31,18 @@ loadKeywordRulesFromStorage();
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
+const DEFAULT_TERMINAL_SHORTCUTS = Object.freeze({
+  copy: 'Ctrl+C',
+  paste: 'Ctrl+V',
+  pasteSelection: 'Ctrl+Shift+V',
+  clear: 'Ctrl+L',
+  newTab: 'Ctrl+T',
+  find: 'Ctrl+F',
+  sigint: 'Ctrl+C',
+  eof: 'Ctrl+D',
+  suspend: 'Ctrl+Z',
+  clearLine: 'Ctrl+U',
+});
 
 // SearchAddon 只上背景、不改字色。按终端底色选高亮，不按界面 mode。
 // 深色终端必须用「够深」的底：偏亮的半透明底会触发 minimumContrastRatio 把白字压成黑字。
@@ -1401,9 +1413,11 @@ export default function Terminal({
     if (shortcutsRef.current === null) {
       try {
         const saved = localStorage.getItem('appShortcuts');
-        shortcutsRef.current = saved ? JSON.parse(saved) : { copy: 'Ctrl+C', paste: 'Ctrl+V', clear: 'Ctrl+L', newTab: 'Ctrl+T', find: 'Ctrl+F' };
+        shortcutsRef.current = saved
+          ? { ...DEFAULT_TERMINAL_SHORTCUTS, ...JSON.parse(saved) }
+          : { ...DEFAULT_TERMINAL_SHORTCUTS };
       } catch (_) {
-        shortcutsRef.current = { copy: 'Ctrl+C', paste: 'Ctrl+V', clear: 'Ctrl+L', newTab: 'Ctrl+T', find: 'Ctrl+F' };
+        shortcutsRef.current = { ...DEFAULT_TERMINAL_SHORTCUTS };
       }
     }
 
@@ -1444,13 +1458,6 @@ export default function Terminal({
         e.preventDefault();
         const selection = term.getSelection();
         if (selection) navigator.clipboard.writeText(selection);
-        return false;
-      }
-
-      // ── Ctrl+Shift+V：将终端当前选区粘贴回终端 ────────────────
-      if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toUpperCase() === 'V') {
-        e.preventDefault();
-        void pasteTerminalSelectionToTerminal();
         return false;
       }
 
@@ -1514,6 +1521,13 @@ export default function Terminal({
           }
           return false;
         }
+      }
+
+      // 已有动作优先，避免重复绑定时一次按键执行两个动作
+      if (pressedStr === customShortcuts.pasteSelection) {
+        e.preventDefault();
+        void pasteTerminalSelectionToTerminal();
+        return false;
       }
 
       // ── 其他标准控制字符全部透传给服务器处理 ────────────────────────
@@ -2155,7 +2169,7 @@ export default function Terminal({
       const result = await window.luminDialog?.confirm(
         t('所选内容超过3行，是否继续粘贴？'),
         t('确认粘贴'),
-        t('以后不再提醒')
+        t('不再询问')
       );
       const confirmed = typeof result === 'object' ? result.confirmed : result === true;
       if (!confirmed) {
@@ -2662,13 +2676,13 @@ export default function Terminal({
     return () => { cancelled = true; };
   }, [showHistory, historyMode]);
 
-  // 数据渲染后定位到顶部，与键盘导航默认选中的第一项保持一致
+  // 数据渲染后定位到底部，默认选中最新一项
   useEffect(() => {
     if (!showHistory || !scrollOnNextUpdate.current) return;
     // 数据还没加载完（空状态），等待下一次更新
     if (historyList.length === 0) return;
     const el = historyScrollRef.current;
-    if (el) requestAnimationFrame(() => { el.scrollTop = 0; });
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     scrollOnNextUpdate.current = false;
   }, [historyList, showHistory]);
 
@@ -2682,7 +2696,7 @@ export default function Terminal({
   const displayHistory = useMemo(() => [...filteredHistory].reverse(), [filteredHistory]);
 
   useEffect(() => {
-    setHistorySelectedIndex(displayHistory.length > 0 ? 0 : -1);
+    setHistorySelectedIndex(displayHistory.length - 1);
   }, [displayHistory, showHistory]);
 
   useEffect(() => {
@@ -3880,12 +3894,17 @@ export default function Terminal({
               <span style={{ color: 'var(--term-status-color)', fontSize: 11 }}>{t('历史命令')}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
-                  onClick={() => {
-                    setHistoryList([]);
-                    if (historyMode === 'global') {
-                      AppGo.SaveGlobalCommandHistory('[]').catch(() => {});
-                    } else {
-                      AppGo.SaveCommandHistory(historyServerId, '[]').catch(() => {});
+                  onClick={async () => {
+                    try {
+                      if (historyMode === 'global') {
+                        await AppGo.SaveGlobalCommandHistory('[]');
+                      } else {
+                        await AppGo.SaveCommandHistory(historyServerId, '[]');
+                        window.dispatchEvent(new CustomEvent('ssh-history-cleared', { detail: { sessionId: serverId } }));
+                      }
+                      setHistoryList([]);
+                    } catch (error) {
+                      console.error('[Terminal] 清空历史失败:', error);
                     }
                   }}
                   style={{ ...btnStyle('red'), fontSize: 11, padding: '2px 8px' }}
@@ -4129,7 +4148,7 @@ export default function Terminal({
             : [
                 { icon: <Copy size={13} />, label: t('复制'), action: 'copy', shortcut: formatShortcut('Ctrl+C'), disabled: !contextHasSelection },
                 { icon: <Clipboard size={13} />, label: t('粘贴'), action: 'paste', shortcut: formatShortcut('Ctrl+V') },
-                { icon: <Clipboard size={13} />, label: t('粘贴所选项'), action: 'pasteSelection', shortcut: formatShortcut('Ctrl+Shift+V'), disabled: !contextHasSelection },
+                { icon: <Clipboard size={13} />, label: t('粘贴所选项'), action: 'pasteSelection', shortcut: formatShortcut(shortcutsRef.current?.pasteSelection || DEFAULT_TERMINAL_SHORTCUTS.pasteSelection), disabled: !contextHasSelection },
                 { type: 'separator' },
                 { icon: <CheckSquare size={13} />, label: t('全选'), action: 'selectAll' },
                 { icon: <Search size={13} />, label: t('查找'), action: 'find', shortcut: formatShortcut(shortcutsRef.current?.find || 'Ctrl+F') },

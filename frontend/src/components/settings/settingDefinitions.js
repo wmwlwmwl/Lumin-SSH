@@ -114,6 +114,7 @@ const settingsTreeSource = rootNode(
         fieldNode('general.close-all', 'closeAll', '关闭全部时确认', '批量关闭所有连接前弹出确认弹窗', { control: 'toggle', stateKey: 'confirmCloseAll' }),
         fieldNode('general.file-delete', 'fileDelete', '文件管理器删除时确认', '删除文件或文件夹前弹出确认弹窗', { control: 'toggle', stateKey: 'confirmFileDelete' }),
         fieldNode('general.process-kill', 'processKill', '终止进程时确认', '终止进程前弹出确认弹窗', { control: 'toggle', stateKey: 'confirmProcessKill' }),
+        fieldNode('general.terminal-selection-paste-confirm', 'terminalSelectionPasteConfirm', '粘贴所选项时确认', '粘贴超过3行的终端选区前弹出确认弹窗', { control: 'toggle', stateKey: 'confirmTerminalSelectionPaste' }),
         fieldNode('general.window-close', 'windowClose', '关闭窗口时', '选择关闭窗口时的默认行为', { control: 'select', stateKey: 'windowCloseAction' }),
       ]),
     ], { targetId: 'general.close-session' }),
@@ -331,6 +332,7 @@ const settingsTreeSource = rootNode(
       panelNode('shortcuts.panel.terminal', [
         fieldNode('shortcuts.copy', 'copy', '从终端复制', '', { control: 'shortcut' }),
         fieldNode('shortcuts.paste', 'paste', '粘贴到终端', '', { control: 'shortcut' }),
+        fieldNode('shortcuts.paste-selection', 'pasteSelection', '粘贴所选项', '', { control: 'shortcut' }),
         fieldNode('shortcuts.clear', 'clear', '清空终端缓冲区', '', { control: 'shortcut' }),
         fieldNode('shortcuts.new-tab', 'newTab', '新建本地标签页', '', { control: 'shortcut' }),
         fieldNode('shortcuts.find', 'find', '查找终端内容', '', { control: 'shortcut' }),
@@ -338,6 +340,7 @@ const settingsTreeSource = rootNode(
         fieldNode('shortcuts.eof', 'eof', '结束终端会话 (EOF)', '', { control: 'shortcut' }),
         fieldNode('shortcuts.suspend', 'suspend', '后台挂起进程 (SIGTSTP)', '', { control: 'shortcut' }),
         fieldNode('shortcuts.clear-line', 'clearLine', '清空当前输入行', '', { control: 'shortcut' }),
+        actionNode('shortcuts.reset-shortcuts', 'resetShortcuts', '恢复默认', '', { actionKey: 'resetShortcuts' }),
       ]),
     ], { targetId: 'shortcuts.copy' }),
   ]),

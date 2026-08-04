@@ -9,6 +9,7 @@ export default function Tiptop({
   style,
   triggerClassName = '',
   forceVisible = false,
+  minTop,
 }) {
   const triggerRef = useRef(null)
   const bubbleRef = useRef(null)
@@ -23,11 +24,15 @@ export default function Tiptop({
       setPosition(null)
       return
     }
+    const resolvedMinTop = typeof minTop === 'function' ? minTop() : minTop;
+    const triggerBottom = rect.bottom + 6;
     setPosition({
       left: rect.left + rect.width / 2,
-      top: placement === 'bottom' ? rect.bottom + 6 : rect.top - 6,
+      top: placement === 'bottom' && Number.isFinite(resolvedMinTop)
+        ? Math.max(triggerBottom, resolvedMinTop)
+        : placement === 'bottom' ? triggerBottom : rect.top - 6,
     })
-  }, [placement])
+  }, [minTop, placement])
 
   const hide = useCallback(() => {
     setVisible(false)

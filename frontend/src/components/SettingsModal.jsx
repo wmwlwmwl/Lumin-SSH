@@ -430,6 +430,7 @@ export default function SettingsModal({
   const defaultShortcuts = {
     copy: 'Ctrl+C',
     paste: 'Ctrl+V',
+    pasteSelection: 'Ctrl+Shift+V',
     clear: 'Ctrl+L',
     newTab: 'Ctrl+T',
     find: 'Ctrl+F',
@@ -447,6 +448,15 @@ export default function SettingsModal({
     }
   });
   const [listeningKey, setListeningKey] = useState(null); // 'copy' | 'paste' | 'clear' | 'newTab' | null
+
+  const handleResetShortcuts = () => {
+    const defaults = { ...defaultShortcuts };
+    setListeningKey(null);
+    setShortcuts(defaults);
+    localStorage.removeItem('appShortcuts');
+    window.dispatchEvent(new CustomEvent('app-shortcuts-changed', { detail: defaults }));
+    addToast($t('恢复成功'), 'success');
+  };
 
   // Esc 关闭模态框（仅在未监听快捷键时生效）
   useEffect(() => {
@@ -991,6 +1001,7 @@ export default function SettingsModal({
   const [confirmCloseAll, setConfirmCloseAll] = useState(localStorage.getItem('skipCloseAllConfirm') !== 'true');
   const [confirmFileDelete, setConfirmFileDelete] = useState(localStorage.getItem('skipFileDeleteConfirm') !== 'true');
   const [confirmProcessKill, setConfirmProcessKill] = useState(localStorage.getItem('skipProcessKillConfirm') !== 'true');
+  const [confirmTerminalSelectionPaste, setConfirmTerminalSelectionPaste] = useState(localStorage.getItem('skipTerminalSelectionPasteConfirm') !== 'true');
   const [windowCloseAction, setWindowCloseAction] = useState(localStorage.getItem('windowCloseAction') || 'ask');
   const [updateUseProxy, setUpdateUseProxy] = useState(localStorage.getItem('updateUseProxy') === 'true');
   const [rememberWorkspace, setRememberWorkspace] = useState(false);
@@ -1061,6 +1072,12 @@ export default function SettingsModal({
     setConfirmProcessKill(next);
     if (next) localStorage.removeItem('skipProcessKillConfirm');
     else localStorage.setItem('skipProcessKillConfirm', 'true');
+  };
+  const handleToggleConfirmTerminalSelectionPaste = () => {
+    const next = !confirmTerminalSelectionPaste;
+    setConfirmTerminalSelectionPaste(next);
+    if (next) localStorage.removeItem('skipTerminalSelectionPasteConfirm');
+    else localStorage.setItem('skipTerminalSelectionPasteConfirm', 'true');
   };
   const handleWindowCloseActionChange = (value) => {
     setWindowCloseAction(value);
@@ -2138,6 +2155,8 @@ export default function SettingsModal({
                 onToggleConfirmFileDelete={handleToggleConfirmFileDelete}
                 confirmProcessKill={confirmProcessKill}
                 onToggleConfirmProcessKill={handleToggleConfirmProcessKill}
+                confirmTerminalSelectionPaste={confirmTerminalSelectionPaste}
+                onToggleConfirmTerminalSelectionPaste={handleToggleConfirmTerminalSelectionPaste}
                 windowCloseAction={windowCloseAction}
                 onWindowCloseActionChange={handleWindowCloseActionChange}
                 updateUseProxy={updateUseProxy}
@@ -2312,7 +2331,12 @@ export default function SettingsModal({
             )}
 
             {activeTab === 'shortcuts' && (
-              <ShortcutsTab shortcuts={shortcuts} listeningKey={listeningKey} onSetListeningKey={setListeningKey} />
+              <ShortcutsTab
+                shortcuts={shortcuts}
+                listeningKey={listeningKey}
+                onSetListeningKey={setListeningKey}
+                onResetShortcuts={handleResetShortcuts}
+              />
             )}
 
             {activeTab === 'sync' && (

@@ -28,13 +28,26 @@ function ShortcutRow({ definition, label, keyName, shortcuts, listeningKey, onSe
   );
 }
 
-export default function ShortcutsTab({ shortcuts, listeningKey, onSetListeningKey }) {
+export default function ShortcutsTab({ shortcuts, listeningKey, onSetListeningKey, onResetShortcuts }) {
   const sectionNode = settings.shortcuts.sections.terminal;
   const shortcutNodes = sectionNode.children.flatMap((node) => node.children || []).filter((node) => node.type === 'field');
+  const resetNode = sectionNode.children.flatMap((node) => node.children || []).find((node) => node.type === 'action');
   return (
     <SettingsTabRoot>
       <div>
-        <SettingsSectionTitle definition={sectionNode} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+          <SettingsSectionTitle definition={sectionNode} style={{ marginBottom: 0 }} />
+          {resetNode ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              data-settings-field-id={resetNode.id}
+              onClick={onResetShortcuts}
+            >
+              {$t(resetNode.titleKey)}
+            </button>
+          ) : null}
+        </div>
         <SettingsPanel style={{ padding: 0 }}>
           {shortcutNodes.map((node, index) => (
             <ShortcutRow

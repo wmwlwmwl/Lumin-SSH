@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { House, Minus, Square, X, Bot, Settings, RefreshCw, Rocket, Sun, Moon, ChevronDown } from 'lucide-react';
 import Tiptop from './Tiptop.jsx';
 import { WindowMinimise } from '../../wailsjs/runtime/runtime.js';
@@ -17,11 +18,14 @@ export default function AppTopbar({
   setIsUpdateModalVisible, setSettingsInitialTab, handleToggleMaximise,
   handleCloseWindow, reconnectSession,
 }) {
+  const topbarRef = useRef(null);
+
   return (
     <>
       {/* ── Topbar ───────────────────────────────────────── */}
       <div
         className="topbar"
+        ref={topbarRef}
         onMouseDown={(e) => {
           // detail>1 为双击的第二次按下；阻止浏览器默认划词（否则 WebView2 会弹 AI 搜索条）
           if (e.detail > 1) e.preventDefault();
@@ -125,6 +129,7 @@ export default function AppTopbar({
                         return (
                           <Tiptop
                             placement="bottom"
+                            minTop={() => (topbarRef.current?.getBoundingClientRect().bottom ?? 40) + 6}
                             text={(
                               <>
                                 <div>{t('服务器连接通道占用')}</div>
