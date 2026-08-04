@@ -24,7 +24,7 @@ import defaultTermBg from '../assets/term_bg.webp';
 import { Z } from '../constants/zIndex';
 import { getTerminalTheme, getAppThemeMode, isDarkTerminalSurface } from '../utils/theme.js';
 import { getResolvedProgramFontPreferences } from '../utils/programFonts.js';
-import { highlightKeywords, loadKeywordRulesFromStorage, setKeywordRules } from '../utils/terminalKeywordHighlight.js';
+import { highlightKeywords, loadKeywordRulesFromStorage, setKeywordRules, createHighlightState } from '../utils/terminalKeywordHighlight.js';
 
 // 启动时从 localStorage 加载自定义关键字规则（模块级，仅执行一次）
 loadKeywordRulesFromStorage();
@@ -505,6 +505,10 @@ export default function Terminal({
   const keywordHighlightEnabledRef = useRef(localStorage.getItem('terminalKeywordHighlight') === 'true');
   // 关键字高亮：二进制帧流式解码器（每次建连重置，保证 UTF-8 跨帧字符完整）
   const hlDecoderRef = useRef(new TextDecoder());
+  // 关键字高亮：per-session 前景色状态。服务端着色区间可能跨帧，
+  // 需跨帧跟踪 fgActive 才不会误注入/误清色；每个终端会话独立持有，
+  // 多标签/分屏互不污染。建连 / 开关切换时一并重置。
+  const hlStateRef = useRef(createHighlightState());
   const [alternateBufferActive, setAlternateBufferActive] = useState(false);
   const alternateBufferActiveRef = useRef(false);
   // Ring buffer 时间戳：用 xterm marker 跟随 scrollback 裁剪，避免 buffer 行号复用后错位
@@ -1350,7 +1354,7 @@ export default function Terminal({
       // 关闭时数据为原始 string/Uint8Array，直接透传不高亮。
       let writeData = data;
       if (keywordHighlightEnabledRef.current && typeof data === 'string') {
-        writeData = highlightKeywords(data);
+        writeData = highlightKeywords(data, hlStateRef.current);
       }
       if (userPinned) {
         // xterm.js 在用户不在底部时已经会保持滚动位置。
@@ -1510,6 +1514,9 @@ export default function Terminal({
     let predictiveTextCarry = '';
     // 重置高亮流式解码器，避免上一次连接的残留字节污染本次输出
     hlDecoderRef.current = new TextDecoder();
+    // 同步重置前景色状态：上次连接可能在颜色区间未闭合时断开（fgActive=true），
+    // 不清掉会让新连接开局误判为「前景色已激活」而哑火高亮
+    hlStateRef.current = createHighlightState();
 
     // 并行获取端口与鉴权 token，后端要求连接时通过 ?token=xxx 携带，防止本机恶意进程注入命令
     Promise.all([AppGo.GetWsPort(), AppGo.GetWsToken()]).then(([port, token]) => {
@@ -2016,6 +2023,8 @@ export default function Terminal({
       keywordHighlightEnabledRef.current = e.detail === true;
       // 开关切换时重置流式解码器，清除挂起的不完整字节，避免重新开启后污染输出
       hlDecoderRef.current = new TextDecoder();
+      // 一并重置前景色状态：关闭前可能停在 fgActive=true，重开时避免误判
+      hlStateRef.current = createHighlightState();
     };
     const handleKeywordRulesChange = (e) => {
       if (Array.isArray(e.detail)) setKeywordRules(e.detail);

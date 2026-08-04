@@ -53,12 +53,24 @@ export const DEFAULT_KEYWORD_RULES = [
 ];
 
 // ── 运行时状态 ──────────────────────────────────────────────────────
+// 注意：compiledRegex / keywordColorMap 是「只读结构」，多终端共享安全；
+// 但「前景色激活状态」必须 per-session 跟踪（见 createHighlightState），
+// 绝不能放模块级——否则多标签/分屏会互相污染，导致误注入/误跳过高亮。
 let activeRules = DEFAULT_KEYWORD_RULES;
 let compiledRegex = null;
 let keywordColorMap = new Map(); // 关键字(小写) → 颜色信息，避免下标对齐错位
-// 跨调用保持的前景色状态：highlightKeywords 按 WebSocket 帧逐次调用，
-// 服务端着色区间可能跨帧，必须跨帧跟踪才不会误注入/误清色
-let persistentFgActive = false;
+
+/**
+ * 为单个终端会话创建一个独立的高亮状态对象。
+ * highlightKeywords 按 WebSocket 帧逐次调用，服务端着色区间可能跨帧，
+ * 必须跨帧跟踪前景色才不会误注入/误清色。
+ * 每个终端连接应持有自己的状态，避免多标签/分屏互相干扰。
+ *
+ * @returns {{ fgActive: boolean }}
+ */
+export function createHighlightState() {
+  return { fgActive: false };
+}
 
 /**
  * 将 hex 颜色转为 RGB 三元组
@@ -88,11 +100,18 @@ function rebuildRegex() {
       sgr: rule.sgr || 31,
       hex: rule.hex || '#ff6b6b',
     };
-    // 转义关键字中的正则特殊字符
-    const escaped = rule.keywords.map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    sources.push(`(?:\\b(?:${escaped.join('|')})\\b)`);
     for (const kw of rule.keywords) {
-      colorMap.set(String(kw).toLowerCase(), colorInfo);
+      const raw = String(kw);
+      // 转义关键字中的正则特殊字符
+      const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // \b 基于 \w=[A-Za-z0-9_]：纯 ASCII 词字符的关键字用 \b 做精确整词边界，
+      // 避免「terror」里的「error」被误命中；
+      // 含非 ASCII（CJK / emoji 等）的关键字 \b 不生效甚至会令匹配失败，
+      // 此时去掉边界约束（子串匹配，如「失败」命中「大失败」，符合中文直觉）。
+      const isAsciiWord = /^[\w]+$/.test(raw);
+      const part = isAsciiWord ? `\\b${escaped}\\b` : escaped;
+      sources.push(`(?:${part})`);
+      colorMap.set(raw.toLowerCase(), colorInfo);
     }
   }
 
@@ -177,18 +196,26 @@ function getColorInfoForMatch(matchText) {
 }
 
 /**
- * 生成 ANSI 前景色开启码
+ * 生成 ANSI 前景色开启码。
+ *
+ * 故意只设前景色、不带 intensity(1)：
+ * 若注入 `1;31m`、关闭用 `22;39m`，22 会把关键词之后「服务端已加粗」的文字一起还原成常规，
+ * 等于篡改了原文的字重。改用 ANSI 亮色档（90-97 / 真彩色）保证观感鲜亮，
+ * 关闭码只用 `\x1b[39m`（恢复默认前景，不碰字重），对原文 intensity 零副作用。
  */
 function buildColorOpen(colorInfo) {
   if (colorInfo.colorMode === 'truecolor') {
     const rgb = hexToRgbParts(colorInfo.hex);
-    if (rgb) return `\x1b[1;38;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
+    if (rgb) return `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
   }
-  return `\x1b[1;${colorInfo.sgr}m`;
+  // sgr 30-37（标准色）映射到 90-97（亮色档），既鲜亮又不触发加粗
+  const sgr = Number(colorInfo.sgr) || 31;
+  const bright = sgr >= 30 && sgr <= 37 ? sgr + 60 : sgr;
+  return `\x1b[${bright}m`;
 }
 
-// 颜色关闭码：取消加粗 + 恢复默认前景
-const COLOR_CLOSE = '\x1b[22;39m';
+// 颜色关闭码：仅恢复默认前景色，绝不动 intensity（避免篡改服务端已加粗文本）
+const COLOR_CLOSE = '\x1b[39m';
 
 /**
  * 从 SGR 参数字符串中提取前景色状态变化。
@@ -211,24 +238,35 @@ function sgrForegroundAction(sgrParams) {
   return action;
 }
 
-// ANSI 转义序列匹配：CSI（含 SGR）、OSC、其他单字符 ESC
-const ANSI_ESCAPE_REGEX = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[^[\]]/g;
+// ANSI 转义序列匹配（按优先级顺序）：
+// 1. CSI        : ESC [ ... <0x40-0x7E>
+// 2. OSC        : ESC ] ... (BEL | ST)   ST = ESC \
+// 3. 字符串序列  : ESC P / X / ^ / _ ... (BEL | ST)   （DCS / SOS / PM / APC）
+//    —— Sixel 图、终端查询响应等走这里；串体里若含关键字绝不能注入 SGR，
+//       否则会破坏图形/响应序列。必须把整段串体连同结束符一起吞掉。
+// 4. 其他单字符 ESC: ESC <一个字符>（如 ESC c 重置）
+// 第三分支末尾 `\x1b[^^PX^_]` 等价于「ESC 后跟非 [ 非 字符串序列引导符 的单字符」。
+const ANSI_ESCAPE_REGEX = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[^[PX^_]/g;
 
 /**
  * 对终端输出文本注入关键字高亮 ANSI 码。
  *
  * @param {string} text - 原始终端输出（可能包含 ANSI 转义序列）
+ * @param {{ fgActive?: boolean } | null} [state] - per-session 前景色状态。
+ *        跨帧跟踪服务端着色区间，避免误注入/误清色。由调用方（每个终端会话）
+ *        用 useRef 持有并通过 createHighlightState() 创建，多终端互不干扰。
+ *        传 null/undefined 时退化为「按帧无状态」高亮（兼容旧调用，不推荐）。
  * @returns {string} 注入高亮后的文本
  */
-export function highlightKeywords(text) {
+export function highlightKeywords(text, state) {
   if (!text || typeof text !== 'string') return text;
   if (text.length < 3) return text;
   if (!compiledRegex) return text;
 
   const result = [];
   let lastEnd = 0;
-  // 使用跨帧保持的前景色状态
-  let fgActive = persistentFgActive;
+  // 读取该会话的跨帧前景色状态（per-session，杜绝多终端互相污染）
+  let fgActive = state ? !!state.fgActive : false;
 
   ANSI_ESCAPE_REGEX.lastIndex = 0;
 
@@ -248,8 +286,8 @@ export function highlightKeywords(text) {
 
   // 纯文本快速路径
   if (segments.length === 1 && segments[0].type === 'text') {
-    // 纯文本不含 SGR，前景状态不变；写回保持值
-    persistentFgActive = fgActive;
+    // 纯文本不含 SGR，前景状态不变；写回保持值（仅当调用方提供了 state）
+    if (state) state.fgActive = fgActive;
     return highlightPlainText(segments[0].value);
   }
 
@@ -271,8 +309,8 @@ export function highlightKeywords(text) {
     }
   }
 
-  // 写回跨帧状态，供下一帧使用
-  persistentFgActive = fgActive;
+  // 写回跨帧状态，供下一帧使用（仅当调用方提供了 state）
+  if (state) state.fgActive = fgActive;
 
   return result.join('');
 }
