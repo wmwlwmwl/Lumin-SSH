@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Khi bật, vùng đầu ra của terminal sử dụng con trỏ chuột mặc định của hệ thống và không hiển thị con trỏ văn bản hình chữ I.",
   "命令块边框": "Khối lệnh có thể thu gọn",
   "左侧显示可折叠命令块，点击收起输出": "Hiển thị khối lệnh có thể thu gọn bên trái; nhấp để ẩn đầu ra",
+  "日志关键字高亮": "Tô sáng từ khóa nhật ký",
+  "对 error、warning、info、success 等关键字着色显示": "Tô màu các từ khóa như error, warning, info, success trong đầu ra terminal",
   "界面主题": "Chủ đề giao diện",
   "主题": "chủ đề",
   "主题包": "gói chủ đề",

@@ -3,6 +3,7 @@ import { t as $t } from '../../i18n.js';
 import { Sun, Monitor, Moon, Trash2, Copy } from 'lucide-react';
 import { SettingRow, SettingsDivider, SettingsPanel, SettingsSectionTitle, SettingsTabRoot, ToggleSwitch } from './SharedComponents';
 import { settings } from './settingDefinitions';
+import KeywordRulesPanel from './KeywordRulesPanel.jsx';
 
 export default function AppearanceTab({
   programFonts,
@@ -25,6 +26,8 @@ export default function AppearanceTab({
   terminalTimestamps, onTerminalTimestampsChange,
   terminalCommandBlocks, onTerminalCommandBlocksChange,
   terminalDefaultMouseCursor, onTerminalDefaultMouseCursorChange,
+  terminalKeywordHighlight, onTerminalKeywordHighlightChange,
+  keywordRules, onKeywordRulesChange, onKeywordRulesReset, terminalBgColor,
   themePackages,
   themePackageSettings,
   themeMode, onThemeChange,
@@ -269,6 +272,20 @@ export default function AppearanceTab({
             description={$t('开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标')}
             action={<ToggleSwitch checked={terminalDefaultMouseCursor} onChange={() => onTerminalDefaultMouseCursorChange(!terminalDefaultMouseCursor)} />}
           />
+          <SettingsDivider />
+          <SettingRow
+            definition={settings.appearance.fields.terminalKeywordHighlight}
+            description={$t('对 error、warning、info、success 等关键字着色显示')}
+            action={<ToggleSwitch checked={terminalKeywordHighlight} onChange={() => onTerminalKeywordHighlightChange(!terminalKeywordHighlight)} />}
+          />
+          {terminalKeywordHighlight && (
+            <KeywordRulesPanel
+              rules={keywordRules}
+              onRulesChange={onKeywordRulesChange}
+              onResetDefault={onKeywordRulesReset}
+              terminalBg={terminalBgColor}
+            />
+          )}
         </SettingsPanel>
       </div>
 

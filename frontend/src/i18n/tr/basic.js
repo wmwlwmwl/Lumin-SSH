@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Açıldığında, terminal çıkış alanı sistemin varsayılan fare işaretçisini kullanır ve I şeklindeki metin imlecini görüntülemez.",
   "命令块边框": "Daraltılabilir komut blokları",
   "左侧显示可折叠命令块，点击收起输出": "Solda daraltılabilir komut bloklarını gösterin; çıktıyı gizlemek için tıklayın",
+  "日志关键字高亮": "Günlük anahtar kelime vurgulama",
+  "对 error、warning、info、success 等关键字着色显示": "error, warning, info, success gibi anahtar kelimeleri renklendir",
   "界面主题": "Arayüz teması",
   "主题": "tema",
   "主题包": "tema paketi",

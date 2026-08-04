@@ -297,6 +297,7 @@ const settingsTreeSource = rootNode(
         fieldNode('appearance.terminal-timestamps', 'terminalTimestamps', '每行显示时间', '在终端每行输出前添加时间戳', { control: 'toggle', stateKey: 'terminalTimestamps' }),
         fieldNode('appearance.terminal-command-blocks', 'terminalCommandBlocks', '命令块边框', '左侧显示可折叠命令块，点击收起输出', { control: 'toggle', stateKey: 'terminalCommandBlocks' }),
         fieldNode('appearance.terminal-default-mouse-cursor', 'terminalDefaultMouseCursor', '终端输出保持默认鼠标指针', '开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标', { control: 'toggle', stateKey: 'terminalDefaultMouseCursor' }),
+        fieldNode('appearance.terminal-keyword-highlight', 'terminalKeywordHighlight', '日志关键字高亮', '对 error、warning、info、success 等关键字着色显示', { control: 'toggle', stateKey: 'terminalKeywordHighlight' }),
       ]),
     ], { targetId: 'appearance.font-manager' }),
     sectionNode('appearance', 'theme', '主题包', [

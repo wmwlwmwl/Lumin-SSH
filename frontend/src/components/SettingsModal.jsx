@@ -9,7 +9,8 @@ import { Sun, Monitor, Moon, Keyboard, Cloud, Info, Database, Folder, X, Refresh
 import { Z } from '../constants/zIndex';
 import { EventsOn, WindowSetSize, WindowUnmaximise } from '../../wailsjs/runtime/runtime.js';
 import { deleteProgramFont, getProgramFontAssignmentSnapshot, listProgramFonts, selectAndImportProgramFontFiles, setProgramFontPreference } from '../utils/programFonts.js';
-import { getAppThemeMode, getThemePackageSettings as getStoredThemePackageSettings, listThemePackages, loadThemePackages, saveThemePackageSettings } from '../utils/theme.js';
+import { getAppThemeMode, getThemePackageSettings as getStoredThemePackageSettings, getTerminalTheme, listThemePackages, loadThemePackages, saveThemePackageSettings } from '../utils/theme.js';
+import { loadKeywordRulesFromStorage, saveKeywordRulesToStorage, resetKeywordRulesToDefault, setKeywordRules } from '../utils/terminalKeywordHighlight.js';
 import { syncWithRecoveryPassword } from '../utils/recoveryPasswordSync.js';
 import AppTab from './settings/AppTab';
 import GeneralTab from './settings/GeneralTab';
@@ -384,6 +385,8 @@ export default function SettingsModal({
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
   const [terminalCommandBlocks, setTerminalCommandBlocks] = useState(localStorage.getItem('terminalCommandBlocks') === 'true');
+  const [terminalKeywordHighlight, setTerminalKeywordHighlight] = useState(localStorage.getItem('terminalKeywordHighlight') === 'true');
+  const [keywordRules, setKeywordRulesState] = useState(() => loadKeywordRulesFromStorage());
   const [terminalDefaultMouseCursor, setTerminalDefaultMouseCursor] = useState(localStorage.getItem('terminalOutputDefaultMouseCursor') === 'true');
   const [terminalRightClickPasteOnEmpty, setTerminalRightClickPasteOnEmpty] = useState(localStorage.getItem('terminalRightClickPasteOnEmpty') === 'true');
   const [terminalRightClickPasteMode, setTerminalRightClickPasteMode] = useState(localStorage.getItem('terminalRightClickPasteMode') === 'always' ? 'always' : 'empty');
@@ -765,6 +768,25 @@ export default function SettingsModal({
     setTerminalCommandBlocks(enabled);
     localStorage.setItem('terminalCommandBlocks', String(enabled));
     window.dispatchEvent(new CustomEvent('terminal-command-blocks-changed', { detail: enabled }));
+  };
+
+  const handleTerminalKeywordHighlightChange = (enabled) => {
+    setTerminalKeywordHighlight(enabled);
+    localStorage.setItem('terminalKeywordHighlight', String(enabled));
+    window.dispatchEvent(new CustomEvent('terminal-keyword-highlight-changed', { detail: enabled }));
+  };
+
+  const handleKeywordRulesChange = (rules) => {
+    setKeywordRulesState(rules);
+    setKeywordRules(rules);
+    saveKeywordRulesToStorage(rules);
+    window.dispatchEvent(new CustomEvent('terminal-keyword-rules-changed', { detail: rules }));
+  };
+
+  const handleKeywordRulesReset = () => {
+    const defaults = resetKeywordRulesToDefault();
+    setKeywordRulesState(defaults);
+    window.dispatchEvent(new CustomEvent('terminal-keyword-rules-changed', { detail: defaults }));
   };
 
   const handleTerminalDefaultMouseCursorChange = (enabled) => {
@@ -2238,6 +2260,12 @@ export default function SettingsModal({
                 onTerminalCommandBlocksChange={handleTerminalCommandBlocksChange}
                 terminalDefaultMouseCursor={terminalDefaultMouseCursor}
                 onTerminalDefaultMouseCursorChange={handleTerminalDefaultMouseCursorChange}
+                terminalKeywordHighlight={terminalKeywordHighlight}
+                onTerminalKeywordHighlightChange={handleTerminalKeywordHighlightChange}
+                keywordRules={keywordRules}
+                onKeywordRulesChange={handleKeywordRulesChange}
+                onKeywordRulesReset={handleKeywordRulesReset}
+                terminalBgColor={(() => { try { return getTerminalTheme()?.container?.containerBg || ''; } catch (_) { return ''; } })()}
                 themePackages={themePackages}
                 themePackageSettings={themePackageSettings}
                 themeMode={forceDarkTheme ? 'dark' : themeMode}

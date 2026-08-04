@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Quando è attivata, l'area di output del terminale utilizza il puntatore del mouse predefinito del sistema e non visualizza il cursore di testo a forma di I.",
   "命令块边框": "Blocchi di comando comprimibili",
   "左侧显示可折叠命令块，点击收起输出": "Mostra blocchi di comando comprimibili a sinistra; fai clic per nascondere l'output",
+  "日志关键字高亮": "Evidenziazione parole chiave del registro",
+  "对 error、warning、info、success 等关键字着色显示": "Colora le parole chiave come error, warning, info, success nell'output del terminale",
   "界面主题": "Tema dell'interfaccia",
   "主题": "tema",
   "主题包": "pacchetto tematico",

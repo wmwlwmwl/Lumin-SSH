@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Když je zapnutá, výstupní oblast terminálu používá výchozí systémový ukazatel myši a nezobrazuje textový kurzor ve tvaru I.",
   "命令块边框": "Sbalitelné bloky příkazů",
   "左侧显示可折叠命令块，点击收起输出": "Zobrazit sbalitelné bloky příkazů vlevo; kliknutím skryjte výstup",
+  "日志关键字高亮": "Zvýraznění klíčových slov protokolu",
+  "对 error、warning、info、success 等关键字着色显示": "Obarvit klíčová slova jako error, warning, info, success ve výstupu terminálu",
   "界面主题": "Téma rozhraní",
   "主题": "téma",
   "主题包": "tématický balíček",

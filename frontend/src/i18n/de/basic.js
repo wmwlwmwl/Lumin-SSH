@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Wenn diese Option aktiviert ist, verwendet der Terminalausgabebereich den standardmäßigen Systemmauszeiger und zeigt nicht den I-förmigen Textcursor an.",
   "命令块边框": "Einklappbare Befehlsblöcke",
   "左侧显示可折叠命令块，点击收起输出": "Einklappbare Befehlsblöcke links anzeigen; klicken, um die Ausgabe auszublenden",
+  "日志关键字高亮": "Log-Schlüsselwort-Hervorhebung",
+  "对 error、warning、info、success 等关键字着色显示": "Schlüsselwörter wie error, warning, info, success in der Terminalausgabe einfärben",
   "界面主题": "Schnittstellenthema",
   "主题": "Thema",
   "主题包": "Themenpaket",

@@ -24,6 +24,10 @@ import defaultTermBg from '../assets/term_bg.webp';
 import { Z } from '../constants/zIndex';
 import { getTerminalTheme, getAppThemeMode, isDarkTerminalSurface } from '../utils/theme.js';
 import { getResolvedProgramFontPreferences } from '../utils/programFonts.js';
+import { highlightKeywords, loadKeywordRulesFromStorage, setKeywordRules } from '../utils/terminalKeywordHighlight.js';
+
+// 启动时从 localStorage 加载自定义关键字规则（模块级，仅执行一次）
+loadKeywordRulesFromStorage();
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -498,6 +502,9 @@ export default function Terminal({
   const commandBlocksEnabledRef = useRef(localStorage.getItem('terminalCommandBlocks') === 'true');
   const [commandBlocksVisible, setCommandBlocksVisible] = useState(localStorage.getItem('terminalCommandBlocks') === 'true');
   const [terminalDefaultMouseCursorEnabled, setTerminalDefaultMouseCursorEnabled] = useState(localStorage.getItem('terminalOutputDefaultMouseCursor') === 'true');
+  const keywordHighlightEnabledRef = useRef(localStorage.getItem('terminalKeywordHighlight') === 'true');
+  // 关键字高亮：二进制帧流式解码器（每次建连重置，保证 UTF-8 跨帧字符完整）
+  const hlDecoderRef = useRef(new TextDecoder());
   const [alternateBufferActive, setAlternateBufferActive] = useState(false);
   const alternateBufferActiveRef = useRef(false);
   // Ring buffer 时间戳：用 xterm marker 跟随 scrollback 裁剪，避免 buffer 行号复用后错位
@@ -1339,6 +1346,12 @@ export default function Terminal({
     };
     const smartWrite = (data) => {
       if (isClearScreenData(data)) handleClearScreen();
+      // 关键字高亮：高亮开启时 onmessage 已统一解码为字符串（incomingText），这里只需处理字符串；
+      // 关闭时数据为原始 string/Uint8Array，直接透传不高亮。
+      let writeData = data;
+      if (keywordHighlightEnabledRef.current && typeof data === 'string') {
+        writeData = highlightKeywords(data);
+      }
       if (userPinned) {
         // xterm.js 在用户不在底部时已经会保持滚动位置。
         // 之前用 scrollToLine(savedY) 在异步回调中执行，会在用户向下滚动后
@@ -1346,7 +1359,7 @@ export default function Terminal({
         // 现在仅在 xterm.js 自动滚动打断时才恢复（用相对偏移检测）。
         const buf = term.buffer.active;
         const offset = buf.baseY - buf.viewportY;
-        term.write(data, () => {
+        term.write(writeData, () => {
           const newBuf = term.buffer.active;
           // 只有当 offset 变小（说明 xterm 自动滚动了）才恢复
           if (newBuf.baseY - newBuf.viewportY < offset) {
@@ -1355,7 +1368,7 @@ export default function Terminal({
           }
         });
       } else {
-        term.write(data);
+        term.write(writeData);
       }
     };
     smartWriteRef.current = smartWrite;
@@ -1495,6 +1508,8 @@ export default function Terminal({
     const pendingEchoes = [];
     let predictiveDecoder = new TextDecoder();
     let predictiveTextCarry = '';
+    // 重置高亮流式解码器，避免上一次连接的残留字节污染本次输出
+    hlDecoderRef.current = new TextDecoder();
 
     // 并行获取端口与鉴权 token，后端要求连接时通过 ?token=xxx 携带，防止本机恶意进程注入命令
     Promise.all([AppGo.GetWsPort(), AppGo.GetWsToken()]).then(([port, token]) => {
@@ -1509,6 +1524,11 @@ export default function Terminal({
 
         // 在原始数据上检测清屏序列（不依赖后续文本处理路径）
         const rawBytes = typeof ev.data === 'string' ? null : new Uint8Array(ev.data);
+        // 统一解码：高亮开启时整个连接只用一个流式解码器（hlDecoderRef），
+        // 避免「快速路径 / 回显过滤路径」各自持有一个解码器导致跨帧 UTF-8 失步损坏
+        const incomingText = (keywordHighlightEnabledRef.current && rawBytes)
+          ? hlDecoderRef.current.decode(rawBytes, { stream: true })
+          : null;
         if (timestampsEnabledRef.current) {
           if (typeof ev.data === 'string' && (ev.data.includes('\x1b[2J') || ev.data.includes('\x1b[3J'))) {
             handleClearScreen();
@@ -1524,7 +1544,7 @@ export default function Terminal({
 
         // 检测密码提示，标记下一行输入为密码（不记入命令历史）
         if (!awaitingPasswordRef.current) {
-          const probeText = typeof ev.data === 'string' ? ev.data : textDecoder.decode(ev.data);
+          const probeText = incomingText ?? (typeof ev.data === 'string' ? ev.data : textDecoder.decode(ev.data));
           // ponytail: 只在最后一行像密码/验证码提示时触发（关键词 + 行尾冒号），
           // 避免 "admin password: xxx" 之类信息性输出误判，导致下一条普通命令被跳过。
           // 行尾冒号是强约束，关键词可适度放宽：覆盖 OTP/MFA/Token 等验证码提示
@@ -1539,11 +1559,11 @@ export default function Terminal({
         if (!shouldFilterIncomingText) {
           predictiveDecoder = new TextDecoder()
           predictiveTextCarry = ''
-          smartWrite(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data));
+          smartWrite(incomingText ?? (typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data)));
           return;
         }
 
-        let text = typeof ev.data === 'string' ? ev.data : predictiveDecoder.decode(new Uint8Array(ev.data), { stream: true });
+        let text = incomingText ?? (typeof ev.data === 'string' ? ev.data : predictiveDecoder.decode(new Uint8Array(ev.data), { stream: true }));
         if (predictiveTextCarry) {
           text = predictiveTextCarry + text;
           predictiveTextCarry = '';
@@ -1992,6 +2012,14 @@ export default function Terminal({
     const handleTerminalLeftClickCopyOnSelectionModeChange = (e) => {
       terminalLeftClickCopyOnSelectionModeRef.current = e.detail === 'mouseup' ? 'mouseup' : 'click';
     };
+    const handleKeywordHighlightChange = (e) => {
+      keywordHighlightEnabledRef.current = e.detail === true;
+      // 开关切换时重置流式解码器，清除挂起的不完整字节，避免重新开启后污染输出
+      hlDecoderRef.current = new TextDecoder();
+    };
+    const handleKeywordRulesChange = (e) => {
+      if (Array.isArray(e.detail)) setKeywordRules(e.detail);
+    };
     window.addEventListener('app-shortcuts-changed', handleShortcutsChange);
     window.addEventListener('terminal-local-echo-changed', handleLocalEchoChange);
     window.addEventListener('terminal-timestamps-changed', handleTimestampsChange);
@@ -2001,6 +2029,8 @@ export default function Terminal({
     window.addEventListener('terminal-right-click-paste-mode-changed', handleTerminalRightClickPasteModeChange);
     window.addEventListener('terminal-left-click-copy-on-selection-changed', handleTerminalLeftClickCopyOnSelectionChange);
     window.addEventListener('terminal-left-click-copy-on-selection-mode-changed', handleTerminalLeftClickCopyOnSelectionModeChange);
+    window.addEventListener('terminal-keyword-highlight-changed', handleKeywordHighlightChange);
+    window.addEventListener('terminal-keyword-rules-changed', handleKeywordRulesChange);
     window.addEventListener('program-font-settings-changed', handleProgramFontSettingsChange);
     return () => {
       window.removeEventListener('app-shortcuts-changed', handleShortcutsChange);
@@ -2012,6 +2042,8 @@ export default function Terminal({
       window.removeEventListener('terminal-right-click-paste-mode-changed', handleTerminalRightClickPasteModeChange);
       window.removeEventListener('terminal-left-click-copy-on-selection-changed', handleTerminalLeftClickCopyOnSelectionChange);
       window.removeEventListener('terminal-left-click-copy-on-selection-mode-changed', handleTerminalLeftClickCopyOnSelectionModeChange);
+      window.removeEventListener('terminal-keyword-highlight-changed', handleKeywordHighlightChange);
+      window.removeEventListener('terminal-keyword-rules-changed', handleKeywordRulesChange);
       window.removeEventListener('program-font-settings-changed', handleProgramFontSettingsChange);
     };
   }, []);

@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Lorsqu'elle est activée, la zone de sortie du terminal utilise le pointeur de la souris par défaut du système et n'affiche pas le curseur de texte en forme de I.",
   "命令块边框": "Blocs de commandes repliables",
   "左侧显示可折叠命令块，点击收起输出": "Afficher les blocs de commandes repliables à gauche ; cliquez pour masquer la sortie",
+  "日志关键字高亮": "Surbrillance des mots-clés de journal",
+  "对 error、warning、info、success 等关键字着色显示": "Colorer les mots-clés comme error, warning, info, success dans la sortie du terminal",
   "界面主题": "Thème de l'interface",
   "主题": "thème",
   "主题包": "pack thématique",

@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Când este pornită, zona de ieșire a terminalului folosește indicatorul implicit al mouse-ului de sistem și nu afișează cursorul de text în formă de I.",
   "命令块边框": "Blocuri de comenzi pliante",
   "左侧显示可折叠命令块，点击收起输出": "Afișați blocurile de comenzi pliante pe stânga; faceți clic pentru a ascunde ieșirea",
+  "日志关键字高亮": "Evidențierea cuvintelor cheie din jurnale",
+  "对 error、warning、info、success 等关键字着色显示": "Colorează cuvintele cheie precum error, warning, info, success în ieșirea terminalului",
   "界面主题": "Tema interfeței",
   "主题": "temă",
   "主题包": "pachet tematic",

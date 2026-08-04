@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Po włączeniu obszar wyjściowy terminala używa domyślnego systemowego wskaźnika myszy i nie wyświetla kursora tekstowego w kształcie litery I.",
   "命令块边框": "Zwijane bloki poleceń",
   "左侧显示可折叠命令块，点击收起输出": "Pokaż zwijane bloki poleceń po lewej; kliknij, aby ukryć wynik",
+  "日志关键字高亮": "Podświetlanie słów kluczowych logów",
+  "对 error、warning、info、success 等关键字着色显示": "Koloruj słowa kluczowe takie jak error, warning, info, success w wyjściu terminala",
   "界面主题": "Motyw interfejsu",
   "主题": "temat",
   "主题包": "pakiet tematyczny",

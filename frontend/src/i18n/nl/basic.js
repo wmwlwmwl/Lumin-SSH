@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Indien ingeschakeld, gebruikt het terminaluitvoergebied de standaardmuisaanwijzer van het systeem en wordt de I-vormige tekstcursor niet weergegeven.",
   "命令块边框": "Inklapbare opdrachtblokken",
   "左侧显示可折叠命令块，点击收起输出": "Toon inklapbare opdrachtblokken links; klik om de uitvoer te verbergen",
+  "日志关键字高亮": "Log-trefwoordmarkering",
+  "对 error、warning、info、success 等关键字着色显示": "Kleur trefwoorden zoals error, warning, info, success in terminaluitvoer",
   "界面主题": "Interface-thema",
   "主题": "thema",
   "主题包": "themapakket",

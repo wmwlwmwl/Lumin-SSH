@@ -934,6 +934,8 @@ export default {
   "开启后, 终端输出区域使用系统默认鼠标指针, 不显示工字型文本光标": "Saat dihidupkan, area keluaran terminal menggunakan penunjuk tetikus default sistem dan tidak menampilkan kursor teks berbentuk I.",
   "命令块边框": "Blok perintah yang dapat dilipat",
   "左侧显示可折叠命令块，点击收起输出": "Tampilkan blok perintah yang dapat dilipat di kiri; klik untuk menyembunyikan keluaran",
+  "日志关键字高亮": "Sorot kata kunci log",
+  "对 error、warning、info、success 等关键字着色显示": "Warnai kata kunci seperti error, warning, info, success di keluaran terminal",
   "界面主题": "Tema antarmuka",
   "主题": "tema",
   "主题包": "paket tema",
