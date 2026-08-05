@@ -7,6 +7,7 @@ import { CanResolveFilePaths, EventsOn, OnFileDrop, OnFileDropOff } from '../../
 import { useTranslation, t as tKey, getLanguage } from '../i18n.js';
 import { Z } from '../constants/zIndex.js';
 import { clampMenuPosition } from '../utils/menuPosition.js';
+import { isArchive, isBinaryLike, isViewable } from '../utils/fileTypeClassify.js';
 import FileUploadQueuePanel from './FileUploadQueuePanel.jsx';
 import Tiptop from './Tiptop.jsx';
 import {
@@ -163,11 +164,7 @@ function isEditable(name) {
   return false;
 }
 
-// 判断是否为压缩包
-function isArchive(name) {
-  const ext = (name.split('.').pop() || '').toLowerCase();
-  return ['zip', 'tar', 'gz', 'bz2', 'tgz', 'rar', '7z'].includes(ext) || name.toLowerCase().endsWith('.tar.gz');
-}
+// 压缩包/二进制/媒体文件类型判定已抽到 utils/fileTypeClassify.js（isArchive/isBinaryLike/isViewable）
 
 // 文件编辑大小上限
 const MAX_EDIT_SIZE = 5 * 1024 * 1024; // 5MB
@@ -6513,10 +6510,21 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           lastClickedPathRef.current = itemPath;
           if (item.isDirectory) {
             navigate(item);
-          } else if (isArchive(item.name) && fileManagerDoubleClickUncompressArchive) {
-            void handleUncompress(item);
+          } else if (isArchive(item.name)) {
+            // 压缩包永不进入编辑器路径：开关开启时解压，否则仅提示
+            if (fileManagerDoubleClickUncompressArchive) {
+              void handleUncompress(item);
+            } else {
+              addToast(t('该文件是压缩包，可通过右键菜单解压'), 'warning');
+            }
+          } else if (isBinaryLike(item.name)) {
+            // 二进制文件不适合编辑，直接拦截
+            addToast(t('该文件类型不适合用编辑器打开'), 'warning');
           } else if (isEditable(item.name)) {
             void handleEdit(item);
+          } else if (isViewable(item.name)) {
+            // 媒体类可看不可编：一律走系统关联程序，不受“指定编辑器”模式影响
+            void handleOpenSystemEditor({ path: itemPath, name: item.name }, '');
           } else {
             const file = { path: itemPath, name: item.name };
             if (defaultOpenMode === 'external') {

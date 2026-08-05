@@ -693,6 +693,8 @@ export default {
   "外部编辑已同步到远程": "Editările externe au fost sincronizate pe remote",
   "外部编辑同步失败": "Sincronizarea editărilor externe a eșuat",
   "打开外部编辑器失败": "Deschiderea editorului extern a eșuat",
+  "该文件是压缩包，可通过右键菜单解压": "Acest fișier este o arhivă. O poți extrage din meniul contextual",
+  "该文件类型不适合用编辑器打开": "Acest tip de fișier nu este potrivit pentru editare",
   "未选择编辑器": "Niciun editor selectat",
   "左侧分栏": "coloana din stânga",
   "右侧分栏": "Coloana din dreapta",

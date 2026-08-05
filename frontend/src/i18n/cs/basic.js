@@ -698,6 +698,8 @@ export default {
   "外部编辑已同步到远程": "Externí úpravy synchronizovány na vzdálený",
   "外部编辑同步失败": "Synchronizace externích úprav selhala",
   "打开外部编辑器失败": "Otevření externího editoru selhalo",
+  "该文件是压缩包，可通过右键菜单解压": "Tento soubor je archiv. Můžete jej rozbalit pomocí kontextové nabídky",
+  "该文件类型不适合用编辑器打开": "Tento typ souboru není vhodný k úpravám",
   "未选择编辑器": "Nebyl vybrán editor",
   "左侧分栏": "levý sloupec",
   "右侧分栏": "Pravý sloupec",

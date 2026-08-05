@@ -693,6 +693,8 @@ export default {
   "外部编辑已同步到远程": "Chỉnh sửa ngoài đã đồng bộ lên máy chủ",
   "外部编辑同步失败": "Đồng bộ chỉnh sửa ngoài thất bại",
   "打开外部编辑器失败": "Không mở được trình soạn thảo ngoài",
+  "该文件是压缩包，可通过右键菜单解压": "Tệp này là tệp nén. Bạn có thể giải nén qua menu chuột phải",
+  "该文件类型不适合用编辑器打开": "Loại tệp này không phù hợp để chỉnh sửa",
   "未选择编辑器": "Chưa chọn trình soạn thảo",
   "左侧分栏": "cột bên trái",
   "右侧分栏": "Cột bên phải",

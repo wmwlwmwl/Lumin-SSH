@@ -698,6 +698,8 @@ export default {
   "外部编辑已同步到远程": "External edits synced to remote",
   "外部编辑同步失败": "Failed to sync external edits",
   "打开外部编辑器失败": "Failed to open external editor",
+  "该文件是压缩包，可通过右键菜单解压": "This file is an archive. Use the right-click menu to extract it",
+  "该文件类型不适合用编辑器打开": "This file type is not suitable for editing",
   "未选择编辑器": "No editor selected",
   "左侧分栏": "Left Split",
   "右侧分栏": "Right Split",

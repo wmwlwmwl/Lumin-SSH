@@ -698,6 +698,8 @@ export default {
   "外部编辑已同步到远程": "Externe Änderungen mit Remote synchronisiert",
   "外部编辑同步失败": "Externe Änderungen konnten nicht synchronisiert werden",
   "打开外部编辑器失败": "Externer Editor konnte nicht geöffnet werden",
+  "该文件是压缩包，可通过右键菜单解压": "Diese Datei ist ein Archiv. Über das Rechtsklickmenü kann sie entpackt werden",
+  "该文件类型不适合用编辑器打开": "Dieser Dateityp eignet sich nicht zum Bearbeiten",
   "未选择编辑器": "Kein Editor ausgewählt",
   "左侧分栏": "linke Spalte",
   "右侧分栏": "Rechte Spalte",

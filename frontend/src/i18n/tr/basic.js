@@ -693,6 +693,8 @@ export default {
   "外部编辑已同步到远程": "Harici düzenlemeler uzak sunucuya senkronize edildi",
   "外部编辑同步失败": "Harici düzenlemeler senkronize edilemedi",
   "打开外部编辑器失败": "Harici düzenleyici açılamadı",
+  "该文件是压缩包，可通过右键菜单解压": "Bu dosya bir arşivdir. Sağ tık menüsüyle çıkarabilirsiniz",
+  "该文件类型不适合用编辑器打开": "Bu dosya türü düzenlemeye uygun değil",
   "未选择编辑器": "Düzenleyici seçilmedi",
   "左侧分栏": "sol sütun",
   "右侧分栏": "Sağ sütun",

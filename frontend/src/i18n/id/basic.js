@@ -693,6 +693,8 @@ export default {
   "外部编辑已同步到远程": "Edit eksternal disinkronkan ke remote",
   "外部编辑同步失败": "Gagal menyinkronkan edit eksternal",
   "打开外部编辑器失败": "Gagal membuka editor eksternal",
+  "该文件是压缩包，可通过右键菜单解压": "File ini adalah arsip. Anda dapat mengekstraknya melalui menu klik kanan",
+  "该文件类型不适合用编辑器打开": "Jenis file ini tidak cocok untuk diedit",
   "未选择编辑器": "Tidak ada editor yang dipilih",
   "左侧分栏": "kolom kiri",
   "右侧分栏": "Kolom kanan",

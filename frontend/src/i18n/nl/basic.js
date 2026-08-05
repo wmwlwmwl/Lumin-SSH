@@ -698,6 +698,8 @@ export default {
   "外部编辑已同步到远程": "Externe bewerkingen gesynchroniseerd naar remote",
   "外部编辑同步失败": "Synchroniseren van externe bewerkingen mislukt",
   "打开外部编辑器失败": "Externe editor openen mislukt",
+  "该文件是压缩包，可通过右键菜单解压": "Dit bestand is een archief. Gebruik het rechtermuisknopmenu om het uit te pakken",
+  "该文件类型不适合用编辑器打开": "Dit bestandstype is niet geschikt om te bewerken",
   "未选择编辑器": "Geen editor geselecteerd",
   "左侧分栏": "linker kolom",
   "右侧分栏": "Rechter kolom",
