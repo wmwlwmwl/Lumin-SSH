@@ -26,6 +26,7 @@
 .trae/
 .idea/
 .vscode/
+.zcode/
 *.suo
 *.ntvs*
 *.njsproj

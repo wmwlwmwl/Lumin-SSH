@@ -8,6 +8,7 @@ import { useTranslation, t as tKey, getLanguage } from '../i18n.js';
 import { Z } from '../constants/zIndex.js';
 import { clampMenuPosition } from '../utils/menuPosition.js';
 import { isArchive, isBinaryLike, isViewable } from '../utils/fileTypeClassify.js';
+import { suppressDragOutClick } from '../utils/dragOutClickGuard.js';
 import FileUploadQueuePanel from './FileUploadQueuePanel.jsx';
 import Tiptop from './Tiptop.jsx';
 import {
@@ -1060,6 +1061,68 @@ function ChmodDialog({ path, permission, mode, rememberedMode = '', autoApplyLas
   );
 }
 
+// 行内重命名输入框。
+//
+// 设计要点：
+//   - 非受控（defaultValue + ref 读值），避免受控渲染竞态丢字符。
+//   - suppressDragOutClick 抑制"框内 mousedown 拖出 mouseup"派生的 click，
+//     防止冒泡到行级 onClick 抢焦点、触发 onBlur 误提交。
+//   - committedRef 保证 onBlur / Enter / 外部取消 三条提交路径只生效一次。
+//   - 虚拟化卸载（Virtuoso 把该行滚出视口）时 React 不触发 onBlur，renamingItem
+//     会残留——卸载后 cleanup 故意保留已脱离 DOM 的元素引用，
+//     由 F2 入口（handleFileListKeyDown）与行级点击路径检测“input 已脱离 DOM”
+//     并读取 .value 兜底提交。之所以不用 useEffect cleanup 提交：
+//     StrictMode 下会 mount→unmount→remount，cleanup 会在用户什么都没做时就误触发提交。
+function RenameInput({ initialValue, isDirectory, onConfirm, onCancel, mountedRef }) {
+  const inputRef = useRef(null);
+  const committedRef = useRef(false);
+
+  const commit = useCallback((refocus) => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const el = inputRef.current;
+    const value = el ? el.value : '';
+    onConfirm(value, refocus);
+  }, [onConfirm]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (mountedRef) mountedRef.current = el; // 登记：供残留检测路径判断 input 是否还在 DOM
+    const name = el.value;
+    const extensionIndex = isDirectory ? -1 : name.lastIndexOf('.');
+    const selectionEnd = extensionIndex > 0 && extensionIndex < name.length - 1 ? extensionIndex : name.length;
+    el.setSelectionRange(0, selectionEnd);
+    // 卸载时不清空 mountedRef：保留已脱离 DOM 的元素引用，
+    // 让残留清理路径（F2 / 行级点击）能读到 .value 提交用户最后输入；
+    // 读取方都必须先做 document.body.contains 判断。绝不在 cleanup 做业务提交。
+  }, [isDirectory, mountedRef]);
+
+  return (
+    <input
+      ref={inputRef}
+      id="fm-rename-input"
+      name="fm-rename-input"
+      className="rename-input"
+      autoComplete="off"
+      defaultValue={initialValue}
+      onMouseDown={suppressDragOutClick}
+      onBlur={() => commit(false)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') commit(true);
+        if (event.key === 'Escape') {
+          if (committedRef.current) return;
+          committedRef.current = true;
+          onCancel();
+        }
+      }}
+      onClick={(event) => event.stopPropagation()}
+      autoFocus
+    />
+  );
+}
+
 // Context menu component
 function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinned = false, canTogglePinned = false, canCloseTab = false, showCreateActions = false, deleteItemCount = 1, clipboardItemCount = 1, canPaste = false, clipboardActionArrow = '', onClose, onDownload, onEdit, onOpenSystemEditor, onOpenWithEditor, onRename, onDelete, onDeleteShell, onMkdir, onNewFile, onCompress, onUncompress, onChmod, onCopyPath, onCopyItem, onCutItem, onPaste, onOpenInNewTab, onTogglePinned, onCloseTab, t }) {
   const ref = useRef(null);
@@ -1072,8 +1135,9 @@ function ContextMenu({ pos, item, mode = 'item', isPinned = false, isSystemPinne
 
   React.useLayoutEffect(() => {
     if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const clamped = clampMenuPosition(pos.x, pos.y, rect.width, rect.height);
+    // 使用 offsetWidth/offsetHeight 测量：菜单带有 scale(0.94) 入场动画，
+    // getBoundingClientRect 会拿到变换后的缩小尺寸，导致底部 clamp 不足、末尾项被裁剪
+    const clamped = clampMenuPosition(pos.x, pos.y, ref.current.offsetWidth, ref.current.offsetHeight);
     setAdjusted({ left: clamped.x, top: clamped.y });
   }, [pos.x, pos.y]);
 
@@ -2421,7 +2485,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   }, [sessionGroupId]);
 
   const [renamingItem, setRenamingItem] = useState(null);
-  const [renameValue, setRenameValue] = useState('');
+  // 跟踪重命名 input 是否仍挂在 DOM：Virtuoso 把行滚出视口会卸载 input，此时
+  // renamingItem 仍残留。F2 入口据此判断是否需要先提交残留的重命名再继续。
+  const renamingInputMountedRef = useRef(null);
   const [chmodTarget, setChmodTarget] = useState(null); // { item, path, mode, includeSubdirectories, showIncludeSubdirectories }
   const [openEditFiles, setOpenEditFiles] = useState([]);      // [{ path, name, content }]
   const openEditFilesRef = useRef([]);
@@ -5192,7 +5258,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   // Keyboard shortcuts for file list
   const handleFileListKeyDown = (e) => {
     if (operationInProgressRef.current) return;
-    if (renamingItem) return;
+    // 重命名残留兜底：若上一次重命名的 input 已被虚拟化滚出视口而卸载（React 不会
+    // 触发 onBlur，renamingItem 会残留），这里先把它提交掉，再继续本次按键。
+    // 仅当 input 仍挂在 DOM 时，才认为用户正在编辑、需挡住快捷键。
+    if (renamingItem) {
+      const el = renamingInputMountedRef.current;
+      const stillInDom = el && document.body.contains(el);
+      if (stillInDom) return;
+      confirmRename(el ? el.value : '');
+    }
     const eventTarget = e.target;
     const isEditableTarget = eventTarget instanceof HTMLElement
       && (
@@ -5537,19 +5611,30 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
 
   // Rename
   const startRename = (item) => {
+    // 切换到另一个条目的重命名时，先提交当前编辑中的值（input 卸载不会触发 onBlur）
+    if (renamingItem && renamingItem.name !== item.name) {
+      const el = renamingInputMountedRef.current;
+      void confirmRename(el ? el.value : '');
+    }
     setRenamingItem(item);
-    setRenameValue(item.name);
   };
 
-  const confirmRename = async (refocus = false) => {
-    const nextName = renameValue.trim();
-    if (!renamingItem || !nextName || nextName === renamingItem.name) {
-      setRenamingItem(null);
+  const renameCommittingRef = useRef(null);
+
+  const confirmRename = async (nextValue, refocus = false) => {
+    const targetItem = renamingItem;
+    // 同一 item 的提交正在进行中时忽略重复触发（残留清理可能被连续点击多次调用）
+    if (!targetItem || renameCommittingRef.current === targetItem) return;
+    const nextName = String(nextValue ?? '').trim();
+    if (!nextName || nextName === targetItem.name) {
+      // 函数式更新 + 身份比较：避免异步窗口内清掉刚启动的新重命名
+      setRenamingItem((current) => (current === targetItem ? null : current));
       if (refocus) fileListRef.current?.focus();
       return;
     }
-    const oldPath = joinPath(currentPath, renamingItem.name);
+    const oldPath = joinPath(currentPath, targetItem.name);
     const newPath = joinPath(currentPath, nextName);
+    renameCommittingRef.current = targetItem;
     try {
       await AppGo.RenameItem(sessionId, oldPath, newPath);
       pushFileManagerUndoEntry({
@@ -5574,14 +5659,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       clearActiveRowEffect(oldPath);
       queueRowEffectForMatchingPanes(currentPathRef.current || currentPath, newPath, newPath, 'changed');
       updateItemsPreservingView((prev) => prev.map((entry) => (
-        entry.name === renamingItem.name
+        entry.name === targetItem.name
           ? { ...entry, name: nextName, modifyTime: Date.now() }
           : entry
       )), anchor);
     } catch (err) {
       addToast(`${t('重命名失败')}: ${err}`, 'error');
     } finally {
-      setRenamingItem(null);
+      if (renameCommittingRef.current === targetItem) renameCommittingRef.current = null;
+      setRenamingItem((current) => (current === targetItem ? null : current));
       if (refocus) fileListRef.current?.focus();
     }
   };
@@ -6420,6 +6506,12 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           } : undefined}
           onClick={isInteractive ? (event) => {
             if ((event.detail || 1) >= 2) return;
+            if (renamingItem) {
+              const staleRenameEl = renamingInputMountedRef.current;
+              if (!(staleRenameEl && document.body.contains(staleRenameEl))) {
+                void confirmRename(staleRenameEl ? staleRenameEl.value : '');
+              }
+            }
             setSelectedPaths([]);
             fileListRef.current?.focus();
           } : undefined}
@@ -6459,6 +6551,14 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const handleItemClick = (event) => {
       if (!isInteractive || isDeletedPlaceholder) return;
       if ((event.detail || 1) >= 2) return;
+      // 重命名 input 已被虚拟化卸载时（renamingItem 残留、onBlur 不会触发），
+      // 先提交残留重命名（读取脱离 DOM 元素的最后值），再处理本次点击
+      if (renamingItem) {
+        const staleRenameEl = renamingInputMountedRef.current;
+        if (!(staleRenameEl && document.body.contains(staleRenameEl))) {
+          void confirmRename(staleRenameEl ? staleRenameEl.value : '');
+        }
+      }
       fileListRef.current?.focus();
       if (event.ctrlKey || event.metaKey) {
         setSelectedPaths((previousSelectedPaths) => (
@@ -6574,30 +6674,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         <div className="file-name-cell">
           <span className="file-icon">{fileIcon(item.name, item.isDirectory, item.isSymlink)}</span>
           {isInteractive && renamingItem?.name === item.name ? (
-            <input
-              id="fm-rename-input"
-              name="fm-rename-input"
-              className="rename-input"
-              autoComplete="off"
-              value={renameValue}
-              onChange={(event) => setRenameValue(event.target.value)}
-              onBlur={() => confirmRename(false)}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === 'Enter') confirmRename(true);
-                if (event.key === 'Escape') {
-                  setRenamingItem(null);
-                  fileListRef.current?.focus();
-                }
+            <RenameInput
+              initialValue={item.name}
+              isDirectory={item.isDirectory}
+              mountedRef={renamingInputMountedRef}
+              onConfirm={(value, refocus) => confirmRename(value, refocus)}
+              onCancel={() => {
+                setRenamingItem(null);
+                fileListRef.current?.focus();
               }}
-              onFocus={(event) => {
-                const name = event.currentTarget.value;
-                const extensionIndex = item.isDirectory ? -1 : name.lastIndexOf('.');
-                const selectionEnd = extensionIndex > 0 && extensionIndex < name.length - 1 ? extensionIndex : name.length;
-                event.currentTarget.setSelectionRange(0, selectionEnd);
-              }}
-              autoFocus
-              onClick={(event) => event.stopPropagation()}
             />
           ) : (
             <span className={`file-name ${item.isDirectory ? 'is-dir' : ''}${isDeletedPlaceholder ? ' is-deleted-placeholder' : ''}`}>
@@ -6666,7 +6751,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
         )}
       </div>
     );
-  }, [activePaneKey, activeRowEffects, addToast, buildFileManagerDragPayload, clipboard, confirmRename, contextMenuTargetPath, defaultOpenMode, effectiveLocatorActiveRowKey, fileManagerDoubleClickUncompressArchive, fileManagerDualPaneDragTransferEnabled, handleChmod, handleDelete, handleDownload, handleEdit, handleOpenSystemEditor, handleOpenWithEditor, handleUncompress, hideFileManagerDragTip, isDeletedPlaceholderItem, isDualPaneLayout, navigate, normalizePath, renamingItem, renameValue, t, updateFileManagerDragTip]);
+  }, [activePaneKey, activeRowEffects, addToast, buildFileManagerDragPayload, clipboard, confirmRename, contextMenuTargetPath, defaultOpenMode, effectiveLocatorActiveRowKey, fileManagerDoubleClickUncompressArchive, fileManagerDualPaneDragTransferEnabled, handleChmod, handleDelete, handleDownload, handleEdit, handleOpenSystemEditor, handleOpenWithEditor, handleUncompress, hideFileManagerDragTip, isDeletedPlaceholderItem, isDualPaneLayout, navigate, normalizePath, renamingItem, t, updateFileManagerDragTip]);
 
   const renderFileManagerVirtualViewport = useCallback((paneState, options = {}) => {
     const normalizedPaneKey = paneState?.key === 'right' ? 'right' : 'left';
