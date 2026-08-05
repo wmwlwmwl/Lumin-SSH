@@ -8,7 +8,7 @@ function withAlpha(color, alpha, fallback) {
 }
 
 export default function useTerminalSubTabs(deps) {
-  const { TERMINAL_DOCK_LONG_PRESS_MS, activeSessionId, activeSessionRootTerminals, activeTerminalId, canMoveTerminalToDockTarget, clearTerminalDockLongPressTimer, contentTab, fileManagerDockPreview, getFileManagerDockConfirmRect, getSessionRootTerminals, getTerminalDockPreviewTarget, getTerminalDockPreviewZones, getTerminalDockTargetStates, handleTerminalPaneDrop, setTerminalDockDragPreview, setTerminalSubTabCanScrollLeft, setTerminalSubTabCanScrollRight, setTerminalSubTabOverflow, terminalDockClickSuppressUntilRef, terminalDockLongPressTimerRef, terminalDockPointerCleanupRef, terminalSubTabDragSuppressUntilRef, terminalSubTabDraggingRef, terminalSubTabScrollBySessionRef, terminalSubTabScrollFrameRef, terminalSubTabScrollRef, terminalSubTabScrollTargetRef, terminalSubTabTheme } = deps;
+  const { TERMINAL_DOCK_LONG_PRESS_MS, activeSessionId, activeSessionRootTerminals, activeTerminalId, canMoveTerminalToDockTarget, clearTerminalDockLongPressTimer, contentTab, fileManagerDockPreview, getFileManagerDockConfirmRect, getSessionRootTerminals, getTerminalDockPreviewTarget, getTerminalDockPreviewZones, getTerminalDockTargetStates, handleTerminalPaneDrop, setTerminalDockDragPreview, setTerminalSubTabOverflow, terminalDockClickSuppressUntilRef, terminalDockLongPressTimerRef, terminalDockPointerCleanupRef, terminalSubTabDragSuppressUntilRef, terminalSubTabDraggingRef, terminalSubTabScrollBySessionRef, terminalSubTabScrollFrameRef, terminalSubTabScrollRef, terminalSubTabScrollTargetRef, terminalSubTabTheme } = deps;
   const terminalSubTabScrollStyle = useMemo(() => ({
     '--terminal-list-scrollbar-thumb': withAlpha(terminalSubTabTheme?.xterm?.cursor, 0.32, 'rgba(var(--accent-rgb), 0.32)'),
     '--terminal-list-scrollbar-thumb-hover': withAlpha(terminalSubTabTheme?.xterm?.blue || terminalSubTabTheme?.xterm?.cursor, 0.58, 'rgba(var(--accent-rgb), 0.58)'),
@@ -59,16 +59,12 @@ export default function useTerminalSubTabs(deps) {
     const el = terminalSubTabScrollRef.current;
     if (!el) {
       setTerminalSubTabOverflow(false);
-      setTerminalSubTabCanScrollLeft(false);
-      setTerminalSubTabCanScrollRight(false);
       return;
     }
     const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
     const currentLeft = el.scrollLeft;
     const hasOverflow = maxLeft > 1;
     setTerminalSubTabOverflow(hasOverflow);
-    setTerminalSubTabCanScrollLeft(hasOverflow && currentLeft > 1);
-    setTerminalSubTabCanScrollRight(hasOverflow && currentLeft < maxLeft - 1);
     if (activeSessionId) {
       rememberTerminalSubTabScroll(activeSessionId, hasOverflow ? currentLeft : 0);
     }
@@ -183,15 +179,6 @@ export default function useTerminalSubTabs(deps) {
     const baseLeft = terminalSubTabScrollFrameRef.current ? terminalSubTabScrollTargetRef.current : el.scrollLeft;
     setTerminalSubTabScrollTarget(baseLeft + delta);
     e.preventDefault();
-  }, [setTerminalSubTabScrollTarget]);
-  const scrollTerminalSubTabs = useCallback((direction) => {
-    const el = terminalSubTabScrollRef.current;
-    if (!el) {
-      return;
-    }
-    const step = Math.max(96, Math.round(el.clientWidth * 0.45));
-    const baseLeft = terminalSubTabScrollFrameRef.current ? terminalSubTabScrollTargetRef.current : el.scrollLeft;
-    setTerminalSubTabScrollTarget(baseLeft + step * direction);
   }, [setTerminalSubTabScrollTarget]);
   const handleTerminalSubTabMouseDown = useCallback((e) => {
     if (e.button !== 0) {
@@ -388,5 +375,5 @@ export default function useTerminalSubTabs(deps) {
     }).filter(Boolean);
   }, [fileManagerDockPreview, getFileManagerDockConfirmRect]);
 
-  return { terminalSubTabScrollStyle, handleTerminalSubTabScroll, handleTerminalSubTabWheel, scrollTerminalSubTabs, handleTerminalSubTabMouseDown, handleTerminalSubTabClickCapture, handleTerminalSubTabDockMouseDown, fileManagerDockDropzones };
+  return { terminalSubTabScrollStyle, handleTerminalSubTabScroll, handleTerminalSubTabWheel, handleTerminalSubTabMouseDown, handleTerminalSubTabClickCapture, handleTerminalSubTabDockMouseDown, fileManagerDockDropzones };
 }

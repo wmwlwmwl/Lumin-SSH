@@ -1114,6 +1114,114 @@ input::-ms-clear {
   padding-left: 0;
 }
 
+.terminal-tab-list-trigger {
+  align-self: stretch;
+  margin-left: calc(-1 * var(--space-1));
+  margin-right: var(--space-1);
+}
+
+.terminal-tab-list-btn {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tab-inactive-border);
+  border-radius: 0;
+  background: var(--tab-inactive-bg);
+  color: var(--tab-inactive-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: var(--transition-fast);
+}
+
+.terminal-tab-list-btn:hover {
+  background: var(--tab-inactive-bg-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.terminal-tab-list-btn.active {
+  background: var(--tab-active-bg);
+  border-color: var(--tab-active-border);
+  border-bottom-color: var(--accent);
+  color: var(--tab-active-text, var(--text-primary));
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.terminal-tab-list-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.terminal-tab-list-search {
+  position: relative;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-tab-list-search input {
+  width: 100%;
+  padding: 4px 8px 4px 26px;
+  font-size: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.terminal-tab-list-search input:focus-visible {
+  border-color: var(--border-focus);
+}
+
+.terminal-tab-list-search svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.terminal-tab-list-items {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-tab-list-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.terminal-tab-list-item[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.terminal-tab-list-item:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.terminal-tab-list-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-tab-list-empty {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
 .terminal-create-btn {
   height: 32px;
   padding: 0 10px;

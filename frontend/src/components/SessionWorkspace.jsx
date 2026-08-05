@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Cpu, Folder, Globe, Monitor, Plus, RefreshCw, ScrollText, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Cpu, Folder, Globe, Monitor, Plus, RefreshCw, ScrollText, Search, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as AppGo from '../../wailsjs/go/main/App.js';
 import AIChangeReviewWorkbench from './ai/AIChangeReviewWorkbench.jsx';
 import AIConversationDiffOverlay from './ai/AIConversationDiffOverlay.jsx';
@@ -15,6 +16,7 @@ import Tiptop from './Tiptop.jsx';
 import { TERMINAL_PANE_CELL_IDS, getTerminalPaneAbsolutePlacement } from '../utils/terminalPaneLayout.js';
 import { getTerminalTabDoubleClickAction, isUnsupportedMonitorSession } from '../utils/sessionWorkspace.js';
 import { Z } from '../constants/zIndex.js';
+import { clampMenuPosition } from '../utils/menuPosition.js';
 
 const FILE_MANAGER_LEFT_MIN = 180;
 const FILE_MANAGER_BOTTOM_MIN = 100;
@@ -110,7 +112,6 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
     resolvePasswordPrompt,
     restoringWorkspaceSessionIds,
     saveFlowHighlights,
-    scrollTerminalSubTabs,
     searchQuery,
     selectedServerIds,
     serverEditor,
@@ -147,14 +148,92 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
     terminalDockDragPreview,
     terminalPaneLayouts,
     terminalSubTabActionsRef,
-    terminalSubTabCanScrollLeft,
-    terminalSubTabCanScrollRight,
     terminalSubTabOverflow,
     terminalSubTabScrollRef,
     terminalSubTabScrollStyle,
     terminalToolbarIconOnly,
     toggleBatchSelection
   } = props;
+  const [showTerminalList, setShowTerminalList] = useState(false);
+  const [terminalListQuery, setTerminalListQuery] = useState('');
+  const [terminalListPosition, setTerminalListPosition] = useState({ x: 0, y: 0, width: 240, maxHeight: 400 });
+  const terminalListButtonRef = useRef(null);
+  const terminalListMenuRef = useRef(null);
+  const terminalListSearchRef = useRef(null);
+  const filteredTerminalTabs = useMemo(() => {
+    const query = terminalListQuery.trim().toLowerCase();
+    if (!query) return activeSessionRootTerminals;
+    return activeSessionRootTerminals.filter((term) => String(term.label || '').toLowerCase().includes(query));
+  }, [activeSessionRootTerminals, terminalListQuery]);
+  const closeTerminalList = useCallback((restoreFocus = false) => {
+    setShowTerminalList(false);
+    setTerminalListQuery('');
+    if (restoreFocus) {
+      requestAnimationFrame(() => terminalListButtonRef.current?.focus());
+    }
+  }, []);
+  const toggleTerminalList = useCallback(() => {
+    if (showTerminalList) {
+      closeTerminalList(true);
+      return;
+    }
+    const rect = terminalListButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.max(1, Math.min(240, window.innerWidth - 16));
+    const maxHeight = Math.max(1, Math.min(400, window.innerHeight - 16));
+    const position = clampMenuPosition(rect.right - width, rect.bottom + 4, width, maxHeight);
+    setTerminalListPosition({ ...position, width, maxHeight });
+    setTerminalListQuery('');
+    setShowTerminalList(true);
+  }, [closeTerminalList, showTerminalList]);
+  const selectTerminalTab = useCallback((term, fromList = false) => {
+    if (!activeSession) return;
+    markWorkspaceRestoreNavigationOverride();
+    setTerminalTabContextMenu(null);
+    setActiveTerminalId(term.id);
+    setContentTab('terminal');
+    rememberSessionActiveTerminal(activeSession.id, term.id, term.label);
+    persistWorkspaceSnapshotRef.current({
+      activeSessionId: activeSession.id,
+      activeTerminalId: term.id,
+    });
+    if (fromList) {
+      closeTerminalList(true);
+    }
+  }, [activeSession, closeTerminalList, markWorkspaceRestoreNavigationOverride, persistWorkspaceSnapshotRef, rememberSessionActiveTerminal, setActiveTerminalId, setContentTab, setTerminalTabContextMenu]);
+  useEffect(() => {
+    if (!showTerminalList) return undefined;
+    const frame = requestAnimationFrame(() => terminalListSearchRef.current?.focus());
+    const handlePointerDown = (event) => {
+      if (!terminalListMenuRef.current?.contains(event.target) && !terminalListButtonRef.current?.contains(event.target)) {
+        closeTerminalList();
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeTerminalList(true);
+    };
+    const handleResize = () => closeTerminalList();
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [closeTerminalList, showTerminalList]);
+  useEffect(() => {
+    closeTerminalList();
+  }, [activeSessionId, closeTerminalList]);
+  useEffect(() => {
+    if (!terminalSubTabOverflow) {
+      closeTerminalList();
+    }
+  }, [closeTerminalList, terminalSubTabOverflow]);
   return (
       <main className="main-area">
         <div style={{ display: activeSessionId === null ? 'flex' : 'none', flex: 1, flexDirection: 'column', height: '100%' }}>
@@ -310,18 +389,6 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
             {/* ── 终端子标签栏（多终端支持） ──────────────────── */}
             {activeSession && isActiveSessionConnected && (contentTab === 'terminal' || contentTab === 'process' || contentTab === 'network' || contentTab === 'history' || (fileManagerPosition === 'tab' && contentTab === 'files')) && isSessionWorkspaceVisible(activeSession) && activeSession.terminals && activeSession.terminals.length >= 1 && (
               <div className="terminal-sub-tab-bar">
-                {terminalSubTabOverflow && (
-                  <button
-                    type="button"
-                    className={`terminal-sub-tab-nav terminal-sub-tab-nav-left${terminalSubTabCanScrollLeft ? '' : ' disabled'}`}
-                    onClick={() => scrollTerminalSubTabs(-1)}
-                    aria-label={t('向左滚动标签')}
-                    title={t('向左滚动标签')}
-                    disabled={!terminalSubTabCanScrollLeft}
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                )}
                 <div
                   ref={terminalSubTabScrollRef}
                   className="terminal-sub-tab-scroll"
@@ -355,15 +422,7 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
                           }}
                           onClick={() => {
                             if (shouldIgnoreTerminalDockClick()) return;
-                            markWorkspaceRestoreNavigationOverride();
-                            setTerminalTabContextMenu(null);
-                            setActiveTerminalId(term.id);
-                            setContentTab('terminal');
-                            rememberSessionActiveTerminal(activeSession.id, term.id, term.label);
-                            persistWorkspaceSnapshotRef.current({
-                              activeSessionId: activeSession.id,
-                              activeTerminalId: term.id,
-                            });
+                            selectTerminalTab(term);
                           }}
                           onDoubleClick={(e) => {
                             if (term.type !== 'terminal') return;
@@ -405,19 +464,23 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
                     );
                   })}
                 </div>
-                {terminalSubTabOverflow && (
-                  <button
-                    type="button"
-                    className={`terminal-sub-tab-nav terminal-sub-tab-nav-right${terminalSubTabCanScrollRight ? '' : ' disabled'}`}
-                    onClick={() => scrollTerminalSubTabs(1)}
-                    aria-label={t('向右滚动标签')}
-                    title={t('向右滚动标签')}
-                    disabled={!terminalSubTabCanScrollRight}
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                )}
                 <div className="terminal-sub-tab-actions" ref={terminalSubTabActionsRef}>
+                  {terminalSubTabOverflow && (
+                    <Tiptop className="terminal-tab-list-trigger" text={t('终端')} placement="bottom">
+                      <button
+                        ref={terminalListButtonRef}
+                        type="button"
+                        className={`terminal-tab-list-btn${showTerminalList ? ' active' : ''}`}
+                        onClick={toggleTerminalList}
+                        aria-label={t('终端')}
+                        aria-haspopup="listbox"
+                        aria-expanded={showTerminalList}
+                        aria-controls="terminal-sub-tab-list"
+                      >
+                        <ChevronDown size={14} />
+                      </button>
+                    </Tiptop>
+                  )}
                   {fileManagerPosition !== 'tab' && (fileManagerDockPreview === 'left' || fileManagerDockPreview === 'right' || fileManagerDockPreview === 'bottom') && (
                     <div ref={fileManagerDockTabAnchorRef} className="file-manager-tab-dock-placeholder" aria-hidden="true">
                       <div className={`file-manager-dock-preview-dropzone file-manager-dock-preview-dropzone-inline${fileManagerDockConfirmTarget === 'tab' ? ' active' : ''}`} />
@@ -482,6 +545,52 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
                       {!terminalToolbarIconOnly && t('新建终端')}
                     </button>
                   </Tiptop>
+                </div>
+              </div>
+            )}
+            {showTerminalList && (
+              <div
+                ref={terminalListMenuRef}
+                id="terminal-sub-tab-menu"
+                className="tab-context-menu terminal-tab-list-menu"
+                style={{
+                  left: terminalListPosition.x,
+                  top: terminalListPosition.y,
+                  width: terminalListPosition.width,
+                  maxHeight: terminalListPosition.maxHeight,
+                }}
+              >
+                <div className="terminal-tab-list-search">
+                  <input
+                    ref={terminalListSearchRef}
+                    id="terminal-sub-tab-search"
+                    name="terminal-sub-tab-search"
+                    autoComplete="off"
+                    type="text"
+                    value={terminalListQuery}
+                    onChange={(event) => setTerminalListQuery(event.target.value)}
+                    placeholder={t('搜索')}
+                    aria-label={t('搜索')}
+                  />
+                  <Search size={13} />
+                </div>
+                <div id="terminal-sub-tab-list" role="listbox" aria-label={t('终端')} className="terminal-tab-list-items">
+                  {filteredTerminalTabs.map((term) => (
+                    <button
+                      key={term.id}
+                      type="button"
+                      role="option"
+                      aria-selected={activeTerminalId === term.id}
+                      className="tab-context-menu-item terminal-tab-list-item"
+                      onClick={() => selectTerminalTab(term, true)}
+                    >
+                      <Monitor size={13} />
+                      <span>{term.label}</span>
+                    </button>
+                  ))}
+                  {filteredTerminalTabs.length === 0 && (
+                    <div className="terminal-tab-list-empty">{t('无匹配结果')}</div>
+                  )}
                 </div>
               </div>
             )}
