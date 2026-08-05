@@ -646,6 +646,7 @@ export default {
   "最大支持 {size}MB 编辑": "Dukungan maksimal pengeditan {size}MB",
   "文件编辑大小上限 (MB)": "Ukuran maksimum file untuk diedit (MB)",
   "文件编辑大小上限范围为 1-50 MB": "Rentang ukuran maksimum file untuk diedit adalah 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Ukuran file maksimum saat klik ganda atau membuka dengan editor. File yang lebih besar ditolak untuk menghindari lag. Rentang 1-50, bawaan 5",
   "读取目录失败": "Gagal membaca direktori",
   "此操作不可撤销": "Tindakan ini tidak dapat diubah",
   "已删除": "Dihapus",

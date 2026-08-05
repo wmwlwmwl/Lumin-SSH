@@ -651,6 +651,7 @@ export default {
   "最大支持 {size}MB 编辑": "Soporte máximo de edición de {size} MB",
   "文件编辑大小上限 (MB)": "Tamaño máximo de archivo para editar (MB)",
   "文件编辑大小上限范围为 1-50 MB": "El rango del tamaño máximo de archivo para editar es de 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Tamaño máximo de archivo al hacer doble clic o abrir con un editor. Los archivos mayores se rechazan para evitar lentitud o problemas de memoria. Rango 1-50, predeterminado 5",
   "读取目录失败": "No se pudo leer el directorio",
   "此操作不可撤销": "Esta acción es irreversible.",
   "已删除": "Eliminado",

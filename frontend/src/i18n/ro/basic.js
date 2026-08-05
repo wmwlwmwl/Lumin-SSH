@@ -646,6 +646,7 @@ export default {
   "最大支持 {size}MB 编辑": "Suport maxim pentru editare de {size} MB",
   "文件编辑大小上限 (MB)": "Dimensiunea maximă a fișierului pentru editare (MB)",
   "文件编辑大小上限范围为 1-50 MB": "Intervalul dimensiunii maxime a fișierului pentru editare este 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Dimensiunea maximă a fișierului la dublu clic sau deschidere cu un editor. Fișierele mai mari sunt refuzate pentru a evita blocajele. Interval 1-50, implicit 5",
   "读取目录失败": "Nu s-a putut citi directorul",
   "此操作不可撤销": "Această acțiune este ireversibilă",
   "已删除": "Șters",

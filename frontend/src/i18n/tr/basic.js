@@ -646,6 +646,7 @@ export default {
   "最大支持 {size}MB 编辑": "Maksimum destek {size} MB düzenleme",
   "文件编辑大小上限 (MB)": "Düzenleme için maksimum dosya boyutu (MB)",
   "文件编辑大小上限范围为 1-50 MB": "Düzenleme için maksimum dosya boyutu aralığı 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Çift tıklama veya düzenleyiciyle açma için en büyük dosya boyutu. Daha büyük dosyalar takılmayı önlemek için reddedilir. Aralık 1-50, varsayılan 5",
   "读取目录失败": "Dizin okunamadı",
   "此操作不可撤销": "Bu eylem geri alınamaz",
   "已删除": "Silindi",

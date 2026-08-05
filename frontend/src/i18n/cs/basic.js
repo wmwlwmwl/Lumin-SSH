@@ -651,6 +651,7 @@ export default {
   "最大支持 {size}MB 编辑": "Maximální podpora úprav {size} MB",
   "文件编辑大小上限 (MB)": "Maximální velikost souboru pro úpravy (MB)",
   "文件编辑大小上限范围为 1-50 MB": "Rozsah maximální velikosti souboru pro úpravy je 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Maximální velikost souboru při dvojitém kliknutí nebo otevření v editoru. Větší soubory jsou odmítnuty, aby se předešlo zasekávání. Rozsah 1-50, výchozí 5",
   "读取目录失败": "Adresář se nepodařilo přečíst",
   "此操作不可撤销": "Tato akce je nevratná",
   "已删除": "Smazáno",

@@ -646,6 +646,7 @@ export default {
   "最大支持 {size}MB 编辑": "Hỗ trợ chỉnh sửa tối đa {size} MB",
   "文件编辑大小上限 (MB)": "Kích thước tệp tối đa để chỉnh sửa (MB)",
   "文件编辑大小上限范围为 1-50 MB": "Phạm vi kích thước tệp tối đa để chỉnh sửa là 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Kích thước tệp tối đa khi nhấp đúp hoặc mở bằng trình chỉnh sửa. Tệp lớn hơn sẽ bị từ chối để tránh giật lag. Phạm vi 1-50, mặc định 5",
   "读取目录失败": "Không đọc được thư mục",
   "此操作不可撤销": "Hành động này không thể đảo ngược",
   "已删除": "Đã xóa",

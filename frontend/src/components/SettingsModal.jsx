@@ -1332,7 +1332,8 @@ export default function SettingsModal({
   };
   const handleFileManagerMaxEditSizeChange = async (e) => {
     const raw = e.target.value;
-    const next = parseInt(raw, 10);
+    // 用 Number 而非 parseInt：避免 "12abc" 被解析为 12 而误持久化
+    const next = Number(raw);
     // 非法值（空/非数字/越界）只更新 UI 态，不持久化
     if (!Number.isFinite(next) || next < 1 || next > 50) {
       setFileManagerMaxEditSizeMB(raw);

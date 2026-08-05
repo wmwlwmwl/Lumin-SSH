@@ -651,6 +651,7 @@ export default {
   "最大支持 {size}MB 编辑": "Maximale ondersteuning voor bewerken van {size} MB",
   "文件编辑大小上限 (MB)": "Maximale bestandsgrootte voor bewerken (MB)",
   "文件编辑大小上限范围为 1-50 MB": "Bereik van maximale bestandsgrootte voor bewerken is 1-50 MB",
+  "双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5": "Maximale bestandsgrootte bij dubbelklikken of openen met een editor. Grotere bestanden worden geweigerd om haperingen te voorkomen. Bereik 1-50, standaard 5",
   "读取目录失败": "Kan map niet lezen",
   "此操作不可撤销": "Deze actie is onomkeerbaar",
   "已删除": "Verwijderd",
