@@ -166,8 +166,8 @@ function isEditable(name) {
 
 // 压缩包/二进制/媒体文件类型判定已抽到 utils/fileTypeClassify.js（isArchive/isBinaryLike/isViewable）
 
-// 文件编辑大小上限
-const MAX_EDIT_SIZE = 5 * 1024 * 1024; // 5MB
+// 文件编辑大小上限默认值（MB）；实际值由用户配置，组件内 maxEditSizeMB state 持有
+const DEFAULT_MAX_EDIT_SIZE_MB = 5;
 const MAX_CHUNK_UPLOAD_RETRIES = 5;
 const UPLOAD_ABORT_SENTINEL = '__LUMIN_UPLOAD_ABORTED__';
 const DEFAULT_FILE_MANAGER_DOWNLOAD_DIR = '${APP_DIR}\\download';
@@ -1348,6 +1348,7 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
   const [fileManagerDoubleClickUncompressArchive, setFileManagerDoubleClickUncompressArchive] = useState(false);
   const [fileManagerSmartUncompressConflictStrategy, setFileManagerSmartUncompressConflictStrategy] = useState('auto_rename');
   const [fileManagerAutoRefreshDisabled, setFileManagerAutoRefreshDisabled] = useState(false);
+  const [maxEditSizeMB, setMaxEditSizeMB] = useState(DEFAULT_MAX_EDIT_SIZE_MB);
   const fileManagerAutoRefreshDisabledRef = useRef(false);
   useEffect(() => { fileManagerAutoRefreshDisabledRef.current = fileManagerAutoRefreshDisabled; }, [fileManagerAutoRefreshDisabled]);
   useEffect(() => {
@@ -1410,6 +1411,9 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             : 'auto_rename'
         );
         setFileManagerAutoRefreshDisabled(settings.autoRefreshDisabled === true);
+        if (Number.isFinite(Number(settings.maxEditSizeMB)) && Number(settings.maxEditSizeMB) >= 1) {
+          setMaxEditSizeMB(Number(settings.maxEditSizeMB));
+        }
       })
       .catch(() => {});
     return () => {
@@ -1422,13 +1426,19 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       e.detail === 'overwrite' || e.detail === 'prompt' ? e.detail : 'auto_rename'
     );
     const handleAutoRefreshChange = (e) => setFileManagerAutoRefreshDisabled(e.detail === true);
+    const handleMaxEditSizeChange = (e) => {
+      const v = Number(e.detail);
+      if (Number.isFinite(v) && v >= 1) setMaxEditSizeMB(v);
+    };
     window.addEventListener('file-manager-double-click-uncompress-archive-changed', handleDoubleClickChange);
     window.addEventListener('file-manager-smart-uncompress-conflict-strategy-changed', handleStrategyChange);
     window.addEventListener('file-manager-auto-refresh-disabled-changed', handleAutoRefreshChange);
+    window.addEventListener('file-manager-max-edit-size-changed', handleMaxEditSizeChange);
     return () => {
       window.removeEventListener('file-manager-double-click-uncompress-archive-changed', handleDoubleClickChange);
       window.removeEventListener('file-manager-smart-uncompress-conflict-strategy-changed', handleStrategyChange);
       window.removeEventListener('file-manager-auto-refresh-disabled-changed', handleAutoRefreshChange);
+      window.removeEventListener('file-manager-max-edit-size-changed', handleMaxEditSizeChange);
     };
   }, []);
   useEffect(() => {
@@ -4370,16 +4380,21 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     localStorage.setItem('fileEditorRecentApps', JSON.stringify(recent));
   }, []);
 
-  const openExternalEditor = useCallback(async (remotePath, content, editorPath = '') => {
+  const openExternalEditor = useCallback(async (remotePath, content, editorPath = '', readOnly = false, size = 0) => {
     if (!sessionId || !remotePath) return false;
+    // 下载前拦截大文件，避免把 GB 级文件读进内存后才报错（后端也会再校验一道）
+    if (size && size > maxEditSizeMB * 1024 * 1024) {
+      addToast(`${t('文件过大')} (${(size / 1024 / 1024).toFixed(1)}MB)，${t('最大支持 {size}MB 编辑', { size: maxEditSizeMB })}`, 'error');
+      return false;
+    }
     setExternalOpening(true);
     try {
       if (editorPath) {
-        await AppGo.OpenRemoteFileWithEditor(sessionId, remotePath, content || '', editorPath);
+        await AppGo.OpenRemoteFileWithEditor(sessionId, remotePath, content || '', editorPath, readOnly);
         rememberExternalEditorPath(editorPath);
         addToast(t('已用外部编辑器打开'), 'success');
       } else {
-        await AppGo.OpenRemoteFileInSystemEditor(sessionId, remotePath, content || '');
+        await AppGo.OpenRemoteFileInSystemEditor(sessionId, remotePath, content || '', readOnly);
         addToast(t('已用系统编辑器打开'), 'success');
       }
       return true;
@@ -4389,15 +4404,15 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     } finally {
       setExternalOpening(false);
     }
-  }, [sessionId, addToast, t, rememberExternalEditorPath]);
+  }, [sessionId, addToast, t, rememberExternalEditorPath, maxEditSizeMB]);
 
-  const handleOpenSystemEditor = useCallback(async (file, content) => {
+  const handleOpenSystemEditor = useCallback(async (file, content, readOnly = false) => {
     if (!file?.path) return;
-    await openExternalEditor(file.path, content ?? file.content ?? '');
+    await openExternalEditor(file.path, content ?? file.content ?? '', '', readOnly, file?.size || 0);
   }, [openExternalEditor]);
 
   // forcePick=true：始终弹出选择框；false：有记忆路径则直接打开（对齐 electerm）
-  const handleOpenWithEditor = useCallback(async (file, content, forcePick = false) => {
+  const handleOpenWithEditor = useCallback(async (file, content, forcePick = false, readOnly = false) => {
     if (!file?.path) return;
     try {
       let editorPath = '';
@@ -4411,13 +4426,13 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
           return;
         }
       }
-      const ok = await openExternalEditor(file.path, content ?? file.content ?? '', editorPath);
+      const ok = await openExternalEditor(file.path, content ?? file.content ?? '', editorPath, readOnly, file?.size || 0);
       // 记忆路径失效时，自动再选一次
       if (!ok && !forcePick && (localStorage.getItem('fileEditorPreferredApp') || '').trim()) {
         localStorage.removeItem('fileEditorPreferredApp');
         const nextPath = await AppGo.SelectExternalEditor();
         if (nextPath) {
-          await openExternalEditor(file.path, content ?? file.content ?? '', nextPath);
+          await openExternalEditor(file.path, content ?? file.content ?? '', nextPath, readOnly, file?.size || 0);
         }
       }
     } catch (err) {
@@ -4430,8 +4445,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
     const remotePath = joinPath(currentPath, item.name);
 
     // 文件大小检查，避免加载过大文件导致卡顿
-    if (item.size && item.size > MAX_EDIT_SIZE) {
-      addToast(`${t('文件过大')} (${(item.size / 1024 / 1024).toFixed(1)}MB)，${t('最大支持 5MB 编辑')}`, 'error');
+    if (item.size && item.size > maxEditSizeMB * 1024 * 1024) {
+      addToast(`${t('文件过大')} (${(item.size / 1024 / 1024).toFixed(1)}MB)，${t('最大支持 {size}MB 编辑', { size: maxEditSizeMB })}`, 'error');
       return;
     }
 
@@ -6524,7 +6539,8 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
             void handleEdit(item);
           } else if (isViewable(item.name)) {
             // 媒体类可看不可编：一律走系统关联程序，不受“指定编辑器”模式影响
-            void handleOpenSystemEditor({ path: itemPath, name: item.name }, '');
+            // readOnly=true：只下载查看，不监听修改回写远程
+            void handleOpenSystemEditor({ path: itemPath, name: item.name, size: item.size }, '', true);
           } else {
             const file = { path: itemPath, name: item.name };
             if (defaultOpenMode === 'external') {

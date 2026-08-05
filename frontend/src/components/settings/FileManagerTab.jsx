@@ -30,6 +30,8 @@ export default function FileManagerTab({
   onFileManagerSmartUncompressConflictStrategyChange,
   fileManagerAutoRefreshDisabled = false,
   onToggleFileManagerAutoRefreshDisabled,
+  fileManagerMaxEditSizeMB = 5,
+  onFileManagerMaxEditSizeChange,
   fileManagerDefaultOpenMode = 'builtin',
   onFileManagerDefaultOpenModeChange,
   fileManagerPreferredExternalApp = '',
@@ -174,6 +176,12 @@ export default function FileManagerTab({
             definition={settings.fileManager.fields.autoRefresh}
             description={$t('在终端执行命令后、或切回文件管理器时自动刷新当前目录。关闭可减少对远程服务器的请求')}
             action={<ToggleSwitch checked={!fileManagerAutoRefreshDisabled} onChange={onToggleFileManagerAutoRefreshDisabled} />}
+          />
+          <SettingsDivider />
+          <SettingRow
+            definition={settings.fileManager.fields.maxEditSize}
+            description={$t('双击或用编辑器打开文件时的最大文件大小，超过将拒绝打开以避免卡顿或内存溢出。范围 1-50，默认 5')}
+            action={<input id="fm-max-edit-size" name="fm-max-edit-size" className="input" type="number" min={1} max={50} autoComplete="off" value={fileManagerMaxEditSizeMB} onChange={onFileManagerMaxEditSizeChange} style={{ width: 160, textAlign: 'right' }} />}
           />
           <SettingsDivider />
           <div data-settings-field-id={settings.fileManager.fields.uncompressConflict.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

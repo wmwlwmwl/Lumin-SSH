@@ -16,8 +16,9 @@ const BINARY_EXTS = new Set([
 ]);
 
 // 可看不可编的媒体类扩展名（适合系统关联程序打开）
+// 注：svg 是文本，归可编辑（isEditable），不在此列。
 const VIEWABLE_EXTS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
   'mp4', 'mkv', 'avi', 'mov', 'wmv',
   'mp3', 'wav', 'flac', 'ogg',
   'pdf',

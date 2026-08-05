@@ -1037,6 +1037,7 @@ export default function SettingsModal({
   const [fileManagerDoubleClickUncompressArchive, setFileManagerDoubleClickUncompressArchive] = useState(false);
   const [fileManagerSmartUncompressConflictStrategy, setFileManagerSmartUncompressConflictStrategy] = useState('auto_rename');
   const [fileManagerAutoRefreshDisabled, setFileManagerAutoRefreshDisabled] = useState(false);
+  const [fileManagerMaxEditSizeMB, setFileManagerMaxEditSizeMB] = useState(5);
   const [fileManagerDefaultOpenMode, setFileManagerDefaultOpenMode] = useState(() => {
     const mode = localStorage.getItem('fileManagerDefaultOpenMode') || 'builtin';
     return ['builtin', 'system', 'external'].includes(mode) ? mode : 'builtin';
@@ -1329,6 +1330,29 @@ export default function SettingsModal({
       addToast($t('请求失败') + `: ${err}`, 'error');
     }
   };
+  const handleFileManagerMaxEditSizeChange = async (e) => {
+    const raw = e.target.value;
+    const next = parseInt(raw, 10);
+    // 非法值（空/非数字/越界）只更新 UI 态，不持久化
+    if (!Number.isFinite(next) || next < 1 || next > 50) {
+      setFileManagerMaxEditSizeMB(raw);
+      addToast($t('文件编辑大小上限范围为 1-50 MB'), 'warning');
+      return;
+    }
+    const previous = fileManagerMaxEditSizeMB;
+    setFileManagerMaxEditSizeMB(next);
+    try {
+      const setter = window?.go?.main?.App?.SetFileManagerMaxEditSize;
+      if (typeof setter !== 'function') {
+        throw new Error($t('应用不可用'));
+      }
+      await setter(next);
+      window.dispatchEvent(new CustomEvent('file-manager-max-edit-size-changed', { detail: next }));
+    } catch (err) {
+      setFileManagerMaxEditSizeMB(previous);
+      addToast($t('请求失败') + `: ${err}`, 'error');
+    }
+  };
   const handleFileManagerSmartUncompressConflictStrategyChange = async (value) => {
     const next = value === 'overwrite' || value === 'prompt' ? value : 'auto_rename';
     const previous = fileManagerSmartUncompressConflictStrategy;
@@ -1522,6 +1546,9 @@ export default function SettingsModal({
             : 'auto_rename'
         );
         setFileManagerAutoRefreshDisabled(settings.autoRefreshDisabled === true);
+        if (Number.isFinite(Number(settings.maxEditSizeMB)) && Number(settings.maxEditSizeMB) >= 1) {
+          setFileManagerMaxEditSizeMB(Number(settings.maxEditSizeMB));
+        }
         if (Number.isFinite(Number(settings.transferMaxPacketKiB)) && Number(settings.transferMaxPacketKiB) > 0) {
           setTransferMaxPacketKiB(String(settings.transferMaxPacketKiB));
         }
@@ -2224,6 +2251,8 @@ export default function SettingsModal({
                 onFileManagerSmartUncompressConflictStrategyChange={handleFileManagerSmartUncompressConflictStrategyChange}
                 fileManagerAutoRefreshDisabled={fileManagerAutoRefreshDisabled}
                 onToggleFileManagerAutoRefreshDisabled={handleToggleFileManagerAutoRefreshDisabled}
+                fileManagerMaxEditSizeMB={fileManagerMaxEditSizeMB}
+                onFileManagerMaxEditSizeChange={handleFileManagerMaxEditSizeChange}
                 fileManagerDefaultOpenMode={fileManagerDefaultOpenMode}
                 onFileManagerDefaultOpenModeChange={handleFileManagerDefaultOpenModeChange}
                 fileManagerPreferredExternalApp={fileManagerPreferredExternalApp}

@@ -119,7 +119,23 @@ type FileManagerSettings struct {
 	DoubleClickUncompressArchive   bool                   `json:"doubleClickUncompressArchive,omitempty"`
 	SmartUncompressConflictStrategy string                `json:"smartUncompressConflictStrategy,omitempty"`
 	AutoRefreshDisabled            bool                   `json:"autoRefreshDisabled,omitempty"`
+	MaxEditSizeMB                  int                    `json:"maxEditSizeMB,omitempty"`
 	TransferTuning                 TransferTuningSettings `json:"transferTuning,omitempty"`
+}
+
+// 文件编辑大小上限相关常量（单位 MB）。
+const (
+	fileManagerMaxEditSizeDefaultMB = 5
+	fileManagerMaxEditSizeHardCapMB = 50 // 与底层 ReadFileBytes 的内存安全防线对齐，用户配置不可超过
+)
+
+// normalizeFileManagerMaxEditSizeMB 将用户配置的编辑大小上限归一化到合法范围 [1, 50]。
+// 未配置（0）或越界时返回默认值 5MB，保证老配置文件行为不变。
+func normalizeFileManagerMaxEditSizeMB(mb int) int {
+	if mb < 1 || mb > fileManagerMaxEditSizeHardCapMB {
+		return fileManagerMaxEditSizeDefaultMB
+	}
+	return mb
 }
 
 type AppSettings struct {
@@ -1850,6 +1866,7 @@ func (c *ConfigManager) getFileManagerSettingsLocked() FileManagerSettings {
 	}
 	settings.ChmodDialog.Mode = sanitizeChmodDialogMode(settings.ChmodDialog.Mode)
 	settings.SmartUncompressConflictStrategy = normalizeFileManagerSmartUncompressConflictStrategy(settings.SmartUncompressConflictStrategy)
+	settings.MaxEditSizeMB = normalizeFileManagerMaxEditSizeMB(settings.MaxEditSizeMB)
 	settings.TransferTuning = normalizeTransferTuningSettings(settings.TransferTuning)
 	return settings
 }
@@ -1930,6 +1947,7 @@ func (c *ConfigManager) GetFileManagerSettings() map[string]interface{} {
 		"doubleClickUncompressArchive":   settings.DoubleClickUncompressArchive,
 		"smartUncompressConflictStrategy": settings.SmartUncompressConflictStrategy,
 		"autoRefreshDisabled":            settings.AutoRefreshDisabled,
+		"maxEditSizeMB":                  settings.MaxEditSizeMB,
 		"transferMaxPacketKiB":           settings.TransferTuning.MaxPacketKiB,
 		"transferMaxRequestsPerFile":     settings.TransferTuning.MaxRequestsPerFile,
 		"transferConcurrentWrites":       settings.TransferTuning.ConcurrentWrites,
@@ -2032,6 +2050,28 @@ func (c *ConfigManager) SetFileManagerSmartUncompressConflictStrategy(strategy s
 		go c.AutoSync()
 	}
 	return err
+}
+
+// SetFileManagerMaxEditSize 设置文件编辑大小上限（MB），自动归一化到 [1, 50]。
+func (c *ConfigManager) SetFileManagerMaxEditSize(mb int) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	settings := c.getFileManagerSettingsLocked()
+	settings.MaxEditSizeMB = normalizeFileManagerMaxEditSizeMB(mb)
+	err := c.saveFileManagerSettingsLocked(settings)
+	if err == nil {
+		c.bumpSnapshotTime()
+		go c.AutoSync()
+	}
+	return err
+}
+
+// GetFileManagerMaxEditSizeBytes 返回当前编辑大小上限（字节），供 external_edit 校验使用。
+func (c *ConfigManager) GetFileManagerMaxEditSizeBytes() int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	mb := normalizeFileManagerMaxEditSizeMB(c.getFileManagerSettingsLocked().MaxEditSizeMB)
+	return int64(mb) * 1024 * 1024
 }
 
 // ─── 快捷命令 ──────────────────────────────────────

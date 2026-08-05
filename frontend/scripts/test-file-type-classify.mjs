@@ -24,12 +24,13 @@ import { isArchive, isBinaryLike, isViewable } from '../src/utils/fileTypeClassi
 });
 
 // isViewable
-['p.png', 'p.jpg', 'p.jpeg', 'p.gif', 'p.webp', 'p.bmp', 'p.ico', 'p.svg',
+['p.png', 'p.jpg', 'p.jpeg', 'p.gif', 'p.webp', 'p.bmp', 'p.ico',
  'v.mp4', 'v.mkv', 'v.avi', 'v.mov', 'v.wmv', 'a.mp3', 'a.wav', 'a.flac',
  'a.ogg', 'doc.pdf', 'DOC.PDF'].forEach((n) => {
   assert.equal(isViewable(n), true, `应为媒体类: ${n}`);
 });
-['a.txt', 'a.svgz', 'pdf', ''].forEach((n) => {
+// svg 是文本，归 isEditable，不属 viewable
+['a.txt', 'a.svg', 'a.svgz', 'pdf', ''].forEach((n) => {
   assert.equal(isViewable(n), false, `不应为媒体类: ${n}`);
 });
 

@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	externalEditMaxSize      = 5 * 1024 * 1024
 	externalEditDebounce     = 800 * time.Millisecond
 	externalEditStableWait   = 200 * time.Millisecond
 	externalEditEventStarted = "external-edit-started"
@@ -32,6 +31,8 @@ type externalEditSession struct {
 	remotePath string
 	localPath  string
 	lastHash   string
+	readOnly   bool
+	maxBytes   int64
 	cancel     chan struct{}
 	watcher    *fsnotify.Watcher
 }
@@ -163,7 +164,7 @@ func openWithSpecifiedEditor(editorPath, localPath string) error {
 	}
 }
 
-func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath string) (map[string]interface{}, error) {
+func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath string, readOnly bool, maxBytes int64) (map[string]interface{}, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	remotePath = strings.TrimSpace(remotePath)
 	if sessionID == "" || remotePath == "" {
@@ -172,11 +173,19 @@ func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath st
 	if m.app == nil || m.app.sshManager == nil {
 		return nil, fmt.Errorf("app not ready")
 	}
+	// 兜底：调用方未传上限时用默认 5MB，避免 0 导致所有文件被拒。
+	if maxBytes <= 0 {
+		maxBytes = 5 * 1024 * 1024
+	}
 
 	var data []byte
 	if content != "" {
 		data = []byte(content)
 	} else {
+		// 下载前先 stat 拦截大文件，避免把整个大文件（如几 GB 的 mp4）读进内存后才报错。
+		if size, err := m.remoteSize(sessionID, remotePath); err == nil && size > maxBytes {
+			return nil, fmt.Errorf("文件过大 (%.1f MB)，最大支持 %.0f MB", float64(size)/(1024*1024), float64(maxBytes)/(1024*1024))
+		}
 		// 用原始字节而非 ReadFile：ReadFile 会经 b.String() 把非 UTF-8 字节（如 GBK
 		// 编码的中文 lua/配置文件）强解为乱码，写入本地临时文件后编辑器打开即乱码。
 		// 直接读原始字节，本地文件与远程字节一致，编辑器自己会做编码检测。
@@ -186,8 +195,8 @@ func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath st
 		}
 		data = rawBytes
 	}
-	if len(data) > externalEditMaxSize {
-		return nil, fmt.Errorf("文件过大 (%.1f MB)，最大支持 5MB 外置编辑", float64(len(data))/(1024*1024))
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("文件过大 (%.1f MB)，最大支持 %.0f MB", float64(len(data))/(1024*1024), float64(maxBytes)/(1024*1024))
 	}
 
 	localPath, err := m.localPathFor(sessionID, remotePath)
@@ -197,7 +206,6 @@ func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath st
 	if err := os.WriteFile(localPath, data, 0o600); err != nil {
 		return nil, err
 	}
-	contentHash := hashBytes(data)
 
 	key := externalEditKey(sessionID, remotePath)
 	m.mu.Lock()
@@ -205,16 +213,22 @@ func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath st
 		m.stopSessionLocked(existing, false)
 	}
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		m.mu.Unlock()
-		return nil, err
-	}
-	watchDir := filepath.Dir(localPath)
-	if err := watcher.Add(watchDir); err != nil {
-		_ = watcher.Close()
-		m.mu.Unlock()
-		return nil, err
+	// readOnly（媒体类：只下载用系统程序查看，不监听修改、不回写远程）：
+	// 不创建 watcher、不启动监听协程。会话仍登记到 sessions 以便统一 Stop/清理临时文件。
+	var watcher *fsnotify.Watcher
+	if !readOnly {
+		w, werr := fsnotify.NewWatcher()
+		if werr != nil {
+			m.mu.Unlock()
+			return nil, werr
+		}
+		watchDir := filepath.Dir(localPath)
+		if err := w.Add(watchDir); err != nil {
+			_ = w.Close()
+			m.mu.Unlock()
+			return nil, err
+		}
+		watcher = w
 	}
 
 	sess := &externalEditSession{
@@ -222,14 +236,18 @@ func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath st
 		sessionID:  sessionID,
 		remotePath: remotePath,
 		localPath:  localPath,
-		lastHash:   contentHash,
+		lastHash:   hashBytes(data),
+		readOnly:   readOnly,
+		maxBytes:   maxBytes,
 		cancel:     make(chan struct{}),
 		watcher:    watcher,
 	}
 	m.sessions[key] = sess
 	m.mu.Unlock()
 
-	go m.watchSession(sess)
+	if !readOnly {
+		go m.watchSession(sess)
+	}
 
 	if strings.TrimSpace(editorPath) != "" {
 		err = openWithSpecifiedEditor(editorPath, localPath)
@@ -245,9 +263,23 @@ func (m *ExternalEditManager) Open(sessionID, remotePath, content, editorPath st
 		"sessionId":  sessionID,
 		"remotePath": remotePath,
 		"localPath":  localPath,
+		"readOnly":   readOnly,
 	}
 	m.emit(externalEditEventStarted, payload)
 	return payload, nil
+}
+
+// remoteSize 返回远程文件大小（字节）；stat 失败时返回 0 和错误，调用方可忽略错误走原下载流程。
+func (m *ExternalEditManager) remoteSize(sessionID, remotePath string) (int64, error) {
+	client, err := m.app.sshManager.getSFTPClient(sessionID)
+	if err != nil {
+		return 0, err
+	}
+	info, err := client.Stat(remotePath)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func (m *ExternalEditManager) watchSession(sess *externalEditSession) {
@@ -336,7 +368,7 @@ func (m *ExternalEditManager) trySync(sess *externalEditSession) {
 		// Still changing; wait for next event / debounce.
 		return
 	}
-	if len(data2) > externalEditMaxSize {
+	if int64(len(data2)) > sess.maxBytes {
 		m.emit(externalEditEventError, map[string]interface{}{
 			"sessionId":  sess.sessionID,
 			"remotePath": sess.remotePath,
