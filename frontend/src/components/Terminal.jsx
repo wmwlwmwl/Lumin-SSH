@@ -241,6 +241,41 @@ function isInteractivePromptText(value) {
   return /\[[yn0-9/\-]+\]:?\s*(?:\d+)?\s*$/i.test(text)
 }
 
+// 从 xterm 可见缓冲区的"当前命令行"剥离提示符，返回真正执行的命令。
+// 兼容：
+//   - Linux user@host:path$ / # / %
+//   - PowerShell "PS C:\path>" 与 Windows CMD "C:\path>"
+//   - Starship/oh-my-posh 等自定义 prompt 的 Unicode 符号（❯ ➜ › » λ ƒ ψ）
+//   - Python/Node 等 REPL 的 >>> / ...
+// 用行首锚定的提示符结构匹配（非贪婪），只消费"提示符"本身、保留命令文本，
+// 避免命令内部含 $/#（如 echo $HOME、含 # 注释）被误切。
+const SHELL_PROMPT_PREFIX_PATTERNS = [
+  /^[\w.-]+@[\w.-]+:[^\n]*?[#$%]\s*/,    // user@host:path$ cmd
+  /^\[[^\]]+\][#$%]\s*/,                 // [user@host dir]$ cmd
+  /^[\w.-]+@[\w.-]+\s+[^\n]*?[#$%]\s*/,  // root@host ~]# cmd
+  /^[#$%]\s+/,                            // 极简：单独的 $/#/% 起命令
+  // Windows：兼容 "PS C:\path>" 与裸 "C:\path>"，盘符/路径后以 > 结尾。
+  // 行首可选 PS，后跟 X:\... 路径，再 > 与空格（空格可选，空提示符也匹配）。
+  /^(?:PS\s+)?[A-Za-z]:[\\\/][^\n]*?>\s*/,
+  // 自定义 Unicode 符号提示符：可能重复（如 ❯❯）或带颜色，后接空格再接命令。
+  // 符号取自常见自定义 prompt：❯ ➜ › » λ ƒ ψ 等。
+  /^[❯➜›»λƒψ▶▷]+[=>]?\s+/,
+  // REPL 提示符：Python/Node 等的 >>> 与续行 ...
+  /^(?:>>>|\.\.\.)\s+/,
+]
+function extractCommandFromBufferLine(line) {
+  if (!line) return ''
+  let t = String(line)
+  for (const re of SHELL_PROMPT_PREFIX_PATTERNS) {
+    const m = t.match(re)
+    if (m) {
+      t = t.slice(m[0].length)
+      break
+    }
+  }
+  return t.trim()
+}
+
 function splitTrailingIncompleteEscapeSequence(input) {
   if (!input) {
     return { complete: '', carry: '' }
@@ -1702,11 +1737,16 @@ export default function Terminal({
         wsRef.current.send(textEncoder.encode(out));
       }
 
-      // ── 命令记录：回车时优先用逐字符累加的命令（用户真实输入），
-      // 累加为空才 fallback 到 xterm buffer（方向键调历史 / Tab 补全 / 粘贴）。
-      // ponytail: buffer 提取用 $/# 切提示符，交互脚本输出也含 $ 导致误抓整行，
-      // 优先用 pendingCmdRef 可排除 y/1/3 等单字符脚本应答。
+      // ── 命令记录：优先读取终端可见缓冲区的当前行（屏幕上实际渲染、
+      // 真正被 shell 执行的命令），可正确捕捉 Tab 补全 / 方向键调历史 /
+      // Ctrl+R 等 shell 编辑结果；pendingCmdRef 仅在缓冲读取失败时作兜底。
       if (out.includes('\r') || out.includes('\n')) {
+        // 备用屏（vim/htop/less 等 TUI）下不记录历史：此时缓冲里是文件内容，
+        // 按 Enter 会被误当成命令。顺带清空 pendingCmdRef，退出 TUI 后从头计。
+        if (alternateBufferActiveRef.current) {
+          pendingCmdRef.current = '';
+          return;
+        }
         // 多行粘贴：只把最后一行之前的可见内容并入历史，避免把整段 paste 拆烂
         const lines = out.split(/\r/).filter((line, i, arr) => i < arr.length - 1 || line.length > 0);
         if (lines.length > 1) {
@@ -1720,17 +1760,27 @@ export default function Terminal({
             pendingCmdRef.current += out.slice(0, nlIdx).replace(/[\x00-\x1F\x7F]/g, '');
           }
         }
-        let cmd = pendingCmdRef.current.trim();
-        if (!cmd) {
-          const buf = term.buffer.active;
+        let cmd = '';
+        const buf = term.buffer.active;
+        if (buf) {
           const bufLine = buf.getLine(buf.baseY + buf.cursorY);
-          if (bufLine) {
-            const text = bufLine.translateToString(true);
-            const idx = Math.max(text.lastIndexOf('#'), text.lastIndexOf('$'));
-            cmd = idx >= 0 ? text.slice(idx + 1).trim() : text.trim();
-            // ponytail: buffer 提取只作兜底，过滤安装向导这类交互提示，避免把问题文本当命令。
-            if (/[^\x20-\x7E]/.test(cmd) || isInteractivePromptText(cmd)) cmd = '';
-          }
+          const text = bufLine ? bufLine.translateToString(true) : '';
+          cmd = extractCommandFromBufferLine(text);
+          // 含控制字符（C0 0x00-0x1F / DEL / C1 0x80-0x9F，多为 ANSI 序列残留）
+          // 或交互脚本提示：视为无效，回退到逐字符累加。注意保留合法 Unicode
+          // （如提示符 ❯、中文路径、emoji 参数），不再按"非 ASCII"一刀切丢弃。
+          if (/[\x00-\x1F\x7F-\x9F]/.test(cmd) || isInteractivePromptText(cmd)) cmd = '';
+        }
+        // 智能 fallback：buffer 提取是"屏幕上真正执行的命令"，优先采用；但
+        // 当手敲值 pendingCmdRef 与之明显不一致（无前缀关系）时，说明当前不是
+        // 普通 shell 命令行（如交互脚本 "Continue? [y/n]? y"），应信任手敲值，
+        // 避免把整行提示文本当成命令记入历史。
+        const pending = pendingCmdRef.current.trim();
+        if (!cmd) {
+          cmd = pending;
+        } else if (pending) {
+          const c = cmd.toLowerCase(), p = pending.toLowerCase();
+          if (!c.startsWith(p) && !p.startsWith(c)) cmd = pending;
         }
         if (!awaitingPasswordRef.current && cmd.length > 1 && !/^\d+$/.test(cmd)) {
           window.dispatchEvent(new CustomEvent('ssh-command-history', {
