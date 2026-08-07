@@ -362,19 +362,19 @@ func (d aiSSHDelegate) BridgeGetClientEntry(sessionID string) (*ssh.Client, *sft
 	if d.manager == nil {
 		return nil, nil, fmt.Errorf("ssh manager unavailable")
 	}
-	return d.manager.getClientEntry(sessionID)
+	return d.manager.GetClientEntry(sessionID)
 }
 
 func (d aiSSHDelegate) BridgeExecuteCmdWithClientContext(ctx context.Context, client *ssh.Client, command string) (string, error) {
 	if d.manager == nil {
 		return "", fmt.Errorf("ssh manager unavailable")
 	}
-	return d.manager.executeCmdWithClientContext(ctx, client, command)
+	return d.manager.ExecuteCmdWithClientContext(ctx, client, command)
 }
 
 func (d aiSSHDelegate) BridgeGetSFTPClient(sessionID string) (*sftp.Client, error) {
 	if d.manager == nil {
 		return nil, fmt.Errorf("ssh manager unavailable")
 	}
-	return d.manager.getSFTPClient(sessionID)
+	return d.manager.GetSFTPClient(sessionID)
 }

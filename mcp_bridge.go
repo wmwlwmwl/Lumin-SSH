@@ -252,16 +252,7 @@ func (h mcpHost) ListSessionDescriptors() ([]mcpserver.SessionDescriptor, error)
 	if h.app == nil || h.app.sshManager == nil {
 		return []mcpserver.SessionDescriptor{}, nil
 	}
-	h.app.sshManager.mu.RLock()
-	sessionMap := make(map[string]*SessionData, len(h.app.sshManager.sessions))
-	for sessionID, sessionData := range h.app.sshManager.sessions {
-		sessionMap[sessionID] = sessionData
-	}
-	clientMap := make(map[string]*sshClientEntry, len(h.app.sshManager.clients))
-	for connectionRef, clientEntry := range h.app.sshManager.clients {
-		clientMap[connectionRef] = clientEntry
-	}
-	h.app.sshManager.mu.RUnlock()
+	sessionMap, sftpAvail := h.app.sshManager.SnapshotSessionsAndSftpAvailability()
 
 	connectionMap := make(map[string]Connection)
 	if h.app.configManager != nil {
@@ -284,7 +275,7 @@ func (h mcpHost) ListSessionDescriptors() ([]mcpserver.SessionDescriptor, error)
 			ConnectionRef:  sessionData.ConnKey,
 			ConnectionID:   sessionData.ConnKey,
 		}
-		if clientEntry, ok := clientMap[sessionData.ConnKey]; ok && clientEntry != nil && clientEntry.SFTP != nil {
+		if sftpAvail[sessionData.ConnKey] {
 			descriptor.SFTPAvailable = true
 		}
 		if connection, ok := connectionMap[sessionData.ConnKey]; ok {
@@ -308,7 +299,7 @@ func (h mcpHost) ListDirectoryContext(ctx context.Context, sessionID string, rem
 	if h.app == nil || h.app.sshManager == nil {
 		return nil, fmt.Errorf("ssh manager unavailable")
 	}
-	if client, _, err := h.app.sshManager.getClientEntry(sessionID); err == nil && client != nil {
+	if client, _, err := h.app.sshManager.GetClientEntry(sessionID); err == nil && client != nil {
 		return h.shellListDirectory(ctx, client, remotePath)
 	}
 	return h.app.sshManager.ListDirContext(ctx, sessionID, remotePath)
@@ -318,7 +309,7 @@ func (h mcpHost) ReadTextFileContext(ctx context.Context, sessionID string, remo
 	if h.app == nil || h.app.sshManager == nil {
 		return "", fmt.Errorf("ssh manager unavailable")
 	}
-	if client, _, err := h.app.sshManager.getClientEntry(sessionID); err == nil && client != nil {
+	if client, _, err := h.app.sshManager.GetClientEntry(sessionID); err == nil && client != nil {
 		return h.runShellCommandLong(ctx, client, "cat -- "+shellQuotePath(remotePath))
 	}
 	return h.app.sshManager.ReadFileContext(ctx, sessionID, remotePath)
@@ -377,18 +368,18 @@ func (h mcpHost) RunCommandContext(ctx context.Context, sessionID string, comman
 	if h.app == nil || h.app.sshManager == nil {
 		return "", fmt.Errorf("ssh manager unavailable")
 	}
-	client, _, err := h.app.sshManager.getClientEntry(sessionID)
+	client, _, err := h.app.sshManager.GetClientEntry(sessionID)
 	if err != nil {
 		return "", err
 	}
-	return h.app.sshManager.executeCmdWithClientContext(ctx, client, command)
+	return h.app.sshManager.ExecuteCmdWithClientContext(ctx, client, command)
 }
 
 func (h mcpHost) UploadTempTextContext(ctx context.Context, sessionID string, suffix string, content string, mode os.FileMode) (string, error) {
 	if h.app == nil || h.app.sshManager == nil {
 		return "", fmt.Errorf("ssh manager unavailable")
 	}
-	sftpClient, err := h.app.sshManager.getSFTPClient(sessionID)
+	sftpClient, err := h.app.sshManager.GetSFTPClient(sessionID)
 	if err != nil {
 		return "", err
 	}
@@ -421,7 +412,7 @@ func (h mcpHost) RemoveFile(sessionID string, remotePath string) {
 	if h.app == nil || h.app.sshManager == nil || strings.TrimSpace(remotePath) == "" {
 		return
 	}
-	sftpClient, err := h.app.sshManager.getSFTPClient(sessionID)
+	sftpClient, err := h.app.sshManager.GetSFTPClient(sessionID)
 	if err != nil {
 		return
 	}

@@ -1,4 +1,4 @@
-package main
+package sshmanager
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/mcp"
 	"luminssh-go/internal/mcpserver"
 )
 
@@ -431,7 +432,7 @@ func (m *SSHManager) stageUnixInteractiveCommandScriptViaSFTP(sessionID string, 
 	if err := m.WriteFileContext(stageCtx, sessionID, scriptPath, scriptContent); err != nil {
 		return err
 	}
-	sftpClient, err := m.getSFTPClient(sessionID)
+	sftpClient, err := m.GetSFTPClient(sessionID)
 	if err != nil {
 		return err
 	}
@@ -443,13 +444,13 @@ func (m *SSHManager) stageUnixInteractiveCommandScriptViaSFTP(sessionID string, 
 }
 
 func (m *SSHManager) stageUnixInteractiveCommandScriptViaExec(sessionID string, scriptPath string, scriptContent string) error {
-	client, _, err := m.getClientEntry(sessionID)
+	client, _, err := m.GetClientEntry(sessionID)
 	if err != nil {
 		return err
 	}
 	stageCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err = m.executeCmdWithClientContext(stageCtx, client, buildUnixInteractiveCommandStageExecCommand(scriptPath, scriptContent))
+	_, err = m.ExecuteCmdWithClientContext(stageCtx, client, buildUnixInteractiveCommandStageExecCommand(scriptPath, scriptContent))
 	return err
 }
 
@@ -553,7 +554,7 @@ func sanitizeInteractiveCommandOutput(output string, startMarker string, endMark
 	if output == "" {
 		return ""
 	}
-	return compressTerminalOutput(output, currentTerminalOutputLineLimit(), currentTerminalOutputCharacterLimit())
+	return compressTerminalOutput(output, mcp.CurrentTerminalOutputLineLimit(), mcp.CurrentTerminalOutputCharacterLimit())
 }
 
 func extractInteractiveExitCode(output string) (int, bool) {

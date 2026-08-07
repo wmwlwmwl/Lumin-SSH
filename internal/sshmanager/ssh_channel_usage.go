@@ -1,4 +1,4 @@
-package main
+package sshmanager
 
 import (
 	"strconv"
@@ -134,7 +134,7 @@ func (m *SSHManager) collectSSHChannelUsage(connKey string) sshChannelUsage {
 	return usage
 }
 
-func (m *SSHManager) connKeyForSession(sessionId string) string {
+func (m *SSHManager) ConnKeyForSession(sessionId string) string {
 	if strings.TrimSpace(sessionId) == "" {
 		return ""
 	}
@@ -176,11 +176,11 @@ func (m *SSHManager) emitSSHChannelUsage(connKey string) {
 }
 
 func (m *SSHManager) emitSSHChannelUsageForSession(sessionId string) {
-	m.emitSSHChannelUsage(m.connKeyForSession(sessionId))
+	m.emitSSHChannelUsage(m.ConnKeyForSession(sessionId))
 }
 
 func (m *SSHManager) trackUploadChannelDelta(sessionId string, delta int) {
-	connKey := m.connKeyForSession(sessionId)
+	connKey := m.ConnKeyForSession(sessionId)
 	if connKey == "" {
 		return
 	}
@@ -210,7 +210,7 @@ func (m *SSHManager) probeSSHMaxSessions(connKey string) {
 }
 
 func (m *SSHManager) GetSSHChannelUsage(sessionId string) map[string]interface{} {
-	usage := m.collectSSHChannelUsage(m.connKeyForSession(sessionId))
+	usage := m.collectSSHChannelUsage(m.ConnKeyForSession(sessionId))
 	return map[string]interface{}{
 		"terminals":   usage.Terminals,
 		"sharedSftp":  usage.SharedSFTP,

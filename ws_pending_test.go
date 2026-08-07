@@ -122,12 +122,12 @@ func TestCleanupWsPendingRemovesEntry(t *testing.T) {
 	a := newTestAppWithWs()
 	a.WriteWsOutput("s1", []byte("orphaned-frame"))
 
-	a.cleanupWsPending("s1")
+	a.CleanupWsPending("s1")
 
 	a.wsMu.Lock()
 	_, still := a.wsPending["s1"]
 	a.wsMu.Unlock()
 	if still {
-		t.Fatal("cleanupWsPending 后 wsPending 仍残留")
+		t.Fatal("CleanupWsPending 后 wsPending 仍残留")
 	}
 }

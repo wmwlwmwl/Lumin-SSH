@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package main
+package sshmanager
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 	"github.com/UserExistsError/conpty"
 )
 
-// getLocalShells lists detected shells on Windows.
-func (a *App) getLocalShells() ([]string, error) {
+// GetLocalShells lists detected shells on Windows.
+func (m *SSHManager) GetLocalShells() ([]string, error) {
 	var shells []string
 	if path, err := exec.LookPath("pwsh.exe"); err == nil && path != "" {
 		shells = append(shells, "pwsh.exe")
@@ -81,8 +81,8 @@ func parseWSLDistros(raw []byte) []string {
 	return distros
 }
 
-// connectLocal spawns a local command process via ConPTY on Windows.
-func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd string) error {
+// ConnectLocal spawns a local command process via ConPTY on Windows.
+func (m *SSHManager) ConnectLocal(sessionId string, name string, shellPath string, cwd string) error {
 	workDir := cwd
 	if workDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -187,11 +187,11 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		sd.Stdin = stdinPipe
 	}
 
-	a.sshManager.mu.Lock()
-	a.sshManager.nextGen++
-	sd.Gen = a.sshManager.nextGen
-	a.sshManager.sessions[sessionId] = sd
-	a.sshManager.mu.Unlock()
+	m.mu.Lock()
+	m.nextGen++
+	sd.Gen = m.nextGen
+	m.sessions[sessionId] = sd
+	m.mu.Unlock()
 
 	// Start an embedded SFTP server so the file manager can work for this session.
 	connKey := "local://" + sessionId
@@ -207,16 +207,16 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		log.Printf("[connectLocal] embedded SFTP server failed (file manager unavailable): %v", err)
 	} else {
 		entry := &sshClientEntry{Client: sshClient, SFTP: sftpClient}
-		a.sshManager.mu.Lock()
-		a.sshManager.clients[connKey] = entry
+		m.mu.Lock()
+		m.clients[connKey] = entry
 		sd.ConnKey = connKey
 		sd.LocalSFTPSrv = sftpServer
-		a.sshManager.mu.Unlock()
+		m.mu.Unlock()
 	}
 
 	// Start background CWD polling monitor for file manager sync.
 	// (WSL sessions skip this — they report CWD via the marker stream below.)
-	a.sshManager.StartLocalCwdMonitor(sessionId)
+	m.StartLocalCwdMonitor(sessionId)
 
 	// Wait and notify exit. Capture gen so a fast reconnect that reused sessionId
 	// (a newer entry now sits in the map) doesn't get torn down by this stale waiter.
@@ -226,13 +226,13 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		} else {
 			_ = cmd.Wait()
 		}
-		a.sshManager.disconnectCurrentGen(sessionId, sd.Gen)
+		m.disconnectCurrentGen(sessionId, sd.Gen)
 	}()
 
 	// Pipe output from local pty to WebSocket. For WSL sessions the stream is
 	// run through the terminalstream command parser (same as remote SSH) so LUMIN_CWD markers
 	// are parsed into CWD changes that drive the file manager follow.
-	a.sshManager.pipeLocalOutput(sessionId, cptyHandle, stdoutPipe)
+	m.pipeLocalOutput(sessionId, cptyHandle, stdoutPipe)
 
 	return nil
 }

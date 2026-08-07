@@ -1,4 +1,4 @@
-package main
+package sshmanager
 
 import (
 	"bytes"
@@ -23,6 +23,7 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/config"
 	"luminssh-go/internal/localsftp"
 	"luminssh-go/internal/localsysinfo"
 	"luminssh-go/internal/mcpserver"
@@ -36,6 +37,13 @@ import (
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/transform"
+)
+
+// ─── 类型别名：引用 config 包类型 ──────────────────────────
+type (
+	Connection             = config.Connection
+	TransferTuningSettings = config.TransferTuningSettings
+	PersistedPortForward   = config.PersistedPortForward
 )
 
 // ErrHostKeyChanged 在远程主机密钥发生变化时返回，需要用户确认
@@ -132,15 +140,15 @@ type transferBackend struct {
 }
 
 func (b transferBackend) ClientEntry(sessionID string) (*ssh.Client, *sftp.Client, error) {
-	return b.manager.getClientEntry(sessionID)
+	return b.manager.GetClientEntry(sessionID)
 }
 
 func (b transferBackend) SFTPClient(sessionID string) (*sftp.Client, error) {
-	return b.manager.getSFTPClient(sessionID)
+	return b.manager.GetSFTPClient(sessionID)
 }
 
 func (b transferBackend) ExecuteCommand(ctx context.Context, client *ssh.Client, command string) (string, error) {
-	return b.manager.executeCmdWithClientContext(ctx, client, command)
+	return b.manager.ExecuteCmdWithClientContext(ctx, client, command)
 }
 
 func (b transferBackend) DeleteRemote(ctx context.Context, sessionID string, remotePath string, isDir bool) error {
@@ -217,9 +225,16 @@ func (s transferSink) Emit(event string, payload any) {
 	}
 }
 
+// SSHAppBackend 抽象 SSHManager 对 App 的依赖（WebSocket 输出 + 缓冲清理）。
+type SSHAppBackend interface {
+	WriteWsOutput(sessionId string, data []byte)
+	CleanupWsPending(sessionId string)
+}
+
 type SSHManager struct {
 	ctx              context.Context
-	app              *App                          // reference to App for WebSocket output delivery
+	app              SSHAppBackend                 // reference to App for WebSocket output delivery
+	configManager    *config.ConfigManager        // 端口转发持久化等配置管理
 	sessions         map[string]*SessionData       // terminalId -> terminal session
 	clients          map[string]*sshClientEntry    // connKey -> shared client+SFTP
 	connTerminals    map[string][]string           // connKey -> terminal sessionIds
@@ -248,6 +263,27 @@ func dialAddr(host string, port int) string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
+// DialAddr 导出包装器
+func DialAddr(host string, port int) string { return dialAddr(host, port) }
+
+// ─── 导出包装器：供 package main 通过 ssh_alias.go 调用的工具函数 ──
+
+func ShellQuotePath(path string) string { return shellQuotePath(path) }
+
+func RunCommandWithSessionContext(ctx context.Context, session *ssh.Session, cmd string, timeout time.Duration) (string, error) {
+	return runCommandWithSessionContext(ctx, session, cmd, timeout)
+}
+
+func EnsureContextActive(ctx context.Context) error { return ensureContextActive(ctx) }
+
+func WriteStringChunksWithContext(ctx context.Context, writer io.Writer, content string) error {
+	return writeStringChunksWithContext(ctx, writer, content)
+}
+
+const RemoteCmdLongTimeout = remoteCmdLongTimeout
+
+func NewCommandExecutionToken() string { return newCommandExecutionToken() }
+
 func NewSSHManager() *SSHManager {
 	manager := &SSHManager{
 		sessions:         make(map[string]*SessionData),
@@ -271,8 +307,49 @@ func NewSSHManager() *SSHManager {
 	return manager
 }
 
+// SetApp 注入 App 后端（用于 WebSocket 输出和缓冲清理）
+func (m *SSHManager) SetApp(app SSHAppBackend) {
+	m.app = app
+}
+
+// SetConfigManager 注入配置管理器（用于端口转发持久化等）
+func (m *SSHManager) SetConfigManager(cm *config.ConfigManager) {
+	m.configManager = cm
+}
+
+// SetCtx 注入 Wails 上下文（用于事件发射等）
+func (m *SSHManager) SetCtx(ctx context.Context) {
+	m.ctx = ctx
+}
+
+// GetSession 返回指定会话的 SessionData（只读快照，调用方不得修改内部字段）。
+func (m *SSHManager) GetSession(sessionId string) (*SessionData, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s, ok := m.sessions[sessionId]
+	return s, ok
+}
+
+// SnapshotSessionsAndSftpAvailability 返回会话表快照和各 connKey 的 SFTP 可用性。
+// 用于 mcp_bridge 列举会话描述符，避免外部直接访问 mu/sessions/clients。
+func (m *SSHManager) SnapshotSessionsAndSftpAvailability() (map[string]*SessionData, map[string]bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sessions := make(map[string]*SessionData, len(m.sessions))
+	for k, v := range m.sessions {
+		sessions[k] = v
+	}
+	sftpAvail := make(map[string]bool, len(m.clients))
+	for k, v := range m.clients {
+		if v != nil && v.SFTP != nil {
+			sftpAvail[k] = true
+		}
+	}
+	return sessions, sftpAvail
+}
+
 func terminalEncodingCodec(terminalEncoding string) encoding.Encoding {
-	normalized := normalizeTerminalEncoding(terminalEncoding)
+	normalized := config.NormalizeTerminalEncoding(terminalEncoding)
 	if normalized == "utf-8" {
 		return nil
 	}
@@ -382,7 +459,7 @@ func (m *SSHManager) runPostAuthStep(ctx context.Context, cancel context.CancelF
 func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 	// 去除密码首尾空白（防止复制粘贴带入不可见字符）
 	conn.Password = strings.TrimSpace(conn.Password)
-	conn.TerminalEncoding = normalizeTerminalEncoding(conn.TerminalEncoding)
+	conn.TerminalEncoding = config.NormalizeTerminalEncoding(conn.TerminalEncoding)
 	// 诊断：密码为空时记录日志，帮助定位"记住密码后重启密码错误"问题
 	if conn.AuthMethod == "password" && conn.Password == "" {
 		log.Printf("[Connect] WARNING: password is empty for %s@%s:%d (connId=%s)", conn.Username, conn.Host, conn.Port, conn.ID)
@@ -467,7 +544,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 			return ErrHostKeyChanged
 		}
 
-		config := &ssh.ClientConfig{
+		sshConfig := &ssh.ClientConfig{
 			User:              conn.Username,
 			Auth:              authMethods,
 			HostKeyCallback:   customHostKeyCallback,
@@ -501,7 +578,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 				log.Printf("[Connect] 瞬态网络错误重试 %d/%d: %s", attempt, maxRetries, conn.Host)
 			}
 
-			netConn, dialErr := dialConnectionTargetContext(cancelCtx, conn, target, config.Timeout)
+			netConn, dialErr := config.DialConnectionTargetContext(cancelCtx, conn, target, sshConfig.Timeout)
 			if dialErr != nil {
 				if errors.Is(dialErr, context.Canceled) || cancelCtx.Err() != nil {
 					return fmt.Errorf("连接已取消")
@@ -540,7 +617,7 @@ func (m *SSHManager) Connect(sessionId string, conn Connection) error {
 				}
 			}()
 
-			sshConn, chans, reqs, handshakeErr := ssh.NewClientConn(netConn, target, config)
+			sshConn, chans, reqs, handshakeErr := ssh.NewClientConn(netConn, target, sshConfig)
 			close(handshakeDone)
 
 			if handshakeErr != nil {
@@ -755,7 +832,7 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 
 	var historyStream *terminalstream.CommandHistoryParser
 	if remoteHistoryActive {
-		encoding := normalizeTerminalEncoding(terminalEncoding)
+		encoding := config.NormalizeTerminalEncoding(terminalEncoding)
 		historyStream = terminalstream.NewCommandHistoryParser(func(data []byte) string {
 			return decodeTerminalText(data, encoding)
 		})
@@ -781,7 +858,7 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 		RemoteHistoryActive: remoteHistoryActive,
 		ShellPath:           strings.TrimSpace(shellPath),
 		TerminalInitPath:    strings.TrimSpace(terminalInitPath),
-		TerminalEncoding:    normalizeTerminalEncoding(terminalEncoding),
+		TerminalEncoding:    config.NormalizeTerminalEncoding(terminalEncoding),
 		PromptReady:         !remoteHistoryActive,
 	}
 	if groupSessionId != "" {
@@ -802,7 +879,7 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 	return nil
 }
 
-func (m *SSHManager) applyTransferTuning(settings TransferTuningSettings) {
+func (m *SSHManager) ApplyTransferTuning(settings TransferTuningSettings) {
 	m.transferService.SetTuning(transfer.Tuning{
 		MaxPacketKiB:        settings.MaxPacketKiB,
 		MaxRequestsPerFile:  settings.MaxRequestsPerFile,
@@ -1116,7 +1193,7 @@ func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *te
 		if s.GroupSessionId != "" {
 			eventSessionId = s.GroupSessionId
 		}
-		terminalEncoding = normalizeTerminalEncoding(s.TerminalEncoding)
+		terminalEncoding = config.NormalizeTerminalEncoding(s.TerminalEncoding)
 	}
 	m.mu.RUnlock()
 
@@ -1265,7 +1342,7 @@ func (m *SSHManager) pipeLocalOutput(sessionId string, cptyHandle any, stdoutPip
 }
 
 // getClientEntry 查找 session 对应的共享客户端
-func (m *SSHManager) getClientEntry(sessionId string) (*ssh.Client, *sftp.Client, error) {
+func (m *SSHManager) GetClientEntry(sessionId string) (*ssh.Client, *sftp.Client, error) {
 	m.mu.RLock()
 	s, ok := m.sessions[sessionId]
 	if !ok {
@@ -1281,7 +1358,7 @@ func (m *SSHManager) getClientEntry(sessionId string) (*ssh.Client, *sftp.Client
 }
 
 // getSFTPClient 查找 session 对应的 SFTP 客户端；初始化中时短暂等待。
-func (m *SSHManager) getSFTPClient(sessionId string) (*sftp.Client, error) {
+func (m *SSHManager) GetSFTPClient(sessionId string) (*sftp.Client, error) {
 	m.mu.RLock()
 	s, ok := m.sessions[sessionId]
 	if !ok {
@@ -1410,7 +1487,7 @@ func (m *SSHManager) Disconnect(sessionId string) bool {
 	// 会话彻底销毁：清理其 WS 注册前缓冲，避免 wsPending map 残留泄漏
 	// （PTY 在 WS 断开后可能缓冲过数据；此时 session 已删，再无 flush 机会）。
 	if m.app != nil {
-		m.app.cleanupWsPending(sessionId)
+		m.app.CleanupWsPending(sessionId)
 	}
 
 	// 2. 在锁外关闭资源（服务器挂了时这些操作可能阻塞，但不会锁住其他 goroutine）
@@ -1540,6 +1617,9 @@ func getKnownHostsPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".ssh", "known_hosts")
 }
+
+// GetKnownHostsPath 导出包装器
+func GetKnownHostsPath() string { return getKnownHostsPath() }
 
 // initKnownHostsCallback 初始化 known_hosts 文件并返回 HostKeyCallback
 func initKnownHostsCallback() (ssh.HostKeyCallback, error) {
@@ -1706,7 +1786,7 @@ func (m *SSHManager) GetTerminalCwd(sessionId string) (string, error) {
 	}
 	m.mu.RUnlock()
 
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return "", err
 	}
@@ -1841,7 +1921,7 @@ func (m *SSHManager) WriteBytes(sessionId string, data []byte) {
 			s.PromptReady = false
 		}
 		stdin = s.Stdin
-		terminalEncoding = normalizeTerminalEncoding(s.TerminalEncoding)
+		terminalEncoding = config.NormalizeTerminalEncoding(s.TerminalEncoding)
 	}
 	m.mu.Unlock()
 	if stdin != nil {
@@ -1966,10 +2046,10 @@ func (m *SSHManager) Resize(sessionId string, cols, rows int) {
 
 // executeCmdWithClient executes a command on a separate temporary session using the given client
 func (m *SSHManager) executeCmdWithClient(client *ssh.Client, cmd string) (string, error) {
-	return m.executeCmdWithClientContext(context.Background(), client, cmd)
+	return m.ExecuteCmdWithClientContext(context.Background(), client, cmd)
 }
 
-func (m *SSHManager) executeCmdWithClientContext(ctx context.Context, client *ssh.Client, cmd string) (string, error) {
+func (m *SSHManager) ExecuteCmdWithClientContext(ctx context.Context, client *ssh.Client, cmd string) (string, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return "", err
@@ -2197,11 +2277,11 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 	if localOk && localSd.IsLocal {
 		return localsysinfo.SystemInfo(localSysinfoSession(localSd), includeNetworkConnections, localSysinfoDependencies())
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return nil, err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -2936,7 +3016,7 @@ func (m *SSHManager) GetFullProcessList(sessionId string) ([]map[string]interfac
 		return getLocalFullProcessList(sd)
 	}
 
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -3009,7 +3089,7 @@ func (m *SSHManager) KillProcess(sessionId string, pid string) error {
 		return localsysinfo.KillProcess(localsysinfo.Session{WSLDistro: wslDistro}, pid)
 	}
 
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -3032,7 +3112,7 @@ func (m *SSHManager) GetProcessEnv(sessionId string, pid string) ([]string, erro
 		return localsysinfo.ProcessEnvironment(localsysinfo.Session{WSLDistro: wslDistro}, pid)
 	}
 
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -3070,7 +3150,7 @@ func (m *SSHManager) GetServerStaticInfo(sessionId string) (result map[string]in
 		return localsysinfo.StaticInfo(localsysinfo.Session{WSLDistro: wslDistro}, localSysinfoDependencies())
 	}
 
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -3211,7 +3291,7 @@ func isRemotePathNotFound(err error) bool {
 
 func (m *SSHManager) ResolveDirectoryPath(sessionId string, inputPath string) (string, error) {
 	normalizedPath := normalizeRemotePath(inputPath)
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return "", err
 	}
@@ -3255,7 +3335,7 @@ func (m *SSHManager) ListDirContext(ctx context.Context, sessionId string, path 
 	if err := ensureContextActive(ctx); err != nil {
 		return nil, err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -3403,7 +3483,7 @@ func normalizeOwnershipCandidateEntries(entries []OwnershipCandidateEntry) []Own
 }
 
 func (m *SSHManager) ListOwnershipCandidates(sessionId string) (OwnershipCandidates, error) {
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return OwnershipCandidates{}, err
 	}
@@ -3486,7 +3566,7 @@ func (m *SSHManager) GetPathOwnership(sessionId string, path string) (PathOwners
 		UID: "-",
 		GID: "-",
 	}
-	sftpClient, sftpErr := m.getSFTPClient(sessionId)
+	sftpClient, sftpErr := m.GetSFTPClient(sessionId)
 	if sftpErr == nil && sftpClient != nil {
 		if fileInfo, statErr := sftpClient.Stat(path); statErr == nil && fileInfo != nil {
 			info.Permission = fileInfo.Mode().String()
@@ -3503,7 +3583,7 @@ func (m *SSHManager) GetPathOwnership(sessionId string, path string) (PathOwners
 		}
 	}
 
-	client, _, clientErr := m.getClientEntry(sessionId)
+	client, _, clientErr := m.GetClientEntry(sessionId)
 	if clientErr != nil {
 		if hasPathOwnershipInfo(info) {
 			return info, nil
@@ -3553,13 +3633,13 @@ func (m *SSHManager) ChmodFile(sessionId string, path string, modeStr string, re
 		return fmt.Errorf("invalid mode: %w", err)
 	}
 	if !recursive {
-		sftpClient, err := m.getSFTPClient(sessionId)
+		sftpClient, err := m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}
 		return sftpClient.Chmod(path, os.FileMode(modeInt))
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -3575,7 +3655,7 @@ func (m *SSHManager) ReadFileContext(ctx context.Context, sessionId string, path
 	if err := ensureContextActive(ctx); err != nil {
 		return "", err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return "", err
 	}
@@ -3629,7 +3709,7 @@ func (m *SSHManager) ReadFileBytesContext(ctx context.Context, sessionId string,
 	if err := ensureContextActive(ctx); err != nil {
 		return nil, err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -3679,7 +3759,7 @@ func (m *SSHManager) WriteFileContext(ctx context.Context, sessionId string, pat
 	if err := ensureContextActive(ctx); err != nil {
 		return err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -3928,7 +4008,7 @@ func (m *SSHManager) execRemoteCmdLong(ctx context.Context, sessionId string, cm
 	if err := ensureContextActive(ctx); err != nil {
 		return err
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -3952,7 +4032,7 @@ func (m *SSHManager) DeleteItemContext(ctx context.Context, sessionId string, pa
 	if isDangerousPath(path) {
 		return fmt.Errorf("refusing to delete dangerous path: %q", path)
 	}
-	client, sftpClient, err := m.getClientEntry(sessionId)
+	client, sftpClient, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -3962,11 +4042,11 @@ func (m *SSHManager) DeleteItemContext(ctx context.Context, sessionId string, pa
 				return ensureContextActive(ctx)
 			}
 		}
-		_, err := m.executeCmdWithClientContext(ctx, client, rmRfCmd(path))
+		_, err := m.ExecuteCmdWithClientContext(ctx, client, rmRfCmd(path))
 		return err
 	}
 	if sftpClient == nil {
-		sftpClient, err = m.getSFTPClient(sessionId)
+		sftpClient, err = m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}
@@ -3996,17 +4076,17 @@ func (m *SSHManager) DeleteItemShellContext(ctx context.Context, sessionId strin
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		sftpClient, err := m.getSFTPClient(sessionId)
+		sftpClient, err := m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}
 		return sftpClient.RemoveAll(path)
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
-	_, err = m.executeCmdWithClientContext(ctx, client, rmRfCmd(path))
+	_, err = m.ExecuteCmdWithClientContext(ctx, client, rmRfCmd(path))
 	return err
 }
 
@@ -4042,7 +4122,7 @@ func (m *SSHManager) BatchDeleteItemShellContext(ctx context.Context, sessionId 
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		sftpClient, err := m.getSFTPClient(sessionId)
+		sftpClient, err := m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}
@@ -4054,11 +4134,11 @@ func (m *SSHManager) BatchDeleteItemShellContext(ctx context.Context, sessionId 
 		}
 		return firstErr
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
-	_, err = m.executeCmdWithClientContext(ctx, client, batchRmRfCmd(safePaths))
+	_, err = m.ExecuteCmdWithClientContext(ctx, client, batchRmRfCmd(safePaths))
 	return err
 }
 
@@ -4070,7 +4150,7 @@ func (m *SSHManager) MkdirContext(ctx context.Context, sessionId string, path st
 	if err := ensureContextActive(ctx); err != nil {
 		return err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4085,7 +4165,7 @@ func (m *SSHManager) RenameItemContext(ctx context.Context, sessionId string, ol
 	if err := ensureContextActive(ctx); err != nil {
 		return err
 	}
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4157,7 +4237,7 @@ func (m *SSHManager) ListTransfersContext(ctx context.Context, sessionID string)
 }
 
 func (m *SSHManager) PreviewDownloadConflicts(sessionId string, remotePath string, localPath string, isDirectory bool) ([]map[string]interface{}, error) {
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return nil, err
 	}
@@ -4185,13 +4265,13 @@ func (m *SSHManager) CopyItemContext(ctx context.Context, sessionId string, srcP
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		sftpClient, err := m.getSFTPClient(sessionId)
+		sftpClient, err := m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}
 		return transfer.CopyViaSFTP(sftpClient, srcPath, dstPath)
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4222,7 +4302,7 @@ func (m *SSHManager) MoveItemContext(ctx context.Context, sessionId string, srcP
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		sftpClient, err := m.getSFTPClient(sessionId)
+		sftpClient, err := m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}
@@ -4232,7 +4312,7 @@ func (m *SSHManager) MoveItemContext(ctx context.Context, sessionId string, srcP
 		}
 		return nil
 	}
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4336,7 +4416,7 @@ func (m *SSHManager) copyWithProgress(dst io.Writer, src io.Reader, sessionId st
 }
 
 func (m *SSHManager) UploadFile(sessionId string, localPath string, remotePath string) error {
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4363,7 +4443,7 @@ func (m *SSHManager) UploadFile(sessionId string, localPath string, remotePath s
 
 // UploadDir recursively uploads a local directory to a remote path
 func (m *SSHManager) UploadDir(sessionId string, localDir string, remoteDir string) error {
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4417,7 +4497,7 @@ func (m *SSHManager) UploadDir(sessionId string, localDir string, remoteDir stri
 
 // UploadFileContent uploads file content from memory to a remote path
 func (m *SSHManager) UploadFileContent(sessionId string, fileName string, remoteDir string, content []byte) error {
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4436,7 +4516,7 @@ func (m *SSHManager) UploadFileContent(sessionId string, fileName string, remote
 // UploadFileContentBase64 通过 base64 编码上传文件内容，避免前端将 Uint8Array
 // 展开为普通 Array 导致的内存爆炸（8-16 倍开销）。base64 仅 1.33 倍开销。
 func (m *SSHManager) UploadFileContentBase64(sessionId string, fileName string, remoteDir string, base64Content string) error {
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4457,7 +4537,7 @@ func (m *SSHManager) UploadFileContentBase64(sessionId string, fileName string, 
 }
 
 func (m *SSHManager) DownloadFile(sessionId string, remotePath string, localPath string) error {
-	sftpClient, err := m.getSFTPClient(sessionId)
+	sftpClient, err := m.GetSFTPClient(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4482,7 +4562,7 @@ func (m *SSHManager) DownloadFile(sessionId string, remotePath string, localPath
 }
 
 func (m *SSHManager) CompressItem(sessionId string, remotePath string) error {
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4523,12 +4603,12 @@ func (m *SSHManager) previewSmartUncompressItem(client *ssh.Client, sftpClient *
 }
 
 func (m *SSHManager) PreviewSmartUncompressItem(sessionId string, remotePath string) (map[string]interface{}, error) {
-	client, sftpClient, err := m.getClientEntry(sessionId)
+	client, sftpClient, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return nil, err
 	}
 	if sftpClient == nil {
-		sftpClient, err = m.getSFTPClient(sessionId)
+		sftpClient, err = m.GetSFTPClient(sessionId)
 		if err != nil {
 			return nil, err
 		}
@@ -4552,7 +4632,7 @@ func (m *SSHManager) UncompressItem(sessionId string, remotePath string) error {
 }
 
 func (m *SSHManager) InstallUnzip(sessionId string) error {
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4583,7 +4663,7 @@ command -v unzip >/dev/null 2>&1`
 }
 
 func (m *SSHManager) UncompressUploadedArchive(sessionId string, remotePath string) error {
-	client, _, err := m.getClientEntry(sessionId)
+	client, _, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
@@ -4622,12 +4702,12 @@ func (m *SSHManager) UncompressUploadedArchive(sessionId string, remotePath stri
 }
 
 func (m *SSHManager) UncompressItemWithStrategy(sessionId string, remotePath string, conflictStrategy string) error {
-	client, sftpClient, err := m.getClientEntry(sessionId)
+	client, sftpClient, err := m.GetClientEntry(sessionId)
 	if err != nil {
 		return err
 	}
 	if sftpClient == nil {
-		sftpClient, err = m.getSFTPClient(sessionId)
+		sftpClient, err = m.GetSFTPClient(sessionId)
 		if err != nil {
 			return err
 		}

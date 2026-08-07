@@ -1,4 +1,4 @@
-package main
+package sshmanager
 
 import (
 	"context"
@@ -59,19 +59,32 @@ func (m *SSHManager) serverIdForConnKey(connKey string) string {
 	return connKey
 }
 
+// PortForwardBelongsToSession 校验某端口映射是否归属给定会话对应的连接, 防止仅凭全局 id 越权操作。
+func (m *SSHManager) PortForwardBelongsToSession(sessionId string, id string) bool {
+	connKey := m.ConnKeyForSession(sessionId)
+	if connKey == "" {
+		return false
+	}
+	m.ensurePersistedPortForwardsLoadedForConnKey(connKey)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	entry, ok := m.portForwards[id]
+	return ok && entry != nil && entry.connKey == connKey
+}
+
 // stopPortForwardsForConnKey 将某连接下所有运行态端口映射转为已停止态(关闭真实监听, 保留记录)。
 // 用于 SSH 连接生命周期结束(断连/keepalive 失败/用户关闭最后一个终端)时自动回收监听器,
 // 避免本地端口被泄漏占用; 转为已停止态而非删除, 保持"停止不删记录"语义, 重连后可重启。
 // 调用方不得持有 m.mu。幂等: 已停止的 entry 会被跳过。
 func (m *SSHManager) ensurePersistedPortForwardsLoadedForConnKey(connKey string) {
-	if strings.TrimSpace(connKey) == "" || m.app == nil || m.app.configManager == nil {
+	if strings.TrimSpace(connKey) == "" || m.app == nil || m.configManager == nil {
 		return
 	}
 	serverId := m.serverIdForConnKey(connKey)
 	if strings.TrimSpace(serverId) == "" {
 		return
 	}
-	persisted := m.app.configManager.GetPortForwards(serverId)
+	persisted := m.configManager.GetPortForwards(serverId)
 	if len(persisted) == 0 {
 		return
 	}
@@ -137,7 +150,7 @@ func (m *SSHManager) stopPortForwardsForConnKey(connKey string) {
 
 // persistPortForwardsForServer 将某 server 当前所有映射(运行态+已停止态)写盘。调用方不得持有 m.mu。
 func (m *SSHManager) persistPortForwardsForServer(serverId string) {
-	if m.app == nil || m.app.configManager == nil || strings.TrimSpace(serverId) == "" {
+	if m.app == nil || m.configManager == nil || strings.TrimSpace(serverId) == "" {
 		return
 	}
 	m.mu.RLock()
@@ -159,7 +172,7 @@ func (m *SSHManager) persistPortForwardsForServer(serverId string) {
 		})
 	}
 	m.mu.RUnlock()
-	if err := m.app.configManager.SavePortForwards(serverId, list); err != nil {
+	if err := m.configManager.SavePortForwards(serverId, list); err != nil {
 		log.Printf("[persistPortForwardsForServer] save failed for %s: %v", serverId, err)
 	}
 }

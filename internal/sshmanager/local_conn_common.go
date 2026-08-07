@@ -1,4 +1,4 @@
-package main
+package sshmanager
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"go.bug.st/serial"
 )
 
-// listSerialPorts returns the list of available serial port names.
-func (a *App) listSerialPorts() ([]string, error) {
+// ListSerialPorts returns the list of available serial port names.
+func (m *SSHManager) ListSerialPorts() ([]string, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
 		return nil, err
@@ -16,8 +16,8 @@ func (a *App) listSerialPorts() ([]string, error) {
 	return ports, nil
 }
 
-// connectSerial connects to a local serial port and pipes it to the WebSocket path.
-func (a *App) connectSerial(sessionId string, name string, portName string, baudRate int, dataBits int, stopBits float64, parity string) error {
+// ConnectSerial connects to a local serial port and pipes it to the WebSocket path.
+func (m *SSHManager) ConnectSerial(sessionId string, name string, portName string, baudRate int, dataBits int, stopBits float64, parity string) error {
 	var sb serial.StopBits
 	switch stopBits {
 	case 1.5:
@@ -67,11 +67,11 @@ func (a *App) connectSerial(sessionId string, name string, portName string, baud
 	// 清理旧条目并关闭旧串口、退出旧读循环，因此这里直接覆盖即可。
 	// Gen 在写 map 时分配新代次：旧读 goroutine 若仍存活，退出时会发现自己的
 	// gen 已过时（map 里的会话是新一代），从而静默退出，不会误关新的 serial 会话。
-	a.sshManager.mu.Lock()
-	a.sshManager.nextGen++
-	sd.Gen = a.sshManager.nextGen
-	a.sshManager.sessions[sessionId] = sd
-	a.sshManager.mu.Unlock()
+	m.mu.Lock()
+	m.nextGen++
+	sd.Gen = m.nextGen
+	m.sessions[sessionId] = sd
+	m.mu.Unlock()
 
 	// Pipe output from serial port to frontend
 	go func() {
@@ -81,10 +81,10 @@ func (a *App) connectSerial(sessionId string, name string, portName string, baud
 			if n > 0 {
 				data := make([]byte, n)
 				copy(data, buf[:n])
-				a.WriteWsOutput(sessionId, data)
+				m.app.WriteWsOutput(sessionId, data)
 			}
 			if err != nil {
-				a.sshManager.disconnectCurrentGen(sessionId, sd.Gen)
+				m.disconnectCurrentGen(sessionId, sd.Gen)
 				return
 			}
 		}

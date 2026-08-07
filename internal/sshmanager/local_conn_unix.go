@@ -1,7 +1,7 @@
 //go:build !windows
 // +build !windows
 
-package main
+package sshmanager
 
 import (
 	"fmt"
@@ -14,8 +14,8 @@ import (
 	"github.com/creack/pty"
 )
 
-// getLocalShells lists detected shells on UNIX-like systems.
-func (a *App) getLocalShells() ([]string, error) {
+// GetLocalShells lists detected shells on UNIX-like systems.
+func (m *SSHManager) GetLocalShells() ([]string, error) {
 	shells := []string{}
 	if sh := os.Getenv("SHELL"); sh != "" {
 		shells = append(shells, sh)
@@ -41,8 +41,8 @@ func (a *App) getLocalShells() ([]string, error) {
 	return shells, nil
 }
 
-// connectLocal spawns a local process using creack/pty.
-func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd string) error {
+// ConnectLocal spawns a local process using creack/pty.
+func (m *SSHManager) ConnectLocal(sessionId string, name string, shellPath string, cwd string) error {
 	workDir := cwd
 	if workDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -72,11 +72,11 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		PromptReady:  true,
 	}
 
-	a.sshManager.mu.Lock()
-	a.sshManager.nextGen++
-	sd.Gen = a.sshManager.nextGen
-	a.sshManager.sessions[sessionId] = sd
-	a.sshManager.mu.Unlock()
+	m.mu.Lock()
+	m.nextGen++
+	sd.Gen = m.nextGen
+	m.sessions[sessionId] = sd
+	m.mu.Unlock()
 
 	// Start an embedded SFTP server so the file manager can work for this session.
 	connKey := "local://" + sessionId
@@ -85,21 +85,21 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		log.Printf("[connectLocal] embedded SFTP server failed (file manager unavailable): %v", err)
 	} else {
 		entry := &sshClientEntry{Client: sshClient, SFTP: sftpClient}
-		a.sshManager.mu.Lock()
-		a.sshManager.clients[connKey] = entry
+		m.mu.Lock()
+		m.clients[connKey] = entry
 		sd.ConnKey = connKey
 		sd.LocalSFTPSrv = sftpServer
-		a.sshManager.mu.Unlock()
+		m.mu.Unlock()
 	}
 
 	// Start background CWD polling monitor for file manager sync
-	a.sshManager.StartLocalCwdMonitor(sessionId)
+	m.StartLocalCwdMonitor(sessionId)
 
 	// Wait and notify exit. Capture gen so a fast reconnect that reused sessionId
 	// (a newer entry now sits in the map) doesn't get torn down by this stale waiter.
 	go func() {
 		_ = cmd.Wait()
-		a.sshManager.disconnectCurrentGen(sessionId, sd.Gen)
+		m.disconnectCurrentGen(sessionId, sd.Gen)
 	}()
 
 	// Pipe output from local pty file to WebSocket. Reuses pipeLocalOutput (the
@@ -107,7 +107,7 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	// execution captures output via these taps) and teardown is guarded against
 	// a trailing read after Disconnect. Unix sessions set no OSCCwdParser, so the
 	// parser branch is skipped and this behaves as a plain passthrough.
-	a.sshManager.pipeLocalOutput(sessionId, ptyFile, nil)
+	m.pipeLocalOutput(sessionId, ptyFile, nil)
 
 	return nil
 }
@@ -128,7 +128,7 @@ func (m *SSHManager) ResizeLocal(s *SessionData, cols, rows int) {
 
 // CloseLocal closes the UNIX PTY handle and kills the process.
 // Field mutation happens under m.mu so concurrent readers (ResizeLocal, the
-// CWD monitor and localsftp.CurrentWorkingDirectory never observe a half-nulled session. The actual
+// CWD monitor and localsftp.CurrentWorkingDirectory never observe a half-nilled session. The actual
 // Close/Kill calls run outside the lock since they may block.
 func (m *SSHManager) CloseLocal(s *SessionData) {
 	m.mu.Lock()

@@ -43,7 +43,7 @@ type externalEditRemoteFiles struct {
 }
 
 func (r externalEditRemoteFiles) Size(sessionID string, remotePath string) (int64, error) {
-	client, err := r.manager.getSFTPClient(sessionID)
+	client, err := r.manager.GetSFTPClient(sessionID)
 	if err != nil {
 		return 0, err
 	}
@@ -217,10 +217,10 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.sshManager.ctx = ctx // Give SSH manager access to Wails events
-	a.sshManager.app = a   // Give SSH manager access to WebSocket registry
+	a.sshManager.SetCtx(ctx) // Give SSH manager access to Wails events
+	a.sshManager.SetApp(a)   // Give SSH manager access to WebSocket registry
 	a.configManager.SetWailsCtx(ctx)
-	a.sshManager.applyTransferTuning(a.configManager.GetTransferTuningSettings())
+	a.sshManager.ApplyTransferTuning(a.configManager.GetTransferTuningSettings())
 	if err := a.ensureMainLivenessLock(); err != nil {
 		log.Printf("failed to acquire main liveness lock: %v", err)
 	}
@@ -451,10 +451,10 @@ func (a *App) flushPendingWsOutput(sessionId string) {
 	a.writeWsFrame(sessionId, entry, pending)
 }
 
-// cleanupWsPending 在会话彻底销毁时清理其注册前缓冲，避免 wsPending map 残留。
+// CleanupWsPending 在会话彻底销毁时清理其注册前缓冲，避免 wsPending map 残留。
 // 注意：不能在单条 WS 重连时调用——重连期间 PTY 可能仍在向 pending 缓冲首帧，
 // 那些数据需要留给新连接 flush。仅在 session 从 m.sessions 删除（彻底断开）时调用。
-func (a *App) cleanupWsPending(sessionId string) {
+func (a *App) CleanupWsPending(sessionId string) {
 	a.wsMu.Lock()
 	delete(a.wsPending, sessionId)
 	a.wsMu.Unlock()
@@ -818,7 +818,7 @@ func (a *App) ConnectSSH(sessionId string, connId string) error {
 }
 
 func (a *App) StartLocalPortForward(sessionId string, localAddr string, remoteAddr string) (string, error) {
-	connKey := a.sshManager.connKeyForSession(sessionId)
+	connKey := a.sshManager.ConnKeyForSession(sessionId)
 	if connKey == "" {
 		return "", fmt.Errorf("session not found")
 	}
@@ -826,7 +826,7 @@ func (a *App) StartLocalPortForward(sessionId string, localAddr string, remoteAd
 }
 
 func (a *App) StartRemotePortForward(sessionId string, remoteAddr string, localAddr string) (string, error) {
-	connKey := a.sshManager.connKeyForSession(sessionId)
+	connKey := a.sshManager.ConnKeyForSession(sessionId)
 	if connKey == "" {
 		return "", fmt.Errorf("session not found")
 	}
@@ -834,7 +834,7 @@ func (a *App) StartRemotePortForward(sessionId string, remoteAddr string, localA
 }
 
 func (a *App) ListPortForwards(sessionId string) ([]PortForwardInfo, error) {
-	connKey := a.sshManager.connKeyForSession(sessionId)
+	connKey := a.sshManager.ConnKeyForSession(sessionId)
 	if connKey == "" {
 		return nil, fmt.Errorf("session not found")
 	}
@@ -843,15 +843,7 @@ func (a *App) ListPortForwards(sessionId string) ([]PortForwardInfo, error) {
 
 // portForwardBelongsToSession 校验某端口映射是否归属给定会话对应的连接, 防止仅凭全局 id 越权操作。
 func (a *App) portForwardBelongsToSession(sessionId string, id string) bool {
-	connKey := a.sshManager.connKeyForSession(sessionId)
-	if connKey == "" {
-		return false
-	}
-	a.sshManager.ensurePersistedPortForwardsLoadedForConnKey(connKey)
-	a.sshManager.mu.RLock()
-	defer a.sshManager.mu.RUnlock()
-	entry, ok := a.sshManager.portForwards[id]
-	return ok && entry != nil && entry.connKey == connKey
+	return a.sshManager.PortForwardBelongsToSession(sessionId, id)
 }
 
 func (a *App) StopPortForward(id string) error {
@@ -1005,9 +997,7 @@ func (a *App) AcceptHostKeyChange(sessionId string, action int) error {
 
 // OpenTerminal 在当前服务器连接上打开新的终端标签页
 func (a *App) OpenTerminal(sessionId string) (string, error) {
-	a.sshManager.mu.RLock()
-	existing, ok := a.sshManager.sessions[sessionId]
-	a.sshManager.mu.RUnlock()
+	existing, ok := a.sshManager.GetSession(sessionId)
 	if !ok {
 		return "", fmt.Errorf("session not found")
 	}
@@ -1019,7 +1009,7 @@ func (a *App) OpenTerminal(sessionId string) (string, error) {
 		}
 		newId := fmt.Sprintf("term_%x", randomId)
 
-		err := a.connectLocal(newId, filepath.Base(existing.ShellPath), existing.ShellPath, "")
+		err := a.sshManager.ConnectLocal(newId, filepath.Base(existing.ShellPath), existing.ShellPath, "")
 		if err != nil {
 			return "", err
 		}
@@ -1041,22 +1031,22 @@ func (a *App) ResizeTerminal(sessionId string, cols, rows int) {
 
 // GetLocalShells lists detected shells on the local system.
 func (a *App) GetLocalShells() ([]string, error) {
-	return a.getLocalShells()
+	return a.sshManager.GetLocalShells()
 }
 
 // ListSerialPorts returns the list of available serial port names.
 func (a *App) ListSerialPorts() ([]string, error) {
-	return a.listSerialPorts()
+	return a.sshManager.ListSerialPorts()
 }
 
 // ConnectLocal spawns a local command process and pipes it to the WebSocket path.
 func (a *App) ConnectLocal(sessionId string, name string, shellPath string, cwd string) error {
-	return a.connectLocal(sessionId, name, shellPath, cwd)
+	return a.sshManager.ConnectLocal(sessionId, name, shellPath, cwd)
 }
 
 // ConnectSerial connects to a local serial port and pipes it to the WebSocket path.
 func (a *App) ConnectSerial(sessionId string, name string, portName string, baudRate int, dataBits int, stopBits float64, parity string) error {
-	return a.connectSerial(sessionId, name, portName, baudRate, dataBits, stopBits, parity)
+	return a.sshManager.ConnectSerial(sessionId, name, portName, baudRate, dataBits, stopBits, parity)
 }
 
 // SystemInfo retrieves basic system probe info
@@ -1162,7 +1152,7 @@ func (a *App) SaveTransferTuningSettings(maxPacketKiB int, maxRequestsPerFile in
 	if err := a.configManager.SaveTransferTuningSettings(maxPacketKiB, maxRequestsPerFile, concurrentWrites, applyToSharedClient); err != nil {
 		return err
 	}
-	a.sshManager.applyTransferTuning(a.configManager.GetTransferTuningSettings())
+	a.sshManager.ApplyTransferTuning(a.configManager.GetTransferTuningSettings())
 	return nil
 }
 

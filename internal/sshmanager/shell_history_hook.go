@@ -1,4 +1,4 @@
-package main
+package sshmanager
 
 import (
 	"fmt"
@@ -40,7 +40,7 @@ func buildShellLaunchCommand(shellPath string, initialPath string) (string, bool
 	trimmedInitialPath := strings.TrimSpace(initialPath)
 	prefix := ""
 	if trimmedInitialPath != "" {
-		prefix = fmt.Sprintf("cd %s 2>/dev/null || true; ", shellQuote(trimmedInitialPath))
+		prefix = fmt.Sprintf("cd %s 2>/dev/null || true; ", shellQuotePath(trimmedInitialPath))
 	}
 
 	if !isBashShell(trimmedShellPath) {
@@ -50,7 +50,7 @@ func buildShellLaunchCommand(shellPath string, initialPath string) (string, bool
 		if trimmedShellPath == "" {
 			return prefix + `exec "${SHELL:-/bin/sh}" -il`, false
 		}
-		return prefix + "exec " + shellQuote(trimmedShellPath) + " -il", false
+		return prefix + "exec " + shellQuotePath(trimmedShellPath) + " -il", false
 	}
 
 	hook := `[ -t 0 ] && stty echo 2>/dev/null; if [ -n "${LUMIN_PROMPT_SEEN:-}" ]; then LUMIN_LAST="$(fc -ln -1 2>/dev/null)"; LUMIN_LAST="${LUMIN_LAST#"${LUMIN_LAST%%[![:space:]]*}"}"; if [ -n "$LUMIN_LAST" ]; then LUMIN_ENCODED="$(printf '%s' "$LUMIN_LAST" | base64 | tr -d '\r\n')"; printf '\037LUMIN_CMD\037%s\036' "$LUMIN_ENCODED"; fi; fi; LUMIN_PROMPT_SEEN=1; LUMIN_CWD="$(pwd 2>/dev/null | base64 | tr -d '\r\n')"; if [ -n "$LUMIN_CWD" ]; then printf '\037LUMIN_CWD\037%s\036' "$LUMIN_CWD"; fi; if [ -n "${LUMIN_OLD_PROMPT_COMMAND:-}" ]; then eval "$LUMIN_OLD_PROMPT_COMMAND"; fi`
@@ -58,8 +58,8 @@ func buildShellLaunchCommand(shellPath string, initialPath string) (string, bool
 	command := fmt.Sprintf(
 		"%sexport HISTCONTROL=; export HISTIGNORE=; export LUMIN_OLD_PROMPT_COMMAND=\"$PROMPT_COMMAND\"; export PROMPT_COMMAND=%s; exec %s -il",
 		prefix,
-		shellQuote(hook),
-		shellQuote(trimmedShellPath),
+		shellQuotePath(hook),
+		shellQuotePath(trimmedShellPath),
 	)
 
 	return command, true
@@ -67,9 +67,4 @@ func buildShellLaunchCommand(shellPath string, initialPath string) (string, bool
 
 func isBashShell(shellPath string) bool {
 	return strings.EqualFold(path.Base(strings.TrimSpace(shellPath)), "bash")
-}
-
-// shellQuote 用单引号包裹字符串并转义内部单引号（复用 ssh.go 的 shellQuotePath）
-func shellQuote(value string) string {
-	return shellQuotePath(value)
 }
