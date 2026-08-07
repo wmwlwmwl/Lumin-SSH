@@ -1,4 +1,4 @@
-package main
+package ping
 
 import (
 	"net"
@@ -143,7 +143,7 @@ func TestShouldRunBannerVerify(t *testing.T) {
 // 重点关注：并发 update / snapshot 不触发 race（go test -race）。
 func TestPingHostStateSnapshotClear(t *testing.T) {
 	key := "test-snapshot-clear"
-	defer clearPingHostState(key)
+	defer ClearPingHostState(key)
 
 	updatePingHostBannerState(key, true, 42)
 	st := snapshotPingHostState(key)
@@ -151,7 +151,7 @@ func TestPingHostStateSnapshotClear(t *testing.T) {
 		t.Fatalf("snapshot = %+v, want online ms=42", st)
 	}
 
-	clearPingHostState(key)
+	ClearPingHostState(key)
 	st2 := snapshotPingHostState(key)
 	if st2.hasBannerResult {
 		t.Fatal("after clear, snapshot should be empty")
@@ -161,7 +161,7 @@ func TestPingHostStateSnapshotClear(t *testing.T) {
 // TestPingHostStateConcurrentRace 跑 -race：并发 update + snapshot 不应数据竞争。
 func TestPingHostStateConcurrentRace(t *testing.T) {
 	key := "test-race"
-	defer clearPingHostState(key)
+	defer ClearPingHostState(key)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

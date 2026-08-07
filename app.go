@@ -26,6 +26,7 @@ import (
 	ai "luminssh-go/internal/ai"
 	"luminssh-go/internal/externaledit"
 	"luminssh-go/internal/localopen"
+	"luminssh-go/internal/ping"
 	"luminssh-go/internal/platformupdate"
 	"luminssh-go/internal/programfonts"
 	"luminssh-go/internal/transfer"
@@ -204,7 +205,7 @@ func NewApp() *App {
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
 	app.configManager.SetProgramDir(getProgramDirectory())
-	app.configManager.SetOnDeleteConnection(clearPingHostState)
+	app.configManager.SetOnDeleteConnection(ping.ClearPingHostState)
 	app.externalEdit = externaledit.NewManager(
 		externalEditRemoteFiles{manager: app.sshManager},
 		externalEditEventSink{app: app},
@@ -2832,7 +2833,7 @@ func (a *App) PingServer(connId string, mode string) map[string]interface{} {
 			"latency": 0,
 		}
 	}
-	return PingServer(resolvedConn, mode)
+	return ping.PingServer(resolvedConn, mode)
 }
 
 // isAllowedUpdateDownloadURL 仅允许 GitHub Release 资产下载地址（含常见 ghproxy 前缀）。

@@ -1,4 +1,4 @@
-package main
+package ping
 
 import (
 	"bytes"
@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"luminssh-go/internal/config"
+	"luminssh-go/internal/sshmanager"
 )
 
 // 智能模式下，疑似 TUN/代理路径的 Banner 可达性确认最短间隔。
@@ -285,10 +288,10 @@ var (
 	pingStates  = map[string]*pingHostState{}
 )
 
-func pingHostKey(conn Connection) string {
+func pingHostKey(conn config.Connection) string {
 	id := strings.TrimSpace(conn.ID)
 	if id == "" {
-		id = fmt.Sprintf("%s@%s", conn.Username, dialAddr(conn.Host, conn.Port))
+		id = fmt.Sprintf("%s@%s", conn.Username, sshmanager.DialAddr(conn.Host, conn.Port))
 	}
 	return id
 }
@@ -318,8 +321,8 @@ func updatePingHostBannerState(key string, online bool, ms int64) {
 	st.hasBannerResult = true
 }
 
-// clearPingHostState 在删除连接时清理其 Banner 状态，避免 pingStates 无限增长。
-func clearPingHostState(key string) {
+// ClearPingHostState 在删除连接时清理其 Banner 状态，避免 pingStates 无限增长。
+func ClearPingHostState(key string) {
 	pingStateMu.Lock()
 	defer pingStateMu.Unlock()
 	delete(pingStates, key)
@@ -357,13 +360,13 @@ func readSSHBanner(conn net.Conn, connectedAt time.Time) (int64, bool) {
 }
 
 // dialForPing 拨号并返回连接与 dial 耗时。
-func dialForPing(connConfig Connection) (net.Conn, int64, time.Time, error) {
-	target := dialAddr(connConfig.Host, connConfig.Port)
+func dialForPing(connConfig config.Connection) (net.Conn, int64, time.Time, error) {
+	target := sshmanager.DialAddr(connConfig.Host, connConfig.Port)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 
 	start := time.Now()
-	conn, err := dialConnectionTargetContext(ctx, connConfig, target, 4*time.Second)
+	conn, err := config.DialConnectionTargetContext(ctx, connConfig, target, 4*time.Second)
 	if err != nil {
 		return nil, 0, time.Time{}, err
 	}
@@ -372,7 +375,7 @@ func dialForPing(connConfig Connection) (net.Conn, int64, time.Time, error) {
 }
 
 // measureLatencyTCP 仅 TCP 端口连通探测。
-func measureLatencyTCP(connConfig Connection) (int64, bool) {
+func measureLatencyTCP(connConfig config.Connection) (int64, bool) {
 	conn, dialMs, _, err := dialForPing(connConfig)
 	if err != nil {
 		return 0, false
@@ -382,7 +385,7 @@ func measureLatencyTCP(connConfig Connection) (int64, bool) {
 }
 
 // measureLatencyBanner 强制 Banner 可达性探测。
-func measureLatencyBanner(connConfig Connection) (int64, bool) {
+func measureLatencyBanner(connConfig config.Connection) (int64, bool) {
 	conn, _, connectedAt, err := dialForPing(connConfig)
 	if err != nil {
 		return 0, false
@@ -395,13 +398,13 @@ func measureLatencyBanner(connConfig Connection) (int64, bool) {
 //   - 直连路径：TCP 测延迟/在线
 //   - 疑似代理/TUN：TCP 每轮拨号观察路径；Banner 按 autoBannerVerifyInterval 低频确认；
 //     未通过 Banner 确认前，不把「TCP 0ms」当成在线（避免 TUN 黑洞假在线）。
-func measureLatencyAuto(connConfig Connection) (int64, bool) {
+func measureLatencyAuto(connConfig config.Connection) (int64, bool) {
 	conn, dialMs, connectedAt, err := dialForPing(connConfig)
 	if err != nil {
 		return 0, false
 	}
 
-	usesProxy := connectionUsesProxy(connConfig)
+	usesProxy := config.ConnectionUsesProxy(connConfig)
 	local := conn.LocalAddr()
 	remote := conn.RemoteAddr()
 	remoteIP := parseIPFromAddr(remote)
@@ -442,7 +445,7 @@ func measureLatencyAuto(connConfig Connection) (int64, bool) {
 //   - auto：路径感知 + 双频（直连 TCP；TUN/代理低频 Banner）
 //   - tcp：强制只看 TCP 端口连通
 //   - banner：强制所有连接都读真实 SSH Banner
-func measureLatency(connConfig Connection, mode string) (int64, bool) {
+func measureLatency(connConfig config.Connection, mode string) (int64, bool) {
 	mode = normalizePingMode(mode)
 	switch mode {
 	case "tcp":
@@ -456,7 +459,7 @@ func measureLatency(connConfig Connection, mode string) (int64, bool) {
 
 // PingServer returns the latency to the SSH port. mode 见 normalizePingMode。
 // 每轮只采样 1 次，降低对 SSH 端口的连接频率。
-func PingServer(connConfig Connection, mode string) map[string]interface{} {
+func PingServer(connConfig config.Connection, mode string) map[string]interface{} {
 	rtt, online := measureLatency(connConfig, mode)
 	if !online {
 		return map[string]interface{}{
