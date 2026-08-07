@@ -27,6 +27,7 @@ import (
 	"luminssh-go/internal/externaledit"
 	"luminssh-go/internal/localopen"
 	"luminssh-go/internal/platformupdate"
+	"luminssh-go/internal/programfonts"
 	"luminssh-go/internal/transfer"
 	"luminssh-go/internal/updatedownload"
 	runtimebundle "luminssh-go/module/runtimebundle"
@@ -1970,8 +1971,8 @@ func (a *App) GetGitHubContributors() ([]GitHubContributor, error) {
 	return nil, lastErr
 }
 
-func (a *App) ListProgramFonts() ([]ProgramFontInfo, error) {
-	return listProgramFontsFromDirectory()
+func (a *App) ListProgramFonts() ([]programfonts.ProgramFontInfo, error) {
+	return programfonts.ListFonts(getProgramDirectory())
 }
 
 func (a *App) SelectProgramFontFiles() ([]string, error) {
@@ -1983,15 +1984,15 @@ func (a *App) SelectProgramFontFiles() ([]string, error) {
 	})
 }
 
-func (a *App) ImportProgramFontFiles(paths []string) ([]ProgramFontInfo, error) {
-	fontsDirectory, err := ensureProgramFontsDirectory()
+func (a *App) ImportProgramFontFiles(paths []string) ([]programfonts.ProgramFontInfo, error) {
+	fontsDirectory, err := programfonts.EnsureDir(getProgramDirectory())
 	if err != nil {
 		return nil, err
 	}
-	imported := make([]ProgramFontInfo, 0, len(paths))
+	imported := make([]programfonts.ProgramFontInfo, 0, len(paths))
 	seen := map[string]bool{}
 	for _, path := range paths {
-		fontInfo, copyErr := copyProgramFontFile(path, fontsDirectory)
+		fontInfo, copyErr := programfonts.CopyFile(path, fontsDirectory)
 		if copyErr != nil {
 			return nil, copyErr
 		}
@@ -2005,11 +2006,11 @@ func (a *App) ImportProgramFontFiles(paths []string) ([]ProgramFontInfo, error) 
 }
 
 func (a *App) DeleteProgramFont(fileName string) error {
-	return deleteProgramFontFile(fileName)
+	return programfonts.DeleteFile(fileName, getProgramDirectory())
 }
 
 func (a *App) GetProgramFontDataURL(fileName string) (string, error) {
-	return buildProgramFontDataURL(fileName)
+	return programfonts.DataURL(fileName, getProgramDirectory())
 }
 
 func (a *App) ResolveDownloadPath(remotePath string, defaultDir string, isDirectory bool, optionsJSON string) string {
