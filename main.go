@@ -81,7 +81,7 @@ func main() {
 	// Create an instance of the app structure
 	app := NewApp()
 
-	systrayEnd := prepareSystray(app)
+	systrayEnd := platformruntime.PrepareSystray(func() { setupSystray(app) })
 
 	// 退出时先同步删托盘图标，再 systray.Quit。
 	// Windows 上纯异步 Quit 常在 NIM_DELETE 前进程已死，留下幽灵图标。
@@ -110,7 +110,7 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			// 先挂托盘：startup 里 MCP 等可能阻塞，托盘若排后面会出现「窗口已能关到托盘但图标很久才出」。
 			app.ctx = ctx
-			startSystray(app)
+			platformruntime.StartSystray(func() { setupSystray(app) })
 			// 启动单实例 socket：二次启动会发 show 指令，经 forceShowWindow 走托盘同一路径唤起主窗口。
 			platformruntime.StartSingletonServer(func() {
 				forceShowWindow(app.ctx)
