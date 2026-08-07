@@ -1,8 +1,8 @@
-package main
+package platformupdate
 
 import "testing"
 
-func TestIsAllowedUpdateDownloadURL(t *testing.T) {
+func TestIsAllowedDownloadURL(t *testing.T) {
 	cases := []struct {
 		url  string
 		want bool
@@ -16,13 +16,13 @@ func TestIsAllowedUpdateDownloadURL(t *testing.T) {
 		{"", false},
 	}
 	for _, tc := range cases {
-		if got := isAllowedUpdateDownloadURL(tc.url); got != tc.want {
-			t.Fatalf("isAllowedUpdateDownloadURL(%q)=%v want %v", tc.url, got, tc.want)
+		if got := IsAllowedDownloadURL(tc.url); got != tc.want {
+			t.Fatalf("IsAllowedDownloadURL(%q)=%v want %v", tc.url, got, tc.want)
 		}
 	}
 }
 
-func TestIsAllowedUpdateFilename(t *testing.T) {
+func TestIsAllowedFilename(t *testing.T) {
 	cases := []struct {
 		name string
 		want bool
@@ -40,8 +40,8 @@ func TestIsAllowedUpdateFilename(t *testing.T) {
 		{"..", false},
 	}
 	for _, tc := range cases {
-		if got := isAllowedUpdateFilename(tc.name); got != tc.want {
-			t.Fatalf("isAllowedUpdateFilename(%q)=%v want %v", tc.name, got, tc.want)
+		if got := IsAllowedFilename(tc.name); got != tc.want {
+			t.Fatalf("IsAllowedFilename(%q)=%v want %v", tc.name, got, tc.want)
 		}
 	}
 }

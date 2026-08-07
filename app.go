@@ -35,6 +35,7 @@ import (
 	"luminssh-go/internal/sshmanager"
 	"luminssh-go/internal/transfer"
 	"luminssh-go/internal/updatedownload"
+	"luminssh-go/internal/wsbuffer"
 	runtimebundle "luminssh-go/module/runtimebundle"
 	runtimeenv "luminssh-go/module/runtimeenv"
 	runtimeinstaller "luminssh-go/module/runtimeinstaller"
@@ -108,9 +109,7 @@ type App struct {
 	configManager             *config.ConfigManager
 	wsPort                    int
 	wsToken                   string
-	wsMu                      sync.Mutex
-	wsConns                   map[string]*wsEntry      // sessionId -> active WebSocket
-	wsPending                 map[string]*wsPendingBuf // WS 注册前到达的输出缓冲（本地终端 PTY 首帧）
+	wsManager                 *wsbuffer.Manager        // WebSocket 连接与缓冲管理器
 	wsServer                  *http.Server             // WebSocket HTTP 服务器，用于优雅关闭
 	wsListener                net.Listener             // WebSocket 监听器，用于关闭时释放端口
 	mainLivenessLockPath      string
@@ -137,25 +136,6 @@ type App struct {
 	liveWorkspaceState        string
 	externalEdit              *externaledit.Manager
 }
-
-// wsEntry 包装一个 WebSocket 连接及其独立写锁。
-// wsMu 仅保护 map 增删改查；写消息时用每连接独立锁，避免慢客户端阻塞其他 session。
-type wsEntry struct {
-	conn    *websocket.Conn
-	writeMu sync.Mutex
-}
-
-// wsPendingBuf 缓冲 WS 注册前到达的输出（本地终端启动极快，PTY 首帧提示符
-// 往往早于前端 WS 注册到达；直接丢弃会表现为「首屏空白，回车才出提示符」）。
-// firstAt 用于过期：前端始终不连接时过期作废，避免陈旧数据在之后误 flush。
-type wsPendingBuf struct {
-	data    []byte
-	firstAt time.Time
-}
-
-// 每 session 首帧缓冲上限与过期时间
-const wsPendingMaxBytes = 256 * 1024
-const wsPendingMaxAge = 30 * time.Second
 
 type BuiltinProviderRuntimeStatus struct {
 	ProviderID string `json:"providerId"`
@@ -197,8 +177,7 @@ func NewApp() *App {
 	app := &App{
 		sshManager:                sshmanager.NewSSHManager(),
 		configManager:             config.NewConfigManager(),
-		wsConns:                   make(map[string]*wsEntry),
-		wsPending:                 make(map[string]*wsPendingBuf),
+		wsManager:                 wsbuffer.NewManager(),
 		builtinProcesses:          make(map[string]*exec.Cmd),
 		builtinBundleReady:        make(map[string]bool),
 		builtinInitCommands:       make(map[string]*exec.Cmd),
@@ -278,24 +257,10 @@ func (a *App) startup(ctx context.Context) {
 		}
 		defer conn.Close()
 
-		// 注册当前 WebSocket 连接
-		entry := &wsEntry{conn: conn}
-		a.wsMu.Lock()
-		if old := a.wsConns[sessionId]; old != nil {
-			go old.conn.Close() // 同 session 重连时关闭被覆盖的旧连接，避免 fd 泄漏
-		}
-		a.wsConns[sessionId] = entry
-		a.wsMu.Unlock()
-		// 注册完成后立即 flush 注册前缓冲的首帧，保证本地终端首屏提示符立即可见
-		a.flushPendingWsOutput(sessionId)
-		defer func() {
-			a.wsMu.Lock()
-			// 仅删除自己的 entry：若已被新连接覆盖，cur != entry，不能误删新连接
-			if cur, ok := a.wsConns[sessionId]; ok && cur == entry {
-				delete(a.wsConns, sessionId)
-			}
-			a.wsMu.Unlock()
-		}()
+		// 注册当前 WebSocket 连接（同 session 重连时自动关闭旧连接），并 flush 注册前缓冲
+		entry := a.wsManager.Register(sessionId, conn)
+		a.wsManager.FlushPending(sessionId)
+		defer a.wsManager.Unregister(sessionId, entry)
 
 		// 读取 WebSocket 消息，直通 SSH stdin
 		for {
@@ -386,102 +351,16 @@ func (a *App) GetWsToken() string {
 	return a.wsToken
 }
 
-// WriteWsToSession 将 WebSocket 输出写入给指定 session 的 WS 连接
+// WriteWsOutput 将 WebSocket 输出写入给指定 session 的 WS 连接
 func (a *App) WriteWsOutput(sessionId string, data []byte) {
-	// 仅在 wsMu 下取出 entry，并原子取走可能存在的注册前缓冲；
-	// 写消息时用每连接独立锁，避免慢客户端阻塞其他 session
-	a.wsMu.Lock()
-	entry, ok := a.wsConns[sessionId]
-	var pending []byte
-	if ok && entry != nil {
-		if p := a.wsPending[sessionId]; p != nil {
-			pending = p.data
-			delete(a.wsPending, sessionId)
-		}
-	}
-	a.wsMu.Unlock()
-
-	if !ok || entry == nil {
-		// WS 尚未注册（本地终端 PTY 首帧竞态）：缓冲而非丢弃，注册时 flush。
-		if len(data) > 0 {
-			a.bufferPendingWsOutput(sessionId, data)
-		}
-		return
-	}
-
-	// 先写缓冲首帧再写当前数据，保证前端帧顺序
-	if len(pending) > 0 {
-		a.writeWsFrame(sessionId, entry, pending)
-	}
-	if len(data) > 0 {
-		a.writeWsFrame(sessionId, entry, data)
-	}
+	a.wsManager.WriteOutput(sessionId, data)
 }
 
-// bufferPendingWsOutput 在 wsMu 下累积注册前输出，带上限与过期保护。
-func (a *App) bufferPendingWsOutput(sessionId string, data []byte) {
-	a.wsMu.Lock()
-	defer a.wsMu.Unlock()
-	p := a.wsPending[sessionId]
-	if p == nil || time.Since(p.firstAt) > wsPendingMaxAge {
-		p = &wsPendingBuf{firstAt: time.Now()}
-		a.wsPending[sessionId] = p
-	}
-	if len(p.data) >= wsPendingMaxBytes {
-		return // 已达上限：只保留头部首帧数据
-	}
-	if remain := wsPendingMaxBytes - len(p.data); len(data) > remain {
-		data = data[:remain]
-	}
-	p.data = append(p.data, data...)
-}
-
-// flushPendingWsOutput 在 WS 注册时把注册前缓冲 flush 给新连接。
-// 与 WriteWsOutput 的取缓冲操作同在 wsMu 下原子完成，二者只会有一方取到，
-// 因此「flush 路径」与「注册后首条实时数据路径」不会重复或乱序。
-func (a *App) flushPendingWsOutput(sessionId string) {
-	a.wsMu.Lock()
-	entry, ok := a.wsConns[sessionId]
-	var pending []byte
-	if ok && entry != nil {
-		if p := a.wsPending[sessionId]; p != nil {
-			pending = p.data
-			delete(a.wsPending, sessionId)
-		}
-	}
-	a.wsMu.Unlock()
-	if !ok || entry == nil || len(pending) == 0 {
-		return
-	}
-	a.writeWsFrame(sessionId, entry, pending)
-}
-
-// CleanupWsPending 在会话彻底销毁时清理其注册前缓冲，避免 wsPending map 残留。
+// CleanupWsPending 在会话彻底销毁时清理其注册前缓冲，避免 pending map 残留。
 // 注意：不能在单条 WS 重连时调用——重连期间 PTY 可能仍在向 pending 缓冲首帧，
-// 那些数据需要留给新连接 flush。仅在 session 从 m.sessions 删除（彻底断开）时调用。
+// 那些数据需要留给新连接 flush。仅在 session 彻底断开时调用。
 func (a *App) CleanupWsPending(sessionId string) {
-	a.wsMu.Lock()
-	delete(a.wsPending, sessionId)
-	a.wsMu.Unlock()
-}
-
-// writeWsFrame 在连接独立写锁下写一帧二进制消息；写失败时移除并关闭连接。
-func (a *App) writeWsFrame(sessionId string, entry *wsEntry, data []byte) {
-	entry.writeMu.Lock()
-	defer entry.writeMu.Unlock()
-	// 设置写超时，防止前端停止读取后 goroutine 永久阻塞
-	entry.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := entry.conn.WriteMessage(websocket.BinaryMessage, data)
-	if err != nil {
-		// 写失败（超时/连接断开），关闭并移除该连接
-		a.wsMu.Lock()
-		// 二次校验：可能已被其他 goroutine 替换或移除
-		if cur, ok := a.wsConns[sessionId]; ok && cur == entry {
-			delete(a.wsConns, sessionId)
-		}
-		a.wsMu.Unlock()
-		entry.conn.Close()
-	}
+	a.wsManager.CleanupPending(sessionId)
 }
 
 // IsPortableVersion checks if the current executable is the portable version
@@ -2840,46 +2719,6 @@ func (a *App) PingServer(connId string, mode string) map[string]interface{} {
 	return ping.PingServer(resolvedConn, mode)
 }
 
-// isAllowedUpdateDownloadURL 仅允许 GitHub Release 资产下载地址（含常见 ghproxy 前缀）。
-// 拒绝 html_url / 网页 / 非 download 路径，避免把 Release 页面当安装包热替换。
-func isAllowedUpdateDownloadURL(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	if !strings.HasPrefix(raw, "https://") {
-		return false
-	}
-	// 允许直连与常见镜像前缀：镜像通常是 https://proxy/https://github.com/...
-	// 统一在完整字符串里找 github.com/.../releases/download/
-	lower := strings.ToLower(raw)
-	idx := strings.Index(lower, "github.com/")
-	if idx < 0 {
-		return false
-	}
-	rest := lower[idx+len("github.com/"):]
-	// 期望: owner/repo/releases/download/...
-	if !strings.Contains(rest, "/releases/download/") {
-		return false
-	}
-	// 拒绝 .sha256 自身
-	if strings.HasSuffix(lower, ".sha256") {
-		return false
-	}
-	return true
-}
-
-func isAllowedUpdateFilename(filename string) bool {
-	name := strings.ToLower(strings.TrimSpace(filename))
-	if name == "" || name == "." || name == ".." {
-		return false
-	}
-	if strings.HasSuffix(name, ".sha256") {
-		return false
-	}
-	return strings.HasSuffix(name, ".exe") ||
-		strings.HasSuffix(name, ".deb") ||
-		strings.HasSuffix(name, ".rpm") ||
-		strings.HasSuffix(name, ".dmg")
-}
-
 // UpdateApp downloads a platform update package, verifies it, and starts the
 // platform-specific installation or executable replacement flow.
 func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) error {
@@ -2887,12 +2726,12 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 	if !strings.HasPrefix(downloadUrl, "https://") {
 		return fmt.Errorf("更新地址必须使用 HTTPS")
 	}
-	if !isAllowedUpdateDownloadURL(downloadUrl) {
+	if !platformupdate.IsAllowedDownloadURL(downloadUrl) {
 		return fmt.Errorf("更新地址无效：仅允许 GitHub Release 安装包下载链接")
 	}
 	// Release asset names must not escape the temporary/download directory.
 	filename = filepath.Base(strings.TrimSpace(filename))
-	if !isAllowedUpdateFilename(filename) {
+	if !platformupdate.IsAllowedFilename(filename) {
 		return fmt.Errorf("更新文件名无效或不受支持: %s", filename)
 	}
 	// 2. 下载新文件（带超时，防止慢网络永久阻塞）
