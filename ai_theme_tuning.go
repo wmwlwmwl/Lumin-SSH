@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/config"
 )
 
 type aiThemeToolDraftState struct {
@@ -22,7 +23,7 @@ type aiThemeToolDraftState struct {
 	SourceThemeID     string
 	ReadyForPreview   bool
 	HasPreviewChanges bool
-	Draft             ThemePackageFile
+	Draft             config.ThemePackageFile
 }
 
 var aiThemeToolDraftStore = struct {
@@ -43,15 +44,15 @@ func cloneAIThemeToolDraftState(state *aiThemeToolDraftState) *aiThemeToolDraftS
 		SourceThemeID:     state.SourceThemeID,
 		ReadyForPreview:   state.ReadyForPreview,
 		HasPreviewChanges: state.HasPreviewChanges,
-		Draft: ThemePackageFile{
+		Draft: config.ThemePackageFile{
 			SchemaVersion: state.Draft.SchemaVersion,
 			ID:            state.Draft.ID,
 			Name:          state.Draft.Name,
 			Description:   state.Draft.Description,
 			ModeHint:      state.Draft.ModeHint,
-			Tokens:        cloneStringMap(state.Draft.Tokens),
-			Components:    cloneAnyMap(state.Draft.Components),
-			Resources:     cloneAnyMap(state.Draft.Resources),
+			Tokens:        config.CloneStringMap(state.Draft.Tokens),
+			Components:    config.CloneAnyMap(state.Draft.Components),
+			Resources:     config.CloneAnyMap(state.Draft.Resources),
 		},
 	}
 }
@@ -67,40 +68,40 @@ func normalizeAIThemeToolSlot(value string) string {
 	}
 }
 
-func themeToolPackageFileFromSummary(item ThemePackageSummary) ThemePackageFile {
-	return ThemePackageFile{
+func themeToolPackageFileFromSummary(item config.ThemePackageSummary) config.ThemePackageFile {
+	return config.ThemePackageFile{
 		SchemaVersion: item.SchemaVersion,
 		ID:            item.ID,
 		Name:          item.Name,
 		Description:   item.Description,
 		ModeHint:      item.ModeHint,
-		Tokens:        cloneStringMap(item.Tokens),
-		Components:    cloneAnyMap(item.Components),
-		Resources:     cloneAnyMap(item.Resources),
+		Tokens:        config.CloneStringMap(item.Tokens),
+		Components:    config.CloneAnyMap(item.Components),
+		Resources:     config.CloneAnyMap(item.Resources),
 	}
 }
 
-func themeToolPackageFileToMap(item ThemePackageFile) map[string]interface{} {
+func themeToolPackageFileToMap(item config.ThemePackageFile) map[string]interface{} {
 	return map[string]interface{}{
 		"schemaVersion": item.SchemaVersion,
 		"id":            item.ID,
 		"name":          item.Name,
 		"description":   item.Description,
 		"modeHint":      item.ModeHint,
-		"tokens":        cloneStringMap(item.Tokens),
-		"components":     cloneAnyMap(item.Components),
-		"resources":      cloneAnyMap(item.Resources),
+		"tokens":        config.CloneStringMap(item.Tokens),
+		"components":     config.CloneAnyMap(item.Components),
+		"resources":      config.CloneAnyMap(item.Resources),
 	}
 }
 
-func themeToolCurrentThemeSummary(items []ThemePackageSummary, id string) (ThemePackageSummary, bool) {
+func themeToolCurrentThemeSummary(items []config.ThemePackageSummary, id string) (config.ThemePackageSummary, bool) {
 	normalizedID := strings.TrimSpace(id)
 	for _, item := range items {
 		if strings.TrimSpace(item.ID) == normalizedID {
 			return item, true
 		}
 	}
-	return ThemePackageSummary{}, false
+	return config.ThemePackageSummary{}, false
 }
 
 func themeToolLoadDraft(conversationID string) (*aiThemeToolDraftState, bool) {
@@ -155,16 +156,16 @@ func (a *App) MarkThemeToolConversationUserConfirmed(conversationID string) {
 	themeToolMarkDraftReadyForPreview(conversationID)
 }
 
-func themeToolApplyPatch(current ThemePackageFile, patch map[string]interface{}) (ThemePackageFile, []string, []string, error) {
-	next := ThemePackageFile{
-		SchemaVersion: themePackageSchemaVersion,
+func themeToolApplyPatch(current config.ThemePackageFile, patch map[string]interface{}) (config.ThemePackageFile, []string, []string, error) {
+	next := config.ThemePackageFile{
+		SchemaVersion: config.ThemePackageSchemaVersion,
 		ID:            current.ID,
 		Name:          current.Name,
 		Description:   current.Description,
 		ModeHint:      current.ModeHint,
-		Tokens:        cloneStringMap(current.Tokens),
-		Components:    cloneAnyMap(current.Components),
-		Resources:     cloneAnyMap(current.Resources),
+		Tokens:        config.CloneStringMap(current.Tokens),
+		Components:    config.CloneAnyMap(current.Components),
+		Resources:     config.CloneAnyMap(current.Resources),
 	}
 	appliedPaths := make([]string, 0)
 	warnings := make([]string, 0)
@@ -219,11 +220,11 @@ func themeToolApplyPatch(current ThemePackageFile, patch map[string]interface{})
 		}
 	}
 	if components, ok := patch["components"].(map[string]interface{}); ok {
-		next.Components = mergeAnyMaps(next.Components, components)
+		next.Components = config.MergeAnyMaps(next.Components, components)
 		ai.ThemeToolCollectPatchPaths("components", components, &appliedPaths)
 	}
 	if resources, ok := patch["resources"].(map[string]interface{}); ok {
-		next.Resources = mergeAnyMaps(next.Resources, resources)
+		next.Resources = config.MergeAnyMaps(next.Resources, resources)
 		ai.ThemeToolCollectPatchPaths("resources", resources, &appliedPaths)
 	}
 
@@ -271,19 +272,19 @@ func (a *App) themeToolInitializeDraft(conversationID string, slot string) (*aiT
 	return state, nil
 }
 
-func (a *App) themeToolCommitDraft(state *aiThemeToolDraftState, request map[string]interface{}) (ThemePackageSummary, ThemePackageSettings, error) {
+func (a *App) themeToolCommitDraft(state *aiThemeToolDraftState, request map[string]interface{}) (config.ThemePackageSummary, config.ThemePackageSettings, error) {
 	if a == nil || a.configManager == nil || state == nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, fmt.Errorf("theme package settings unavailable")
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, fmt.Errorf("theme package settings unavailable")
 	}
-	themePackage := ThemePackageFile{
-		SchemaVersion: themePackageSchemaVersion,
+	themePackage := config.ThemePackageFile{
+		SchemaVersion: config.ThemePackageSchemaVersion,
 		ID:            ai.ThemeToolBuildCommittedID(state.Slot),
 		Name:          ai.ThemeToolDefaultCommitName(state.Slot, state.Draft.Name),
 		Description:   state.Draft.Description,
 		ModeHint:      state.Slot,
-		Tokens:        cloneStringMap(state.Draft.Tokens),
-		Components:    cloneAnyMap(state.Draft.Components),
-		Resources:     cloneAnyMap(state.Draft.Resources),
+		Tokens:        config.CloneStringMap(state.Draft.Tokens),
+		Components:    config.CloneAnyMap(state.Draft.Components),
+		Resources:     config.CloneAnyMap(state.Draft.Resources),
 	}
 	if name, ok := request["name"].(string); ok && strings.TrimSpace(name) != "" {
 		themePackage.Name = strings.TrimSpace(name)
@@ -291,24 +292,24 @@ func (a *App) themeToolCommitDraft(state *aiThemeToolDraftState, request map[str
 	if description, ok := request["description"].(string); ok {
 		themePackage.Description = strings.TrimSpace(description)
 	}
-	if err := validateThemePackageFile(&themePackage); err != nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, err
+	if err := config.ValidateThemePackageFile(&themePackage); err != nil {
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, err
 	}
 	userDirectory, err := a.configManager.EnsureUserThemePackagesDirectory()
 	if err != nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, err
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, err
 	}
 	data, err := json.MarshalIndent(themePackage, "", "  ")
 	if err != nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, err
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, err
 	}
 	targetPath := filepath.Join(userDirectory, themePackage.ID+".json")
-	if err := atomicWriteFile(targetPath, data, 0o644); err != nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, err
+	if err := config.AtomicWriteFile(targetPath, data, 0o644); err != nil {
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, err
 	}
-	summary, err := readThemePackageSummaryFromFile(targetPath, "user")
+	summary, err := config.ReadThemePackageSummaryFromFile(targetPath, "user")
 	if err != nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, err
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, err
 	}
 	settings := a.configManager.GetThemePackageSettings()
 	if state.Slot == "light" {
@@ -317,7 +318,7 @@ func (a *App) themeToolCommitDraft(state *aiThemeToolDraftState, request map[str
 		settings.DarkThemePackageID = summary.ID
 	}
 	if err := a.configManager.SaveThemePackageSettings(settings); err != nil {
-		return ThemePackageSummary{}, ThemePackageSettings{}, err
+		return config.ThemePackageSummary{}, config.ThemePackageSettings{}, err
 	}
 	return summary, a.configManager.GetThemePackageSettings(), nil
 }
@@ -433,8 +434,8 @@ func (a *App) HandleThemeToolRequest(ctx context.Context, request ai.ThemeToolRe
 			DraftID:        state.DraftID,
 			Slot:           state.Slot,
 			SourceThemeID:  state.SourceThemeID,
-			CommittedTheme: themePackageSummaryToMap(committedTheme),
-			Settings:       themePackageSettingsToMap(settings),
+			CommittedTheme: config.ThemePackageSummaryToMap(committedTheme),
+			Settings:       config.ThemePackageSettingsToMap(settings),
 			Result:         "committed",
 		}, nil
 	case "revert":

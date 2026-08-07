@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/config"
 	mcp "luminssh-go/internal/mcp"
 	"luminssh-go/internal/mcpbridge"
 	"luminssh-go/internal/mcpserver"
@@ -148,7 +149,7 @@ func applyMCPOutputCompressionSettings(settings mcp.OutputCompressionSettings) {
 	mcp.ApplyOutputCompressionSettings(settings)
 }
 
-func getMCPOutputCompressionSettings(cm *ConfigManager) mcp.OutputCompressionSettings {
+func getMCPOutputCompressionSettings(cm *config.ConfigManager) mcp.OutputCompressionSettings {
 	if cm == nil {
 		return mcp.OutputCompressionSettings{
 			TerminalOutputLineLimit:      mcp.DefaultTerminalOutputLineLimit,
@@ -158,7 +159,7 @@ func getMCPOutputCompressionSettings(cm *ConfigManager) mcp.OutputCompressionSet
 	return mcp.LoadOutputCompressionSettings(cm.GetConfigDir())
 }
 
-func saveMCPOutputCompressionSettings(cm *ConfigManager, settings mcp.OutputCompressionSettings) error {
+func saveMCPOutputCompressionSettings(cm *config.ConfigManager, settings mcp.OutputCompressionSettings) error {
 	if cm == nil {
 		return nil
 	}

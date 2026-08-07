@@ -9,9 +9,11 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/config"
 	"luminssh-go/internal/localopen"
 	"luminssh-go/internal/mcp"
 	"luminssh-go/internal/mcpserver"
+	"luminssh-go/internal/sshmanager"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -254,7 +256,7 @@ func (b *AIBindings) SaveAIProviderState(jsonStr string) error {
 	for i := range currentProviders {
 		currentProviders[i].UpdatedAt = 0
 	}
-	if b != nil && b.app != nil && b.app.configManager != nil && !aiProvidersEqual(previousProviders, currentProviders) {
+	if b != nil && b.app != nil && b.app.configManager != nil && !config.AIProvidersEqual(previousProviders, currentProviders) {
 		b.app.configManager.BumpSnapshotTime()
 		go b.app.configManager.AutoSync()
 	}
@@ -278,7 +280,7 @@ func (b *AIBindings) RequestAIProviderModelsWithProfile(jsonStr string) ([]strin
 }
 
 type aiSSHDelegate struct {
-	manager *SSHManager
+	manager *sshmanager.SSHManager
 }
 
 func (d aiSSHDelegate) ExecuteCommandInTerminalControlled(sessionID string, command string, purpose string, isMutating bool, cwd string, shellType string, timeout time.Duration, control <-chan ai.ToolExecutionAction, reassign <-chan string, onCommandQueued func(), onCommandStarted func(), onCommandOutput func(string)) (mcpserver.CommandExecutionResult, ai.ToolExecutionAction, error) {

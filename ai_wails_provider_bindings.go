@@ -1,7 +1,7 @@
 package main
 
 // ponytail: provider 归一化函数已迁移至 internal/ai/provider_binding.go。
-// 本文件仅保留 AIProviderBindings 结构体（含 ConfigManager 文件 I/O 依赖）。
+// 本文件仅保留 AIProviderBindings 结构体（含 config.ConfigManager 文件 I/O 依赖）。
 
 import (
 	"encoding/json"
@@ -10,13 +10,14 @@ import (
 	"strings"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/config"
 )
 
 type AIProviderBindings struct {
-	configManager *ConfigManager
+	configManager *config.ConfigManager
 }
 
-func NewAIProviderBindings(configManager *ConfigManager) *AIProviderBindings {
+func NewAIProviderBindings(configManager *config.ConfigManager) *AIProviderBindings {
 	return &AIProviderBindings{configManager: configManager}
 }
 
@@ -91,7 +92,7 @@ func (b *AIProviderBindings) saveAIProviderRegistry(registry ai.AIProviderRegist
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(b.aiProviderRegistryPath(), data, 0600)
+	return config.AtomicWriteFile(b.aiProviderRegistryPath(), data, 0600)
 }
 
 func (b *AIProviderBindings) readAICurrentProviderID() string {
@@ -124,5 +125,5 @@ func (b *AIProviderBindings) saveAICurrentProviderID(currentProviderID string) e
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(b.aiGlobalSettingsPath(), nextData, 0600)
+	return config.AtomicWriteFile(b.aiGlobalSettingsPath(), nextData, 0600)
 }
