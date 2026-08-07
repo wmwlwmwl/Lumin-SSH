@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"luminssh-go/internal/platformruntime"
+
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -26,12 +28,12 @@ var embeddedModuleFS embed.FS
 // 原生激活放前后各一次：覆盖「仅最小化」和「托盘隐藏」两种状态。
 func forceShowWindow(ctx context.Context) {
 	defer func() { recover() }()
-	platformForceShowWindow()
+	platformruntime.ForceShowWindow()
 	if ctx != nil {
 		runtime.WindowUnminimise(ctx)
 		runtime.WindowShow(ctx)
 	}
-	platformForceShowWindow()
+	platformruntime.ForceShowWindow()
 }
 
 var systrayOnce sync.Once
@@ -58,7 +60,7 @@ func setupSystray(app *App) {
 		// Windows 久置后 TrackPopupMenu 常因托盘窗抢不到前台而不弹出；
 		// 先解锁前台再 ShowMenu（与主窗久置唤起同源限制）。
 		systray.SetOnRClick(func(menu systray.IMenu) {
-			platformPrepareTrayMenu()
+			platformruntime.PrepareTrayMenu()
 			menu.ShowMenu()
 		})
 
@@ -74,7 +76,7 @@ func setupSystray(app *App) {
 
 func main() {
 	// 单实例检查（平台特定实现）
-	ensureSingleInstance()
+	platformruntime.EnsureSingleInstance()
 
 	// Create an instance of the app structure
 	app := NewApp()
@@ -86,7 +88,7 @@ func main() {
 	var trayCleanupOnce sync.Once
 	cleanupTray := func() {
 		trayCleanupOnce.Do(func() {
-			removeTrayIconSync()
+			platformruntime.RemoveTrayIconSync()
 			systrayEnd()
 		})
 	}
@@ -110,13 +112,13 @@ func main() {
 			app.ctx = ctx
 			startSystray(app)
 			// 启动单实例 socket：二次启动会发 show 指令，经 forceShowWindow 走托盘同一路径唤起主窗口。
-			startSingletonServer(func() {
+			platformruntime.StartSingletonServer(func() {
 				forceShowWindow(app.ctx)
 			})
 			app.startup(ctx)
 		},
 		OnShutdown: func(ctx context.Context) {
-			stopSingletonServer()
+			platformruntime.StopSingletonServer()
 			stopMCPServer(app)
 			cleanupTray()
 		},
@@ -151,7 +153,8 @@ func main() {
 	}
 
 	// 应用平台特定选项（平台特定实现）
-	applyPlatformOptions(opts, app.configManager)
+	gpuDisabled := app.configManager != nil && app.configManager.GetWebviewGpuDisabled()
+	platformruntime.ApplyOptions(opts, gpuDisabled)
 
 	err := wails.Run(opts)
 

@@ -27,6 +27,7 @@ import (
 	"luminssh-go/internal/externaledit"
 	"luminssh-go/internal/localopen"
 	"luminssh-go/internal/ping"
+	"luminssh-go/internal/platformruntime"
 	"luminssh-go/internal/platformupdate"
 	"luminssh-go/internal/programfonts"
 	"luminssh-go/internal/transfer"
@@ -1355,7 +1356,7 @@ func (a *App) ensureMainLivenessLock() error {
 		return nil
 	}
 	lockPath := filepath.Join(a.configManager.GetConfigDir(), "luminssh-main.lock")
-	release, err := acquireMainLivenessLock(lockPath)
+	release, err := platformruntime.AcquireMainLivenessLock(lockPath)
 	if err != nil {
 		return err
 	}
