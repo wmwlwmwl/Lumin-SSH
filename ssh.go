@@ -23,6 +23,11 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/localsftp"
+	"luminssh-go/internal/localsysinfo"
+	"luminssh-go/internal/mcpserver"
+	"luminssh-go/internal/terminalstream"
+	"luminssh-go/internal/transfer"
 
 	"github.com/pkg/sftp"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -95,7 +100,7 @@ type SessionData struct {
 	ConnKey             string // 共享客户端查找键: user@host:port
 	Session             *ssh.Session
 	Stdin               io.WriteCloser
-	HistoryStream       *commandHistoryStream
+	HistoryStream       *terminalstream.CommandHistoryParser
 	RemoteHistoryActive bool
 	GroupSessionId      string // 对子终端有效：父会话 sessionId（用于历史事件归组）
 	ShellPath           string
@@ -111,8 +116,8 @@ type SessionData struct {
 	SerialPort      io.ReadWriteCloser
 	Cmd             *exec.Cmd
 	WSLDistro       string
-	LocalSFTPSrv    *localSFTPServer // embedded SFTP server; non-nil when file manager is available
-	OSCCwdParser    *oscCwdParser    // WSL-only: parses ESC]733;<b64>BEL CWD markers from the ConPTY stream
+	LocalSFTPSrv    *localsftp.Server            // embedded SFTP server; non-nil when file manager is available
+	OSCCwdParser    *terminalstream.OSCCWDParser // WSL-only: parses ESC]733;<b64>BEL CWD markers from the ConPTY stream
 	// Gen is a per-session-instance generation counter incremented each time a
 	// local/serial session reuses the same sessionId (fast reconnect). Background
 	// goroutines (the serial read loop, the local cmd-waiter, pipeLocalOutput)
@@ -120,6 +125,96 @@ type SessionData struct {
 	// carries the same gen — otherwise a newer instance has replaced it and the
 	// old goroutine must leave the map alone to avoid killing the new session.
 	Gen uint64
+}
+
+type transferBackend struct {
+	manager *SSHManager
+}
+
+func (b transferBackend) ClientEntry(sessionID string) (*ssh.Client, *sftp.Client, error) {
+	return b.manager.getClientEntry(sessionID)
+}
+
+func (b transferBackend) SFTPClient(sessionID string) (*sftp.Client, error) {
+	return b.manager.getSFTPClient(sessionID)
+}
+
+func (b transferBackend) ExecuteCommand(ctx context.Context, client *ssh.Client, command string) (string, error) {
+	return b.manager.executeCmdWithClientContext(ctx, client, command)
+}
+
+func (b transferBackend) DeleteRemote(ctx context.Context, sessionID string, remotePath string, isDir bool) error {
+	return b.manager.DeleteItemContext(ctx, sessionID, remotePath, isDir)
+}
+
+func (b transferBackend) MkdirRemote(ctx context.Context, sessionID string, remotePath string) error {
+	return b.manager.MkdirContext(ctx, sessionID, remotePath)
+}
+
+func (b transferBackend) RenameRemote(ctx context.Context, sessionID string, oldPath string, newPath string) error {
+	return b.manager.RenameItemContext(ctx, sessionID, oldPath, newPath)
+}
+
+func (b transferBackend) UpdateUploadChannels(sessionID string, delta int) {
+	b.manager.trackUploadChannelDelta(sessionID, delta)
+}
+
+type transferSink struct {
+	manager *SSHManager
+}
+
+func (s transferSink) Emit(event string, payload any) {
+	switch progress := payload.(type) {
+	case transfer.DownloadProgress:
+		s.manager.transferService.UpdateMCPTransferFromDownloadEvent(
+			progress.SessionID,
+			progress.DownloadID,
+			progress.Mode,
+			progress.Phase,
+			progress.Status,
+			progress.Progress,
+			progress.BytesDone,
+			progress.BytesTotal,
+			progress.Current,
+			progress.Detail,
+		)
+		payload = map[string]interface{}{
+			"downloadId": progress.DownloadID,
+			"mode":       progress.Mode,
+			"phase":      progress.Phase,
+			"status":     progress.Status,
+			"progress":   progress.Progress,
+			"bytesDone":  progress.BytesDone,
+			"bytesTotal": progress.BytesTotal,
+			"current":    progress.Current,
+			"detail":     progress.Detail,
+		}
+	case transfer.CompressedUploadProgress:
+		s.manager.transferService.UpdateMCPTransferFromCompressedUploadEvent(
+			progress.SessionID,
+			progress.UploadID,
+			progress.Phase,
+			progress.Progress,
+			progress.PhaseProgress,
+			progress.BytesDone,
+			progress.BytesTotal,
+			progress.Current,
+			progress.Detail,
+		)
+		payload = map[string]interface{}{
+			"uploadId":      progress.UploadID,
+			"phase":         progress.Phase,
+			"progress":      progress.Progress,
+			"phaseProgress": progress.PhaseProgress,
+			"bytesDone":     progress.BytesDone,
+			"bytesTotal":    progress.BytesTotal,
+			"current":       progress.Current,
+			"detail":        progress.Detail,
+		}
+	}
+	if s.manager != nil && s.manager.ctx != nil {
+		runtime.EventsEmit(s.manager.ctx, event, payload)
+	}
 }
 
 type SSHManager struct {
@@ -134,11 +229,10 @@ type SSHManager struct {
 	pendingHostKeys  map[string]*PendingHostKey    // sessionId -> pending host key info
 	tempAcceptedKeys map[string]string             // sessionId -> fingerprint (accept this time only)
 	pendingCancels   map[string]context.CancelFunc // sessionId -> cancel func for in-progress Connect
-	uploadTasks      map[string]*chunkedUploadTask
+	transferService  *transfer.Service
 	portForwards     map[string]*managedPortForward
 	mu               sync.RWMutex
 	pendingMu        sync.Mutex
-	uploadMu         sync.Mutex
 	bufPool          sync.Pool
 	// nextGen is the monotonic source of SessionData.Gen values, used to tell
 	// apart two local/serial sessions that reused the same sessionId (fast
@@ -155,7 +249,7 @@ func dialAddr(host string, port int) string {
 }
 
 func NewSSHManager() *SSHManager {
-	return &SSHManager{
+	manager := &SSHManager{
 		sessions:         make(map[string]*SessionData),
 		clients:          make(map[string]*sshClientEntry),
 		connTerminals:    make(map[string][]string),
@@ -165,7 +259,6 @@ func NewSSHManager() *SSHManager {
 		pendingHostKeys:  make(map[string]*PendingHostKey),
 		tempAcceptedKeys: make(map[string]string),
 		pendingCancels:   make(map[string]context.CancelFunc),
-		uploadTasks:      make(map[string]*chunkedUploadTask),
 		portForwards:     make(map[string]*managedPortForward),
 		bufPool: sync.Pool{
 			New: func() any {
@@ -174,6 +267,8 @@ func NewSSHManager() *SSHManager {
 			},
 		},
 	}
+	manager.transferService = transfer.NewService(transferBackend{manager: manager}, transferSink{manager: manager})
+	return manager
 }
 
 func terminalEncodingCodec(terminalEncoding string) encoding.Encoding {
@@ -658,10 +753,12 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 		return ctx.Err()
 	}
 
-	var historyStream *commandHistoryStream
+	var historyStream *terminalstream.CommandHistoryParser
 	if remoteHistoryActive {
-		historyStream = newCommandHistoryStream()
-		historyStream.terminalEncoding = normalizeTerminalEncoding(terminalEncoding)
+		encoding := normalizeTerminalEncoding(terminalEncoding)
+		historyStream = terminalstream.NewCommandHistoryParser(func(data []byte) string {
+			return decodeTerminalText(data, encoding)
+		})
 	}
 
 	m.mu.Lock()
@@ -705,9 +802,19 @@ func (m *SSHManager) setupSession(ctx context.Context, client *ssh.Client, connK
 	return nil
 }
 
+func (m *SSHManager) applyTransferTuning(settings TransferTuningSettings) {
+	m.transferService.SetTuning(transfer.Tuning{
+		MaxPacketKiB:        settings.MaxPacketKiB,
+		MaxRequestsPerFile:  settings.MaxRequestsPerFile,
+		ConcurrentWrites:    settings.ConcurrentWrites,
+		ApplyToSharedClient: settings.ApplyToSharedClient,
+		Configured:          settings.Configured,
+	})
+}
+
 func (m *SSHManager) newSharedSFTPClient(client *ssh.Client) (*sftp.Client, error) {
-	if resolveTransferTuning().ApplyToSharedClient {
-		return newTunedSFTPClient(client)
+	if m.transferService.Tuning().ApplyToSharedClient {
+		return m.transferService.NewSFTPClient(client)
 	}
 	return sftp.NewClient(client)
 }
@@ -997,7 +1104,7 @@ func (m *SSHManager) disconnectCurrentGen(sessionId string, gen uint64) {
 	})
 }
 
-func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *commandHistoryStream) {
+func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *terminalstream.CommandHistoryParser) {
 	bufPtr := m.bufPool.Get().(*[]byte)
 	defer m.bufPool.Put(bufPtr)
 	buf := *bufPtr
@@ -1073,7 +1180,7 @@ func (m *SSHManager) pipeOutput(sessionId string, r io.Reader, historyStream *co
 }
 
 // pipeLocalOutput pumps bytes from a local PTY/pipe to the frontend. For WSL
-// sessions it runs the bytes through an oscCwdParser (which strips the OSC 733
+// sessions it runs the bytes through the terminalstream OSC CWD parser (which strips the OSC 733
 // CWD markers emitted by the PROMPT_COMMAND hook and decodes the CWD), so the
 // file manager can follow the shell's working directory. cptyHandle is the
 // Windows ConPTY handle (opaque); stdoutPipe is the fallback non-ConPTY reader.
@@ -1111,7 +1218,6 @@ func (m *SSHManager) pipeLocalOutput(sessionId string, cptyHandle any, stdoutPip
 				return
 			}
 			oscParser := curSd.OSCCwdParser
-
 
 			var data []byte
 			if oscParser != nil {
@@ -1218,19 +1324,7 @@ func (m *SSHManager) getSFTPClient(sessionId string) (*sftp.Client, error) {
 
 func (m *SSHManager) abortUploadsForSession(sessionId string) {
 	_ = m.AbortCompressedUpload(sessionId)
-
-	taskIDs := make([]string, 0)
-	m.uploadMu.Lock()
-	for taskID, task := range m.uploadTasks {
-		if task != nil && task.sessionId == sessionId {
-			taskIDs = append(taskIDs, taskID)
-		}
-	}
-	m.uploadMu.Unlock()
-
-	for _, taskID := range taskIDs {
-		_ = m.AbortChunkedUploadTask(taskID)
-	}
+	m.transferService.CancelSession(sessionId)
 }
 
 func (m *SSHManager) Disconnect(sessionId string) bool {
@@ -1402,6 +1496,7 @@ func (m *SSHManager) DisconnectAll() {
 	for _, id := range ids {
 		m.Disconnect(id)
 	}
+	m.transferService.Close()
 }
 
 // OpenTerminal 为已有连接创建新的终端通道
@@ -1649,32 +1744,40 @@ func (m *SSHManager) GetTerminalCwd(sessionId string) (string, error) {
 
 // getLocalCwdForSession returns the CWD for a local terminal session by
 // querying the OS process tree (platform-specific implementation).
-// It snapshots s.Cmd under the lock because CloseLocal may nil it concurrently
-// (the Unix localGetCwd path reads the shell pid from s.Cmd).
 func (m *SSHManager) getLocalCwdForSession(s *SessionData) (string, error) {
 	if s == nil {
 		home, _ := os.UserHomeDir()
 		return home, nil
 	}
 	m.mu.RLock()
-	cmd := s.Cmd
+	wslDistro := s.WSLDistro
+	pid := 0
+	if s.Cmd != nil && s.Cmd.Process != nil {
+		pid = s.Cmd.Process.Pid
+	}
 	m.mu.RUnlock()
-	return localGetCwd(s, cmd)
+	return localsftp.CurrentWorkingDirectory(wslDistro, pid)
 }
 
-// getLocalFullProcessList returns the process list for a local session.
+func localSysinfoDependencies() localsysinfo.Dependencies {
+	return localsysinfo.Dependencies{
+		ProbeScript:      dynamicProbeScript,
+		ParseProbe:       parseProbeOutput,
+		ParseProcessList: parseFullProcessListOutput,
+		ParseStaticInfo:  parseServerStaticInfoOutput,
+	}
+}
+
+func localSysinfoSession(session *SessionData) localsysinfo.Session {
+	if session == nil {
+		return localsysinfo.Session{}
+	}
+	return localsysinfo.Session{WSLDistro: session.WSLDistro}
+}
+
 // On Unix/WSL it runs ps; on Windows-native shells it is not yet supported.
 func getLocalFullProcessList(s *SessionData) ([]map[string]interface{}, error) {
-	info, err := getLocalSystemInfoImpl(s, false)
-	if err != nil {
-		return nil, err
-	}
-	if procs, ok := info["processes"]; ok {
-		if list, ok := procs.([]map[string]interface{}); ok {
-			return list, nil
-		}
-	}
-	return nil, nil
+	return localsysinfo.FullProcessList(localSysinfoSession(s), localSysinfoDependencies())
 }
 
 // StartLocalCwdMonitor starts a background polling loop to track the CWD of local sessions
@@ -2092,7 +2195,7 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 	localSd, localOk := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if localOk && localSd.IsLocal {
-		return getLocalSystemInfoImpl(localSd, includeNetworkConnections)
+		return localsysinfo.SystemInfo(localSysinfoSession(localSd), includeNetworkConnections, localSysinfoDependencies())
 	}
 	client, _, err := m.getClientEntry(sessionId)
 	if err != nil {
@@ -2900,7 +3003,10 @@ func (m *SSHManager) KillProcess(sessionId string, pid string) error {
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		return localKillProcess(sd, pid)
+		m.mu.RLock()
+		wslDistro := sd.WSLDistro
+		m.mu.RUnlock()
+		return localsysinfo.KillProcess(localsysinfo.Session{WSLDistro: wslDistro}, pid)
 	}
 
 	client, _, err := m.getClientEntry(sessionId)
@@ -2920,7 +3026,10 @@ func (m *SSHManager) GetProcessEnv(sessionId string, pid string) ([]string, erro
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		return localGetProcessEnv(sd, pid)
+		m.mu.RLock()
+		wslDistro := sd.WSLDistro
+		m.mu.RUnlock()
+		return localsysinfo.ProcessEnvironment(localsysinfo.Session{WSLDistro: wslDistro}, pid)
 	}
 
 	client, _, err := m.getClientEntry(sessionId)
@@ -2955,7 +3064,10 @@ func (m *SSHManager) GetServerStaticInfo(sessionId string) (result map[string]in
 	sd, hasSd := m.sessions[sessionId]
 	m.mu.RUnlock()
 	if hasSd && sd.IsLocal {
-		return getLocalServerStaticInfoImpl(sd)
+		m.mu.RLock()
+		wslDistro := sd.WSLDistro
+		m.mu.RUnlock()
+		return localsysinfo.StaticInfo(localsysinfo.Session{WSLDistro: wslDistro}, localSysinfoDependencies())
 	}
 
 	client, _, err := m.getClientEntry(sessionId)
@@ -3980,6 +4092,78 @@ func (m *SSHManager) RenameItemContext(ctx context.Context, sessionId string, ol
 	return sftpClient.Rename(oldPath, newPath)
 }
 
+func (m *SSHManager) BeginChunkedUploadTask(sessionId string, remoteDir string, maxClients int) (string, error) {
+	return m.transferService.BeginChunkedUploadTask(sessionId, remoteDir, maxClients)
+}
+
+func (m *SSHManager) BeginChunkedUploadFile(taskID string, relativePath string, size int64, totalChunks int) (string, error) {
+	return m.transferService.BeginChunkedUploadFile(taskID, relativePath, size, totalChunks)
+}
+
+func (m *SSHManager) UploadChunkBase64(taskID string, fileID string, chunkIndex int, offset int64, base64Content string) error {
+	return m.transferService.UploadChunkBase64(taskID, fileID, chunkIndex, offset, base64Content)
+}
+
+func (m *SSHManager) CompleteChunkedUploadFile(taskID string, fileID string) error {
+	return m.transferService.CompleteChunkedUploadFile(taskID, fileID)
+}
+
+func (m *SSHManager) AbortChunkedUploadFile(taskID string, fileID string) error {
+	return m.transferService.AbortChunkedUploadFile(taskID, fileID)
+}
+
+func (m *SSHManager) FinishChunkedUploadTask(taskID string) error {
+	return m.transferService.FinishChunkedUploadTask(taskID)
+}
+
+func (m *SSHManager) AbortChunkedUploadTask(taskID string) error {
+	return m.transferService.AbortChunkedUploadTask(taskID)
+}
+
+func (m *SSHManager) DownloadFileToLocal(sessionId string, downloadID string, remotePath string, localPath string, optionsJSON string) error {
+	return m.transferService.DownloadFileToLocal(sessionId, downloadID, remotePath, localPath, optionsJSON)
+}
+
+func (m *SSHManager) DownloadDirectoryToLocal(sessionId string, downloadID string, remotePath string, localRoot string, optionsJSON string) error {
+	return m.transferService.DownloadDirectoryToLocal(sessionId, downloadID, remotePath, localRoot, optionsJSON)
+}
+
+func (m *SSHManager) DownloadDirectoryCompressed(sessionId string, downloadID string, remotePath string, localRoot string, optionsJSON string) error {
+	return m.transferService.DownloadDirectoryCompressed(sessionId, downloadID, remotePath, localRoot, optionsJSON)
+}
+
+func (m *SSHManager) AbortDownloadTransfer(identifier string) error {
+	return m.transferService.AbortDownloadTransfer(identifier)
+}
+
+func (m *SSHManager) UploadLocalPathsCompressed(sessionId string, uploadID string, maxConcurrent int, localPaths []string, remoteDir string) error {
+	return m.transferService.UploadLocalPathsCompressed(sessionId, uploadID, maxConcurrent, localPaths, remoteDir)
+}
+
+func (m *SSHManager) AutoRepairCompressedUploadTargets(sessionId string, localPaths []string, remoteDir string) error {
+	return m.transferService.AutoRepairCompressedUploadTargets(sessionId, localPaths, remoteDir)
+}
+
+func (m *SSHManager) AbortCompressedUpload(identifier string) error {
+	return m.transferService.AbortCompressedUpload(identifier)
+}
+
+func (m *SSHManager) TransferFileContext(ctx context.Context, sessionID string, request mcpserver.TransferFileRequest) (mcpserver.TransferTaskSnapshot, error) {
+	return m.transferService.TransferFileContext(ctx, sessionID, request)
+}
+
+func (m *SSHManager) ListTransfersContext(ctx context.Context, sessionID string) ([]mcpserver.TransferTaskSnapshot, error) {
+	return m.transferService.ListTransfersContext(ctx, sessionID)
+}
+
+func (m *SSHManager) PreviewDownloadConflicts(sessionId string, remotePath string, localPath string, isDirectory bool) ([]map[string]interface{}, error) {
+	sftpClient, err := m.getSFTPClient(sessionId)
+	if err != nil {
+		return nil, err
+	}
+	return transfer.PreviewDownloadConflicts(sftpClient, remotePath, localPath, isDirectory)
+}
+
 func (m *SSHManager) CopyItem(sessionId string, srcPath string, dstPath string) error {
 	return m.CopyItemContext(context.Background(), sessionId, srcPath, dstPath)
 }
@@ -4005,7 +4189,7 @@ func (m *SSHManager) CopyItemContext(ctx context.Context, sessionId string, srcP
 		if err != nil {
 			return err
 		}
-		return copyViaSFTP(sftpClient, srcPath, dstPath)
+		return transfer.CopyViaSFTP(sftpClient, srcPath, dstPath)
 	}
 	client, _, err := m.getClientEntry(sessionId)
 	if err != nil {

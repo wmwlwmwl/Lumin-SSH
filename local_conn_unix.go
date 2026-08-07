@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 
+	"luminssh-go/internal/localsftp"
+
 	"github.com/creack/pty"
 )
 
@@ -78,14 +80,15 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 
 	// Start an embedded SFTP server so the file manager can work for this session.
 	connKey := "local://" + sessionId
-	mapPath := unixPathMapper("/")
-	if sftpSrv, entry, err := startLocalSFTPServer(mapPath, nil); err != nil {
+	mapPath := localsftp.UnixPathMapper("/")
+	if sftpServer, sshClient, sftpClient, err := localsftp.Start(mapPath, nil); err != nil {
 		log.Printf("[connectLocal] embedded SFTP server failed (file manager unavailable): %v", err)
 	} else {
+		entry := &sshClientEntry{Client: sshClient, SFTP: sftpClient}
 		a.sshManager.mu.Lock()
 		a.sshManager.clients[connKey] = entry
 		sd.ConnKey = connKey
-		sd.LocalSFTPSrv = sftpSrv
+		sd.LocalSFTPSrv = sftpServer
 		a.sshManager.mu.Unlock()
 	}
 
@@ -125,7 +128,7 @@ func (m *SSHManager) ResizeLocal(s *SessionData, cols, rows int) {
 
 // CloseLocal closes the UNIX PTY handle and kills the process.
 // Field mutation happens under m.mu so concurrent readers (ResizeLocal, the
-// CWD monitor's localGetCwd) never observe a half-nulled session. The actual
+// CWD monitor and localsftp.CurrentWorkingDirectory never observe a half-nulled session. The actual
 // Close/Kill calls run outside the lock since they may block.
 func (m *SSHManager) CloseLocal(s *SessionData) {
 	m.mu.Lock()

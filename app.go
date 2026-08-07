@@ -24,6 +24,11 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/externaledit"
+	"luminssh-go/internal/localopen"
+	"luminssh-go/internal/platformupdate"
+	"luminssh-go/internal/transfer"
+	"luminssh-go/internal/updatedownload"
 	runtimebundle "luminssh-go/module/runtimebundle"
 	runtimeenv "luminssh-go/module/runtimeenv"
 	runtimeinstaller "luminssh-go/module/runtimeinstaller"
@@ -31,6 +36,64 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+type externalEditRemoteFiles struct {
+	manager *SSHManager
+}
+
+func (r externalEditRemoteFiles) Size(sessionID string, remotePath string) (int64, error) {
+	client, err := r.manager.getSFTPClient(sessionID)
+	if err != nil {
+		return 0, err
+	}
+	info, err := client.Stat(remotePath)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+func (r externalEditRemoteFiles) Read(sessionID string, remotePath string) ([]byte, error) {
+	return r.manager.ReadFileBytes(sessionID, remotePath)
+}
+
+func (r externalEditRemoteFiles) Write(sessionID string, remotePath string, data []byte) error {
+	return r.manager.WriteFile(sessionID, remotePath, string(data))
+}
+
+type externalEditEventSink struct {
+	app *App
+}
+
+func (s externalEditEventSink) Emit(event string, payload map[string]interface{}) {
+	if s.app != nil && s.app.ctx != nil {
+		runtime.EventsEmit(s.app.ctx, event, payload)
+	}
+}
+
+type externalEditOpener struct{}
+
+func (externalEditOpener) OpenDefault(localPath string) error {
+	return localopen.OpenDocument(localPath)
+}
+
+func (externalEditOpener) OpenWith(editorPath string, localPath string) error {
+	cleanedEditor := filepath.Clean(strings.TrimSpace(editorPath))
+	cleanedFile := filepath.Clean(strings.TrimSpace(localPath))
+	if cleanedEditor == "" {
+		return fmt.Errorf("missing editor path")
+	}
+	if _, err := os.Stat(cleanedEditor); err != nil {
+		return err
+	}
+	if _, err := os.Stat(cleanedFile); err != nil {
+		return err
+	}
+	if goruntime.GOOS == "darwin" && strings.HasSuffix(strings.ToLower(cleanedEditor), ".app") {
+		return exec.Command("open", "-a", cleanedEditor, cleanedFile).Start()
+	}
+	return exec.Command(cleanedEditor, cleanedFile).Start()
+}
 
 // App struct
 type App struct {
@@ -40,10 +103,10 @@ type App struct {
 	wsPort                    int
 	wsToken                   string
 	wsMu                      sync.Mutex
-	wsConns                   map[string]*wsEntry    // sessionId -> active WebSocket
+	wsConns                   map[string]*wsEntry      // sessionId -> active WebSocket
 	wsPending                 map[string]*wsPendingBuf // WS 注册前到达的输出缓冲（本地终端 PTY 首帧）
-	wsServer                  *http.Server        // WebSocket HTTP 服务器，用于优雅关闭
-	wsListener                net.Listener        // WebSocket 监听器，用于关闭时释放端口
+	wsServer                  *http.Server             // WebSocket HTTP 服务器，用于优雅关闭
+	wsListener                net.Listener             // WebSocket 监听器，用于关闭时释放端口
 	mainLivenessLockPath      string
 	mainLivenessLockRelease   func()
 	builtinProcessMu          sync.Mutex
@@ -66,7 +129,7 @@ type App struct {
 	aiSkipNextAutomaticReqMap map[string]bool
 	liveWorkspaceStateMu      sync.RWMutex
 	liveWorkspaceState        string
-	externalEdit              *ExternalEditManager
+	externalEdit              *externaledit.Manager
 }
 
 // wsEntry 包装一个 WebSocket 连接及其独立写锁。
@@ -139,7 +202,11 @@ func NewApp() *App {
 		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
-	app.externalEdit = NewExternalEditManager(app)
+	app.externalEdit = externaledit.NewManager(
+		externalEditRemoteFiles{manager: app.sshManager},
+		externalEditEventSink{app: app},
+		externalEditOpener{},
+	)
 	return app
 }
 
@@ -150,7 +217,7 @@ func (a *App) startup(ctx context.Context) {
 	a.sshManager.ctx = ctx // Give SSH manager access to Wails events
 	a.sshManager.app = a   // Give SSH manager access to WebSocket registry
 	a.configManager.wailsCtx = ctx
-	setTransferTuningResolver(a.configManager.GetTransferTuningSettings)
+	a.sshManager.applyTransferTuning(a.configManager.GetTransferTuningSettings())
 	if err := a.ensureMainLivenessLock(); err != nil {
 		log.Printf("failed to acquire main liveness lock: %v", err)
 	}
@@ -1089,7 +1156,11 @@ func (a *App) GetFileManagerSettings() map[string]interface{} {
 }
 
 func (a *App) SaveTransferTuningSettings(maxPacketKiB int, maxRequestsPerFile int, concurrentWrites bool, applyToSharedClient bool) error {
-	return a.configManager.SaveTransferTuningSettings(maxPacketKiB, maxRequestsPerFile, concurrentWrites, applyToSharedClient)
+	if err := a.configManager.SaveTransferTuningSettings(maxPacketKiB, maxRequestsPerFile, concurrentWrites, applyToSharedClient); err != nil {
+		return err
+	}
+	a.sshManager.applyTransferTuning(a.configManager.GetTransferTuningSettings())
+	return nil
 }
 
 // SaveChmodDialogSettings persists chmod dialog preferences
@@ -1756,7 +1827,7 @@ func resolveDownloadBasePath(remotePath string, defaultDir string, isDirectory b
 	}
 	baseName := filepath.Base(strings.TrimSpace(remotePath))
 	if isDirectory {
-		baseName = remoteDownloadBaseName(remotePath)
+		baseName = transfer.RemoteDownloadBaseName(remotePath)
 	}
 	return filepath.Join(defaultDirectory, baseName)
 }
@@ -1766,14 +1837,14 @@ func resolveDownloadLocalPath(localPath string, isDirectory bool, optionsJSON st
 	if cleaned == "" {
 		return ""
 	}
-	options := parseDownloadConflictOptions(optionsJSON)
-	if options.strategyFor(".") != downloadConflictStrategyAutoRename {
+	options := transfer.ParseDownloadConflictOptions(optionsJSON)
+	if options.StrategyFor(".") != transfer.DownloadConflictStrategyAutoRename {
 		return cleaned
 	}
 	if _, err := os.Stat(cleaned); os.IsNotExist(err) {
 		return cleaned
 	}
-	renamedPath, err := buildDownloadRenamedPath(cleaned, options.RenameSuffixMode, isDirectory)
+	renamedPath, err := transfer.BuildDownloadRenamedPath(cleaned, options.RenameSuffixMode, isDirectory)
 	if err != nil {
 		return cleaned
 	}
@@ -1980,24 +2051,6 @@ func (a *App) AbortDownloadTransfer(identifier string) error {
 	return a.sshManager.AbortDownloadTransfer(identifier)
 }
 
-func openLocalDocument(path string) error {
-	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" {
-		return fmt.Errorf("missing local path")
-	}
-	if _, err := os.Stat(cleaned); err != nil {
-		return err
-	}
-	switch goruntime.GOOS {
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", cleaned).Start()
-	case "darwin":
-		return exec.Command("open", cleaned).Start()
-	default:
-		return exec.Command("xdg-open", cleaned).Start()
-	}
-}
-
 func (a *App) OpenBuiltinProviderDoc(providerID string) error {
 	normalizedProviderID := strings.TrimSpace(providerID)
 	if normalizedProviderID == "" {
@@ -2014,11 +2067,11 @@ func (a *App) OpenBuiltinProviderDoc(providerID string) error {
 		return err
 	}
 	docPath := filepath.Join(getProgramDirectory(), "modules", "kimiapi", fileName)
-	return openLocalDocument(docPath)
+	return localopen.OpenDocument(docPath)
 }
 
 func (a *App) OpenLocalPathInExplorer(localPath string, isDirectory bool) error {
-	return openLocalPathInExplorer(localPath, isDirectory)
+	return localopen.Reveal(localPath, isDirectory)
 }
 
 // ReadPrivateKeyFile opens a file dialog to read a private key file
@@ -2848,7 +2901,7 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 	// ponytail: 对每个 URL 尝试完整的 下载→写入磁盘 流程，失败再试下一个。
 	// 旧实现只在 Get() 阶段切换 URL，io.Copy 阶段超时直接放弃（"failed to save update file"），
 	// 不会重试代理 URL。大文件 + 慢网络下直连极易在 body 读取阶段超时。
-	client := newUpdateDownloadHTTPClient()
+	client := updatedownload.NewHTTPClient()
 	ghProxies := []string{"https://ghproxy.net/", "https://gh-proxy.com/", "https://proxy.gitwarp.top/"}
 	var tryUrls []string
 	if strings.Contains(downloadUrl, "github.com") {
@@ -2900,20 +2953,28 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 		}
 	}
 
+	downloader := updatedownload.Downloader{
+		Client: client,
+		Progress: func(progress float64) {
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "app-update-progress", progress)
+			}
+		},
+	}
 	var lastErr error
 	var failedSources []string
 	for i, u := range tryUrls {
-		src := updateDownloadSourceLabel(u)
-		err := downloadUpdatePackageWithFallback(client, a.ctx, u, targetPath, "app-update-progress")
+		src := updatedownload.SourceLabel(u)
+		err := downloader.Download(a.ctx, u, targetPath)
 		if err != nil {
 			_ = os.Remove(targetPath)
 			failedSources = append(failedSources, src)
 			lastErr = err
 			if i+1 < len(tryUrls) {
-				next := updateDownloadSourceLabel(tryUrls[i+1])
+				next := updatedownload.SourceLabel(tryUrls[i+1])
 				fmt.Printf("[UpdateApp] %s 整源失败，换源 → %s: %v\n", src, next, err)
 				// 换源时进度归零，避免接在上一源半成品后面
-				emitUpdateDownloadProgress(a.ctx, "app-update-progress", 0)
+				downloader.Progress(0)
 			} else {
 				fmt.Printf("[UpdateApp] %s 整源失败，无更多源: %v\n", src, err)
 			}
@@ -2986,11 +3047,11 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 
 	// 3. 处理 .deb 包安装（Linux）
 	if isDeb {
-		if err := installDebPackage(targetPath); err != nil {
+		if err := platformupdate.InstallDeb(targetPath); err != nil {
 			return err
 		}
 		// dpkg -i 已替换 /usr/bin/lumin，重启为新版本
-		if err := restartApp(exePath); err != nil {
+		if err := platformupdate.Restart(exePath); err != nil {
 			return err
 		}
 		os.Exit(0)
@@ -2999,10 +3060,10 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 
 	// 3.5 处理 .rpm 包安装（Linux）
 	if isRpm {
-		if err := installRpmPackage(targetPath); err != nil {
+		if err := platformupdate.InstallRPM(targetPath); err != nil {
 			return err
 		}
-		if err := restartApp(exePath); err != nil {
+		if err := platformupdate.Restart(exePath); err != nil {
 			return err
 		}
 		os.Exit(0)
@@ -3011,7 +3072,7 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 
 	// 4. macOS DMG 由独立更新进程替换 .app，并在旧进程退出后重启。
 	if isDmg {
-		if err := installDmgPackage(targetPath, exePath); err != nil {
+		if err := platformupdate.InstallDMG(targetPath, exePath); err != nil {
 			return err
 		}
 		os.Exit(0)
@@ -3020,7 +3081,7 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 
 	// Windows 安装包交给系统安装器处理；其他文件走 Portable 替换。
 	if isSetup {
-		if err := launchInstaller(targetPath); err != nil {
+		if err := platformupdate.LaunchInstaller(targetPath); err != nil {
 			return err
 		}
 		// 退出当前应用以解除目录锁定
@@ -3030,7 +3091,7 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 
 	// Portable 热更替换逻辑
 	if needsElevated {
-		if err := applyUpdateElevated(targetPath, exePath); err != nil {
+		if err := platformupdate.ApplyElevated(targetPath, exePath); err != nil {
 			return err
 		}
 		os.Exit(0)
@@ -3050,7 +3111,7 @@ func (a *App) UpdateApp(downloadUrl string, filename string, proxyFirst bool) er
 		return fmt.Errorf("failed to apply update file: %w", err)
 	}
 
-	if err := restartApp(exePath); err != nil {
+	if err := platformupdate.Restart(exePath); err != nil {
 		return err
 	}
 

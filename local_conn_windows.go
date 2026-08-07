@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"unicode/utf16"
 
+	"luminssh-go/internal/localsftp"
+	"luminssh-go/internal/terminalstream"
+
 	"github.com/UserExistsError/conpty"
 )
 
@@ -159,10 +162,10 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	}
 	if isWSL {
 		// The WSL shell emits OSC CWD markers (ESC]733;<b64>BEL) on every prompt.
-		// pipeLocalOutput parses them with an oscCwdParser to drive the file manager.
+		// pipeLocalOutput parses OSC CWD markers to drive the file manager.
 		sd.WSLDistro = distroName
 		sd.RemoteHistoryActive = true
-		sd.OSCCwdParser = newOSCCwdParser()
+		sd.OSCCwdParser = terminalstream.NewOSCCWDParser()
 		sd.PromptReady = false
 	} else if isPowerShell(shellPath) {
 		// PowerShell emits OSC 733 markers via the injected prompt hook. Parse them
@@ -171,7 +174,7 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 		// which needs a LUMIN_CMD marker stream PowerShell doesn't have, leaving the
 		// session stuck "busy". PromptReady stays true so the gate/busy state is
 		// unaffected; CWD still flows through the OSCCwdParser path independently.
-		sd.OSCCwdParser = newOSCCwdParser()
+		sd.OSCCwdParser = terminalstream.NewOSCCWDParser()
 		sd.PromptReady = true
 	} else {
 		// CMD: no shell hook available, keep the home-dir fallback.
@@ -195,18 +198,19 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	var mapPath func(string) string
 	var listRoot func() ([]os.FileInfo, error)
 	if isWSL {
-		mapPath = wslPathMapper(distroName)
+		mapPath = localsftp.WSLPathMapper(distroName)
 	} else {
-		mapPath = winPathMapper()
-		listRoot = winListRoot
+		mapPath = localsftp.WindowsPathMapper()
+		listRoot = localsftp.ListRoot
 	}
-	if sftpSrv, entry, err := startLocalSFTPServer(mapPath, listRoot); err != nil {
+	if sftpServer, sshClient, sftpClient, err := localsftp.Start(mapPath, listRoot); err != nil {
 		log.Printf("[connectLocal] embedded SFTP server failed (file manager unavailable): %v", err)
 	} else {
+		entry := &sshClientEntry{Client: sshClient, SFTP: sftpClient}
 		a.sshManager.mu.Lock()
 		a.sshManager.clients[connKey] = entry
 		sd.ConnKey = connKey
-		sd.LocalSFTPSrv = sftpSrv
+		sd.LocalSFTPSrv = sftpServer
 		a.sshManager.mu.Unlock()
 	}
 
@@ -226,7 +230,7 @@ func (a *App) connectLocal(sessionId string, name string, shellPath string, cwd 
 	}()
 
 	// Pipe output from local pty to WebSocket. For WSL sessions the stream is
-	// run through commandHistoryStream (same as remote SSH) so LUMIN_CWD markers
+	// run through the terminalstream command parser (same as remote SSH) so LUMIN_CWD markers
 	// are parsed into CWD changes that drive the file manager follow.
 	a.sshManager.pipeLocalOutput(sessionId, cptyHandle, stdoutPipe)
 
@@ -272,7 +276,7 @@ func wslPromptCommandHook() string {
 // powershellPromptHookScript returns the PowerShell script that overrides the
 // `prompt` function so every prompt reports the current directory as an OSC 733
 // marker (ESC]733;<base64>SFTP-path>BEL). This is the PowerShell equivalent of
-// wslPromptCommandHook: it lets pipeLocalOutput (via oscCwdParser) track CWD and
+// wslPromptCommandHook: it lets pipeLocalOutput track CWD and
 // drive the file manager's follow, since PowerShell has no /proc/<pid>/cwd to poll.
 //
 // The new prompt chains to the user's pre-existing prompt ScriptBlock (their

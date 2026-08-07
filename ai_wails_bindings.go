@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ai "luminssh-go/internal/ai"
+	"luminssh-go/internal/localopen"
 	"luminssh-go/internal/mcp"
 	"luminssh-go/internal/mcpserver"
 
@@ -153,7 +154,7 @@ func (b *AIBindings) OpenAIConversationFolder(conversationID string) error {
 	if b == nil || b.app == nil || b.app.configManager == nil {
 		return fmt.Errorf("config manager unavailable")
 	}
-	return openLocalPathInExplorer(filepath.Join(b.app.configManager.configDir, "tasks", trimmedConversationID), true)
+	return localopen.Reveal(filepath.Join(b.app.configManager.configDir, "tasks", trimmedConversationID), true)
 }
 
 func (b *AIBindings) PreprocessAIConversationLongText(conversationID string, text string) (string, error) {
