@@ -12,6 +12,7 @@ import (
 	"luminssh-go/internal/config"
 	"luminssh-go/internal/localopen"
 	"luminssh-go/internal/mcp"
+	"luminssh-go/internal/mcpbridge"
 	"luminssh-go/internal/mcpserver"
 	"luminssh-go/internal/sshmanager"
 
@@ -40,7 +41,7 @@ func (b *AIBindings) runtime() *ai.App {
 		var sessionProvider ai.SessionProviderDelegate
 		var sshDelegate ai.SSHDelegate
 		if b.app != nil {
-			sessionProvider = mcpSessionProvider{app: b.app}
+			sessionProvider = mcpbridge.SessionProvider{Host: newMCPHost(b.app)}
 			sshDelegate = aiSSHDelegate{manager: b.app.sshManager}
 		}
 		b.runtimeApp = ai.NewRuntimeApp(context.Background(), configDir, sessionProvider, sshDelegate)
@@ -222,7 +223,7 @@ func (b *AIBindings) SaveAIGlobalSettings(jsonStr string) error {
 	}
 	current := b.runtime().GetAIGlobalSettings()
 	if previous.MCPEnabled != current.MCPEnabled || previous.MCPAllowBrowserCalls != current.MCPAllowBrowserCalls {
-		applyMCPServiceState(b.app)
+		mcpbridge.ApplyServiceState(b.app.configManager.GetConfigDir(), newMCPHost(b.app))
 	}
 	previous.CurrentProviderID = ""
 	current.CurrentProviderID = ""

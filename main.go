@@ -4,9 +4,11 @@ import (
 	"context"
 	"embed"
 	"os"
+	goruntime "runtime"
 	"sync"
 	"time"
 
+	"luminssh-go/internal/mcpbridge"
 	"luminssh-go/internal/platformruntime"
 
 	"github.com/energye/systray"
@@ -21,6 +23,19 @@ var assets embed.FS
 
 //go:embed all:module
 var embeddedModuleFS embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
+
+//go:embed build/windows/icon.ico
+var windowsIcon []byte
+
+var icon = func() []byte {
+	if goruntime.GOOS == "windows" {
+		return windowsIcon
+	}
+	return appIcon
+}()
 
 // forceShowWindow 唤醒隐藏到托盘/久置最小化的窗口。
 // 不先 Hide 再 Show：久置后 Show 失败会把窗口永久卡在隐藏态。
@@ -119,7 +134,7 @@ func main() {
 		},
 		OnShutdown: func(ctx context.Context) {
 			platformruntime.StopSingletonServer()
-			stopMCPServer(app)
+			mcpbridge.StopServer(newMCPHost(app))
 			cleanupTray()
 		},
 		// 拦截窗口关闭：弹出对话框让用户选择退出 / 系统托盘 / 取消

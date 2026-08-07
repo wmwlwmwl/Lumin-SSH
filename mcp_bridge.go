@@ -4,54 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	ai "luminssh-go/internal/ai"
-	"luminssh-go/internal/config"
 	mcp "luminssh-go/internal/mcp"
 	"luminssh-go/internal/mcpbridge"
 	"luminssh-go/internal/mcpserver"
 )
 
-func loadMCPServiceSettings(app *App) mcp.ServiceSettings {
-	configDir := ""
-	if app != nil && app.configManager != nil {
-		configDir = app.configManager.GetConfigDir()
-	}
-	settings := ai.LoadAIGlobalSettings(configDir)
-	return mcp.ServiceSettings{
-		Enabled:           settings.MCPEnabled,
-		AllowBrowserCalls: settings.MCPAllowBrowserCalls,
-	}
-}
-
-func applyMCPServiceState(app *App) {
-	settings := loadMCPServiceSettings(app)
-	mcp.StopServer(newMCPHost(app))
-	if !settings.Enabled {
-		return
-	}
-	mcp.StartServer(newMCPHost(app), settings)
-}
-func initializeMCPClientHub(app *App) {
-	if app == nil || app.configManager == nil {
-		return
-	}
-	mcp.InitializeClientHub(app.configManager.GetConfigDir())
-}
-
-func startMCPServer(app *App) {
-	initializeMCPClientHub(app)
-	applyMCPServiceState(app)
-}
-
-func stopMCPServer(app *App) {
-	mcp.StopServer(newMCPHost(app))
-}
-
 func (a *App) GetMCPServerInfo() map[string]interface{} {
-	return mcp.GetServerInfo(newMCPHost(a), loadMCPServiceSettings(a))
+	return mcp.GetServerInfo(newMCPHost(a), mcpbridge.LoadServiceSettings(a.configManager.GetConfigDir()))
 }
 func (a *App) GetMCPSettingsState() map[string]interface{} {
-	serviceInfo := mcp.GetServerInfo(newMCPHost(a), loadMCPServiceSettings(a))
+	serviceInfo := mcp.GetServerInfo(newMCPHost(a), mcpbridge.LoadServiceSettings(a.configManager.GetConfigDir()))
 	clientState := map[string]any{
 		"servers":           []mcp.ServerRuntime{},
 		"globalConfigPath":  "",
@@ -145,34 +107,13 @@ func (a *App) ReloadMCPGlobalServers() error {
 	return hub.ReloadGlobalOnly()
 }
 
-func applyMCPOutputCompressionSettings(settings mcp.OutputCompressionSettings) {
-	mcp.ApplyOutputCompressionSettings(settings)
-}
-
-func getMCPOutputCompressionSettings(cm *config.ConfigManager) mcp.OutputCompressionSettings {
-	if cm == nil {
-		return mcp.OutputCompressionSettings{
-			TerminalOutputLineLimit:      mcp.DefaultTerminalOutputLineLimit,
-			TerminalOutputCharacterLimit: mcp.DefaultTerminalOutputCharacterLimit,
-		}
-	}
-	return mcp.LoadOutputCompressionSettings(cm.GetConfigDir())
-}
-
-func saveMCPOutputCompressionSettings(cm *config.ConfigManager, settings mcp.OutputCompressionSettings) error {
-	if cm == nil {
-		return nil
-	}
-	return mcp.SaveOutputCompressionSettings(cm.GetConfigDir(), settings)
-}
-
 func (a *App) GetMCPOutputCompressionSettings() map[string]int {
 	settings := mcp.OutputCompressionSettings{
 		TerminalOutputLineLimit:      mcp.DefaultTerminalOutputLineLimit,
 		TerminalOutputCharacterLimit: mcp.DefaultTerminalOutputCharacterLimit,
 	}
 	if a != nil && a.configManager != nil {
-		settings = getMCPOutputCompressionSettings(a.configManager)
+		settings = mcp.LoadOutputCompressionSettings(a.configManager.GetConfigDir())
 	}
 	return map[string]int{
 		"terminalOutputLineLimit":      settings.TerminalOutputLineLimit,
@@ -186,31 +127,16 @@ func (a *App) SaveMCPOutputCompressionSettings(lineLimit int, characterLimit int
 		TerminalOutputCharacterLimit: characterLimit,
 	})
 	if a != nil && a.configManager != nil {
-		if err := saveMCPOutputCompressionSettings(a.configManager, settings); err != nil {
+		if err := mcp.SaveOutputCompressionSettings(a.configManager.GetConfigDir(), settings); err != nil {
 			return err
 		}
 	}
-	applyMCPOutputCompressionSettings(settings)
+	mcp.ApplyOutputCompressionSettings(settings)
 	return nil
 }
 
-type mcpSessionProvider struct {
-	app *App
-}
-
-func (p mcpSessionProvider) ListConnectedSessions() ([]mcpserver.SessionDescriptor, error) {
-	return newMCPHost(p.app).ListSessionDescriptors()
-}
-
-func (p mcpSessionProvider) GetWorkspaceState() string {
-	if p.app == nil || p.app.configManager == nil {
-		return ""
-	}
-	return p.app.GetWorkspaceState()
-}
-
 func (a *App) ListConnectedSessions() ([]mcpserver.ConnectedSession, error) {
-	return mcpserver.NewService(mcpSessionProvider{app: a}).ListConnectedSessions()
+	return mcpserver.NewService(mcpbridge.SessionProvider{Host: newMCPHost(a)}).ListConnectedSessions()
 }
 
 // newMCPHost 构造 mcpbridge.Host，注入 App 的具体依赖。

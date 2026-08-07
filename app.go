@@ -27,6 +27,7 @@ import (
 	"luminssh-go/internal/config"
 	"luminssh-go/internal/externaledit"
 	"luminssh-go/internal/localopen"
+	"luminssh-go/internal/mcpbridge"
 	"luminssh-go/internal/ping"
 	"luminssh-go/internal/platformruntime"
 	"luminssh-go/internal/platformupdate"
@@ -335,9 +336,9 @@ func (a *App) startup(ctx context.Context) {
 
 	a.configManager.CleanupOrphanedHistory()
 	go a.configManager.AutoSync()
-	applyMCPOutputCompressionSettings(getMCPOutputCompressionSettings(a.configManager))
+	mcpbridge.InitOutputCompression(a.configManager.GetConfigDir())
 	// MCP 客户端会连远端（内置 context7），同步握手会拖慢首屏；后台启动即可。
-	go startMCPServer(a)
+	go mcpbridge.StartServer(a.configManager.GetConfigDir(), newMCPHost(a))
 }
 
 // AckClose 前端响应了关闭弹窗（tray/cancel），取消 5s 兜底强制退出
