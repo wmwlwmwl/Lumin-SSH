@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -164,6 +165,7 @@ type PersistedPortForward struct {
 
 type ConfigManager struct {
 	configDir                 string
+	programDir                string
 	connFile                  string
 	credFile                  string
 	davFile                   string
@@ -195,6 +197,7 @@ type ConfigManager struct {
 	syncEventForTest          func(string, map[string]interface{})
 	syncProvidersForTest      func() ([]providerEntry, []providerFailure)
 	allSyncProvidersForTest   func() ([]providerEntry, []providerFailure)
+	onDeleteConnection        func(string) // 删除连接时回调（清理 pingStates 等包级状态）
 }
 
 func NewConfigManager() *ConfigManager {
@@ -1165,7 +1168,9 @@ func (c *ConfigManager) DeleteConnection(id string) bool {
 	c.connCacheDirty = true // 标记缓存需要刷新
 
 	// 清理该连接的延迟检测 Banner 状态，避免 pingStates 无限增长。
-	clearPingHostState(id)
+	if c.onDeleteConnection != nil {
+		c.onDeleteConnection(id)
+	}
 
 	// 清理该服务器的历史文件
 	histPath := filepath.Join(c.historyDir, id+".json")
@@ -1245,7 +1250,9 @@ func (c *ConfigManager) BatchDeleteConnections(ids []string) {
 
 	for _, id := range ids {
 		os.Remove(filepath.Join(c.historyDir, id+".json"))
-		clearPingHostState(id) // 清理延迟检测 Banner 状态，避免 pingStates 无限增长。
+		if c.onDeleteConnection != nil {
+			c.onDeleteConnection(id) // 清理延迟检测 Banner 状态，避免 pingStates 无限增长。
+		}
 	}
 	go c.AutoSync()
 }
@@ -1852,6 +1859,11 @@ func normalizeFileManagerSmartUncompressConflictStrategy(value string) string {
 	default:
 		return "auto_rename"
 	}
+}
+
+// NormalizeFileManagerSmartUncompressConflictStrategy 导出包装器
+func NormalizeFileManagerSmartUncompressConflictStrategy(value string) string {
+	return normalizeFileManagerSmartUncompressConflictStrategy(value)
 }
 
 func (c *ConfigManager) getFileManagerSettingsLocked() FileManagerSettings {
@@ -2493,4 +2505,65 @@ func (c *ConfigManager) CleanupOrphanedHistory() {
 			os.Remove(path)
 		}
 	}
+}
+
+// ─── 对外依赖注入 ──────────────────────────────────────────
+
+// SetProgramDir 注入程序目录路径（用于内置主题包等需要程序路径的场景）
+func (c *ConfigManager) SetProgramDir(dir string) {
+	c.programDir = dir
+}
+
+// SetWailsCtx 注入 Wails 上下文（用于向前端发送同步事件）
+func (c *ConfigManager) SetWailsCtx(ctx context.Context) {
+	c.wailsCtx = ctx
+}
+
+// SetOnDeleteConnection 注入删除连接回调（清理 pingStates 等包级状态）
+func (c *ConfigManager) SetOnDeleteConnection(fn func(string)) {
+	c.onDeleteConnection = fn
+}
+
+// GetConfigDir 返回配置目录路径
+func (c *ConfigManager) GetConfigDir() string {
+	return c.configDir
+}
+
+// BumpSnapshotTime 导出包装器：更新本地快照时间戳
+func (c *ConfigManager) BumpSnapshotTime() int64 { return c.bumpSnapshotTime() }
+
+// LoadLastSyncTimeMax 导出包装器：取所有后端最大同步时间
+func (c *ConfigManager) LoadLastSyncTimeMax() int64 { return c.loadLastSyncTimeMax() }
+
+// ─── 从 package main 复制的辅助函数 ─────────────────────────
+
+// dialAddr 拼接 host:port，自动处理 IPv6 地址。
+// ponytail: 与 ssh.go 中的 dialAddr 重复；config 簇迁移到 internal/config 后无法直接调用 package main 的版本。
+// 升级路径：未来下沉到共享 netutil 包后两处统一引用。
+func dialAddr(host string, port int) string {
+	host = strings.TrimSpace(host)
+	host = strings.Trim(host, "[]")
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// getKnownHostsPath 返回跨平台的 known_hosts 文件路径。
+// ponytail: 与 ssh.go 中的 getKnownHostsPath 重复；config 簇迁移后 sftp.go 需要独立调用。
+// 升级路径：同 dialAddr，下沉到共享包后统一。
+func getKnownHostsPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".ssh", "known_hosts")
+}
+
+// ─── 导出包装器（供 package main 通过 type alias + wrapper 调用）───
+
+func NormalizeTerminalEncoding(value string) string {
+	return normalizeTerminalEncoding(value)
+}
+
+func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	return atomicWriteFile(path, data, perm)
+}
+
+func ParseIntOrDefault(s string, def int) int {
+	return parseIntOrDefault(s, def)
 }

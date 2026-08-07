@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"crypto/rand"
@@ -92,6 +92,11 @@ func buildConnectionsExportWithProxyNodes(conns []Connection, creds []Credential
 		ProxyNodes:   exportedProxyNodes,
 		SnapshotTime: time.Now().UnixMilli(),
 	}
+}
+
+// BuildConnectionsExportWithProxyNodes 导出包装器
+func BuildConnectionsExportWithProxyNodes(conns []Connection, creds []Credential, proxyNodes []ai.AIProxyNode) SyncSnapshot {
+	return buildConnectionsExportWithProxyNodes(conns, creds, proxyNodes)
 }
 
 // connectionKey 返回用于判重的三元组 key（host+port+username，port 缺省 22）
@@ -326,10 +331,16 @@ func buildImportTemplate(lang string) SyncSnapshot {
 	}
 }
 
+// BuildImportTemplate 导出包装器
+func BuildImportTemplate(lang string) SyncSnapshot {
+	return buildImportTemplate(lang)
+}
+
 // ── 密文导入/导出 ──────────────────────────────────────────
 
 // errNeedPassword 表示密文导入时所有候选密钥都解密失败，需要用户输入密码。
 var errNeedPassword = errors.New("need password")
+var ErrNeedPassword = errNeedPassword // 导出别名供 package main 引用
 
 // encryptExportData 把导出对象序列化为 JSON 并用指定密码加密，返回 LUMIN2 字符串。
 func (c *ConfigManager) encryptExportData(exp SyncSnapshot, password string) (string, error) {
@@ -342,6 +353,11 @@ func (c *ConfigManager) encryptExportData(exp SyncSnapshot, password string) (st
 		return "", fmt.Errorf("encrypt export: %w", err)
 	}
 	return enc, nil
+}
+
+// EncryptExportData 导出包装器
+func (c *ConfigManager) EncryptExportData(exp SyncSnapshot, password string) (string, error) {
+	return c.encryptExportData(exp, password)
 }
 
 // parseImportData 智能解析导入文件原始字节：先试明文 JSON，失败则用密码解密 LUMIN2。
@@ -380,6 +396,11 @@ func (c *ConfigManager) parseImportData(data []byte, password string) (*SyncSnap
 		return exp, nil
 	}
 	return nil, fmt.Errorf("LUMIN2 解密成功但内容不是有效 SyncSnapshot")
+}
+
+// ParseImportData 导出包装器
+func (c *ConfigManager) ParseImportData(data []byte, password string) (*SyncSnapshot, error) {
+	return c.parseImportData(data, password)
 }
 
 // tryParseExportJSON 兼容旧版 connectionsExport，转换为 SyncSnapshot。

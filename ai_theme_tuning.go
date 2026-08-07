@@ -619,7 +619,7 @@ func (a *App) themeToolCommitDraft(state *aiThemeToolDraftState, request map[str
 	if err := validateThemePackageFile(&themePackage); err != nil {
 		return ThemePackageSummary{}, ThemePackageSettings{}, err
 	}
-	userDirectory, err := a.configManager.ensureUserThemePackagesDirectory()
+	userDirectory, err := a.configManager.EnsureUserThemePackagesDirectory()
 	if err != nil {
 		return ThemePackageSummary{}, ThemePackageSettings{}, err
 	}

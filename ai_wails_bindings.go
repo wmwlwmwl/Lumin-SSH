@@ -33,7 +33,7 @@ func (b *AIBindings) runtime() *ai.App {
 	if b.runtimeApp == nil {
 		configDir := ""
 		if b.app != nil && b.app.configManager != nil {
-			configDir = b.app.configManager.configDir
+			configDir = b.app.configManager.GetConfigDir()
 		}
 		var sessionProvider ai.SessionProviderDelegate
 		var sshDelegate ai.SSHDelegate
@@ -154,7 +154,7 @@ func (b *AIBindings) OpenAIConversationFolder(conversationID string) error {
 	if b == nil || b.app == nil || b.app.configManager == nil {
 		return fmt.Errorf("config manager unavailable")
 	}
-	return localopen.Reveal(filepath.Join(b.app.configManager.configDir, "tasks", trimmedConversationID), true)
+	return localopen.Reveal(filepath.Join(b.app.configManager.GetConfigDir(), "tasks", trimmedConversationID), true)
 }
 
 func (b *AIBindings) PreprocessAIConversationLongText(conversationID string, text string) (string, error) {
@@ -229,8 +229,8 @@ func (b *AIBindings) SaveAIGlobalSettings(jsonStr string) error {
 	previous.ProxyNodes = nil
 	current.ProxyNodes = nil
 	if b != nil && b.app != nil && b.app.configManager != nil && !reflect.DeepEqual(previous, current) {
-		mcp.InitializeClientHub(b.app.configManager.configDir)
-		b.app.configManager.bumpSnapshotTime()
+		mcp.InitializeClientHub(b.app.configManager.GetConfigDir())
+		b.app.configManager.BumpSnapshotTime()
 		go b.app.configManager.AutoSync()
 	}
 	return nil
@@ -255,7 +255,7 @@ func (b *AIBindings) SaveAIProviderState(jsonStr string) error {
 		currentProviders[i].UpdatedAt = 0
 	}
 	if b != nil && b.app != nil && b.app.configManager != nil && !aiProvidersEqual(previousProviders, currentProviders) {
-		b.app.configManager.bumpSnapshotTime()
+		b.app.configManager.BumpSnapshotTime()
 		go b.app.configManager.AutoSync()
 	}
 	return nil

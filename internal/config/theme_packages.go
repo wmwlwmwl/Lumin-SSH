@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 )
 
 const themePackageSchemaVersion = 1
+const ThemePackageSchemaVersion = themePackageSchemaVersion // 导出别名供 package main 引用
 const defaultLightThemePackageID = "lumin-light"
 const defaultDarkThemePackageID = "lumin-dark"
 
@@ -951,8 +952,8 @@ func themePackageSettingsToMap(item ThemePackageSettings) map[string]interface{}
 	}
 }
 
-func ensureBuiltinThemePackagesDirectory() (string, error) {
-	programDirectory := strings.TrimSpace(getProgramDirectory())
+func (c *ConfigManager) ensureBuiltinThemePackagesDirectory() (string, error) {
+	programDirectory := strings.TrimSpace(c.programDir)
 	if programDirectory == "" {
 		return "", fmt.Errorf("program directory unavailable")
 	}
@@ -982,6 +983,11 @@ func (c *ConfigManager) ensureUserThemePackagesDirectory() (string, error) {
 		return "", err
 	}
 	return targetDirectory, nil
+}
+
+// EnsureUserThemePackagesDirectory 导出包装器
+func (c *ConfigManager) EnsureUserThemePackagesDirectory() (string, error) {
+	return c.ensureUserThemePackagesDirectory()
 }
 
 func readThemePackageSummaryFromFile(path string, source string) (ThemePackageSummary, error) {
@@ -1038,7 +1044,7 @@ func listThemePackagesFromDirectory(directory string, source string) ([]ThemePac
 }
 
 func (c *ConfigManager) ListThemePackages() ([]ThemePackageSummary, error) {
-	builtinDirectory, err := ensureBuiltinThemePackagesDirectory()
+	builtinDirectory, err := c.ensureBuiltinThemePackagesDirectory()
 	if err != nil {
 		return nil, err
 	}
@@ -1443,4 +1449,34 @@ func (c *ConfigManager) CopyThemePackageToMode(themeID string, targetMode string
 		return ThemePackageSummary{}, err
 	}
 	return readThemePackageSummaryFromFile(targetPath, "user")
+}
+
+// ─── 导出包装器（供 package main wrapper 调用）───
+
+func CloneStringMap(source map[string]string) map[string]string {
+	return cloneStringMap(source)
+}
+
+func CloneAnyMap(source map[string]interface{}) map[string]interface{} {
+	return cloneAnyMap(source)
+}
+
+func MergeAnyMaps(base map[string]interface{}, override map[string]interface{}) map[string]interface{} {
+	return mergeAnyMaps(base, override)
+}
+
+func ValidateThemePackageFile(item *ThemePackageFile) error {
+	return validateThemePackageFile(item)
+}
+
+func ReadThemePackageSummaryFromFile(path string, source string) (ThemePackageSummary, error) {
+	return readThemePackageSummaryFromFile(path, source)
+}
+
+func ThemePackageSummaryToMap(item ThemePackageSummary) map[string]interface{} {
+	return themePackageSummaryToMap(item)
+}
+
+func ThemePackageSettingsToMap(item ThemePackageSettings) map[string]interface{} {
+	return themePackageSettingsToMap(item)
 }

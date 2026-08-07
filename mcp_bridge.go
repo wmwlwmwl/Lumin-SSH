@@ -19,7 +19,7 @@ import (
 func loadMCPServiceSettings(app *App) mcp.ServiceSettings {
 	configDir := ""
 	if app != nil && app.configManager != nil {
-		configDir = app.configManager.configDir
+		configDir = app.configManager.GetConfigDir()
 	}
 	settings := ai.LoadAIGlobalSettings(configDir)
 	return mcp.ServiceSettings{
@@ -40,7 +40,7 @@ func initializeMCPClientHub(app *App) {
 	if app == nil || app.configManager == nil {
 		return
 	}
-	mcp.InitializeClientHub(app.configManager.configDir)
+	mcp.InitializeClientHub(app.configManager.GetConfigDir())
 }
 
 func startMCPServer(app *App) {
@@ -65,7 +65,7 @@ func (a *App) GetMCPSettingsState() map[string]interface{} {
 		"globalServerOrder": []string{},
 	}
 	if a != nil && a.configManager != nil {
-		hub := mcp.InitializeClientHub(a.configManager.configDir)
+		hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 		if hub != nil {
 			clientState = hub.BuildState()
 		}
@@ -79,7 +79,7 @@ func (a *App) SaveMCPGlobalServer(name string, configText string) error {
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -92,7 +92,7 @@ func (a *App) DeleteMCPGlobalServer(name string) error {
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -102,7 +102,7 @@ func (a *App) RestartMCPClientServer(name string, source string) error {
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -112,7 +112,7 @@ func (a *App) ToggleMCPClientServer(name string, source string, disabled bool) e
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -122,7 +122,7 @@ func (a *App) ToggleMCPClientServerDisabledForPrompts(name string, source string
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -132,7 +132,7 @@ func (a *App) UpdateMCPClientServerTimeout(name string, source string, timeout i
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -143,7 +143,7 @@ func (a *App) ReloadMCPGlobalServers() error {
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	hub := mcp.InitializeClientHub(a.configManager.configDir)
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
@@ -162,21 +162,21 @@ func currentTerminalOutputCharacterLimit() int {
 	return mcp.CurrentTerminalOutputCharacterLimit()
 }
 
-func (c *ConfigManager) GetMCPOutputCompressionSettings() mcp.OutputCompressionSettings {
-	if c == nil {
+func getMCPOutputCompressionSettings(cm *ConfigManager) mcp.OutputCompressionSettings {
+	if cm == nil {
 		return mcp.OutputCompressionSettings{
 			TerminalOutputLineLimit:      mcp.DefaultTerminalOutputLineLimit,
 			TerminalOutputCharacterLimit: mcp.DefaultTerminalOutputCharacterLimit,
 		}
 	}
-	return mcp.LoadOutputCompressionSettings(c.configDir)
+	return mcp.LoadOutputCompressionSettings(cm.GetConfigDir())
 }
 
-func (c *ConfigManager) SaveMCPOutputCompressionSettings(settings mcp.OutputCompressionSettings) error {
-	if c == nil {
+func saveMCPOutputCompressionSettings(cm *ConfigManager, settings mcp.OutputCompressionSettings) error {
+	if cm == nil {
 		return nil
 	}
-	return mcp.SaveOutputCompressionSettings(c.configDir, settings)
+	return mcp.SaveOutputCompressionSettings(cm.GetConfigDir(), settings)
 }
 
 func (a *App) GetMCPOutputCompressionSettings() map[string]int {
@@ -185,7 +185,7 @@ func (a *App) GetMCPOutputCompressionSettings() map[string]int {
 		TerminalOutputCharacterLimit: mcp.DefaultTerminalOutputCharacterLimit,
 	}
 	if a != nil && a.configManager != nil {
-		settings = a.configManager.GetMCPOutputCompressionSettings()
+		settings = getMCPOutputCompressionSettings(a.configManager)
 	}
 	return map[string]int{
 		"terminalOutputLineLimit":      settings.TerminalOutputLineLimit,
@@ -199,7 +199,7 @@ func (a *App) SaveMCPOutputCompressionSettings(lineLimit int, characterLimit int
 		TerminalOutputCharacterLimit: characterLimit,
 	})
 	if a != nil && a.configManager != nil {
-		if err := a.configManager.SaveMCPOutputCompressionSettings(settings); err != nil {
+		if err := saveMCPOutputCompressionSettings(a.configManager, settings); err != nil {
 			return err
 		}
 	}

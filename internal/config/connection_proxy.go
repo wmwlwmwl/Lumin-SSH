@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"bufio"
@@ -321,4 +321,14 @@ func dialSOCKS5ProxyContext(ctx context.Context, conn Connection, target string,
 	case result := <-resultCh:
 		return result.conn, result.err
 	}
+}
+
+// ─── 导出包装器（供 package main wrapper 调用）───
+
+func DialConnectionTargetContext(ctx context.Context, conn Connection, target string, timeout time.Duration) (net.Conn, error) {
+	return dialConnectionTargetContext(ctx, conn, target, timeout)
+}
+
+func ConnectionUsesProxy(conn Connection) bool {
+	return connectionUsesProxy(conn)
 }

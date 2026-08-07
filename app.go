@@ -203,6 +203,8 @@ func NewApp() *App {
 		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
+	app.configManager.SetProgramDir(getProgramDirectory())
+	app.configManager.SetOnDeleteConnection(clearPingHostState)
 	app.externalEdit = externaledit.NewManager(
 		externalEditRemoteFiles{manager: app.sshManager},
 		externalEditEventSink{app: app},
@@ -217,7 +219,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.sshManager.ctx = ctx // Give SSH manager access to Wails events
 	a.sshManager.app = a   // Give SSH manager access to WebSocket registry
-	a.configManager.wailsCtx = ctx
+	a.configManager.SetWailsCtx(ctx)
 	a.sshManager.applyTransferTuning(a.configManager.GetTransferTuningSettings())
 	if err := a.ensureMainLivenessLock(); err != nil {
 		log.Printf("failed to acquire main liveness lock: %v", err)
@@ -329,7 +331,7 @@ func (a *App) startup(ctx context.Context) {
 
 	a.configManager.CleanupOrphanedHistory()
 	go a.configManager.AutoSync()
-	applyMCPOutputCompressionSettings(a.configManager.GetMCPOutputCompressionSettings())
+	applyMCPOutputCompressionSettings(getMCPOutputCompressionSettings(a.configManager))
 	// MCP 客户端会连远端（内置 context7），同步握手会拖慢首屏；后台启动即可。
 	go startMCPServer(a)
 }
@@ -607,7 +609,7 @@ func (a *App) ExportConnections(useEncryption bool, password string) (string, er
 	}
 
 	// 密文：序列化 → LUMIN2 加密
-	encrypted, err := a.configManager.encryptExportData(exp, password)
+	encrypted, err := a.configManager.EncryptExportData(exp, password)
 	if err != nil {
 		return "", fmt.Errorf("导出失败: %w", err)
 	}
@@ -686,7 +688,7 @@ func (a *App) ExportConnectionsByIDs(ids []string, useEncryption bool, password 
 	}
 
 	// 密文：序列化 → LUMIN2 加密
-	encrypted, err := a.configManager.encryptExportData(exp, password)
+	encrypted, err := a.configManager.EncryptExportData(exp, password)
 	if err != nil {
 		return "", fmt.Errorf("导出失败: %w", err)
 	}
@@ -729,7 +731,7 @@ func (a *App) ImportConnections(filePath string, password string) (ImportResult,
 		password = a.configManager.GetRecoveryPassword()
 	}
 
-	exp, err := a.configManager.parseImportData(data, password)
+	exp, err := a.configManager.ParseImportData(data, password)
 	if err != nil {
 		if errors.Is(err, errNeedPassword) {
 			// 原样返回，前端识别此 sentinel 并弹密码框
@@ -1361,7 +1363,7 @@ func (a *App) ensureMainLivenessLock() error {
 	if a.mainLivenessLockRelease != nil && strings.TrimSpace(a.mainLivenessLockPath) != "" {
 		return nil
 	}
-	lockPath := filepath.Join(a.configManager.configDir, "luminssh-main.lock")
+	lockPath := filepath.Join(a.configManager.GetConfigDir(), "luminssh-main.lock")
 	release, err := acquireMainLivenessLock(lockPath)
 	if err != nil {
 		return err
@@ -2185,7 +2187,7 @@ func (a *App) GetLastSyncTime() int64 {
 	if a == nil || a.configManager == nil {
 		return 0
 	}
-	return a.configManager.loadLastSyncTimeMax()
+	return a.configManager.LoadLastSyncTimeMax()
 }
 
 // GetSyncTombstoneStats 返回本地同步删除记录条数。
@@ -2266,7 +2268,7 @@ func (a *App) SaveProxyNodes(jsonStr string) error {
 	if err := a.configManager.SaveAIProxyNodes(nodes); err != nil {
 		return err
 	}
-	a.configManager.bumpSnapshotTime()
+	a.configManager.BumpSnapshotTime()
 	go a.configManager.AutoSync()
 	return nil
 }

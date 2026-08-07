@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"bytes"
@@ -17,6 +17,18 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// sshHostKeyAlgorithms SSH 主机密钥算法列表。
+// ponytail: 与 ssh.go 中的 sshHostKeyAlgorithms 重复；config 簇迁移后 sftp.go 需要独立引用。
+// 升级路径：下沉到共享 sshutil 包后两处统一。
+var sshHostKeyAlgorithms = []string{
+	"ssh-ed25519",
+	"ecdsa-sha2-nistp256",
+	"ecdsa-sha2-nistp384",
+	"ecdsa-sha2-nistp521",
+	"rsa-sha2-512",
+	"rsa-sha2-256",
+}
 
 type SFTPConfig struct {
 	Host       string `json:"host"`

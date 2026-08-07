@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -240,6 +240,11 @@ func aiProvidersEqual(a, b []ai.AIProviderProfile) bool {
 		}
 	}
 	return true
+}
+
+// AIProvidersEqual 导出包装器
+func AIProvidersEqual(a, b []ai.AIProviderProfile) bool {
+	return aiProvidersEqual(a, b)
 }
 
 func normalizeAIGlobalSettingsForCompare(settings ai.AIGlobalSettings) ai.AIGlobalSettings {

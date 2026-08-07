@@ -47,11 +47,11 @@ func (b *AIProviderBindings) SaveAIProviderState(jsonStr string) error {
 }
 
 func (b *AIProviderBindings) aiProviderRegistryPath() string {
-	return filepath.Join(b.configManager.configDir, "ai_providers.json")
+	return filepath.Join(b.configManager.GetConfigDir(), "ai_providers.json")
 }
 
 func (b *AIProviderBindings) aiGlobalSettingsPath() string {
-	return filepath.Join(b.configManager.configDir, "ai_global_settings.json")
+	return filepath.Join(b.configManager.GetConfigDir(), "ai_global_settings.json")
 }
 
 func (b *AIProviderBindings) getAIProviderRegistry() ai.AIProviderRegistry {

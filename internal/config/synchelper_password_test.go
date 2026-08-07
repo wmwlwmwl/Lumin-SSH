@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"crypto/aes"
@@ -449,12 +449,11 @@ func TestAutoSyncProviderRecordsFirstEmptyRemoteUpload(t *testing.T) {
 
 func TestGetLastSyncTimeReturnsPersistedValue(t *testing.T) {
 	cm := testSyncManager(t)
-	app := &App{configManager: cm}
-	if got := app.GetLastSyncTime(); got != 0 {
+	if got := cm.LoadLastSyncTimeMax(); got != 0 {
 		t.Fatalf("未同步时应返回 0，得到 %d", got)
 	}
 	cm.saveLastSyncTime("webdav", 123456789)
-	if got := app.GetLastSyncTime(); got != 123456789 {
+	if got := cm.LoadLastSyncTimeMax(); got != 123456789 {
 		t.Fatalf("应返回持久化时间，得到 %d", got)
 	}
 }
