@@ -5202,9 +5202,25 @@ body.theme-light .dashboard-server-editor {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  /* 右侧边界渐隐：滚动时药丸淡出，而不是被搜索框硬切 */
-  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+  position: relative;
+  /* ponytail: 弃用 mask-image 渐隐——WebKitGTK(Ubuntu)滚动时不重绘遮罩层，
+     导致药丸叠影/跳档；改用 ::after 覆盖层实现右侧淡出，覆盖层不随内容滚动。 */
+}
+/* 右侧边界渐隐：覆盖层定位在容器边框上，不随内容滚动，规避 WebKitGTK 遮罩重绘 bug */
+.term-quick-cmd-list::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  background: linear-gradient(to right, transparent, var(--term-input-bar-bg));
+  pointer-events: none;
+  z-index: 1;
+}
+/* 横向滚动行：药丸外包壳(Tiptop)必须 flex-shrink:0，否则 WebKitGTK 下被压缩导致按钮溢出叠压 */
+.term-quick-cmd-list > .tiptop {
+  flex-shrink: 0;
 }
 .term-quick-cmd-list::-webkit-scrollbar {
   height: 4px;
