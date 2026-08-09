@@ -60,6 +60,13 @@ func setupSystray(app *App) {
 			showMain()
 		})
 
+		// Windows sends WM_LBUTTONDBLCLK separately from WM_LBUTTONUP.
+		// Register the double-click callback explicitly so a double-click on the
+		// tray icon restores the main window just like a single click.
+		systray.SetOnDClick(func(menu systray.IMenu) {
+			showMain()
+		})
+
 		// 右键点击托盘图标：显示菜单。
 		// Windows 久置后 TrackPopupMenu 常因托盘窗抢不到前台而不弹出；
 		// 先解锁前台再 ShowMenu（与主窗久置唤起同源限制）。
