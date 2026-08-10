@@ -5186,7 +5186,7 @@ body.theme-light .dashboard-server-editor {
 /* ── 终端固定命令条（输入框上方，横向滚动 + 右侧搜索） ── */
 .term-quick-cmd-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* 顶部对齐，确保按钮和搜索按钮完美对齐 */
   gap: 6px;
   padding: 4px 8px;
   background: var(--term-input-bar-bg);
@@ -5201,16 +5201,15 @@ body.theme-light .dashboard-server-editor {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
-  /* 底部留白：Linux/WebKitGTK 横向滚动条较宽，6px 确保不遮挡按钮点击区 */
+  /* 底部留白：在按钮下方预留滚动条空间。不使用负 margin，防止滚动条被下方输入栏遮挡 */
   padding-bottom: 6px;
-  margin-bottom: -3px;
   /* 右侧边界渐隐：滚动时药丸淡出，而不是被搜索框硬切 */
   mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
 }
 .term-quick-cmd-list::-webkit-scrollbar {
   height: 4px;
+  background: transparent;
 }
 .term-quick-cmd-list::-webkit-scrollbar-track {
   background: transparent;
