@@ -975,9 +975,9 @@ export default function useSessionConnections(deps: UseSessionConnectionsDeps): 
       t('请选择操作'),
       t('关闭窗口'),
       [
-        { label: t('退出'), value: 'quit', primary: true },
-        { label: t('系统托盘'), value: 'tray', secondary: true },
-        { label: t('取消'), value: 'cancel', secondary: true },
+        { label: t('退出'), value: 'quit', shortcut: 'q', primary: true },
+        { label: t('系统托盘'), value: 'tray', shortcut: 't', secondary: true },
+        { label: t('取消'), value: 'cancel', shortcut: 'c', secondary: true },
       ],
       t('记住选择'),
       { priority: 'system' },

@@ -28,7 +28,7 @@ interface QueuedDialog {
   inputType?: 'password' | 'text';
   validate?: ((value: string) => string | null | undefined | Promise<string | null | undefined>) | null;
   checkboxLabel?: string;
-  buttons?: Array<{ label: string; value: unknown; primary?: boolean; secondary?: boolean }>;
+  buttons?: Array<{ label: string; value: unknown; shortcut?: string; primary?: boolean; secondary?: boolean }>;
   onClose?: () => void;
   onCancel?: () => void;
   onConfirm?: (val: unknown, checked: boolean) => void;
@@ -295,6 +295,28 @@ function DialogContent({ current, active, onClose, onConfirm, onChoice }: Dialog
         return;
       }
 
+      if (current.type === 'confirm' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'c' || key === 'y') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          if (key === 'c') onClose();
+          else onConfirm(true, checked);
+          return;
+        }
+      }
+
+      if (current.type === 'choice' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+        const key = e.key.toLowerCase();
+        const btn = current.buttons?.find((candidate) => candidate.shortcut?.toLowerCase() === key);
+        if (btn) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          onChoice(btn.value, checked);
+          return;
+        }
+      }
+
       // confirm / choice：左右选中按钮
       if (current.type === 'confirm' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
@@ -540,6 +562,7 @@ function DialogContent({ current, active, onClose, onConfirm, onChoice }: Dialog
             <button
               key={i}
               data-dialog-choice={i}
+              aria-keyshortcuts={btn.shortcut?.toUpperCase()}
               className={btn.primary ? 'btn btn-primary' : btn.secondary ? 'btn btn-secondary' : 'btn btn-secondary'}
               onClick={() => onChoice(btn.value, checked)}
               onMouseEnter={() => setFocusAction(i)}
@@ -552,7 +575,7 @@ function DialogContent({ current, active, onClose, onConfirm, onChoice }: Dialog
                 outlineOffset: 2,
               }}
             >
-              {btn.label}
+              {btn.shortcut ? `${btn.label}(${btn.shortcut.toUpperCase()})` : btn.label}
             </button>
           ))}
         </div>
@@ -575,6 +598,7 @@ function DialogContent({ current, active, onClose, onConfirm, onChoice }: Dialog
         {current.type !== 'alert' && (
           <button
             data-dialog-action="cancel"
+            aria-keyshortcuts={current.type === 'confirm' ? 'C Escape' : undefined}
             className="btn btn-secondary"
             onClick={onClose}
             onMouseEnter={() => current.type === 'confirm' && setFocusAction('cancel')}
@@ -586,7 +610,7 @@ function DialogContent({ current, active, onClose, onConfirm, onChoice }: Dialog
               outlineOffset: 2,
             }}
           >
-            {t('取消')}
+            {current.type === 'confirm' ? `${t('取消')}(C)` : t('取消')}
           </button>
         )}
         <button
@@ -606,7 +630,7 @@ function DialogContent({ current, active, onClose, onConfirm, onChoice }: Dialog
             outlineOffset: 2,
           }}
         >
-          {current.type === 'alert' ? t('我知道了') : t('确定')}
+          {current.type === 'alert' ? t('我知道了') : current.type === 'confirm' ? `${t('确定')}(Y)` : t('确定')}
         </button>
       </div>
       </>
