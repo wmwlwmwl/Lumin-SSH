@@ -229,10 +229,22 @@ func (a *App) startup(ctx context.Context) {
 			if origin == "" {
 				return false
 			}
+			// Wails WebView 自定义协议 Origin（不同平台 / Wails 版本表现不一）：
+			//   wails://wails                       —— Windows WebView2（旧版）
+			//   wails://wails.localhost[:port]      —— Linux/macOS WebKit dev 模式实测
+			//                                          （页面 origin=wails://wails.localhost:<vitePort>）
+			//   wails://localhost[:port]            —— 部分环境 WebKit baseURL
+			//   http(s)://wails.localhost[:port]    —— Windows WebView2
+			// dev 模式下 host 后会带 vite/dev 端口。每个 host 用「精确匹配 + 带冒号前缀」，
+			// 避免误匹配 wails.localhost.attacker.com 之类的子域（DNS-rebinding 防护）。
 			if origin == "wails://wails" ||
+				origin == "wails://wails.localhost" ||
+				strings.HasPrefix(origin, "wails://wails.localhost:") ||
+				origin == "wails://localhost" ||
+				strings.HasPrefix(origin, "wails://localhost:") ||
 				origin == "http://wails.localhost" ||
-				origin == "https://wails.localhost" ||
 				strings.HasPrefix(origin, "http://wails.localhost:") ||
+				origin == "https://wails.localhost" ||
 				strings.HasPrefix(origin, "https://wails.localhost:") {
 				return true
 			}
