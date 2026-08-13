@@ -5296,13 +5296,14 @@ export default function AIPanel({ width, side, terminalId = 'global', sessionId 
     try {
       await restoreAIChatTool(restoreArtifactPath, terminalId)
       clearRestorePreview()
+      addToast?.(translate('已还原'), 'success', 3200)
       return true
     } catch (error) {
       // error.message 为后端动态文案（可能不在翻译表），translate() 内部有兜底
       await showAlert(error instanceof Error ? translate(error.message as I18nKey) : translate('当前状态不支持还原'))
       return false
     }
-  }, [clearRestorePreview, showAlert, terminalId])
+  }, [addToast, clearRestorePreview, showAlert, terminalId, translate])
 
   const handleListCommandTerminalCandidates = useCallback(async () => {
     if (!panelState.activeRequestId) {

@@ -1,7 +1,6 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Cpu, Folder, Globe, Monitor, Plus, RefreshCw, ScrollText, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, lazy, Suspense, useMemo, useRef, useState } from 'react';
 import * as AppGo from '../../wailsjs/go/wailsapp/App.js';
-import AIChangeReviewWorkbench from './ai/AIChangeReviewWorkbench.tsx';
 import AIConversationDiffOverlay from './ai/AIConversationDiffOverlay.tsx';
 import CommandHistory from './CommandHistory.tsx';
 import ConnectingCard from './ConnectingCard.tsx';
@@ -25,6 +24,10 @@ import type { TerminalTabContextMenuState } from './AppOverlays.tsx';
 import type { ServerFormData } from '../hooks/useServerCatalog.ts';
 import type { PanelResizeDirection } from '../hooks/useWorkspacePanelDocking.ts';
 import type { ConversationDiffItem } from '../hooks/useAIReview.ts';
+
+// 懒加载：AIChangeReviewWorkbench 依赖 Monaco（瘦身后核心仍在 ~2MB），
+// 只在打开变更审阅/恢复预览时按需加载，避免进入应用启动路径
+const AIChangeReviewWorkbench = lazy(() => import('./ai/AIChangeReviewWorkbench.tsx'));
 
 const FILE_MANAGER_LEFT_MIN = 180;
 const FILE_MANAGER_BOTTOM_MIN = 100;
@@ -1354,30 +1357,34 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
                 />
                 <div id="editor-split-host" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', order: 2, width: 0, transition: 'width 0.2s ease, height 0.2s ease' }} />
                 {activeChangeReview ? (
-                  <AIChangeReviewWorkbench
-                    review={activeChangeReview as Parameters<typeof AIChangeReviewWorkbench>[0]['review']}
-                    queueLength={(activeChangeReviewQueue as unknown[]).length}
-                  />
+                  <Suspense fallback={null}>
+                    <AIChangeReviewWorkbench
+                      review={activeChangeReview as Parameters<typeof AIChangeReviewWorkbench>[0]['review']}
+                      queueLength={(activeChangeReviewQueue as unknown[]).length}
+                    />
+                  </Suspense>
                 ) : null}
                 {activeRestorePreviewReview && (activeRestorePreviewReview as { review?: unknown }).review ? (
-                  <AIChangeReviewWorkbench
-                    review={(activeRestorePreviewReview as { review: unknown }).review as Parameters<typeof AIChangeReviewWorkbench>[0]['review']}
-                    queueLength={1}
-                    previewOnly={true}
-                    onClose={() => {
-                      if (!activeWorkspaceTerminalKey) {
-                        return;
-                      }
-                      (setRestorePreviewReviews as (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => void)((prev) => {
-                        if (!prev[activeWorkspaceTerminalKey]) {
-                          return prev;
+                  <Suspense fallback={null}>
+                    <AIChangeReviewWorkbench
+                      review={(activeRestorePreviewReview as { review: unknown }).review as Parameters<typeof AIChangeReviewWorkbench>[0]['review']}
+                      queueLength={1}
+                      previewOnly={true}
+                      onClose={() => {
+                        if (!activeWorkspaceTerminalKey) {
+                          return;
                         }
-                        const next = { ...prev };
-                        delete next[activeWorkspaceTerminalKey];
-                        return next;
-                      });
-                    }}
-                  />
+                        (setRestorePreviewReviews as (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => void)((prev) => {
+                          if (!prev[activeWorkspaceTerminalKey]) {
+                            return prev;
+                          }
+                          const next = { ...prev };
+                          delete next[activeWorkspaceTerminalKey];
+                          return next;
+                        });
+                      }}
+                    />
+                  </Suspense>
                 ) : null}
                 {activeConversationDiffPanel ? (
                   <AIConversationDiffOverlay

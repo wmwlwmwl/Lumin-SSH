@@ -14,6 +14,8 @@ export interface ConversationDiffItem {
   status: string
   copyContent: string
   order: number
+  /** 该条目已被还原（按钮持久显示「已还原」并禁用） */
+  restored?: boolean
 }
 
 function normalizeItems(items: unknown): ConversationDiffItem[] {
@@ -30,6 +32,7 @@ function normalizeItems(items: unknown): ConversationDiffItem[] {
         status: typeof item.status === 'string' ? item.status.trim() : '',
         copyContent: typeof item.copyContent === 'string' ? item.copyContent : '',
         order: Number.isFinite(Number(item.order)) ? Number(item.order) : index + 1,
+        restored: item.restored === true,
       }))
       .filter((item) => item.artifactPath)
     : []
@@ -193,7 +196,9 @@ export default function AIConversationDiffOverlay({
 }: AIConversationDiffOverlayProps) {
   const { t } = useTranslation()
   const [copiedItemId, setCopiedItemId] = useState('')
-  const [actionSucceeded, setActionSucceeded] = useState({ itemId: '', kind: '' })
+  // 仅用于左键「重新应用」成功后的短暂「已应用」反馈（可重复触发，故保留 1.2s 重置）；
+  // 还原态则由全局 item.restored 持久驱动，不再用本地临时态
+  const [appliedItemId, setAppliedItemId] = useState('')
   const normalizedItems = useMemo(() => normalizeItems(items), [items])
   const activeItem = useMemo(() => (
     normalizedItems.find((item) => item.messageId === selectedMessageId)
@@ -210,12 +215,12 @@ export default function AIConversationDiffOverlay({
   }, [copiedItemId])
 
   useEffect(() => {
-    if (!actionSucceeded.itemId) {
+    if (!appliedItemId) {
       return undefined
     }
-    const timer = window.setTimeout(() => setActionSucceeded({ itemId: '', kind: '' }), 1200)
+    const timer = window.setTimeout(() => setAppliedItemId(''), 1200)
     return () => window.clearTimeout(timer)
-  }, [actionSucceeded])
+  }, [appliedItemId])
 
   const handleCopyItemContent = async (item: ConversationDiffItem) => {
     const itemId = typeof item?.id === 'string' ? item.id : ''
@@ -239,26 +244,23 @@ export default function AIConversationDiffOverlay({
   const handlePreviewItemRestore = async (item: ConversationDiffItem) => {
     const artifactPath = typeof item?.artifactPath === 'string' ? item.artifactPath.trim() : ''
     const itemId = typeof item?.id === 'string' ? item.id : ''
-    if (!artifactPath) {
+    if (!artifactPath || item?.restored) {
       return
     }
     const applied = await onPreviewRestore?.(artifactPath)
     if (applied === true && itemId) {
-      setActionSucceeded({ itemId, kind: 'apply' })
+      setAppliedItemId(itemId)
     }
   }
 
   const handleApplyItemRestore = async (event: React.MouseEvent, item: ConversationDiffItem) => {
     const artifactPath = typeof item?.artifactPath === 'string' ? item.artifactPath.trim() : ''
-    const itemId = typeof item?.id === 'string' ? item.id : ''
-    if (!artifactPath) {
+    if (!artifactPath || item?.restored) {
       return
     }
     event.preventDefault()
-    const applied = await onApplyRestore?.(artifactPath)
-    if (applied === true && itemId) {
-      setActionSucceeded({ itemId, kind: 'restore' })
-    }
+    // 还原成功后由 useAIReview 标记 item.restored=true（全局单一数据源），按钮持久显示「已还原」并禁用
+    await onApplyRestore?.(artifactPath)
   }
 
   return (
@@ -351,8 +353,8 @@ export default function AIConversationDiffOverlay({
           {normalizedItems.map((item) => {
             const isActive = activeItem?.id === item.id
             const isCopied = copiedItemId === item.id
-            const isActionSucceeded = actionSucceeded.itemId === item.id
-            const itemActionKind = isActionSucceeded ? actionSucceeded.kind : ''
+            const isRestored = item.restored === true
+            const isApplied = appliedItemId === item.id
             const itemTitle = item.title || item.toolName || item.id
             const itemSummary = item.summary && item.summary !== itemTitle ? item.summary : ''
             const review = item.artifactPath && reviewByArtifactPath && typeof reviewByArtifactPath === 'object'
@@ -465,17 +467,17 @@ export default function AIConversationDiffOverlay({
                       </Tiptop>
                     ) : null}
                     {item.artifactPath ? (
-                      <Tiptop text={isActionSucceeded ? (itemActionKind === 'restore' ? t('已还原') : t('已应用')) : t('左键应用/右键还原')} style={{ display: 'inline-flex' }}>
+                      <Tiptop text={isRestored ? t('已还原') : (isApplied ? t('已应用') : t('左键应用/右键还原'))} style={{ display: 'inline-flex' }}>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={isRestored ? undefined : () => {
                             void handlePreviewItemRestore(item)
                           }}
                           onMouseDown={(event) => {
                             event.preventDefault()
                             event.stopPropagation()
                           }}
-                          onContextMenu={(event) => {
+                          onContextMenu={isRestored ? undefined : (event) => {
                             void handleApplyItemRestore(event, item)
                           }}
                           style={{
@@ -485,15 +487,15 @@ export default function AIConversationDiffOverlay({
                             gap: 5,
                             padding: '0 8px',
                             borderRadius: 999,
-                            border: isActionSucceeded ? '1px solid rgba(var(--success-rgb), 0.28)' : '1px solid rgba(var(--accent-rgb), 0.24)',
-                            background: isActionSucceeded ? 'rgba(var(--success-rgb), 0.10)' : 'rgba(var(--accent-rgb), 0.08)',
-                            color: isActionSucceeded ? 'var(--success)' : 'var(--text-secondary)',
+                            border: isRestored || isApplied ? '1px solid rgba(var(--success-rgb), 0.28)' : '1px solid rgba(var(--accent-rgb), 0.24)',
+                            background: isRestored || isApplied ? 'rgba(var(--success-rgb), 0.10)' : 'rgba(var(--accent-rgb), 0.08)',
+                            color: isRestored || isApplied ? 'var(--success)' : 'var(--text-secondary)',
                             fontSize: 11,
                             fontWeight: 700,
-                            cursor: 'pointer',
+                            cursor: isRestored ? 'default' : 'pointer',
                           }}>
-                          <RotateCcw size={11} color={isActionSucceeded ? 'currentColor' : 'var(--accent)'} />
-                          <span>{isActionSucceeded ? (itemActionKind === 'restore' ? t('已还原') : t('已应用')) : t('应用')}</span>
+                          <RotateCcw size={11} color={isRestored || isApplied ? 'currentColor' : 'var(--accent)'} />
+                          <span>{isRestored ? t('已还原') : (isApplied ? t('已应用') : t('应用'))}</span>
                         </button>
                       </Tiptop>
                     ) : null}

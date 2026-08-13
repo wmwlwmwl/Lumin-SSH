@@ -31,6 +31,8 @@ export interface ConversationDiffItem {
   status: string;
   copyContent: string;
   order: number;
+  /** 该条目已被还原（按钮持久显示「已还原」并禁用，单一数据源） */
+  restored?: boolean;
 }
 
 /** 对话差异面板 */
@@ -294,12 +296,39 @@ export default function useAIReview({ sessionsRef, addToast, t }: UseAIReviewOpt
   const handleApplyConversationDiffRestore = useCallback(async (artifactPath: string, targetSessionId: string, targetTerminalId: string) => {
     try {
       await restoreAIChatTool(artifactPath, targetTerminalId);
+      addToast(t('已还原'), 'success', 3200);
+      // 还原成功：标记该条目 restored=true（按钮持久显示「已还原」并禁用），保留条目不再移除
+      const binding = resolveAIWorkspaceTerminalBindingByTerminalId(sessionsRef.current, targetSessionId || targetTerminalId);
+      const panelKey = binding ? buildAIWorkspaceTerminalPanelKey(binding.sessionId, binding.terminalId) : '';
+      if (panelKey) {
+        setConversationDiffPanels((prev) => {
+          const panel = prev[panelKey];
+          if (!panel || !Array.isArray(panel.items)) {
+            return prev;
+          }
+          let changed = false;
+          const nextItems = panel.items.map((item) => {
+            const p = typeof (item as { artifactPath?: unknown }).artifactPath === 'string'
+              ? String((item as { artifactPath: string }).artifactPath).trim()
+              : '';
+            if (p === artifactPath.trim() && !item.restored) {
+              changed = true;
+              return { ...item, restored: true };
+            }
+            return item;
+          });
+          if (!changed) {
+            return prev;
+          }
+          return { ...prev, [panelKey]: { ...panel, items: nextItems } };
+        });
+      }
       return true;
     } catch (error) {
       addToast(error instanceof Error ? t(error.message) : t('当前状态不支持还原'), 'error', 3200);
       return false;
     }
-  }, [addToast]);
+  }, [addToast, t]);
 
   const handleSelectConversationDiffItem = useCallback(async (item: ConversationDiffItem, options: {
     sessionId?: string;
@@ -434,6 +463,7 @@ export default function useAIReview({ sessionsRef, addToast, t }: UseAIReviewOpt
             status: typeof raw.status === 'string' ? raw.status.trim() : '',
             copyContent: typeof raw.copyContent === 'string' ? raw.copyContent : '',
             order: Number.isFinite(Number(raw.order)) ? Number(raw.order) : index + 1,
+            restored: raw.restored === true,
           };
         })
         .filter((item) => item.artifactPath);

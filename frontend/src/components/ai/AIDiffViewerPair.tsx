@@ -1,10 +1,49 @@
-import { DiffEditor, loader } from '@monaco-editor/react'
-import * as monaco from 'monaco-editor'
-import cssWorker from '../../../node_modules/monaco-editor/esm/vs/language/css/css.worker.js?worker'
-import htmlWorker from '../../../node_modules/monaco-editor/esm/vs/language/html/html.worker.js?worker'
+// 瘦身：不再全量引入 'monaco-editor'（editor.main 会带入全部 84 种语言 + LSP features + lsp-client，
+// 主包增量约 4MB）。改为 editor.api 核心 + 按需注册 LANGUAGE_BY_EXTENSION 映射所需的语言（26 种全保留）。
+// 类型声明见 src/types/monaco-slim.d.ts（复用主包类型，纯声明不进 bundle）。
+// 注：monaco-editor 的 exports 为 "./*": "./esm/vs/*.js"，子路径不带 esm/vs 前缀
+import * as monaco from 'monaco-editor/editor/editor.api.js'
+// 纯 tokenizer 语言（definitions/，无需语言 worker）；cpp 注册文件同时注册 c + cpp
+import 'monaco-editor/languages/definitions/bat/register.js'
+import 'monaco-editor/languages/definitions/cpp/register.js'
+import 'monaco-editor/languages/definitions/csharp/register.js'
+import 'monaco-editor/languages/definitions/css/register.js'
+import 'monaco-editor/languages/definitions/dockerfile/register.js'
+import 'monaco-editor/languages/definitions/go/register.js'
+import 'monaco-editor/languages/definitions/html/register.js'
+import 'monaco-editor/languages/definitions/ini/register.js'
+import 'monaco-editor/languages/definitions/java/register.js'
+import 'monaco-editor/languages/definitions/javascript/register.js'
+import 'monaco-editor/languages/definitions/kotlin/register.js'
+import 'monaco-editor/languages/definitions/less/register.js'
+import 'monaco-editor/languages/definitions/markdown/register.js'
+import 'monaco-editor/languages/definitions/php/register.js'
+import 'monaco-editor/languages/definitions/powershell/register.js'
+import 'monaco-editor/languages/definitions/python/register.js'
+import 'monaco-editor/languages/definitions/ruby/register.js'
+import 'monaco-editor/languages/definitions/rust/register.js'
+import 'monaco-editor/languages/definitions/scss/register.js'
+import 'monaco-editor/languages/definitions/shell/register.js'
+import 'monaco-editor/languages/definitions/sql/register.js'
+import 'monaco-editor/languages/definitions/swift/register.js'
+import 'monaco-editor/languages/definitions/xml/register.js'
+import 'monaco-editor/languages/definitions/yaml/register.js'
+// worker 版语言（features/）：0.56 中 json/typescript 仅此版本，保留对应 worker
+import 'monaco-editor/languages/features/json/register.js'
+import 'monaco-editor/languages/features/typescript/register.js'
+// 补注册精简版缺失的编辑器服务：editor.api 精简版中 contrib 已注册但对应服务未注册，
+// 创建编辑器实例化贡献时抛 "depends on UNKNOWN service"（全量版 editor.main 连带加载）。
+// 逐个补齐（与 outlineModel 同一模式）：
+import 'monaco-editor/editor/contrib/documentSymbols/browser/outlineModel.js'
+import 'monaco-editor/editor/contrib/codelens/browser/codeLensCache.js'
+import 'monaco-editor/editor/contrib/inlayHints/browser/inlayHintsController.js'
+import 'monaco-editor/editor/contrib/suggest/browser/suggestMemory.js'
+import 'monaco-editor/editor/common/services/treeViewsDndService.js'
+import 'monaco-editor/platform/actionWidget/browser/actionWidget.js'
+// worker：只保留 editor / json / ts（css/html 用 tokenizer 版后无需语言 worker）
+import editorWorker from '../../../node_modules/monaco-editor/esm/vs/editor/editor.worker.js?worker'
 import jsonWorker from '../../../node_modules/monaco-editor/esm/vs/language/json/json.worker.js?worker'
 import tsWorker from '../../../node_modules/monaco-editor/esm/vs/language/typescript/ts.worker.js?worker'
-import editorWorker from '../../../node_modules/monaco-editor/esm/vs/editor/editor.worker.js?worker'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { I18nKey } from '../../i18n.ts'
 import { getAppThemeMode } from '../../utils/theme.ts'
@@ -99,6 +138,24 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   zsh: 'shell',
 }
 
+function createMonacoWorker(kind: 'editor' | 'json' | 'ts'): Worker {
+  // dev 模式：esm/vs 的 worker 是 ESM 模块，classic worker（importScripts）无法加载，
+  // Monaco 会回退主线程执行语言服务导致 UI 卡顿（打开审阅面板时尤其明显），且 diff 计算
+  // （computeDiff）依赖 worker——worker 失败会导致变更行红绿高亮消失。
+  // 故 dev 下用 vite 插件（vite.config.ts monacoDevWorkersPlugin）预先打包的 iife worker
+  // （esbuild 产物，classic worker 可直接加载，同版本 postMessage 协议兼容），生产用 vite 打包的 iife worker。
+  if (import.meta.env.DEV) {
+    return new Worker(`/node_modules/.cache/monaco-workers/${kind}.worker.js`)
+  }
+  if (kind === 'json') {
+    return new jsonWorker()
+  }
+  if (kind === 'ts') {
+    return new tsWorker()
+  }
+  return new editorWorker()
+}
+
 function ensureMonacoConfigured() {
   if (monacoConfigured || typeof globalThis === 'undefined') {
     return
@@ -106,21 +163,14 @@ function ensureMonacoConfigured() {
   globalThis.MonacoEnvironment = {
     getWorker(_workerId: string, label: string): Worker {
       if (label === 'json') {
-        return new jsonWorker()
-      }
-      if (label === 'css' || label === 'scss' || label === 'less') {
-        return new cssWorker()
-      }
-      if (label === 'html' || label === 'handlebars' || label === 'razor') {
-        return new htmlWorker()
+        return createMonacoWorker('json')
       }
       if (label === 'typescript' || label === 'javascript') {
-        return new tsWorker()
+        return createMonacoWorker('ts')
       }
-      return new editorWorker()
+      return createMonacoWorker('editor')
     },
   }
-  loader.config({ monaco })
   monacoConfigured = true
 }
 
@@ -208,9 +258,13 @@ export interface DiffEditorPairProps {
 
 export function DiffEditorPair({ block, index = 0, path = '', reviewId = '', showBlockBadge = false, t, onNavigateReady = null }: DiffEditorPairProps) {
   const [themeName, setThemeName] = useState(resolveMonacoThemeName())
+  const [editorReady, setEditorReady] = useState(false)
+  const hostRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
+  const modelsRef = useRef<{ original: monaco.editor.ITextModel; modified: monaco.editor.ITextModel } | null>(null)
   const diffUpdateDisposableRef = useRef<monaco.IDisposable | null>(null)
   const firstDiffRevealedRef = useRef(false)
+  const createdRef = useRef(false)
   const rawBlock = block as ReviewBlock | null | undefined
   const original = typeof rawBlock?.before === 'string' ? normalizeText(rawBlock.before) : ''
   const modified = typeof rawBlock?.after === 'string' ? normalizeText(rawBlock.after) : ''
@@ -250,6 +304,79 @@ export function DiffEditorPair({ block, index = 0, path = '', reviewId = '', sho
     firstDiffRevealedRef.current = true
     editor.goToDiff('next')
   }, [])
+
+  // 创建 + 内容更新合并为单一 effect（依赖变化即触发）：
+  // - 首次（createdRef=false）：创建 editor + models + diff 更新订阅
+  // - 后续（createdRef=true）：先 dispose 旧 models 再 create 新 models（新模型复用同一 URI，必须先释放旧的避免 already exists）
+  // 注意：不能拆成两个 effect——挂载时所有 effect 都会执行，拆分会重复 createModel 同一 uri 报 already exists
+  useEffect(() => {
+    if (!createdRef.current) {
+      const host = hostRef.current
+      if (!host) {
+        return undefined
+      }
+      const editor = monaco.editor.createDiffEditor(host, editorOptions)
+      editorRef.current = editor
+      const models = {
+        original: monaco.editor.createModel(original, language, monaco.Uri.parse(originalModelPath)),
+        modified: monaco.editor.createModel(modified, language, monaco.Uri.parse(modifiedModelPath)),
+      }
+      modelsRef.current = models
+      editor.setModel(models)
+      diffUpdateDisposableRef.current?.dispose()
+      diffUpdateDisposableRef.current = editor.onDidUpdateDiff(revealFirstDiff)
+      revealFirstDiff()
+      if (focusLine > 0 && !firstDiffRevealedRef.current) {
+        editor.revealLineInCenter(focusLine)
+      }
+      createdRef.current = true
+      setEditorReady(true)
+      return undefined
+    }
+    const editor = editorRef.current
+    if (!editor) {
+      return undefined
+    }
+    const oldModels = modelsRef.current
+    // 先 dispose 旧模型再 create 新模型：新模型复用同一 URI（path/reviewId/index 不变仅内容变），
+    // 若旧模型仍存活，createModel 会抛 "model with uri already exists"（@monaco-editor/react 内部同此顺序）
+    oldModels?.original.dispose()
+    oldModels?.modified.dispose()
+    const next = {
+      original: monaco.editor.createModel(original, language, monaco.Uri.parse(originalModelPath)),
+      modified: monaco.editor.createModel(modified, language, monaco.Uri.parse(modifiedModelPath)),
+    }
+    modelsRef.current = next
+    editor.setModel(next)
+    firstDiffRevealedRef.current = false
+    return undefined
+  }, [original, modified, language, originalModelPath, modifiedModelPath, editorOptions, revealFirstDiff, focusLine])
+
+  // 卸载：先 dispose editor（widget 先 reset），后 dispose models——
+  // 顺序与 @monaco-editor/react 相反，避免 "TextModel got disposed before DiffEditorWidget model got reset"
+  useEffect(() => () => {
+    diffUpdateDisposableRef.current?.dispose()
+    diffUpdateDisposableRef.current = null
+    const oldModels = modelsRef.current
+    modelsRef.current = null
+    const editor = editorRef.current
+    editorRef.current = null
+    createdRef.current = false
+    editor?.dispose()
+    oldModels?.original.dispose()
+    oldModels?.modified.dispose()
+  }, [])
+
+  // 选项变化（ariaLabel 等）时同步
+  useEffect(() => {
+    editorRef.current?.updateOptions(editorOptions)
+  }, [editorOptions])
+
+  // 主题同步（setTheme 为全局调用，Monaco 仅本面板使用，安全）
+  useEffect(() => {
+    monaco.editor.setTheme(themeName)
+  }, [themeName])
+
   useEffect(() => {
     if (typeof onNavigateReady !== 'function') {
       return undefined
@@ -257,14 +384,7 @@ export function DiffEditorPair({ block, index = 0, path = '', reviewId = '', sho
     onNavigateReady(goToDiff)
     return () => onNavigateReady(null)
   }, [goToDiff, onNavigateReady])
-  useEffect(() => {
-    firstDiffRevealedRef.current = false
-  }, [original, modified])
-  useEffect(() => () => {
-    diffUpdateDisposableRef.current?.dispose()
-    diffUpdateDisposableRef.current = null
-    editorRef.current = null
-  }, [])
+
   useEffect(() => {
     const refreshTheme = () => setThemeName(resolveMonacoThemeName())
     refreshTheme()
@@ -328,30 +448,11 @@ export function DiffEditorPair({ block, index = 0, path = '', reviewId = '', sho
           ) : null}
         </div>
       ) : null}
-      <div style={{ minHeight: 0 }}>
-        <DiffEditor
-          height="100%"
-          width="100%"
-          original={original}
-          modified={modified}
-          language={language}
-          originalModelPath={originalModelPath}
-          modifiedModelPath={modifiedModelPath}
-          keepCurrentOriginalModel={false}
-          keepCurrentModifiedModel={false}
-          theme={themeName}
-          loading={buildLoadingNode(t('加载中...'))}
-          options={editorOptions}
-          onMount={(editor) => {
-            editorRef.current = editor
-            diffUpdateDisposableRef.current?.dispose()
-            diffUpdateDisposableRef.current = editor.onDidUpdateDiff(revealFirstDiff)
-            revealFirstDiff()
-            if (focusLine > 0 && !firstDiffRevealedRef.current) {
-              editor.revealLineInCenter(focusLine)
-            }
-          }}
-        />
+      <div style={{ minHeight: 0, position: 'relative' }}>
+        {!editorReady ? (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>{buildLoadingNode(t('加载中...'))}</div>
+        ) : null}
+        <div ref={hostRef} style={{ height: '100%', minHeight: 0 }} />
       </div>
     </div>
   )

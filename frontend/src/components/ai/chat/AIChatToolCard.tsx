@@ -447,14 +447,6 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
     }
   }, [hasSubsequentAssistantMessage])
 
-  useEffect(() => {
-    if (!restored) {
-      return undefined
-    }
-    const timer = window.setTimeout(() => setRestored(false), 1200)
-    return () => window.clearTimeout(timer)
-  }, [restored])
-
   const normalizedRestoreArtifactPath = typeof restoreArtifactPath === 'string' ? restoreArtifactPath.trim() : ''
   const showRevertTitleButton = ['apply_diff', 'write_to_file', 'search_replace', 'edit_file', 'apply_patch'].includes(String(actionLabel || '').trim())
   const showInlineDiffPreview = showRevertTitleButton && extra?.conversationDiffHasPreview === true && Boolean(normalizedRestoreArtifactPath) && typeof onPreviewDiffFetch === 'function'
@@ -543,14 +535,14 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
   }
 
   const handlePreviewRestore = () => {
-    if (!normalizedRestoreArtifactPath) {
+    if (restored || !normalizedRestoreArtifactPath) {
       return
     }
     void onPreviewRestore?.(normalizedRestoreArtifactPath)
   }
 
   const handleApplyRestore = async () => {
-    if (!normalizedRestoreArtifactPath) {
+    if (restored || !normalizedRestoreArtifactPath) {
       return
     }
     const applied = await onApplyRestore?.(normalizedRestoreArtifactPath)
@@ -607,7 +599,7 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
             <Tiptop text={restored ? t('已还原') : t('左键预览/右键还原')} style={{ display: 'inline-flex' }}>
               <button
                 type="button"
-                onClick={(event) => {
+                onClick={restored ? undefined : (event) => {
                   event.stopPropagation()
                   handlePreviewRestore()
                 }}
@@ -615,7 +607,7 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
                   event.preventDefault()
                   event.stopPropagation()
                 }}
-                onContextMenu={(event) => {
+                onContextMenu={restored ? undefined : (event) => {
                   event.preventDefault()
                   event.stopPropagation()
                   void handleApplyRestore()
@@ -632,7 +624,7 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
                   color: restored ? 'var(--success)' : 'var(--text-secondary)',
                   fontSize: 11,
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  cursor: restored ? 'default' : 'pointer',
                   flexShrink: 0,
                 }}>
                 <RotateCcw size={11} color={restored ? 'currentColor' : 'var(--accent)'} />
