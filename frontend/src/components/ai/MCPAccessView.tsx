@@ -61,8 +61,12 @@ interface MCPAccessViewProps {
   showTools?: boolean;
   mcpEnabled?: boolean;
   mcpAllowBrowserCalls?: boolean;
+  mcpRequireApproval?: boolean;
+  mcpActivityVisible?: boolean;
   onToggleMcpEnabled: () => void;
   onToggleMcpAllowBrowserCalls: () => void;
+  onToggleMcpRequireApproval: () => void;
+  onToggleMcpActivityVisible: () => void;
 }
 
 export default function MCPAccessView({
@@ -75,8 +79,12 @@ export default function MCPAccessView({
   showTools = false,
   mcpEnabled = true,
   mcpAllowBrowserCalls = false,
+  mcpRequireApproval = false,
+  mcpActivityVisible = true,
   onToggleMcpEnabled,
   onToggleMcpAllowBrowserCalls,
+  onToggleMcpRequireApproval,
+  onToggleMcpActivityVisible,
 }: MCPAccessViewProps) {
   const { t } = useTranslation();
 
@@ -108,6 +116,20 @@ export default function MCPAccessView({
             <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('允许带 Origin 的浏览器请求访问本地 MCP 服务。关闭后仅允许无 Origin 的本机客户端调用')}</div>
           </div>
           <ToggleSwitch checked={mcpAllowBrowserCalls} onChange={onToggleMcpAllowBrowserCalls} disabled={!mcpEnabled} />
+        </div>
+        <div style={{ padding: 14, borderRadius: 12, background: 'var(--surface-base)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, opacity: mcpEnabled ? 1 : 0.65 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{t('外部 MCP 操作可见')}</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('在 MCP 活动面板中显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出')}</div>
+          </div>
+          <ToggleSwitch checked={mcpActivityVisible} onChange={onToggleMcpActivityVisible} disabled={!mcpEnabled} />
+        </div>
+        <div style={{ padding: 14, borderRadius: 12, background: 'var(--surface-base)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, opacity: mcpEnabled ? 1 : 0.65 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700 }}>{t('外部 MCP 写操作需审批')}</div>
+            <div style={{ color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.6 }}>{t('开启后，外部客户端的写操作（is_mutating）需在应用内手动批准才执行。关闭则自动执行。')}</div>
+          </div>
+          <ToggleSwitch checked={mcpRequireApproval} onChange={onToggleMcpRequireApproval} disabled={!mcpEnabled} />
         </div>
       </div>
       <div style={{ display: 'grid', gap: 10, padding: 14, background: 'var(--surface-base)', border: '1px solid var(--border)', borderRadius: 12 }}>

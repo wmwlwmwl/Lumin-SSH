@@ -5,6 +5,7 @@ import type { config } from '../wailsjs/go/models.ts';
 import ProbePanel, { type ProbeSnapshot } from './components/ProbePanel.tsx';
 import FileManager from './components/FileManager.tsx';
 import AIPanel from './components/AIPanel.tsx';
+import MCPActivityPanel from './components/MCPActivityPanel.tsx';
 import { isRecoveryPasswordError, syncWithRecoveryPassword } from './utils/recoveryPasswordSync.ts';
 import {
   getAllSessionFileManagerWorkspaces,
@@ -521,6 +522,7 @@ export default function App() {
     updateLeftSplitWidth,
     updateProbePanelWidth,
   });
+  const [showMCPActivity, setShowMCPActivity] = useState(false);
   const [showSessionList, setShowSessionList] = useState(false);
   const [terminalThemeToggle, setTerminalThemeToggle] = useState(0);
   const [sessionListPos, setSessionListPos] = useState({ x: 0, y: 0 });
@@ -1923,6 +1925,56 @@ export default function App() {
         animation={{ editFlyAnimation: editFlyAnimation as unknown as AppOverlaysProps['animation']['editFlyAnimation'], editorModeBanner }}
         shared={{ addToast: looseAddToast, t: looseT }}
       />
+
+      {/* ── MCP Activity floating panel ──────────────────── */}
+      <MCPActivityFloatingToggle
+        visible={!showMCPActivity}
+        onClick={() => setShowMCPActivity(true)}
+      />
+      {showMCPActivity && (
+        <div style={{
+          position: 'fixed',
+          bottom: '16px',
+          right: '16px',
+          width: '380px',
+          maxWidth: 'calc(100vw - 32px)',
+          height: '60vh',
+          maxHeight: '600px',
+          zIndex: 9999,
+        }}>
+          <MCPActivityPanel onClose={() => setShowMCPActivity(false)} />
+        </div>
+      )}
     </div>
+  );
+}
+
+function MCPActivityFloatingToggle({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+  if (!visible) return null;
+  return (
+    <button
+      onClick={onClick}
+      title="MCP 活动"
+      style={{
+        position: 'fixed',
+        bottom: '16px',
+        right: '16px',
+        width: '40px',
+        height: '40px',
+        borderRadius: '50%',
+        border: '1px solid rgba(255,255,255,0.12)',
+        background: 'var(--lumin-bg-tertiary, #1a2335)',
+        color: 'var(--lumin-text-secondary, #8892b0)',
+        cursor: 'pointer',
+        zIndex: 9998,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '18px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+      }}
+    >
+      🤖
+    </button>
   );
 }

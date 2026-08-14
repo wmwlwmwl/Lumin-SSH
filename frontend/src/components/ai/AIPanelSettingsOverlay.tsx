@@ -141,6 +141,8 @@ interface GlobalAISettingsLike {
   messageNavEnabled?: boolean
   mcpEnabled?: boolean
   mcpAllowBrowserCalls?: boolean
+  mcpRequireApproval?: boolean
+  mcpActivityVisible?: boolean
   continueAfterToolRejection?: boolean
   proxyNodes?: Array<{ id?: string; name?: string; type?: string; host?: string; port?: string | number }>
   aiRequestProxyId?: string
@@ -365,6 +367,8 @@ export default function AIPanelSettingsOverlay({
   const messageNavEnabled = globalAISettings?.messageNavEnabled !== false
   const mcpEnabled = globalAISettings?.mcpEnabled !== false
   const mcpAllowBrowserCalls = Boolean(globalAISettings?.mcpAllowBrowserCalls)
+  const mcpRequireApproval = Boolean(globalAISettings?.mcpRequireApproval)
+  const mcpActivityVisible = globalAISettings?.mcpActivityVisible !== false
   const continueAfterToolRejection = globalAISettings?.continueAfterToolRejection !== false
   const proxyNodes = Array.isArray(globalAISettings?.proxyNodes) ? globalAISettings.proxyNodes : []
   const aiRequestProxyId = typeof globalAISettings?.aiRequestProxyId === 'string' ? globalAISettings.aiRequestProxyId : ''
@@ -572,8 +576,12 @@ export default function AIPanelSettingsOverlay({
                 showTools={true}
                 mcpEnabled={mcpEnabled}
                 mcpAllowBrowserCalls={mcpAllowBrowserCalls}
+                mcpRequireApproval={mcpRequireApproval}
+                mcpActivityVisible={mcpActivityVisible}
                 onToggleMcpEnabled={() => onSaveGlobalAISettings?.({ mcpEnabled: !mcpEnabled })}
                 onToggleMcpAllowBrowserCalls={() => onSaveGlobalAISettings?.({ mcpAllowBrowserCalls: !mcpAllowBrowserCalls })}
+                onToggleMcpRequireApproval={() => onSaveGlobalAISettings?.({ mcpRequireApproval: !mcpRequireApproval })}
+                onToggleMcpActivityVisible={() => onSaveGlobalAISettings?.({ mcpActivityVisible: !mcpActivityVisible })}
               />
             )}
             {activeTab === 'mcp-servers' ? (

@@ -138,6 +138,7 @@ type App struct {
 	liveWorkspaceState        string
 	externalEdit              *externaledit.Manager
 	icon                      []byte
+	mcpReporter               *mcpActivityReporter
 }
 
 type BuiltinProviderRuntimeStatus struct {
@@ -190,6 +191,7 @@ func NewApp() *App {
 		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
+	app.mcpReporter = newMCPActivityReporter(app)
 	app.configManager.SetProgramDir(getProgramDirectory())
 	app.configManager.SetOnDeleteConnection(ping.ClearPingHostState)
 	app.externalEdit = externaledit.NewManager(

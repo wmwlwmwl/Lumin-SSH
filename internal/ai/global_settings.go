@@ -56,6 +56,8 @@ type AIGlobalSettings struct {
 	SoundVolume                         float64          `json:"soundVolume,omitempty"`
 	MCPEnabled                          bool             `json:"mcpEnabled"`
 	MCPAllowBrowserCalls                bool             `json:"mcpAllowBrowserCalls"`
+	MCPRequireApproval                  bool             `json:"mcpRequireApproval"`
+	MCPActivityVisible                  bool             `json:"mcpActivityVisible"`
 	TerminalIsolation                   bool             `json:"terminalIsolation"`
 	ConfirmDelete                       bool             `json:"confirmDelete"`
 	ContinueAfterToolRejection          bool             `json:"continueAfterToolRejection"`
@@ -72,10 +74,12 @@ type AIGlobalSettings struct {
 
 func defaultAIGlobalSettings() AIGlobalSettings {
 	return AIGlobalSettings{
-		SoundEnabled:                  true,
-		SoundVolume:                   0.06,
-		MCPEnabled:                    true,
-		MCPAllowBrowserCalls:          false,
+		SoundEnabled:              true,
+		SoundVolume:               0.06,
+		MCPEnabled:                true,
+		MCPAllowBrowserCalls:      false,
+		MCPRequireApproval:        false,
+		MCPActivityVisible:        true,
 		TerminalIsolation:             true,
 		ConfirmDelete:                 true,
 		ContinueAfterToolRejection:    true,

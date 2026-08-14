@@ -8,6 +8,35 @@ import (
 
 const BrowserCallsDisabledOriginSentinel = "__lumin_browser_calls_disabled__"
 
+// ParseClientName derives a human-readable client label from the HTTP
+// User-Agent header. Returns "unknown" when the header is absent or
+// unparseable.
+func ParseClientName(userAgent string) string {
+	trimmed := strings.TrimSpace(userAgent)
+	if trimmed == "" {
+		return "unknown"
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.Contains(lower, "claude"):
+		return "claude-code"
+	case strings.Contains(lower, "codex"):
+		return "codex"
+	case strings.Contains(lower, "cursor"):
+		return "cursor"
+	case strings.Contains(lower, "cline"):
+		return "cline"
+	case strings.Contains(lower, "windsurf"):
+		return "windsurf"
+	default:
+		fields := strings.Fields(trimmed)
+		if len(fields) == 0 {
+			return "unknown"
+		}
+		return strings.ToLower(fields[0])
+	}
+}
+
 type HTTPHandler struct {
 	catalog *Catalog
 	serverInfo Implementation
@@ -144,7 +173,7 @@ func (h *HTTPHandler) handlePost(w http.ResponseWriter, r *http.Request) {
 		h.log("request tools/list")
 		h.handleToolsList(w, request)
 	case MethodToolsCall:
-		h.handleToolsCall(w, request)
+		h.handleToolsCall(w, r, request)
 	case MethodResourcesList:
 		h.log("request resources/list")
 		h.writeResult(w, request.ID, ResourcesListResult{Resources: []any{}})
@@ -195,7 +224,7 @@ func (h *HTTPHandler) handleToolsList(w http.ResponseWriter, request JSONRPCRequ
 	h.writeResult(w, request.ID, ToolsListResult{Tools: h.catalog.List()})
 }
 
-func (h *HTTPHandler) handleToolsCall(w http.ResponseWriter, request JSONRPCRequest) {
+func (h *HTTPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, request JSONRPCRequest) {
 	if h.catalog == nil {
 		h.writeError(w, request.ID, -32603, "catalog unavailable", nil)
 		return
@@ -212,7 +241,8 @@ func (h *HTTPHandler) handleToolsCall(w http.ResponseWriter, request JSONRPCRequ
 		return
 	}
 	h.log("request tools/call name=" + strings.TrimSpace(params.Name))
-	result, err := h.catalog.Call(params.Name, params.Arguments)
+	ctx := ContextWithClientName(r.Context(), ParseClientName(r.Header.Get("User-Agent")))
+	result, err := h.catalog.CallWithContext(ctx, params.Name, params.Arguments)
 	if err != nil {
 		h.log("tool call error name=" + strings.TrimSpace(params.Name) + " error=" + err.Error())
 		h.writeResult(w, request.ID, ToolCallResult{

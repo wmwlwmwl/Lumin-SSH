@@ -17,6 +17,7 @@ type Catalog struct {
 	commandProvider    CommandProvider
 	remoteEditExecutor RemoteEditExecutor
 	transferProvider   TransferProvider
+	reporter           ActivityReporter
 	callCtx            context.Context
 }
 
@@ -31,7 +32,19 @@ func NewCatalog(service *Service, fileProvider FileProvider, commandProvider Com
 		commandProvider:    commandProvider,
 		remoteEditExecutor: remoteEditExecutor,
 		transferProvider:   transferProvider,
+		reporter:           NoopReporter(),
 		callCtx:            context.Background(),
+	}
+}
+
+// SetReporter sets the activity reporter used to emit per-call activity events.
+// Must be called before the catalog serves any requests.
+func (c *Catalog) SetReporter(reporter ActivityReporter) {
+	if c == nil {
+		return
+	}
+	if reporter != nil {
+		c.reporter = reporter
 	}
 }
 
@@ -62,38 +75,108 @@ func (c *Catalog) CallWithContext(ctx context.Context, name string, arguments ma
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	reporter := c.reporter
+	if reporter == nil {
+		reporter = NoopReporter()
+	}
+	clientName := ClientNameFromContext(ctx)
+	ctx = ContextWithActivity(ctx, reporter, clientName)
+
 	clone := *c
 	clone.callCtx = ctx
+
+	// execute_command emits its own full lifecycle via the command provider.
+	if name == "execute_command" {
+		return clone.callExecuteCommand(arguments)
+	}
+
+	// For all other tools, emit a catalog-level start/done envelope.
+	sessionID := extractSessionID(arguments)
+	serverName := clone.resolveServerName(sessionID)
+	requestID := NewRequestID()
+
+	baseEvent := ActivityEvent{
+		RequestID:  requestID,
+		Source:     ActivitySourceExternalMCP,
+		ClientName: clientName,
+		Tool:       name,
+		SessionID:  sessionID,
+		ServerName: serverName,
+	}
+	reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusStarted, "", nil))
+
+	result, err := clone.dispatchTool(name, arguments)
+	if err != nil {
+		reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusError, err.Error(), nil))
+		return nil, err
+	}
+	reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusDone, "", nil))
+	return result, nil
+}
+
+func (c *Catalog) dispatchTool(name string, arguments map[string]any) (any, error) {
 	switch name {
 	case "list_connected_sessions":
-		return clone.callListConnectedSessions(arguments)
+		return c.callListConnectedSessions(arguments)
 	case "get_work_path":
-		return clone.callGetWorkPath(arguments)
+		return c.callGetWorkPath(arguments)
 	case "list_files":
-		return clone.callListFiles(arguments)
+		return c.callListFiles(arguments)
 	case "read_file":
-		return clone.callReadFile(arguments)
+		return c.callReadFile(arguments)
 	case "write_to_file":
-		return clone.callWriteToFile(arguments)
+		return c.callWriteToFile(arguments)
 	case "transfer_batch":
-		return clone.callTransferBatch(arguments)
+		return c.callTransferBatch(arguments)
 	case "transfer_list":
-		return clone.callTransferList(arguments)
-	case "execute_command":
-		return clone.callExecuteCommand(arguments)
+		return c.callTransferList(arguments)
 	case "ask_followup_question":
-		return clone.callAskFollowupQuestion(arguments)
+		return c.callAskFollowupQuestion(arguments)
 	case "attempt_completion":
-		return clone.callAttemptCompletion(arguments)
+		return c.callAttemptCompletion(arguments)
 	case "search_replace":
-		return clone.callSearchReplace(arguments)
+		return c.callSearchReplace(arguments)
 	case "apply_diff":
-		return clone.callApplyDiff(arguments)
+		return c.callApplyDiff(arguments)
 	case "edit_file":
-		return clone.callEditFile(arguments)
+		return c.callEditFile(arguments)
 	case "apply_patch":
-		return clone.callApplyPatch(arguments)
+		return c.callApplyPatch(arguments)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+func extractSessionID(arguments map[string]any) string {
+	if arguments == nil {
+		return ""
+	}
+	value, ok := arguments["session_id"]
+	if !ok {
+		return ""
+	}
+	text, _ := value.(string)
+	return text
+}
+
+func (c *Catalog) resolveServerName(sessionID string) string {
+	if c == nil || c.service == nil || sessionID == "" {
+		return ""
+	}
+	session, err := c.service.GetConnectedSession(sessionID)
+	if err != nil {
+		return ""
+	}
+	if len(session.Tags) > 0 {
+		return session.Tags[0]
+	}
+	return session.ConnectionRef
+}
+
+func fillTimestamp(base ActivityEvent, status ActivityStatus, output string, exitCode *int) ActivityEvent {
+	base.Status = status
+	base.Output = output
+	base.ExitCode = exitCode
+	base.Timestamp = Now()
+	return base
 }

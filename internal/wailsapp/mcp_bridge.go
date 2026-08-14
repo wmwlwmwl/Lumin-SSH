@@ -141,5 +141,9 @@ func (a *App) ListConnectedSessions() ([]mcpserver.ConnectedSession, error) {
 
 // newMCPHost 构造 mcpbridge.Host，注入 App 的具体依赖。
 func newMCPHost(app *App) mcpbridge.Host {
-	return mcpbridge.NewHost(app.sshManager, app.configManager, app.GetWorkspaceState, app)
+	host := mcpbridge.NewHost(app.sshManager, app.configManager, app.GetWorkspaceState, app)
+	if app.mcpReporter != nil {
+		host = host.WithReporter(app.mcpReporter)
+	}
+	return host
 }

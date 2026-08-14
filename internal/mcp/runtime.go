@@ -87,6 +87,9 @@ func StartServer(host Host, settings ServiceSettings) {
 	appendMCPLog("starting MCP server")
 	service := mcpserver.NewService(NewSessionProvider(host))
 	catalog := mcpserver.NewCatalog(service, NewFileProvider(host), NewCommandProvider(host), NewRemoteEditExecutor(host), NewTransferProvider(host))
+	if carrier, ok := host.(ActivityReporterCarrier); ok {
+		catalog.SetReporter(carrier.MCPActivityReporter())
+	}
 	allowedOrigins := []string{mcpserver.BrowserCallsDisabledOriginSentinel}
 	if settings.AllowBrowserCalls {
 		allowedOrigins = nil
