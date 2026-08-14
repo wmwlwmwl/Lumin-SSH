@@ -21,6 +21,7 @@ import {
   type AutocompleteSources,
   type FlattenedQuickCommand,
 } from '../utils/terminalCommandAutocomplete.ts';
+import { parseCommandInputContext } from '../utils/terminalCommandAutocompleteParser.ts';
 import Tiptop from './Tiptop.tsx';
 import type { QuickCommandsHandle } from './QuickCommands.tsx';
 import '@xterm/xterm/css/xterm.css';
@@ -438,6 +439,30 @@ function buildWrappedMultiLineCommand(command: string) {
   return `bash <<'${marker}'\n${source}\n${marker}\n`
 }
 
+const SCREEN_NON_INTERACTIVE_OPTIONS = new Set(['-ls', '-list', '-wipe', '-v', '-version', '--version', '-help', '--help']);
+
+/** 只识别会进入 GNU screen 界面的命令；查询、后台启动和控制命令保持标准终端行为。 */
+function startsInteractiveScreen(command: string) {
+  // ponytail: 仅解析提交行最后一个 shell 段和常用包装器；若要覆盖别名/函数，改由后端上报前台进程。
+  const context = parseCommandInputContext(String(command ?? '').trim());
+  const tokens = context.tokens.map((token) => token.text.replace(/^['"]|['"]$/g, ''));
+  while (tokens.length && /^(?:sudo|env|command|exec)$/i.test(tokens[0])) tokens.shift();
+  while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+  const executable = (tokens.shift() || '').replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+  if (executable !== 'screen') return false;
+  if (tokens.includes('-X') || tokens.some((token) => /^-dm/i.test(token))) return false;
+  const lowerOptions = tokens.map((token) => token.toLowerCase());
+  if (lowerOptions.some((token) => SCREEN_NON_INTERACTIVE_OPTIONS.has(token))) return false;
+  return !lowerOptions.includes('-d') || lowerOptions.some((token) => /^-r+$/.test(token) || token === '-x');
+}
+
+if (import.meta.env.DEV) {
+  console.assert(startsInteractiveScreen('screen -S demo-session'), 'screen 启动命令识别失败');
+  console.assert(startsInteractiveScreen('sudo /usr/bin/screen -r demo-session'), 'screen 恢复命令识别失败');
+  console.assert(!startsInteractiveScreen('screen -ls'), 'screen 查询命令不应进入兼容模式');
+  console.assert(!startsInteractiveScreen('screen -dmS demo-session command'), 'screen 后台命令不应进入兼容模式');
+}
+
 /** 粘贴到终端：统一换行并清掉尾部连续回车，避免右键粘贴时直接连发多次执行 */
 function normalizeTerminalPasteText(text: string) {
   return String(text ?? '')
@@ -618,6 +643,8 @@ export default function Terminal({
   const hlStateRef = useRef(createHighlightState());
   const [alternateBufferActive, setAlternateBufferActive] = useState(false);
   const alternateBufferActiveRef = useRef(false);
+  const screenScrollbackRef = useRef({ pending: false, active: false });
+  const prepareScreenScrollbackRef = useRef<(command: string) => void>(() => {});
   // Ring buffer 时间戳：用 xterm marker 跟随 scrollback 裁剪，避免 buffer 行号复用后错位
   const TS_POOL = 6000;
   // null! 惰性初始化惯用法：下方 if 守卫保证首次渲染即完成填充，后续恒非空
@@ -1356,6 +1383,45 @@ export default function Terminal({
       },
     });
     term.open(containerRef.current);
+    screenScrollbackRef.current.pending = false;
+    screenScrollbackRef.current.active = false;
+    const syncTuiState = (screenActive = screenScrollbackRef.current.active) => {
+      const active = term.buffer.active.type === 'alternate' || screenActive;
+      alternateBufferActiveRef.current = active;
+      setAlternateBufferActive(active);
+      if (active) {
+        if (gutterSyncRAFRef.current !== null) {
+          cancelAnimationFrame(gutterSyncRAFRef.current);
+          gutterSyncRAFRef.current = null;
+        }
+        if (gutterRef.current) gutterRef.current.innerHTML = '';
+        if (linkUnderlineLayerRef.current) linkUnderlineLayerRef.current.innerHTML = '';
+      } else {
+        scheduleGutterSync();
+        scheduleLinkUnderlineSync();
+      }
+    };
+    prepareScreenScrollbackRef.current = (command) => {
+      if (screenScrollbackRef.current.active) return;
+      screenScrollbackRef.current.pending = startsInteractiveScreen(command);
+    };
+    const screenAltModeSetDisposable = term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+      const mode = params.length === 1 && typeof params[0] === 'number' ? params[0] : 0;
+      if ((!screenScrollbackRef.current.pending && !screenScrollbackRef.current.active) || (mode !== 47 && mode !== 1047 && mode !== 1049)) return false;
+      screenScrollbackRef.current.pending = false;
+      screenScrollbackRef.current.active = true;
+      syncTuiState(true);
+      return true;
+    });
+    const screenAltModeResetDisposable = term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) => {
+      const mode = params.length === 1 && typeof params[0] === 'number' ? params[0] : 0;
+      if (!screenScrollbackRef.current.active || (mode !== 47 && mode !== 1047 && mode !== 1049)) return false;
+      screenScrollbackRef.current.active = false;
+      screenScrollbackRef.current.pending = false;
+      syncTuiState(false);
+      // normal buffer 已承载 screen 历史，不能再执行 1049l 的旧光标恢复，否则长日志会把提示符拉回已裁剪位置。
+      return true;
+    });
     try { fitAddon.fit(); } catch (_) {}
     const terminalInput = containerRef.current.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
     if (terminalInput) {
@@ -1385,7 +1451,7 @@ export default function Terminal({
 
     // ── 每行时间戳 / 命令块：marker 跟随 xterm scrollback 裁剪 ──
     const lineFeedDisposable = term.onLineFeed(() => {
-      if (term.buffer.active.type !== 'normal') return;
+      if (alternateBufferActiveRef.current || term.buffer.active.type !== 'normal') return;
       if (!timestampsEnabledRef.current && !commandBlocksEnabledRef.current) return;
 
       const buf = term.buffer.active;
@@ -1431,20 +1497,7 @@ export default function Terminal({
       }
     });
     const bufferChangeDisposable = term.buffer.onBufferChange((buffer) => {
-      const alternate = buffer.type === 'alternate';
-      alternateBufferActiveRef.current = alternate;
-      setAlternateBufferActive(alternate);
-      if (alternate) {
-        if (gutterSyncRAFRef.current !== null) {
-          cancelAnimationFrame(gutterSyncRAFRef.current);
-          gutterSyncRAFRef.current = null;
-        }
-        if (gutterRef.current) gutterRef.current.innerHTML = '';
-        if (linkUnderlineLayerRef.current) linkUnderlineLayerRef.current.innerHTML = '';
-      } else {
-        scheduleGutterSync();
-        scheduleLinkUnderlineSync();
-      }
+      syncTuiState(buffer.type === 'alternate' || screenScrollbackRef.current.active);
     });
     const wheelHandler = (e: WheelEvent) => {
       // 无论向上还是向下滚动，都检查当前位置并更新锁定状态
@@ -1867,6 +1920,9 @@ export default function Terminal({
           const c = cmd.toLowerCase(), p = pending.toLowerCase();
           if (!c.startsWith(p) && !p.startsWith(c)) cmd = pending;
         }
+        if (!awaitingPasswordRef.current) {
+          prepareScreenScrollbackRef.current(cmd);
+        }
         if (!awaitingPasswordRef.current && cmd.length > 1 && !/^\d+$/.test(cmd)) {
           window.dispatchEvent(new CustomEvent('ssh-command-history', {
             detail: { sessionId: serverIdRef.current, command: cmd, time: new Date().toISOString(), source: 'input' }
@@ -1884,6 +1940,7 @@ export default function Terminal({
         pendingCmdRef.current += out;
       } else if (out === '\x03' || out === '\x04') {
         pendingCmdRef.current = '';
+        if (!screenScrollbackRef.current.active) screenScrollbackRef.current.pending = false;
         awaitingPasswordRef.current = false; // Ctrl+C/D 取消当前输入，重置密码等待状态，避免下一条普通命令被误跳过
       }
 
@@ -1932,6 +1989,8 @@ export default function Terminal({
       lineFeedDisposable.dispose();
       writeParsedDisposable.dispose();
       bufferChangeDisposable.dispose();
+      screenAltModeSetDisposable.dispose();
+      screenAltModeResetDisposable.dispose();
       resizeDisposable.dispose();
       try { linkProviderDisposable.dispose(); } catch (_) {}
       try { searchResultsDisposable.dispose(); } catch (_) {}
@@ -1957,6 +2016,9 @@ export default function Terminal({
         delete window.__luminTerminalSnapshots[sessionId];
       }
       smartWriteRef.current = null;
+      screenScrollbackRef.current.pending = false;
+      screenScrollbackRef.current.active = false;
+      prepareScreenScrollbackRef.current = () => {};
       alternateBufferActiveRef.current = false;
       termRef.current     = null;
       fitAddonRef.current = null;
@@ -1990,6 +2052,11 @@ export default function Terminal({
   // 浏览器连接和 Go ReadMessage goroutine。重连后只重建 WS，不重建 xterm。
   useEffect(() => {
     if (status === 'closed' || status === 'error') {
+      screenScrollbackRef.current.pending = false;
+      screenScrollbackRef.current.active = false;
+      const actualAlternate = termRef.current?.buffer.active.type === 'alternate';
+      alternateBufferActiveRef.current = actualAlternate;
+      setAlternateBufferActive(actualAlternate);
       const ws = wsRef.current;
       wsRef.current = null;
       if (ws) {
@@ -2978,6 +3045,7 @@ export default function Terminal({
       : multiLineWrapEnabled && lineCount > 1
         ? buildWrappedMultiLineCommand(normalizedText)
         : text + '\r';
+    prepareScreenScrollbackRef.current(text);
     AppGo.WriteTerminal(sessionId, finalPayload).catch((err) => {
       console.error('WriteTerminal failed:', err);
     });
@@ -3022,6 +3090,9 @@ export default function Terminal({
       : multiLineWrapEnabled && lineCount > 1
         ? buildWrappedMultiLineCommand(text)
         : text + '\r';
+    if (pending.item.addCR !== false) {
+      prepareScreenScrollbackRef.current(text);
+    }
     AppGo.WriteTerminal(sessionId, payload).catch((err) => {
       console.error('WriteTerminal failed:', err);
     });

@@ -19,6 +19,22 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+func TestBuildShellLaunchCommandSkipsMarkersInMultiplexers(t *testing.T) {
+	command, historyActive := buildShellLaunchCommand("/bin/bash", "")
+	if !historyActive {
+		t.Fatal("bash 会话应启用远端历史钩子")
+	}
+	guard := `case "${TERM:-}" in screen*|tmux*)`
+	guardIndex := strings.Index(command, guard)
+	markerIndex := strings.Index(command, "LUMIN_CMD")
+	if guardIndex < 0 || markerIndex < 0 || guardIndex > markerIndex {
+		t.Fatalf("screen/tmux 保护应包住内部标记: %q", command)
+	}
+	if !strings.Contains(command, `LUMIN_OLD_PROMPT_COMMAND`) {
+		t.Fatal("跳过内部标记时仍应保留原 PROMPT_COMMAND")
+	}
+}
+
 func TestParseProbeOutputSkipsLocalizedDFHeader(t *testing.T) {
 	out := strings.Join([]string{
 		"1 0 0",
