@@ -296,7 +296,7 @@ func (a *App) generateAIConversationSummarySubtaskOutput(parentSnapshot AIConver
 	}
 	summaryRequestMessages := append([]AIChatRequestMessage{}, requestMessages...)
 	summaryRequestMessages = append(summaryRequestMessages, buildAIConversationSummarySubtaskFinalInstructionMessage())
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
 	if trimmedRequestID != "" {
 		a.setAIChatRequestCancel(trimmedRequestID, cancel)
 	}

@@ -1120,10 +1120,26 @@ export default function useSessionConnections(deps: UseSessionConnectionsDeps): 
         setConnectingServers((prev) => prev.map((item) => (
           item.sessionId === sessionId ? { ...item, status, message } : item
         )));
+      } else if (status === 'sftp-unavailable' && data?.openwrt === true && typeof data.installCmd === 'string') {
+        // OpenWrt/Dropbear 缺省无 SFTP 子系统:给出可复制的安装命令,
+        // 避免只显示 cryptic 的 "unexpected EOF"。
+        const installCmd = data.installCmd;
+        addToast(
+          `${t('检测到 OpenWrt 设备，文件管理器需要 SFTP 子系统，请执行以下命令安装')}：${installCmd}。${t('安装完成后请重新连接会话')}`,
+          'warning',
+          20000,
+          [{
+            label: t('复制安装命令'),
+            onClick: () => {
+              navigator.clipboard.writeText(installCmd);
+              addToast(t('安装命令已复制'), 'success');
+            },
+          }],
+        );
       }
     });
     return () => { if (unbind) unbind(); };
-  }, [t]);
+  }, [addToast, t]);
 
   // ── 监听同步状态事件 ──────────────────────────────────────
   useEffect(() => {

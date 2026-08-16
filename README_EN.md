@@ -107,7 +107,7 @@ Lumin is a desktop SSH client for developers and operations teams. Built on **na
 
 ### AI chat and MCP
 - **Built-in AI panel** — multi-turn conversations, streaming output, reasoning display, message editing/retry/copy
-- **Multiple provider protocols** — Compatible / Messages / Responses; supports built-in Kimi through a local `uv` + module bridge
+- **Multiple provider protocols** — Compatible / Messages / Responses
 - **Slash commands and @ mentions** — custom `/` commands; reference terminal output or remote paths with `@`
 - **Tool approval** — configure automatic approval or per-item confirmation for read/write/execute operations; supports continue/terminate and terminal reassignment
 - **Change review** — remote editing tools provide diff / patch / restore workbenches
@@ -165,7 +165,7 @@ Lumin is a desktop SSH client for developers and operations teams. Built on **na
 - **Workspace memory** — window size and maximized state; optionally restore sessions and splits; persistence can be program-wide or per session
 
 ### Runtime environment
-- Settings → Runtime environment: install/detect **uv** for built-in Kimi and some local modules
+- Settings → Runtime environment: install/detect **uv**
 
 ---
 
@@ -291,7 +291,7 @@ For official releases (tagging, changelog, and multi-platform packages), see [.g
 ### Usage habits
 - Single instance; tray and close behavior are configured under General
 - For external editing, use the built-in editor first, then the external editor; changes are uploaded through file-change monitoring, not when the editor process exits
-- Built-in Kimi and similar features require the **uv** runtime to be installed first
+- Local runtime-related features require the **uv** runtime to be installed first
 
 ---
 

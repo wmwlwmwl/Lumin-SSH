@@ -36,6 +36,9 @@ func buildAILiveSearchPrompt(query string) string {
 
 func (a *App) resolveAIProviderWebSearchRuntimeProfile(profile AIProviderProfile) (AIProviderProfile, error) {
 	normalizedProfile := normalizeAIProviderValidationProfile(profile)
+	if !normalizedProfile.WebSearchEnabled {
+		return AIProviderProfile{}, fmt.Errorf("当前配置未启用可用的联网搜索工具")
+	}
 	if normalizedProfile.DedicatedWebSearchEnabled {
 		resolvedProfile, _, err := a.resolveAIProviderWebSearchValidationProfile(normalizedProfile)
 		if err != nil {
@@ -45,9 +48,6 @@ func (a *App) resolveAIProviderWebSearchRuntimeProfile(profile AIProviderProfile
 			return AIProviderProfile{}, fmt.Errorf("请先完整填写基础 URL、API 密钥和模型")
 		}
 		return resolvedProfile, nil
-	}
-	if !normalizedProfile.WebSearchEnabled || !aiprovider.CanBeDedicatedWebSearchCandidate(normalizedProfile.Provider) {
-		return AIProviderProfile{}, fmt.Errorf("当前配置未启用可用的联网搜索工具")
 	}
 	if normalizedProfile.BaseURL == "" || normalizedProfile.APIKey == "" || normalizedProfile.Model == "" {
 		return AIProviderProfile{}, fmt.Errorf("请先完整填写基础 URL、API 密钥和模型")

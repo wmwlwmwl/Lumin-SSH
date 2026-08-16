@@ -241,6 +241,7 @@ type SSHManager struct {
 	probeDeployed    map[string]bool               // connKey -> probe.sh deployed
 	probeFailed      map[string]int                // connKey -> probe.sh deploy fail count (max 3)
 	probeRunFailed   map[string]int                // connKey -> probe script run fail count (reset on success)
+	remoteFeatures   map[string]map[string]int     // connKey -> 远端能力探测结果: 1 是 / -1 否（busybox/openwrt）
 	pendingHostKeys  map[string]*PendingHostKey    // sessionId -> pending host key info
 	tempAcceptedKeys map[string]string             // sessionId -> fingerprint (accept this time only)
 	pendingCancels   map[string]context.CancelFunc // sessionId -> cancel func for in-progress Connect
@@ -292,6 +293,7 @@ func NewSSHManager() *SSHManager {
 		probeDeployed:    make(map[string]bool),
 		probeFailed:      make(map[string]int),
 		probeRunFailed:   make(map[string]int),
+		remoteFeatures:   make(map[string]map[string]int),
 		pendingHostKeys:  make(map[string]*PendingHostKey),
 		tempAcceptedKeys: make(map[string]string),
 		pendingCancels:   make(map[string]context.CancelFunc),
@@ -955,16 +957,25 @@ func (m *SSHManager) initSFTPClient(sessionId string, connKey string, conn Conne
 	}
 
 	if err != nil && m.ctx != nil {
-		runtime.EventsEmit(m.ctx, "ssh-status", map[string]interface{}{
+		event := map[string]interface{}{
 			"sessionId": sessionId,
 			"status":    "sftp-unavailable",
 			"host":      conn.Host,
 			"port":      conn.Port,
 			"username":  conn.Username,
 			"error":     err.Error(),
-		})
+		}
+		// OpenWrt/Dropbear 缺省无 SFTP 子系统,附上可复制的安装命令
+		if m.remoteFeatureIs(client, connKey, featureOpenWrt) {
+			event["openwrt"] = true
+			event["installCmd"] = sftpInstallCmd
+		}
+		runtime.EventsEmit(m.ctx, "ssh-status", event)
 	}
 }
+
+// sftpInstallCmd OpenWrt 上安装 SFTP 子系统的命令(Dropbear 需 openssh-sftp-server)。
+const sftpInstallCmd = "opkg update && opkg install openssh-sftp-server"
 
 func (m *SSHManager) watchClient(connKey string, client *ssh.Client) {
 	ticker := time.NewTicker(sshKeepaliveInterval)
@@ -1098,6 +1109,7 @@ func (m *SSHManager) cleanupClientTransport(connKey string, client *ssh.Client, 
 	delete(m.probeDeployed, connKey)
 	delete(m.probeFailed, connKey)
 	delete(m.probeRunFailed, connKey)
+	delete(m.remoteFeatures, connKey)
 	m.mu.Unlock()
 	globalSSHChannelUsage.forget(connKey)
 	if netConn != nil {
@@ -1434,16 +1446,33 @@ func (m *SSHManager) GetSFTPClient(sessionId string) (*sftp.Client, error) {
 		return nil, fmt.Errorf("SFTP initialization timed out")
 	}
 
+	// 等待后的二次读取同样必须在 RLock 内:等待超时路径与 initSFTPClient
+	// 对 entry.SFTP 的写入并发时,锁外读属于数据竞态(-race 检出)。
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	entry, ok = m.clients[s.ConnKey]
-	if !ok || entry.SFTP == nil {
-		if ok && entry.SFTPInitErr != nil {
-			return nil, fmt.Errorf("SFTP not available: %w", entry.SFTPInitErr)
+	var initErr error
+	var sftpClient *sftp.Client
+	var client *ssh.Client
+	if ok {
+		initErr = entry.SFTPInitErr
+		sftpClient = entry.SFTP
+		client = entry.Client
+	}
+	connKey := s.ConnKey
+	m.mu.RUnlock()
+
+	if !ok || sftpClient == nil {
+		if initErr != nil {
+			// OpenWrt/Dropbear 缺省无 SFTP 子系统,给出可执行的安装提示;
+			// 探测在锁外进行,失败时按非 OpenWrt 处理,保持原错误透传。
+			if m.remoteFeatureIs(client, connKey, featureOpenWrt) {
+				return nil, fmt.Errorf("OpenWrt device detected: file manager requires the SFTP subsystem. Install with: %s (original error: %w)", sftpInstallCmd, initErr)
+			}
+			return nil, fmt.Errorf("SFTP not available: %w", initErr)
 		}
 		return nil, fmt.Errorf("SFTP not available")
 	}
-	return entry.SFTP, nil
+	return sftpClient, nil
 }
 
 // DisconnectConnection 关闭 sessionId 所属共享连接的全部终端。
@@ -1563,6 +1592,7 @@ func (m *SSHManager) disconnect(sessionId string, expected *SessionData) bool {
 		delete(m.probeDeployed, connKey)
 		delete(m.probeFailed, connKey)
 		delete(m.probeRunFailed, connKey)
+		delete(m.remoteFeatures, connKey)
 		// 即使 transport 清理已先删掉 client，也要回收连接索引和转发。
 		// stopPortForwardsForConnKey 幂等，和 cleanupClientTransport 重复调用无害。
 		stopForwardsConnKey = connKey
@@ -2213,6 +2243,9 @@ echo ---NETCONN1---
 if [ "$1" = "network" ]; then if command -v ss >/dev/null 2>&1; then out=$(ss -H -tnapni 2>/dev/null); if [ -n "$out" ]; then printf '%s\n' "$out"; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; fi
 echo ---DISKIO1---
 cat /proc/diskstats
+echo ---PROC1---
+cut -d' ' -f1 /proc/uptime 2>/dev/null || date +%s
+cat /proc/[0-9]*/stat 2>/dev/null
 sleep 1
 echo ---CPU2---
 grep '^cpu' /proc/stat
@@ -2222,18 +2255,21 @@ echo ---NETCONN2---
 if [ "$1" = "network" ]; then if command -v ss >/dev/null 2>&1; then out=$(ss -H -tnapni 2>/dev/null); if [ -n "$out" ]; then printf '%s\n' "$out"; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; elif command -v netstat >/dev/null 2>&1; then netstat -tnapn 2>/dev/null | tail -n +3; fi; fi
 echo ---DISKIO2---
 cat /proc/diskstats
-echo ---PROC---
-ps -eo pid,pcpu,rss,comm --sort=-pcpu 2>/dev/null | head -6
+echo ---PROC2---
+cut -d' ' -f1 /proc/uptime 2>/dev/null || date +%s
+cat /proc/[0-9]*/stat 2>/dev/null
 echo ---DONE---
 `
 
-// deployProbeScript writes probe.sh to ~/.lumin/ on the remote server via SFTP.
-// ponytail: SFTP 操作无 per-op deadline,用 select+timer 兜底 probeDeployTimeout,
-// 避免 SFTP subsystem 慢时永久阻塞 getSystemInfo 致前端定时器链断裂(数据不刷新)。
+// deployProbeScript writes probe.sh to ~/.lumin and /tmp/.lumin on the remote
+// server via an exec-channel heredoc. 不依赖 SFTP：OpenWrt/Dropbear 未装
+// openssh-sftp-server 时系统监控也必须可用。
+// ponytail: 远程命令可能慢,用 select+timer 兜底 probeDeployTimeout,
+// 避免服务器慢时永久阻塞 getSystemInfo 致前端定时器链断裂(数据不刷新)。
 // 超时后 goroutine 仍在后台等待 IO,随 keepalive 关连时退出(可接受临时泄漏)。
-func (m *SSHManager) deployProbeScript(sftpClient *sftp.Client, connKey string) error {
-	if sftpClient == nil {
-		return fmt.Errorf("SFTP not available")
+func (m *SSHManager) deployProbeScript(client *ssh.Client, connKey string) error {
+	if client == nil {
+		return fmt.Errorf("client not available")
 	}
 	m.mu.RLock()
 	already := m.probeDeployed[connKey]
@@ -2247,7 +2283,7 @@ func (m *SSHManager) deployProbeScript(sftpClient *sftp.Client, connKey string) 
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- m.deployProbeScriptIO(sftpClient) }()
+	go func() { done <- m.deployProbeScriptIO(client) }()
 
 	timer := time.NewTimer(probeDeployTimeout)
 	defer timer.Stop()
@@ -2272,39 +2308,41 @@ func (m *SSHManager) deployProbeScript(sftpClient *sftp.Client, connKey string) 
 	}
 }
 
-// deployProbeScriptIO 执行 probe.sh 的 SFTP 写入,无超时(由调用方 deployProbeScript 兜底)。
-func (m *SSHManager) deployProbeScriptIO(sftpClient *sftp.Client) error {
-	if err := sftpClient.MkdirAll(".lumin"); err != nil {
-		_ = sftpClient.MkdirAll("/tmp/.lumin")
-	}
+// probeDeployCmd 构造把探针脚本写入 ~/.lumin 与 /tmp/.lumin 的 heredoc 命令。
+// 引号定界符（<<'LUMIN_EOF'）确保脚本内容中的 $、反引号等不被远端 shell 展开；
+// tee 双写两个位置,任一写入成功即可（运行端 buildProbeScriptRunCommand 有双路径回退）。
+// 末尾 [ -f ... ] 作为部署成功的最终校验,避免 tee 半成功时误判。
+func probeDeployCmd() string {
+	return fmt.Sprintf(`mkdir -p ~/.lumin /tmp/.lumin 2>/dev/null
+tee ~/.lumin/probe.sh /tmp/.lumin/probe.sh >/dev/null <<'LUMIN_EOF'
+%s
+LUMIN_EOF
+chmod 755 ~/.lumin/probe.sh /tmp/.lumin/probe.sh 2>/dev/null
+[ -f ~/.lumin/probe.sh ] || [ -f /tmp/.lumin/probe.sh ]`, dynamicProbeScript)
+}
 
-	scriptPath := ".lumin/probe.sh"
-	f, err := sftpClient.Create(scriptPath)
-	if err != nil {
-		scriptPath = "/tmp/.lumin/probe.sh"
-		f, err = sftpClient.Create(scriptPath)
-		if err != nil {
-			return fmt.Errorf("cannot write probe script: %w", err)
-		}
-	}
-	_, err = f.Write([]byte(dynamicProbeScript))
-	// Close 错误也要检查：SFTP 写缓冲刷新失败会导致脚本不完整
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
+// deployProbeScriptIO 通过 exec 通道写入 probe.sh,无超时(由调用方 deployProbeScript 兜底)。
+// 命令包在 sh -c 中执行:远端登录 shell 可能是 fish/csh 等不支持 heredoc 的
+// shell,强制走 POSIX sh 保证部署命令语义一致(与运行端 buildProbeScriptRunCommand 同理)。
+func (m *SSHManager) deployProbeScriptIO(client *ssh.Client) error {
+	_, err := m.executeCmdWithClient(client, wrapShCmd(probeDeployCmd()))
+	return err
+}
 
-	_ = sftpClient.Chmod(scriptPath, 0755)
-	return nil
+// wrapShCmd 把命令包进 POSIX sh 执行。命令中的单引号用 '\'' 转义:该序列在
+// bash/sh/fish/csh 下都会被原样透传给内层 sh(外层 shell 只把单引号当字面
+// 量处理),内层 sh 再把它还原为引号语法,因此命令内容可含任意单引号。
+func wrapShCmd(cmd string) string {
+	return "sh -c '" + strings.ReplaceAll(cmd, "'", `'\''`) + "'"
 }
 
 // extractSection 从 lines 中提取 startMarker（不含）到 endMarker（不含）之间的内容。
 // startMarker 为空时从开头开始收集；endMarker 为空时收集到末尾。
 // GetSystemInfo 与 GetServerStaticInfo 共用此实现，避免重复定义。
 func buildProbeScriptRunCommand(probeArg string) string {
-	return fmt.Sprintf(`sh -c 'f=~/.lumin/probe.sh; [ -f "$f" ] && sh "$f"%s || sh /tmp/.lumin/probe.sh%s'`, probeArg, probeArg)
+	// if/else 而非 &&/||:tee 双写后 home 与 /tmp 两份都常在,&&/|| 会在
+	// home 份非零退出时再跑一遍 /tmp 份——探针双跑、输出拼接、延迟翻倍。
+	return fmt.Sprintf(`sh -c 'f=~/.lumin/probe.sh; if [ -f "$f" ]; then sh "$f"%s; else sh /tmp/.lumin/probe.sh%s; fi'`, probeArg, probeArg)
 }
 
 func (m *SSHManager) diagnoseProbeScriptFailure(client *ssh.Client, probeArg string) string {
@@ -2343,6 +2381,29 @@ func extractSection(lines []string, startMarker, endMarker string) []string {
 	return out
 }
 
+// extractSectionExact 与 extractSection 相同,但 marker 必须整行精确匹配。
+// 完整进程列表的记录行携带任意 cmdline,cmdline 中可能出现 "---PROCS2---"
+// 等 marker 子串(典型:运行脚本的 sh,其 argv 就是整段脚本),子串匹配会把
+// section 提前截断。要求脚本端保证记录单行(fullProcListScript 已把 cmdline
+// 的换行转为空格)。
+func extractSectionExact(lines []string, startMarker, endMarker string) []string {
+	var out []string
+	inside := startMarker == ""
+	for _, l := range lines {
+		if startMarker != "" && l == startMarker {
+			inside = true
+			continue
+		}
+		if endMarker != "" && l == endMarker {
+			break
+		}
+		if inside {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func (m *SSHManager) GetSystemInfo(sessionId string) (map[string]interface{}, error) {
 	return m.getSystemInfo(sessionId, false)
 }
@@ -2370,10 +2431,6 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 	if err != nil {
 		return nil, err
 	}
-	sftpClient, err := m.GetSFTPClient(sessionId)
-	if err != nil {
-		return nil, err
-	}
 
 	m.mu.RLock()
 	s, ok := m.sessions[sessionId]
@@ -2384,7 +2441,7 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 	connKey := s.ConnKey
 	m.mu.RUnlock()
 
-	if err := m.deployProbeScript(sftpClient, connKey); err != nil {
+	if err := m.deployProbeScript(client, connKey); err != nil {
 		return nil, fmt.Errorf("probe script deploy failed: %w", err)
 	}
 
@@ -2394,8 +2451,8 @@ func (m *SSHManager) getSystemInfo(sessionId string, includeNetworkConnections b
 	}
 	out, err := m.executeCmdWithClient(client, buildProbeScriptRunCommand(probeArg))
 	if err != nil || len(strings.TrimSpace(out)) == 0 {
-		// ponytail: 偶发失败(服务器慢/30s 超时)不立即删 probeDeployed 重走 SFTP 部署,
-		// 避免每次重试都触发 SFTP 往返。连续失败 3 次才怀疑脚本损坏,强制重新部署。
+		// ponytail: 偶发失败(服务器慢/30s 超时)不立即删 probeDeployed 重走部署,
+		// 避免每次重试都重新 heredoc 传输探针脚本。连续失败 3 次才怀疑脚本损坏,强制重新部署。
 		m.mu.Lock()
 		m.probeRunFailed[connKey]++
 		if m.probeRunFailed[connKey] >= 3 {
@@ -2775,8 +2832,8 @@ func parseProbeOutput(out string, includeNetworkConnections bool) (map[string]in
 		return res
 	}
 
-	diskIO1 := parseDiskIO(extractSection(lines1, "---DISKIO1---", "---CPU2---"))
-	diskIO2 := parseDiskIO(extractSection(lines2, "---DISKIO2---", "---PROC---"))
+	diskIO1 := parseDiskIO(extractSection(lines1, "---DISKIO1---", "---PROC1---"))
+	diskIO2 := parseDiskIO(extractSection(lines2, "---DISKIO2---", "---PROC2---"))
 
 	var diskReadSpeed, diskWriteSpeed float64
 	for dName, v2 := range diskIO2 {
@@ -3045,27 +3102,10 @@ func parseProbeOutput(out string, includeNetworkConnections bool) (map[string]in
 		networkConnections = networkConnections[:200]
 	}
 
-	// ── Parse Processes ───────────────────────────────────────────────
-	procLines := extractSection(lines2, "---PROC---", "---DONE---")
-	var processes []map[string]interface{}
-	for _, l := range procLines {
-		fields := strings.Fields(l)
-		if len(fields) < 4 {
-			continue
-		}
-		// skip header line
-		if fields[0] == "PID" {
-			continue
-		}
-		cpu, _ := strconv.ParseFloat(fields[1], 64)
-		rss, _ := strconv.ParseUint(fields[2], 10, 64)
-		processes = append(processes, map[string]interface{}{
-			"pid": fields[0],
-			"cpu": cpu,
-			"mem": float64(rss) / 1024.0, // MB
-			"cmd": fields[3],
-		})
-	}
+	// ── Parse Processes (PROC1/PROC2 双采样, /proc 直读, 不依赖 ps/procps) ──
+	proc1Lines := extractSection(lines1, "---PROC1---", "---CPU2---")
+	proc2Lines := extractSection(lines2, "---PROC2---", "---DONE---")
+	processes, _ := parseProbeProcSections(proc1Lines, proc2Lines)
 
 	return map[string]interface{}{
 		"uptime": map[string]int{"days": uptimeDays, "hours": uptimeHours, "mins": uptimeMins},
@@ -3119,12 +3159,41 @@ func (m *SSHManager) GetFullProcessList(sessionId string) ([]map[string]interfac
 		return nil, err
 	}
 
-	out, err := m.executeCmdWithClient(client, `ps -eo pid,pcpu,rss,user,comm,stat,nlwp,etime,args --sort=-pcpu 2>/dev/null`)
+	// OpenWrt/BusyBox 的 ps 不支持 -eo/--sort/nlwp 等 procps 语法,走 /proc 直读;
+	// 常规 Linux 保持 ps 路径不变。GetClientEntry 返回后会话可能已被断开,
+	// 与 getSystemInfo 同样做 ok 检查,避免对 nil 条目取 ConnKey。
+	m.mu.RLock()
+	s, ok := m.sessions[sessionId]
+	if !ok {
+		m.mu.RUnlock()
+		return nil, fmt.Errorf("session not found")
+	}
+	connKey := s.ConnKey
+	m.mu.RUnlock()
+	isBusybox := m.remoteFeatureIs(client, connKey, featureBusybox)
+	out, err := m.executeCmdWithClient(client, fullProcListCmdFor(isBusybox))
 	if err != nil {
 		return nil, err
 	}
-
+	if isBusybox {
+		return parseFullProcListOutput(out)
+	}
 	return parseFullProcessListOutput(out)
+}
+
+// fullProcListCmdFor 按远端能力选择完整进程列表命令。BusyBox 脚本含 POSIX
+// 函数与参数展开语法,必须经 wrapShCmd 强制 sh 执行——远端登录 shell 可能
+// 是 fish/csh,裸发脚本会语法报错、进程列表整页失败。独立成纯函数便于
+// 分支路由单测。
+// fullProcListCmdFor 按远端能力选择完整进程列表命令。BusyBox 脚本含 POSIX
+// 函数与参数展开语法,必须经 wrapShCmd 强制 sh 执行——远端登录 shell 可能
+// 是 fish/csh,裸发脚本会语法报错、进程列表整页失败。独立成纯函数便于
+// 分支路由单测。
+func fullProcListCmdFor(isBusybox bool) string {
+	if isBusybox {
+		return wrapShCmd(fullProcListScript)
+	}
+	return `ps -eo pid,pcpu,rss,user,comm,stat,nlwp,etime,args --sort=-pcpu 2>/dev/null`
 }
 
 // parseFullProcessListOutput parses ps output into structured process maps.

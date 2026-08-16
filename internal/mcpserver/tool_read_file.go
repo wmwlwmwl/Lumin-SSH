@@ -12,7 +12,6 @@ type ReadFileResult struct {
 	EndLine int `json:"end_line,omitempty"`
 	TotalLines int `json:"total_lines"`
 	Content string `json:"content"`
-	NumberedContent string `json:"numbered_content"`
 }
 
 type ReadFileBatchResult struct {
@@ -188,8 +187,7 @@ func (c *Catalog) buildReadFileResult(sessionID string, request ReadFileRequest)
 		SessionID: sessionID,
 		Path: request.Path,
 		TotalLines: totalLines,
-		Content: strings.Join(selectedLines, "\n"),
-		NumberedContent: strings.Join(numberedLines, "\n"),
+		Content: strings.Join(numberedLines, "\n"),
 	}
 	if request.HasLineRange {
 		result.StartLine = startLine

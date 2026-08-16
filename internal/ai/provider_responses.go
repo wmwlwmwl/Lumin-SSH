@@ -199,9 +199,6 @@ func (a *App) requestResponsesAIChatRound(ctx context.Context, requestID string,
 		}
 		requestBody["include"] = []string{"reasoning.encrypted_content"}
 	}
-	if profile.WebSearchEnabled {
-		requestBody["tools"] = []map[string]string{{"type": "web_search"}}
-	}
 
 	body, err := json.Marshal(requestBody)
 	if err != nil {

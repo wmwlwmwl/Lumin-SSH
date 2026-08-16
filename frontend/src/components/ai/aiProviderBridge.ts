@@ -1,8 +1,6 @@
-// 桥接模块（自 .js 收编后类型化）：AI 供应商状态与浏览器嵌入凭据解析
 import { t } from '../../i18n.ts'
-import { runAIProviderPasteHandlerById } from './aiProviderPasteHandlers.ts'
+import { canUseDedicatedWebSearchCandidate } from './providers/index.ts'
 
-/** 规范化后的 AI 供应商（normalizeProvider 输出，严格形状；type 而非 interface 以兼容 AIProviderLike 的索引签名） */
 export type AIProvider = {
   id: string
   name: string
@@ -22,13 +20,9 @@ export type AIProvider = {
   modelMaxTokens: number
   modelMaxThinkingTokens: number
   pinned: boolean
-  builtin: boolean
-  builtinLoginURL: string
-  apiKeyField: Record<string, unknown> | null
   updatedAt: number
 }
 
-/** 规范化后的 AI 供应商状态 */
 export interface AIProviderState {
   currentProviderId: string
   providers: AIProvider[]
@@ -39,7 +33,6 @@ const VALID_PROTOCOLS = new Set<string>(['Compatible', 'Responses', 'Messages'])
 const VALID_CACHE_STRATEGIES = new Set<string>(['off', 'model', '5m', '1h', '30m', 'in_memory', '24h'])
 const VALID_REASONING_EFFORTS = new Set<string>(['disable', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
 
-/** wails 桥接形状（三个模块的并集，运行时按存在性守卫） */
 interface AIProviderBridgeShape {
   GetAIProviderState?: () => Promise<unknown>
   SaveAIProviderState?: (payload: string) => Promise<unknown>
@@ -78,152 +71,6 @@ function normalizeModel(value: unknown): string {
   return nextValue === t('未选择模型') ? '' : nextValue
 }
 
-export function isBuiltinAIProvider(provider: unknown): boolean {
-  return (provider as { builtin?: unknown } | null | undefined)?.builtin === true
-}
-
-function cloneApiKeyField(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null
-  }
-  try {
-    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
-  } catch {
-    return null
-  }
-}
-
-function readEmbeddedBrowserPathValue(source: unknown, path: unknown): unknown {
-  if (!source || typeof source !== 'object' || typeof path !== 'string' || !path.trim()) {
-    return undefined
-  }
-  return path
-    .split('.')
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .reduce((current: unknown, segment) => {
-      if (current === undefined || current === null) {
-        return undefined
-      }
-      if (typeof current === 'string') {
-        try {
-          current = JSON.parse(current)
-        } catch {
-          return undefined
-        }
-      }
-      if (typeof current !== 'object') {
-        return undefined
-      }
-      return (current as Record<string, unknown>)[segment]
-    }, source)
-}
-
-interface BrowserStorageItem {
-  key?: unknown
-  name?: unknown
-  domain?: unknown
-  origin?: unknown
-  value?: unknown
-}
-
-interface BrowserStoragePathConfig {
-  domain?: unknown
-  name?: unknown
-  key?: unknown
-  origin?: unknown
-}
-
-function resolveEmbeddedBrowserStorageValue(bucket: unknown, pathConfig: unknown, sourceType: unknown): unknown {
-  if (!bucket || !pathConfig || typeof pathConfig !== 'object') {
-    return undefined
-  }
-  const path = pathConfig as BrowserStoragePathConfig
-  if (sourceType === 'cookie' && Array.isArray(bucket)) {
-    const expectedDomain = typeof path.domain === 'string' ? path.domain.trim() : ''
-    const expectedName = typeof path.name === 'string' ? path.name.trim() : ''
-    const matchedItem = bucket.find((item) => {
-      const storageItem = item as BrowserStorageItem | null | undefined
-      const itemDomain = typeof storageItem?.domain === 'string' ? storageItem.domain.trim() : ''
-      const itemName = typeof storageItem?.name === 'string' ? storageItem.name.trim() : (typeof storageItem?.key === 'string' ? storageItem.key.trim() : '')
-      return (!expectedDomain || itemDomain === expectedDomain) && expectedName && itemName === expectedName
-    })
-    return (matchedItem as BrowserStorageItem | undefined)?.value
-  }
-  const expectedKey = typeof path.key === 'string' ? path.key.trim() : ''
-  if (Array.isArray(bucket)) {
-    const exactItem = bucket.find((item) => {
-      const storageItem = item as BrowserStorageItem | null | undefined
-      const itemKey = typeof storageItem?.key === 'string' ? storageItem.key.trim() : (typeof storageItem?.name === 'string' ? storageItem.name.trim() : '')
-      const itemOrigin = typeof storageItem?.origin === 'string' ? storageItem.origin.trim() : ''
-      const expectedOrigin = typeof path.origin === 'string' ? path.origin.trim() : ''
-      return itemKey === expectedKey && (!expectedOrigin || !itemOrigin || itemOrigin === expectedOrigin)
-    })
-    if ((exactItem as BrowserStorageItem | undefined)?.value !== undefined) {
-      return (exactItem as BrowserStorageItem | undefined)?.value
-    }
-    if (expectedKey.includes('.')) {
-      const [rootKey, ...restPath] = expectedKey.split('.')
-      const nestedItem = bucket.find((item) => {
-        const storageItem = item as BrowserStorageItem | null | undefined
-        const itemKey = typeof storageItem?.key === 'string' ? storageItem.key.trim() : (typeof storageItem?.name === 'string' ? storageItem.name.trim() : '')
-        return itemKey === rootKey
-      })
-      if ((nestedItem as BrowserStorageItem | undefined)?.value !== undefined) {
-        return readEmbeddedBrowserPathValue((nestedItem as BrowserStorageItem | undefined)?.value, restPath.join('.'))
-      }
-    }
-    return undefined
-  }
-  if (expectedKey && Object.prototype.hasOwnProperty.call(bucket, expectedKey)) {
-    return (bucket as Record<string, unknown>)[expectedKey]
-  }
-  return readEmbeddedBrowserPathValue(bucket, expectedKey)
-}
-
-export function resolveEmbeddedBrowserAPIKey(payload: unknown, apiKeyField: unknown): string {
-  const payloadRecord = (payload ?? {}) as Record<string, unknown>
-  const directCandidates = [
-    payloadRecord.apiKey,
-    payloadRecord.token,
-    payloadRecord.value,
-    payloadRecord.accessToken,
-  ]
-  const directApiKey = directCandidates.find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '')
-  if (directApiKey) {
-    return directApiKey.trim()
-  }
-  if (!apiKeyField || typeof apiKeyField !== 'object') {
-    return ''
-  }
-  const apiKeyFieldRecord = apiKeyField as Record<string, unknown>
-  const sourceType = typeof apiKeyFieldRecord.source === 'string' ? apiKeyFieldRecord.source.trim().toLowerCase() : ''
-  const pathConfig = apiKeyFieldRecord.path && typeof apiKeyFieldRecord.path === 'object' ? apiKeyFieldRecord.path : null
-  const storage = payloadRecord.storage as Record<string, unknown> | null | undefined
-  let bucket: unknown = null
-  if (sourceType === 'cookie') {
-    bucket = payloadRecord.cookies ?? payloadRecord.cookie ?? payloadRecord.cookieJar ?? null
-  } else if (sourceType === 'local_storage') {
-    bucket = payloadRecord.localStorage ?? payloadRecord.local_storage ?? storage?.localStorage ?? storage?.local_storage ?? null
-  } else if (sourceType === 'session_storage') {
-    bucket = payloadRecord.sessionStorage ?? payloadRecord.session_storage ?? storage?.sessionStorage ?? storage?.session_storage ?? null
-  }
-  const resolvedValue = resolveEmbeddedBrowserStorageValue(bucket, pathConfig, sourceType)
-  return typeof resolvedValue === 'string' ? resolvedValue.trim() : ''
-}
-
-export function runAIProviderAPIKeyPasteHandler(rawText: unknown, apiKeyField: unknown): string {
-  const normalizedText = typeof rawText === 'string' ? rawText : ''
-  const apiKeyFieldRecord = apiKeyField as { paste?: { handlerId?: unknown } } | null | undefined
-  const handlerId = typeof apiKeyFieldRecord?.paste?.handlerId === 'string' ? apiKeyFieldRecord.paste.handlerId.trim() : ''
-  return runAIProviderPasteHandlerById(
-    handlerId,
-    normalizedText,
-    cloneApiKeyField(apiKeyField),
-    { resolveEmbeddedBrowserAPIKey },
-  )
-}
-
 function normalizeProvider(provider: unknown, index: number): AIProvider {
   const p = (provider ?? {}) as Record<string, unknown>
   const now = Date.now()
@@ -249,11 +96,6 @@ function normalizeProvider(provider: unknown, index: number): AIProvider {
     modelMaxTokens: normalizePositiveInteger(p.modelMaxTokens),
     modelMaxThinkingTokens: normalizePositiveInteger(p.modelMaxThinkingTokens),
     pinned: Boolean(p.pinned),
-    builtin: p.builtin === true,
-    builtinLoginURL: typeof p.builtinLoginUrl === 'string'
-      ? p.builtinLoginUrl.trim()
-      : (typeof p.builtinLoginURL === 'string' ? p.builtinLoginURL.trim() : ''),
-    apiKeyField: cloneApiKeyField(p.apiKeyField),
     updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : now,
   }
 }
@@ -264,25 +106,27 @@ export function normalizeAIProviderState(state: unknown): AIProviderState {
   const idSet = new Set(providers.map((provider) => provider.id))
 
   const normalizedProviders = providers.map((provider) => {
-    let webSearchEnabled = provider.webSearchEnabled
+    const webSearchEnabled = provider.webSearchEnabled
     let dedicatedWebSearchEnabled = provider.dedicatedWebSearchEnabled
     let dedicatedWebSearchProviderId = provider.dedicatedWebSearchProviderId
-
-    if (webSearchEnabled) {
-      dedicatedWebSearchEnabled = false
-    }
+    const dedicatedCandidateIds = new Set(
+      providers
+        .filter((item) => item.id !== provider.id)
+        .filter((item) => canUseDedicatedWebSearchCandidate(item.provider))
+        .map((item) => item.id),
+    )
 
     if (dedicatedWebSearchProviderId === provider.id) {
       dedicatedWebSearchProviderId = ''
     }
 
     if (dedicatedWebSearchEnabled) {
-      if (!dedicatedWebSearchProviderId || !idSet.has(dedicatedWebSearchProviderId)) {
-        const fallbackProvider = providers.find((item) => item.id !== provider.id)
+      if (!dedicatedWebSearchProviderId || !dedicatedCandidateIds.has(dedicatedWebSearchProviderId)) {
+        const fallbackProvider = providers.find((item) => item.id !== provider.id && canUseDedicatedWebSearchCandidate(item.provider))
         dedicatedWebSearchProviderId = fallbackProvider?.id || ''
         dedicatedWebSearchEnabled = Boolean(dedicatedWebSearchProviderId)
       }
-    } else if (dedicatedWebSearchProviderId && !idSet.has(dedicatedWebSearchProviderId)) {
+    } else if (dedicatedWebSearchProviderId && !dedicatedCandidateIds.has(dedicatedWebSearchProviderId)) {
       dedicatedWebSearchProviderId = ''
     }
 

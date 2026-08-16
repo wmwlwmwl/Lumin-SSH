@@ -176,10 +176,7 @@ func normalizeAIConversationFollowUpOptions(options []AIConversationFollowUpOpti
 		if answer == "" {
 			continue
 		}
-		optionID := strings.TrimSpace(option.ID)
-		if optionID == "" {
-			optionID = fmt.Sprintf("%s-option-%d", questionID, index+1)
-		}
+		optionID := fmt.Sprintf("%s-option-%d", questionID, index+1)
 		normalized = append(normalized, AIConversationFollowUpOption{
 			ID:          optionID,
 			Answer:      answer,
@@ -197,10 +194,7 @@ func normalizeAIConversationFollowUpQuestions(questions []AIConversationFollowUp
 	}
 	normalized := make([]AIConversationFollowUpQuestion, 0, len(questions))
 	for index, question := range questions {
-		questionID := strings.TrimSpace(question.ID)
-		if questionID == "" {
-			questionID = fmt.Sprintf("question-%d", index+1)
-		}
+		questionID := fmt.Sprintf("question-%d", index+1)
 		questionText := strings.TrimSpace(question.Text)
 		if questionText == "" {
 			if index == 0 && strings.TrimSpace(fallbackQuestion) != "" {

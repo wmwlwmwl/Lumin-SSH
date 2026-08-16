@@ -604,12 +604,146 @@ func formatAIPlainToolResultContent(result any) string {
 	}
 }
 
+func formatAIReadFileLineRange(startLine int, endLine int) string {
+	if startLine <= 0 && endLine <= 0 {
+		return ""
+	}
+	if startLine <= 0 {
+		startLine = endLine
+	}
+	if endLine <= 0 {
+		endLine = startLine
+	}
+	if endLine < startLine {
+		startLine, endLine = endLine, startLine
+	}
+	if startLine == endLine {
+		return fmt.Sprintf("(%d)", startLine)
+	}
+	return fmt.Sprintf("(%d-%d)", startLine, endLine)
+}
+
+func formatAIReadFilePathLabel(path string, startLine int, endLine int) string {
+	trimmedPath := strings.TrimSpace(path)
+	lineRange := formatAIReadFileLineRange(startLine, endLine)
+	if trimmedPath == "" {
+		return lineRange
+	}
+	if lineRange == "" {
+		return trimmedPath
+	}
+	return trimmedPath + " " + lineRange
+}
+
+func formatAIReadFileToolResultContent(result mcpserver.ReadFileResult) string {
+	content := strings.TrimSpace(result.Content)
+	pathLabel := formatAIReadFilePathLabel(result.Path, result.StartLine, result.EndLine)
+	if content == "" {
+		if pathLabel != "" {
+			return "Path: " + pathLabel
+		}
+		return ""
+	}
+	if pathLabel == "" {
+		return content
+	}
+	return "Path: " + pathLabel + "\n" + content
+}
+
+func formatAIReadFileBatchEntryContent(result mcpserver.ReadFileResult) string {
+	content := strings.TrimSpace(result.Content)
+	pathLabel := formatAIReadFilePathLabel(result.Path, result.StartLine, result.EndLine)
+	if content == "" {
+		if pathLabel != "" {
+			return "Path: " + pathLabel
+		}
+		return ""
+	}
+	if pathLabel == "" {
+		return content
+	}
+	return "Path: " + pathLabel + "\n" + content
+}
+
+func formatAIReadFileBatchToolResultContent(result mcpserver.ReadFileBatchResult) string {
+	sections := make([]string, 0, len(result.Files))
+	for _, file := range result.Files {
+		if content := formatAIReadFileBatchEntryContent(file); content != "" {
+			sections = append(sections, content)
+		}
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
+func resolveAIReadFileResults(result any) ([]mcpserver.ReadFileResult, bool) {
+	switch value := result.(type) {
+	case mcpserver.ReadFileResult:
+		return []mcpserver.ReadFileResult{value}, false
+	case *mcpserver.ReadFileResult:
+		if value == nil {
+			return nil, false
+		}
+		return []mcpserver.ReadFileResult{*value}, false
+	case mcpserver.ReadFileBatchResult:
+		return value.Files, true
+	case *mcpserver.ReadFileBatchResult:
+		if value == nil {
+			return nil, true
+		}
+		return value.Files, true
+	default:
+		return nil, false
+	}
+}
+
+func buildAIReadFileTokenEstimateMeta(result any, profile AIProviderProfile) []map[string]interface{} {
+	files, isBatch := resolveAIReadFileResults(result)
+	if len(files) == 0 {
+		return nil
+	}
+	estimates := make([]map[string]interface{}, 0, len(files))
+	for _, file := range files {
+		content := formatAIReadFileToolResultContent(file)
+		if isBatch {
+			content = formatAIReadFileBatchEntryContent(file)
+		}
+		tokenCount, tokenDisplay, ok := estimateAIResultTokens(content, profile)
+		if !ok {
+			tokenCount = 0
+			tokenDisplay = "0.000000M"
+		}
+		estimates = append(estimates, map[string]interface{}{
+			"path":         strings.TrimSpace(file.Path),
+			"displayPath":  formatAIReadFilePathLabel(file.Path, file.StartLine, file.EndLine),
+			"startLine":    file.StartLine,
+			"endLine":      file.EndLine,
+			"tokenCount":   tokenCount,
+			"tokenDisplay": tokenDisplay,
+		})
+	}
+	return estimates
+}
+
 func formatAIRawToolResultContent(result any) string {
 	switch value := result.(type) {
 	case string:
 		return value
 	case []byte:
 		return string(value)
+	case mcpserver.ReadFileResult:
+		return formatAIReadFileToolResultContent(value)
+	case *mcpserver.ReadFileResult:
+		if value == nil {
+			return ""
+		}
+		return formatAIReadFileToolResultContent(*value)
+	case mcpserver.ReadFileBatchResult:
+		return formatAIReadFileBatchToolResultContent(value)
+	case *mcpserver.ReadFileBatchResult:
+		if value == nil {
+			return ""
+		}
+		return formatAIReadFileBatchToolResultContent(*value)
 	default:
 		data, err := json.Marshal(result)
 		if err == nil {
@@ -1279,6 +1413,17 @@ func parseAINextToolUseFromXML(xmlContent string, startIndex int) (aiParsedToolU
 		}
 		toolStartIndex := cursor
 		cursor += len(candidate.OpeningTag)
+		if candidate.Name == "ask_followup_question" {
+			closingIndex := strings.Index(xmlContent[cursor:], candidate.ClosingTag)
+			if closingIndex == -1 {
+				return aiParsedToolUse{}, 0, false
+			}
+			tool.Params["follow_up"] = strings.TrimSpace(stripOuterToolParamNewlines(xmlContent[cursor : cursor+closingIndex]))
+			tool.RawXML = xmlContent[toolStartIndex : cursor+closingIndex+len(candidate.ClosingTag)]
+			tool.StartIndex = toolStartIndex
+			tool.EndIndex = cursor + closingIndex + len(candidate.ClosingTag)
+			return tool, tool.EndIndex, true
+		}
 		currentParamName := ""
 		currentParamValueStart := 0
 		currentParamClosingTag := ""
@@ -2260,6 +2405,13 @@ func summarizeParsedToolUse(tool aiParsedToolUse) string {
 			return action
 		}
 	}
+	if strings.TrimSpace(tool.Name) == "read_file" {
+		startLine, _ := strconv.Atoi(strings.TrimSpace(tool.Params["start_line"]))
+		endLine, _ := strconv.Atoi(strings.TrimSpace(tool.Params["end_line"]))
+		if value := formatAIReadFilePathLabel(tool.Params["path"], startLine, endLine); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
 	for _, key := range []string{"path", "file_path", "command", "query", "purpose", "result"} {
 		if value := strings.TrimSpace(tool.Params[key]); value != "" {
 			return value
@@ -2416,7 +2568,7 @@ func buildToolPreviewMessages(turnID string, tools []aiParsedToolUse) []map[stri
 	return messages
 }
 
-func (a *App) executeParsedToolUses(requestID string, assistantMessageID string, payload AIChatRequestPayload, tools []aiParsedToolUse) []AIChatRequestMessage {
+func (a *App) executeParsedToolUses(requestID string, assistantMessageID string, payload AIChatRequestPayload, profile AIProviderProfile, tools []aiParsedToolUse) []AIChatRequestMessage {
 	if a == nil {
 		return nil
 	}
@@ -2426,7 +2578,13 @@ func (a *App) executeParsedToolUses(requestID string, assistantMessageID string,
 
 	for index, tool := range tools {
 		arguments := convertToolArguments(tool, payload.SessionID)
-		callResult, callErr := catalog.Call(tool.Name, arguments)
+		var callResult any
+		var callErr error
+		if tool.Name == "ask_followup_question" {
+			callResult, callErr = callAIAskFollowupQuestion(arguments)
+		} else {
+			callResult, callErr = catalog.Call(tool.Name, arguments)
+		}
 
 		uiResultText := formatToolResultContent(callResult)
 		rawResultText := formatAIRawToolResultContent(callResult)
@@ -2484,20 +2642,24 @@ func (a *App) executeParsedToolUses(requestID string, assistantMessageID string,
 			if callErr != nil {
 				statusText = "错误"
 			}
+			message := map[string]interface{}{
+				"id":                 buildToolMessageID(assistantMessageID, index),
+				"turnId":             assistantMessageID,
+				"kind":               "tool",
+				"actionLabel":        tool.Name,
+				"title":              titleForParsedToolUse(tool),
+				"summary":            summarizeParsedToolUse(tool),
+				"code":               tool.RawXML,
+				"status":             statusText,
+				"remainingFileEdits": getAIToolRemainingFileEdits(tool),
+			}
+			if tool.Name == "read_file" {
+				attachAIReadFileTokenEstimateMeta(message, callResult, profile)
+			}
 			a.emitAIChatEvent(map[string]interface{}{
 				"kind":      "upsert_message",
 				"requestId": requestID,
-				"message": map[string]interface{}{
-					"id":                 buildToolMessageID(assistantMessageID, index),
-					"turnId":             assistantMessageID,
-					"kind":               "tool",
-					"actionLabel":        tool.Name,
-					"title":              titleForParsedToolUse(tool),
-					"summary":            summarizeParsedToolUse(tool),
-					"code":               tool.RawXML,
-					"status":             statusText,
-					"remainingFileEdits": getAIToolRemainingFileEdits(tool),
-				},
+				"message":   message,
 			})
 		}
 
@@ -2520,6 +2682,7 @@ func (a *App) executeParsedToolUses(requestID string, assistantMessageID string,
 		}
 	}
 
+	a.emitAIChatToolExecutionPersistRequested(requestID)
 	return results
 }
 
@@ -2539,7 +2702,7 @@ func (a *App) requestAIProviderChatRound(ctx context.Context, requestID string, 
 
 func (a *App) continueCompatibleAIChatAfterTools(ctx context.Context, requestID string, batch *aiPendingToolBatch) {
 	requestMessages := append([]AIChatRequestMessage{}, batch.RequestMessages...)
-	requestMessages = append(requestMessages, a.executeParsedToolUses(requestID, batch.AssistantMessageID, batch.Payload, batch.ParsedTools)...)
+	requestMessages = append(requestMessages, a.executeParsedToolUses(requestID, batch.AssistantMessageID, batch.Payload, batch.Profile, batch.ParsedTools)...)
 
 	nextAssistantMessageID := fmt.Sprintf("%s-cont-%d", requestID, time.Now().UnixNano())
 	a.emitAIChatEvent(map[string]interface{}{

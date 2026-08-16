@@ -98,7 +98,7 @@ func normalizeAIThemeToolSlot(value string) string {
 func buildAIThemeToolScopedToolDefinitions(slot string) []mcpserver.ToolDefinition {
 	return []mcpserver.ToolDefinition{
 		themeToolAIChatToolDefinition(slot),
-		mcpserver.AskFollowupQuestionToolDefinition(),
+		aiAskFollowupQuestionToolDefinition(),
 		mcpserver.AttemptCompletionToolDefinition(),
 	}
 }

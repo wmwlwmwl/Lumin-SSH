@@ -497,7 +497,7 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
           {aiPanelNode && probePanelPosition === 'right' && (
             <>
               {aiPanelNode}
-              {showAIPanel ? (
+              {isActiveSessionConnected && (showAIPanel ? (
                 <Tiptop text={t('收起 AI 助手面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
                     className={`split-resizer-v hotzone-left${collapseDragIntent === 'ai' ? ' armed' : ''}`}
@@ -520,7 +520,7 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
                     <ChevronRight size={14} />
                   </button>
                 </Tiptop>
-              )}
+              ))}
             </>
           )}
           {/* 系统监控探针面板（独立分栏，左侧） */}
@@ -1475,7 +1475,7 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
           )}
           {aiPanelNode && probePanelPosition === 'left' && (
             <>
-              {showAIPanel ? (
+              {isActiveSessionConnected && (showAIPanel ? (
                 <Tiptop text={t('收起 AI 助手面板')} placement="bottom" style={{ display: 'flex' }}>
                   <div
                     className={`split-resizer-v hotzone-right${collapseDragIntent === 'ai' ? ' armed' : ''}`}
@@ -1498,7 +1498,7 @@ export default function SessionWorkspace({ dashboard = {}, session = {}, fileMan
                     <ChevronLeft size={14} />
                   </button>
                 </Tiptop>
-              )}
+              ))}
               {aiPanelNode}
             </>
           )}

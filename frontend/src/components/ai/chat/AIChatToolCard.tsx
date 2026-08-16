@@ -1,11 +1,130 @@
-import { Check, ChevronDown, FileCode2, FileText, RotateCcw, SquarePen, X } from 'lucide-react'
+import { Check, ChevronDown, Copy, FileCode2, FileText, RotateCcw, SquarePen, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import Tiptop from '../../Tiptop.tsx'
 import { useTranslation, type I18nKey } from '../../../i18n.ts'
 import AIChatMarkdown from './AIChatMarkdown.tsx'
 
 function normalizeAIMessageStatus(value: unknown) {
-  return typeof value === 'string' ? value.trim() : ''
+	return typeof value === 'string' ? value.trim() : ''
+}
+
+interface ReadFileTokenEstimate {
+	path: string
+	displayPath: string
+	tokenCount: number
+	tokenDisplay: string
+}
+
+function normalizeReadFileTokenEstimates(value: unknown): ReadFileTokenEstimate[] {
+	if (!Array.isArray(value)) {
+		return []
+	}
+	return value.flatMap((item) => {
+		if (!item || typeof item !== 'object') {
+			return []
+		}
+		const rawItem = item as Record<string, unknown>
+		const path = typeof rawItem.path === 'string' ? rawItem.path.trim() : ''
+		if (!path) {
+			return []
+		}
+		const displayPath = typeof rawItem.displayPath === 'string' && rawItem.displayPath.trim()
+			? rawItem.displayPath.trim()
+			: path
+		const parsedTokenCount = Number(rawItem.tokenCount)
+		const tokenCount = Number.isFinite(parsedTokenCount) ? Math.max(0, Math.trunc(parsedTokenCount)) : 0
+		const tokenDisplay = typeof rawItem.tokenDisplay === 'string' && rawItem.tokenDisplay.trim()
+			? rawItem.tokenDisplay.trim()
+			: `${(tokenCount / 1000000).toFixed(6)}M`
+		return [{ path, displayPath, tokenCount, tokenDisplay }]
+	})
+}
+
+function ReadFileTokenList({ items, t }: { items: ReadFileTokenEstimate[]; t: (key: I18nKey, vars?: Record<string, unknown>) => string }) {
+	const [copiedPathIndex, setCopiedPathIndex] = useState<number | null>(null)
+	useEffect(() => {
+		if (copiedPathIndex === null) {
+			return undefined
+		}
+		const timeoutId = window.setTimeout(() => {
+			setCopiedPathIndex(null)
+		}, 1200)
+		return () => {
+			window.clearTimeout(timeoutId)
+		}
+	}, [copiedPathIndex])
+	if (items.length === 0) {
+		return null
+	}
+	return (
+		<div style={{ display: 'grid', gap: 2, marginTop: 6 }}>
+			<style>{`
+				@keyframes ai-chat-read-file-path-marquee {
+					0% { transform: translateX(0); }
+					100% { transform: translateX(-50%); }
+				}
+			`}</style>
+			{items.map((item, index) => {
+				const copied = copiedPathIndex === index
+				return (
+					<div
+						key={`${item.path}-${index}`}
+						style={{
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'space-between',
+							gap: 10,
+							minWidth: 0,
+							padding: '7px 10px',
+							border: '1px solid rgba(var(--accent-rgb), 0.75)',
+							borderRadius: 6,
+							background: 'var(--surface-base)',
+							color: 'var(--text-secondary)',
+							fontFamily: 'var(--font-mono)',
+							fontSize: 12,
+							lineHeight: 1.35,
+						}}>
+						<div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+							<Tiptop text={item.displayPath} style={{ display: 'flex', minWidth: 0, flex: 1 }}>
+								<div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+									<div style={{ display: 'flex', width: 'max-content', minWidth: '100%', alignItems: 'center', animation: 'ai-chat-read-file-path-marquee 4s linear infinite', willChange: 'transform' }}>
+										<span style={{ flex: '0 0 auto', whiteSpace: 'nowrap', paddingRight: 32 }}>{item.displayPath}</span>
+										<span aria-hidden="true" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', paddingRight: 32 }}>{item.displayPath}</span>
+									</div>
+								</div>
+							</Tiptop>
+							<Tiptop text={copied ? t('已复制' as I18nKey) : t('复制绝对路径' as I18nKey)} style={{ display: 'inline-flex', flexShrink: 0 }}>
+								<button
+									type="button"
+									onClick={(event) => {
+										event.stopPropagation()
+										void navigator.clipboard.writeText(item.path).then(() => {
+											setCopiedPathIndex(index)
+										}).catch(() => {})
+									}}
+									style={{
+										width: 22,
+										height: 22,
+										display: 'inline-flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										borderRadius: 6,
+										border: copied ? '1px solid color-mix(in srgb, var(--success) 30%, var(--border))' : '1px solid color-mix(in srgb, var(--accent) 24%, var(--border))',
+										background: copied ? 'color-mix(in srgb, var(--success) 8%, var(--surface-base))' : 'color-mix(in srgb, var(--accent) 6%, var(--surface-base))',
+										color: copied ? 'var(--success)' : 'var(--text-secondary)',
+										cursor: 'pointer',
+										flexShrink: 0,
+									}}>
+									{copied ? <Check size={11} color="currentColor" strokeWidth={2.5} /> : <Copy size={11} color="currentColor" strokeWidth={2.5} />}
+								</button>
+							</Tiptop>
+						</div>
+						<span style={{ flexShrink: 0, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>{item.tokenDisplay}</span>
+					</div>
+				)
+			})}
+		</div>
+	)
 }
 
 function normalizeCompactDiffText(value: unknown) {
@@ -526,6 +645,7 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
   const copyCharacterCount = normalizedCopyContent ? normalizedCopyContent.length : 0
   const showCopyCharacterCount = copyCharacterCount > 0
   const resultTokenEstimateDisplay = typeof extra?.resultTokenEstimateDisplay === 'string' ? extra.resultTokenEstimateDisplay.trim() : ''
+  const readFileTokenEstimates = String(actionLabel || '').trim() === 'read_file' ? normalizeReadFileTokenEstimates(extra?.readFileTokenEstimates) : []
   const inlineDiffRaw = typeof inlineDiffReview?.rawDiff === 'string' ? inlineDiffReview.rawDiff : ''
   const inlineDiffBlocks = Array.isArray(inlineDiffReview?.blocks) ? inlineDiffReview.blocks : []
 
@@ -702,9 +822,13 @@ export default function AIChatToolCard({ restoreArtifactPath = '', copyContent =
           ) : (
             <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700 }}>{actionLabel}</div>
           )}
-          <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, wordBreak: 'break-all' }}>
-            <AIChatMarkdown text={summary} enableQuoteContextMenu={true} />
-          </div>
+          {readFileTokenEstimates.length > 0 ? (
+            <ReadFileTokenList items={readFileTokenEstimates} t={t} />
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, wordBreak: 'break-all' }}>
+              <AIChatMarkdown text={summary} enableQuoteContextMenu={true} />
+            </div>
+          )}
         </div>
         {showInlineDiffPreview ? (
           <div style={{ padding: '12px' }}>

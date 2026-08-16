@@ -80,16 +80,15 @@ type aiFollowupXMLThemePreferences struct {
 }
 
 type aiFollowupXMLQuestion struct {
-	ID       string                `xml:"id,attr"`
-	Type     string                `xml:"type,attr"`
-	TypeNode string                `xml:"type"`
-	Label    string                `xml:"label"`
-	Title    string                `xml:"title"`
-	Options  []aiFollowupXMLOption `xml:"option"`
+	Type      string                `xml:"type,attr"`
+	TypeNode  string                `xml:"type"`
+	LabelAttr string                `xml:"label,attr"`
+	Label     string                `xml:"label"`
+	Title     string                `xml:"title"`
+	Options   []aiFollowupXMLOption `xml:"option"`
 }
 
 type aiFollowupXMLOption struct {
-	ID          string `xml:"id,attr"`
 	Mode        string `xml:"mode,attr"`
 	Disabled    string `xml:"disabled,attr"`
 	Recommended string `xml:"recommended,attr"`
@@ -109,6 +108,52 @@ func normalizeAIFollowupQuestionType(value string) string {
 	default:
 		return "single"
 	}
+}
+
+func aiAskFollowupQuestionToolDefinition() mcpserver.ToolDefinition {
+	return mcpserver.ToolDefinition{
+		Name:        "ask_followup_question",
+		Description: "Present a multi-question questionnaire to the user and wait for their structured answer before continuing the task. Write one or more <question> blocks directly inside ask_followup_question. Every question must include a label attribute and an explicit type attribute. Allowed types are single, multiple, and free_text. single and multiple questions must place <option> entries inside that same question block. Do not include id attributes on question or option nodes; the system generates stable sequential IDs automatically. Options may use mode, disabled, and recommended attributes. Legacy 2 to 12 <suggest>...</suggest> payloads are also supported.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"additionalProperties": true,
+		},
+	}
+}
+
+func callAIAskFollowupQuestion(arguments map[string]any) (any, error) {
+	for key := range arguments {
+		if key != "question" && key != "follow_up" {
+			return nil, fmt.Errorf("unknown argument: %s", key)
+		}
+	}
+	question, _ := arguments["question"].(string)
+	followUp, ok := arguments["follow_up"].(string)
+	if !ok {
+		return nil, fmt.Errorf("missing required argument: follow_up")
+	}
+	questions, suggestions, err := parseAIFollowupPayload(followUp, question)
+	if err != nil {
+		return nil, err
+	}
+	displayQuestion := strings.TrimSpace(question)
+	if displayQuestion == "" && len(questions) > 0 {
+		displayQuestion = strings.TrimSpace(questions[0].Text)
+	}
+	result := map[string]any{
+		"status": "pending",
+	}
+	if displayQuestion != "" {
+		result["question"] = displayQuestion
+	}
+	if len(questions) > 0 {
+		result["questions"] = questions
+	}
+	if len(suggestions) > 0 {
+		result["suggestions"] = suggestions
+	}
+	return result, nil
 }
 
 func parseAIFollowupDisabled(value string) bool {
@@ -150,15 +195,15 @@ func parseAIFollowupPayload(raw string, fallbackQuestion string) ([]AIConversati
 	if len(questionItems) > 0 {
 		questions := make([]AIConversationFollowUpQuestion, 0, len(questionItems))
 		for questionIndex, item := range questionItems {
-			questionID := strings.TrimSpace(item.ID)
-			if questionID == "" {
-				questionID = fmt.Sprintf("question-%d", questionIndex+1)
-			}
+			questionID := fmt.Sprintf("question-%d", questionIndex+1)
 			rawQuestionType := strings.TrimSpace(item.Type)
 			if rawQuestionType == "" {
-				rawQuestionType = strings.TrimSpace(item.TypeNode)
+				return nil, nil, fmt.Errorf("第 %d 个追问问题缺少 type", questionIndex+1)
 			}
-			questionText := strings.TrimSpace(item.Label)
+			questionText := strings.TrimSpace(item.LabelAttr)
+			if questionText == "" {
+				questionText = strings.TrimSpace(item.Label)
+			}
 			if questionText == "" {
 				questionText = strings.TrimSpace(item.Title)
 			}
@@ -184,10 +229,7 @@ func parseAIFollowupPayload(raw string, fallbackQuestion string) ([]AIConversati
 				if answer == "" {
 					continue
 				}
-				optionID := strings.TrimSpace(option.ID)
-				if optionID == "" {
-					optionID = fmt.Sprintf("%s-option-%d", questionID, optionIndex+1)
-				}
+				optionID := fmt.Sprintf("%s-option-%d", questionID, optionIndex+1)
 				options = append(options, AIConversationFollowUpOption{
 					ID:          optionID,
 					Answer:      answer,
@@ -262,20 +304,23 @@ func parseAIResolvedFollowupAnswer(raw string) (string, string) {
 
 func buildAIFollowupMessage(turnID string, requestID string, tool aiParsedToolUse, index int) (map[string]interface{}, error) {
 	question := strings.TrimSpace(tool.Params["question"])
-	if question == "" {
-		return nil, fmt.Errorf("缺少追问问题")
-	}
 	questions, suggestions, err := parseAIFollowupPayload(tool.Params["follow_up"], question)
 	if err != nil {
 		return nil, err
+	}
+	displayQuestion := question
+	if displayQuestion == "" && len(questions) > 0 {
+		displayQuestion = strings.TrimSpace(questions[0].Text)
 	}
 	message := map[string]interface{}{
 		"id":        buildToolMessageID(turnID, index),
 		"turnId":    turnID,
 		"kind":      "followup",
 		"requestId": requestID,
-		"question":  question,
 		"status":    "等待处理",
+	}
+	if displayQuestion != "" {
+		message["question"] = displayQuestion
 	}
 	if len(questions) > 0 {
 		message["questions"] = questions
@@ -1076,6 +1121,20 @@ func attachAIResultTokenEstimateMeta(message map[string]interface{}, rawResultCo
 	return message
 }
 
+func attachAIReadFileTokenEstimateMeta(message map[string]interface{}, result any, profile AIProviderProfile) map[string]interface{} {
+	estimates := buildAIReadFileTokenEstimateMeta(result, profile)
+	if message == nil || len(estimates) == 0 {
+		return message
+	}
+	existingExtra, _ := message["extra"].(map[string]interface{})
+	if existingExtra == nil {
+		existingExtra = map[string]interface{}{}
+	}
+	existingExtra["readFileTokenEstimates"] = estimates
+	message["extra"] = existingExtra
+	return message
+}
+
 func buildAIChatToolResultMessage(toolName string, resultText string) AIChatRequestMessage {
 	return AIChatRequestMessage{
 		Role:    "user",
@@ -1665,7 +1724,11 @@ func (a *App) runAIChatGenericToolExecution(execution *aiToolExecutionState) {
 	attachAIRestoreArtifactRef(message, execution.RestoreArtifactPath)
 	attachAICopyContent(message, execution.CopyContent)
 	attachAIConversationDiffMeta(message, execution.ConversationDiffPrimaryPath, execution.ConversationDiffFileCount, execution.ConversationDiffToolName, execution.ConversationDiffHasPreview)
-	attachAIResultTokenEstimateMeta(message, buildAIChatToolResultContent(execution.Tool.Name, formatAIRawToolResultContent(callResult)), resolveAIExecutionProfile(execution))
+	profile := resolveAIExecutionProfile(execution)
+	if execution.Tool.Name == "read_file" {
+		attachAIReadFileTokenEstimateMeta(message, callResult, profile)
+	}
+	attachAIResultTokenEstimateMeta(message, buildAIChatToolResultContent(execution.Tool.Name, formatAIRawToolResultContent(callResult)), profile)
 	a.emitAIChatEvent(map[string]interface{}{
 		"kind":      "upsert_message",
 		"requestId": execution.RequestID,

@@ -58,7 +58,6 @@ func (c *Catalog) List() []ToolDefinition {
 		transferBatchToolDefinition(),
 		transferListToolDefinition(),
 		executeCommandToolDefinition(),
-		askFollowupQuestionToolDefinition(),
 		attemptCompletionToolDefinition(),
 		searchReplaceToolDefinition(),
 		editFileToolDefinition(),
@@ -130,8 +129,6 @@ func (c *Catalog) dispatchTool(name string, arguments map[string]any) (any, erro
 		return c.callTransferBatch(arguments)
 	case "transfer_list":
 		return c.callTransferList(arguments)
-	case "ask_followup_question":
-		return c.callAskFollowupQuestion(arguments)
 	case "attempt_completion":
 		return c.callAttemptCompletion(arguments)
 	case "search_replace":

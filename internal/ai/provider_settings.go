@@ -30,9 +30,6 @@ type AIProviderProfile struct {
 	ModelMaxTokens                     int            `json:"modelMaxTokens,omitempty"`
 	ModelMaxThinkingTokens             int            `json:"modelMaxThinkingTokens,omitempty"`
 	Pinned                             bool           `json:"pinned"`
-	Builtin                            bool           `json:"builtin,omitempty"`
-	BuiltinLoginURL                    string         `json:"builtinLoginUrl,omitempty"`
-	APIKeyField                        map[string]any `json:"apiKeyField,omitempty"`
 	UpdatedAt                          int64          `json:"updatedAt,omitempty"`
 }
 
@@ -45,95 +42,6 @@ type AIProviderState struct {
 	Providers         []AIProviderProfile `json:"providers"`
 }
 
-const (
-	aiBuiltinProviderNamePrefix = "[内置]-"
-)
-
-func cloneAIProviderAnyMap(value map[string]any) map[string]any {
-	if value == nil {
-		return nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	var cloned map[string]any
-	if err := json.Unmarshal(data, &cloned); err != nil {
-		return nil
-	}
-	return cloned
-}
-
-var aiBuiltinProviderPresetMap = map[string]AIProviderProfile{
-	"builtin-kimi": {
-		ID:              "builtin-kimi",
-		Name:            aiBuiltinProviderNamePrefix + "Kimi",
-		Provider:        "Compatible",
-		BaseURL:         "http://127.0.0.1:9543/v1",
-		BuiltinLoginURL: "https://www.kimi.com/",
-		APIKeyField: map[string]any{
-			"expression": "^.+$",
-			"paste": map[string]any{
-				"handlerId": "builtin-kimi-local-storage-json-v1",
-			},
-		},
-		Model:   "",
-		Pinned:  false,
-		Builtin: true,
-	},
-}
-
-func GetAIBuiltinProviderPreset(providerID string) (AIProviderProfile, bool) {
-	preset, ok := aiBuiltinProviderPresetMap[strings.TrimSpace(providerID)]
-	return preset, ok
-}
-
-func isAIBuiltinProviderName(name string) bool {
-	return strings.HasPrefix(strings.TrimSpace(name), aiBuiltinProviderNamePrefix)
-}
-
-func IsAIBuiltinProviderProfile(profile AIProviderProfile) bool {
-	if _, ok := GetAIBuiltinProviderPreset(profile.ID); ok {
-		return true
-	}
-	return isAIBuiltinProviderName(profile.Name)
-}
-
-func FindAIBuiltinProvider(profiles []AIProviderProfile) *AIProviderProfile {
-	for index := range profiles {
-		if IsAIBuiltinProviderProfile(profiles[index]) {
-			profile := profiles[index]
-			return &profile
-		}
-	}
-	return nil
-}
-
-func BuildAIBuiltinProviderProfile(profile AIProviderProfile, preservedAPIKey string) AIProviderProfile {
-	preset, ok := GetAIBuiltinProviderPreset(profile.ID)
-	if !ok {
-		preset = aiBuiltinProviderPresetMap["builtin-kimi"]
-	}
-	nextProfile := profile
-	nextProfile.ID = preset.ID
-	nextProfile.Name = preset.Name
-	nextProfile.Provider = preset.Provider
-	nextProfile.BaseURL = preset.BaseURL
-	nextProfile.Pinned = preset.Pinned
-	nextProfile.Builtin = true
-	nextProfile.BuiltinLoginURL = strings.TrimSpace(preset.BuiltinLoginURL)
-	nextProfile.APIKeyField = cloneAIProviderAnyMap(preset.APIKeyField)
-	nextProfile.Model = strings.TrimSpace(nextProfile.Model)
-	if nextProfile.Model == "" {
-		nextProfile.Model = strings.TrimSpace(preset.Model)
-	}
-	if trimmedAPIKey := strings.TrimSpace(preservedAPIKey); trimmedAPIKey != "" {
-		nextProfile.APIKey = trimmedAPIKey
-	} else {
-		nextProfile.APIKey = strings.TrimSpace(nextProfile.APIKey)
-	}
-	return nextProfile
-}
 
 func normalizeAIProviderProtocol(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
@@ -184,7 +92,7 @@ func normalizeAIProviderReasoningEffort(value string) string {
 	}
 }
 
-func normalizeAIProviderProfilesWithBuiltin(profiles []AIProviderProfile, existingBuiltin *AIProviderProfile) []AIProviderProfile {
+func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfile {
 	if profiles == nil {
 		profiles = []AIProviderProfile{}
 	}
@@ -201,9 +109,6 @@ func normalizeAIProviderProfilesWithBuiltin(profiles []AIProviderProfile, existi
 		if strings.TrimSpace(profile.Name) == "" {
 			profile.Name = "未命名供应商"
 		}
-		profile.Builtin = false
-		profile.BuiltinLoginURL = ""
-		profile.APIKeyField = nil
 		profile.Provider = normalizeAIProviderProtocol(profile.Provider)
 		profile.Model = strings.TrimSpace(profile.Model)
 		if profile.Model == "" {
@@ -232,26 +137,6 @@ func normalizeAIProviderProfilesWithBuiltin(profiles []AIProviderProfile, existi
 		}
 	}
 
-	builtinCandidate := AIProviderProfile{}
-	if existingBuiltin != nil {
-		builtinCandidate = *existingBuiltin
-	}
-	for _, profile := range normalized {
-		if IsAIBuiltinProviderProfile(profile) {
-			builtinCandidate = profile
-			break
-		}
-	}
-
-	filtered := make([]AIProviderProfile, 0, len(normalized)+1)
-	for _, profile := range normalized {
-		if IsAIBuiltinProviderProfile(profile) {
-			continue
-		}
-		filtered = append(filtered, profile)
-	}
-	normalized = append(filtered, BuildAIBuiltinProviderProfile(builtinCandidate, builtinCandidate.APIKey))
-
 	dedicatedCandidateIDs := make(map[string]struct{}, len(normalized))
 	for _, profile := range normalized {
 		if aiprovider.CanBeDedicatedWebSearchCandidate(profile.Provider) {
@@ -261,10 +146,6 @@ func normalizeAIProviderProfilesWithBuiltin(profiles []AIProviderProfile, existi
 
 	for index := range normalized {
 		profile := &normalized[index]
-
-		if profile.WebSearchEnabled {
-			profile.DedicatedWebSearchEnabled = false
-		}
 
 		if profile.DedicatedWebSearchProviderID == profile.ID {
 			profile.DedicatedWebSearchProviderID = ""
@@ -292,17 +173,9 @@ func normalizeAIProviderProfilesWithBuiltin(profiles []AIProviderProfile, existi
 	return normalized
 }
 
-func normalizeAIProviderProfiles(profiles []AIProviderProfile) []AIProviderProfile {
-	return normalizeAIProviderProfilesWithBuiltin(profiles, nil)
-}
-
-func normalizeAIProviderRegistryWithBuiltin(registry AIProviderRegistry, existingBuiltin *AIProviderProfile) AIProviderRegistry {
-	registry.Providers = normalizeAIProviderProfilesWithBuiltin(registry.Providers, existingBuiltin)
-	return registry
-}
-
 func normalizeAIProviderRegistry(registry AIProviderRegistry) AIProviderRegistry {
-	return normalizeAIProviderRegistryWithBuiltin(registry, nil)
+	registry.Providers = normalizeAIProviderProfiles(registry.Providers)
+	return registry
 }
 
 func normalizeAIProviderState(state AIProviderState) AIProviderState {
@@ -346,8 +219,7 @@ func (c *ConfigManager) SaveAIProviderRegistry(registry AIProviderRegistry) erro
 	if c == nil {
 		return nil
 	}
-	existingBuiltin := FindAIBuiltinProvider(c.GetAIProviderRegistry().Providers)
-	normalized := normalizeAIProviderRegistryWithBuiltin(registry, existingBuiltin)
+	normalized := normalizeAIProviderRegistry(registry)
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
 		return err

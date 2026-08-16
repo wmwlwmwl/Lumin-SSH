@@ -45,10 +45,10 @@ func (a *App) resolveAIProviderWebSearchValidationProfile(profile AIProviderProf
 		return normalizedProfile, false, nil
 	}
 	if normalizedProfile.DedicatedWebSearchProviderID == "" {
-		return AIProviderProfile{}, false, fmt.Errorf("请先选择联网专用供应商")
+		return AIProviderProfile{}, false, fmt.Errorf("请先选择联网搜索供应商")
 	}
 	if a == nil || a.configManager == nil {
-		return AIProviderProfile{}, false, fmt.Errorf("当前环境无法解析联网专用供应商")
+		return AIProviderProfile{}, false, fmt.Errorf("当前环境无法解析联网搜索供应商")
 	}
 	state := a.configManager.GetAIProviderState()
 	for _, candidate := range state.Providers {
@@ -56,7 +56,7 @@ func (a *App) resolveAIProviderWebSearchValidationProfile(profile AIProviderProf
 			continue
 		}
 		if !aiprovider.CanBeDedicatedWebSearchCandidate(candidate.Provider) {
-			return AIProviderProfile{}, false, fmt.Errorf("联网专用供应商仅允许 Compatible 或 Responses")
+			return AIProviderProfile{}, false, fmt.Errorf("联网搜索供应商仅允许 Compatible 或 Responses")
 		}
 		return normalizeAIProviderValidationProfile(candidate), true, nil
 	}

@@ -98,13 +98,9 @@ Actual multi-tool example:
 
 3. Multiple standalone-only tools in the same reply
 <ask_followup_question>
-<question>Need more info</question>
-<follow_up>
-<question id="scope" type="single">
-<label>Choose scope</label>
-<option id="a">A</option>
+<question label="Choose scope" type="single">
+<option>A</option>
 </question>
-</follow_up>
 </ask_followup_question>
 <attempt_completion>
 <result>Task completed</result>

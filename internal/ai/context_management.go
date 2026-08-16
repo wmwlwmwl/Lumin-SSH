@@ -539,7 +539,6 @@ func (a *App) CondenseAIConversationContext(conversationID string, sessionID str
 	nextSnapshot.Messages = append(
 		append([]AIConversationMessage{}, snapshot.Messages...),
 		buildAIConversationCondenseUIMessage(compressionSummary, prevContextTokens, newContextTokens),
-		buildAIConversationCondenseFollowupUIMessage(),
 	)
 	savedSnapshot, err := a.configManager.SaveAIConversation(nextSnapshot)
 	if err != nil {

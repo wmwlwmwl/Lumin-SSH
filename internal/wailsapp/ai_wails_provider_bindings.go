@@ -76,17 +76,8 @@ func (b *AIProviderBindings) saveAIProviderRegistry(registry ai.AIProviderRegist
 	if b == nil || b.configManager == nil {
 		return nil
 	}
-	existingBuiltin := ai.FindAIBuiltinProvider(b.getAIProviderRegistry().Providers)
-	normalizedProviders := ai.NormalizeAIProviderProfilesForBinding(registry.Providers)
-	if existingBuiltin != nil {
-		for index := range normalizedProviders {
-			if ai.IsAIBuiltinProviderProfile(normalizedProviders[index]) {
-				normalizedProviders[index] = ai.BuildAIBuiltinProviderProfile(normalizedProviders[index], existingBuiltin.APIKey)
-			}
-		}
-	}
 	normalized := ai.AIProviderRegistry{
-		Providers: normalizedProviders,
+		Providers: ai.NormalizeAIProviderProfilesForBinding(registry.Providers),
 	}
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {

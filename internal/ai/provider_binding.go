@@ -75,8 +75,6 @@ func NormalizeAIProviderProfilesForBinding(profiles []AIProviderProfile) []AIPro
 		if strings.TrimSpace(profile.Name) == "" {
 			profile.Name = "未命名供应商"
 		}
-		profile.Builtin = false
-		profile.BuiltinLoginURL = ""
 		profile.Provider = NormalizeAIProviderProtocolForBinding(profile.Provider)
 		profile.Model = strings.TrimSpace(profile.Model)
 		if profile.Model == "" {
@@ -84,6 +82,7 @@ func NormalizeAIProviderProfilesForBinding(profiles []AIProviderProfile) []AIPro
 		}
 		profile.BaseURL = strings.TrimSpace(profile.BaseURL)
 		profile.APIKey = strings.TrimSpace(profile.APIKey)
+		profile.DedicatedProxyID = strings.TrimSpace(profile.DedicatedProxyID)
 		profile.CacheStrategy = NormalizeAIProviderCacheStrategyForBinding(profile.CacheStrategy)
 		profile.ReasoningEffort = NormalizeAIProviderReasoningEffortForBinding(profile.ReasoningEffort)
 		profile.EnableReasoningEffort = profile.EnableReasoningEffort || (profile.ReasoningEffort != "" && profile.ReasoningEffort != "disable") || profile.ModelMaxTokens > 0 || profile.ModelMaxThinkingTokens > 0
@@ -103,21 +102,6 @@ func NormalizeAIProviderProfilesForBinding(profiles []AIProviderProfile) []AIPro
 			profile.UpdatedAt = now
 		}
 	}
-	builtinCandidate := AIProviderProfile{}
-	for _, profile := range normalized {
-		if IsAIBuiltinProviderProfile(profile) {
-			builtinCandidate = profile
-			break
-		}
-	}
-	filtered := make([]AIProviderProfile, 0, len(normalized)+1)
-	for _, profile := range normalized {
-		if IsAIBuiltinProviderProfile(profile) {
-			continue
-		}
-		filtered = append(filtered, profile)
-	}
-	normalized = append(filtered, BuildAIBuiltinProviderProfile(builtinCandidate, builtinCandidate.APIKey))
 	dedicatedCandidateIDs := make(map[string]struct{}, len(normalized))
 	for _, profile := range normalized {
 		if aiprovider.CanBeDedicatedWebSearchCandidate(profile.Provider) {
@@ -126,9 +110,6 @@ func NormalizeAIProviderProfilesForBinding(profiles []AIProviderProfile) []AIPro
 	}
 	for index := range normalized {
 		profile := &normalized[index]
-		if profile.WebSearchEnabled {
-			profile.DedicatedWebSearchEnabled = false
-		}
 		if profile.DedicatedWebSearchProviderID == profile.ID {
 			profile.DedicatedWebSearchProviderID = ""
 		}

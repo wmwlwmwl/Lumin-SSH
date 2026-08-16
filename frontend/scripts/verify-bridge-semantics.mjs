@@ -181,10 +181,11 @@ for (const file of files) {
       ['{"entries":[{"key":"access_token","value":"et"}]}', undefined],
       ['{"apiKey":"ak"}', { source: 'cookie', path: { key: 'k' } }],
       ['{"foo":"bar"}', undefined],
+      [null, undefined],
     ];
     for (let i = 0; i < cases.length; i++) {
-      await compare(`kimi#${i}`, (m) => m.builtinKimiLocalStorageJsonV1(cases[i][0], cases[i][1]));
-      await compare(`run#${i}`, (m) => m.runAIProviderPasteHandlerById('builtin-kimi-local-storage-json-v1', cases[i][0], cases[i][1]));
+      await compare(`fallback#${i}`, (m) => m.runAIProviderPasteHandlerById('missing-handler', cases[i][0], cases[i][1]));
+      await compare(`blank#${i}`, (m) => m.runAIProviderPasteHandlerById('', cases[i][0], cases[i][1]));
     }
   } else if (idx === 'runtimeEnvironmentBridge') {
     const cases = [undefined, null, {}, { enabled: true, environmentType: 'uv' }, { targetPathTemplate: ' /x ', modulePath: 'm' }, { environmentType: 'py' }];

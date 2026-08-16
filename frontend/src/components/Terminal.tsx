@@ -21,6 +21,7 @@ import {
   type AutocompleteSources,
   type FlattenedQuickCommand,
 } from '../utils/terminalCommandAutocomplete.ts';
+import { parseCommandInputContext } from '../utils/terminalCommandAutocompleteParser.ts';
 import Tiptop from './Tiptop.tsx';
 import type { QuickCommandsHandle } from './QuickCommands.tsx';
 import '@xterm/xterm/css/xterm.css';
@@ -266,8 +267,31 @@ function findTerminalHttpLinksOnLine(term: XTerm, bufferLineNumber: number) {
 function isInteractivePromptText(value: unknown) {
   const text = String(value || '').trim()
   if (!text) return false
+  // 1) 英文前缀：choose / select / enter / input / please enter / press enter ...
   if (/^(choose|select|enter|input|please enter|press enter|would you like|do you have|port to use)\b/i.test(text)) return true
-  if (/\b(default|leave empty|skip|y\/n|yes\/no|option|selection)\b/i.test(text) && /[:?]\s*(?:\d+)?\s*$/.test(text)) return true
+  // 2) 中文前缀：含"请"的 + 常见安装脚本裸动词（设置/配置/指定/填写/输入/选择/确认/继续）
+  //    注意这些动词作为 shell 命令几乎不存在（命令名都是英文），误伤风险极低。
+  if (/^(请设置|请输入|请选择|请确认|请指定|请填写|请提供|是否|是否需要|是否继续|是否确认|按回车|回车确认|请按|设置|配置|指定|填写|输入|选择|确认|继续)/.test(text)) return true
+  // 3) 提问结构探测：行内含【中英文冒号/问号】 OR 含【(默认 /（默认】 的默认值括号结构
+  //    OR 含【[y/n] / [0] / [Y/N]】 这种方括号选择格式。
+  //    这层判断把"用户回答导致行尾不是冒号"的情况也兜住了——只要整行里出现过提问痕迹，就算。
+  const hasPromptStructure = /[:?：？]/.test(text)
+    || /[（(]默认/.test(text)
+    || /\[[yn][^[\]]*\/[^[\]]*[yn]\]/i.test(text)
+    || /\[[0-9\-][0-9,\- ]*\]/.test(text)
+    || /按[^，。：:]*回车|回车[^，。：:]*继续|继续[^，。：:]*执行/.test(text)
+  if (hasPromptStructure) {
+    // 3.1) 英文关键词：default / leave empty / skip / y/n / yes/no / option / selection / password / username / port ...
+    if (/\b(default|leave empty|skip|y\/n|yes\/no|option|selection|password|passwd|username|user|port|host|ip|path|dir|directory)\b/i.test(text)) return true
+    // 3.2) 中文关键词：默认 / 留空 / 跳过 / 可选 / 选项 / 是 / 否 / 回车 / 确认 / 取消
+    //        + 安装脚本高频词：用户名 / 密码 / 口令 / 账号 / SSH / 端口 / 安全入口 / 面板
+    //        + 路径类：路径 / 目录 / 数据目录 / 安装路径 / 监听地址 / 主机
+    if (/(默认|留空|跳过|可选|选项|是\/否|回车|确认|取消|可直接回车|按回车继续|回车确认|用户名|密码|口令|账号|端口|SSH|安全入口|面板|入口|监听|路径|目录|数据目录|安装路径|主机|地址|版本号|是否|继续执行|是否确认)/.test(text)) return true
+  }
+  // 4) 兜底：行尾就是【冒号/问号 (+ 可选数字)】，典型的"等待输入光标前最后一个字符"形式
+  //    即便没命中关键词，这种格式也极大概率是交互提示，保留旧行为。
+  if (/[:?：？]\s*(?:\d+)?\s*$/.test(text)) return true
+  // 5) 兜底方括号选择格式行尾：[y/n] / [0] / [1-23] ...
   return /\[[yn0-9/\-]+\]:?\s*(?:\d+)?\s*$/i.test(text)
 }
 
@@ -436,6 +460,30 @@ function buildWrappedMultiLineCommand(command: string) {
     marker += '_X'
   }
   return `bash <<'${marker}'\n${source}\n${marker}\n`
+}
+
+const SCREEN_NON_INTERACTIVE_OPTIONS = new Set(['-ls', '-list', '-wipe', '-v', '-version', '--version', '-help', '--help']);
+
+/** 只识别会进入 GNU screen 界面的命令；查询、后台启动和控制命令保持标准终端行为。 */
+function startsInteractiveScreen(command: string) {
+  // ponytail: 仅解析提交行最后一个 shell 段和常用包装器；若要覆盖别名/函数，改由后端上报前台进程。
+  const context = parseCommandInputContext(String(command ?? '').trim());
+  const tokens = context.tokens.map((token) => token.text.replace(/^['"]|['"]$/g, ''));
+  while (tokens.length && /^(?:sudo|env|command|exec)$/i.test(tokens[0])) tokens.shift();
+  while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+  const executable = (tokens.shift() || '').replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+  if (executable !== 'screen') return false;
+  if (tokens.includes('-X') || tokens.some((token) => /^-dm/i.test(token))) return false;
+  const lowerOptions = tokens.map((token) => token.toLowerCase());
+  if (lowerOptions.some((token) => SCREEN_NON_INTERACTIVE_OPTIONS.has(token))) return false;
+  return !lowerOptions.includes('-d') || lowerOptions.some((token) => /^-r+$/.test(token) || token === '-x');
+}
+
+if (import.meta.env.DEV) {
+  console.assert(startsInteractiveScreen('screen -S demo-session'), 'screen 启动命令识别失败');
+  console.assert(startsInteractiveScreen('sudo /usr/bin/screen -r demo-session'), 'screen 恢复命令识别失败');
+  console.assert(!startsInteractiveScreen('screen -ls'), 'screen 查询命令不应进入兼容模式');
+  console.assert(!startsInteractiveScreen('screen -dmS demo-session command'), 'screen 后台命令不应进入兼容模式');
 }
 
 /** 粘贴到终端：统一换行并清掉尾部连续回车，避免右键粘贴时直接连发多次执行 */
@@ -618,6 +666,8 @@ export default function Terminal({
   const hlStateRef = useRef(createHighlightState());
   const [alternateBufferActive, setAlternateBufferActive] = useState(false);
   const alternateBufferActiveRef = useRef(false);
+  const screenScrollbackRef = useRef({ pending: false, active: false });
+  const prepareScreenScrollbackRef = useRef<(command: string) => void>(() => {});
   // Ring buffer 时间戳：用 xterm marker 跟随 scrollback 裁剪，避免 buffer 行号复用后错位
   const TS_POOL = 6000;
   // null! 惰性初始化惯用法：下方 if 守卫保证首次渲染即完成填充，后续恒非空
@@ -1356,6 +1406,45 @@ export default function Terminal({
       },
     });
     term.open(containerRef.current);
+    screenScrollbackRef.current.pending = false;
+    screenScrollbackRef.current.active = false;
+    const syncTuiState = (screenActive = screenScrollbackRef.current.active) => {
+      const active = term.buffer.active.type === 'alternate' || screenActive;
+      alternateBufferActiveRef.current = active;
+      setAlternateBufferActive(active);
+      if (active) {
+        if (gutterSyncRAFRef.current !== null) {
+          cancelAnimationFrame(gutterSyncRAFRef.current);
+          gutterSyncRAFRef.current = null;
+        }
+        if (gutterRef.current) gutterRef.current.innerHTML = '';
+        if (linkUnderlineLayerRef.current) linkUnderlineLayerRef.current.innerHTML = '';
+      } else {
+        scheduleGutterSync();
+        scheduleLinkUnderlineSync();
+      }
+    };
+    prepareScreenScrollbackRef.current = (command) => {
+      if (screenScrollbackRef.current.active) return;
+      screenScrollbackRef.current.pending = startsInteractiveScreen(command);
+    };
+    const screenAltModeSetDisposable = term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+      const mode = params.length === 1 && typeof params[0] === 'number' ? params[0] : 0;
+      if ((!screenScrollbackRef.current.pending && !screenScrollbackRef.current.active) || (mode !== 47 && mode !== 1047 && mode !== 1049)) return false;
+      screenScrollbackRef.current.pending = false;
+      screenScrollbackRef.current.active = true;
+      syncTuiState(true);
+      return true;
+    });
+    const screenAltModeResetDisposable = term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) => {
+      const mode = params.length === 1 && typeof params[0] === 'number' ? params[0] : 0;
+      if (!screenScrollbackRef.current.active || (mode !== 47 && mode !== 1047 && mode !== 1049)) return false;
+      screenScrollbackRef.current.active = false;
+      screenScrollbackRef.current.pending = false;
+      syncTuiState(false);
+      // normal buffer 已承载 screen 历史，不能再执行 1049l 的旧光标恢复，否则长日志会把提示符拉回已裁剪位置。
+      return true;
+    });
     try { fitAddon.fit(); } catch (_) {}
     const terminalInput = containerRef.current.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
     if (terminalInput) {
@@ -1385,7 +1474,7 @@ export default function Terminal({
 
     // ── 每行时间戳 / 命令块：marker 跟随 xterm scrollback 裁剪 ──
     const lineFeedDisposable = term.onLineFeed(() => {
-      if (term.buffer.active.type !== 'normal') return;
+      if (alternateBufferActiveRef.current || term.buffer.active.type !== 'normal') return;
       if (!timestampsEnabledRef.current && !commandBlocksEnabledRef.current) return;
 
       const buf = term.buffer.active;
@@ -1431,20 +1520,7 @@ export default function Terminal({
       }
     });
     const bufferChangeDisposable = term.buffer.onBufferChange((buffer) => {
-      const alternate = buffer.type === 'alternate';
-      alternateBufferActiveRef.current = alternate;
-      setAlternateBufferActive(alternate);
-      if (alternate) {
-        if (gutterSyncRAFRef.current !== null) {
-          cancelAnimationFrame(gutterSyncRAFRef.current);
-          gutterSyncRAFRef.current = null;
-        }
-        if (gutterRef.current) gutterRef.current.innerHTML = '';
-        if (linkUnderlineLayerRef.current) linkUnderlineLayerRef.current.innerHTML = '';
-      } else {
-        scheduleGutterSync();
-        scheduleLinkUnderlineSync();
-      }
+      syncTuiState(buffer.type === 'alternate' || screenScrollbackRef.current.active);
     });
     const wheelHandler = (e: WheelEvent) => {
       // 无论向上还是向下滚动，都检查当前位置并更新锁定状态
@@ -1805,6 +1881,7 @@ export default function Terminal({
 
     // ── 历史指令记录 + 输入直觉 + Local Echo ────────────────────────
     let localInputLength = 0; // 用于保护提示符，防止退格越界
+    let pendingCmdReliable = true;
 
     term.onData((data) => {
       if ((statusRef.current === 'closed' || statusRef.current === 'error') && (data.includes('\r') || data.includes('\n'))) {
@@ -1826,9 +1903,7 @@ export default function Terminal({
       // 真正被 shell 执行的命令），可正确捕捉 Tab 补全 / 方向键调历史 /
       // Ctrl+R 等 shell 编辑结果；pendingCmdRef 仅在缓冲读取失败时作兜底。
       if (out.includes('\r') || out.includes('\n')) {
-        // 备用屏（vim/htop/less 等 TUI）下不记录历史：此时缓冲里是文件内容，
-        // 按 Enter 会被误当成命令。顺带清空 pendingCmdRef，退出 TUI 后从头计。
-        if (alternateBufferActiveRef.current) {
+        if (term.buffer.active.type === 'alternate') {
           pendingCmdRef.current = '';
           return;
         }
@@ -1847,6 +1922,7 @@ export default function Terminal({
         }
         let cmd = '';
         const buf = term.buffer.active;
+        let promptFilteredThisTurn = false;
         if (buf) {
           const bufLine = buf.getLine(buf.baseY + buf.cursorY);
           const text = bufLine ? bufLine.translateToString(true) : '';
@@ -1854,18 +1930,24 @@ export default function Terminal({
           // 含控制字符（C0 0x00-0x1F / DEL / C1 0x80-0x9F，多为 ANSI 序列残留）
           // 或交互脚本提示：视为无效，回退到逐字符累加。注意保留合法 Unicode
           // （如提示符 ❯、中文路径、emoji 参数），不再按"非 ASCII"一刀切丢弃。
-          if (/[\x00-\x1F\x7F-\x9F]/.test(cmd) || isInteractivePromptText(cmd)) cmd = '';
+          const hasControl = /[\x00-\x1F\x7F-\x9F]/.test(cmd);
+          const isPrompt = isInteractivePromptText(cmd);
+          if (hasControl || isPrompt) {
+            promptFilteredThisTurn = true;
+            cmd = '';
+          }
         }
-        // 智能 fallback：buffer 提取是"屏幕上真正执行的命令"，优先采用；但
-        // 当手敲值 pendingCmdRef 与之明显不一致（无前缀关系）时，说明当前不是
-        // 普通 shell 命令行（如交互脚本 "Continue? [y/n]? y"），应信任手敲值，
-        // 避免把整行提示文本当成命令记入历史。
         const pending = pendingCmdRef.current.trim();
-        if (!cmd) {
-          cmd = pending;
-        } else if (pending) {
-          const c = cmd.toLowerCase(), p = pending.toLowerCase();
-          if (!c.startsWith(p) && !p.startsWith(c)) cmd = pending;
+        if (!promptFilteredThisTurn) {
+          if (!cmd) {
+            cmd = pending;
+          } else if (pendingCmdReliable && pending) {
+            const c = cmd.toLowerCase(), p = pending.toLowerCase();
+            if (!c.startsWith(p) && !p.startsWith(c)) cmd = '';
+          }
+        }
+        if (!awaitingPasswordRef.current) {
+          prepareScreenScrollbackRef.current(cmd);
         }
         if (!awaitingPasswordRef.current && cmd.length > 1 && !/^\d+$/.test(cmd)) {
           window.dispatchEvent(new CustomEvent('ssh-command-history', {
@@ -1878,13 +1960,18 @@ export default function Terminal({
         awaitingCommandFinishRef.current = !awaitingPasswordRef.current && cmd.length > 0;
         awaitingPasswordRef.current = false;
         pendingCmdRef.current = '';
+        pendingCmdReliable = true;
       } else if (out === '\x7F' || out === '\b') {
         pendingCmdRef.current = pendingCmdRef.current.slice(0, -1);
       } else if (!/[\x00-\x1F\x7F]/.test(out)) {
         pendingCmdRef.current += out;
       } else if (out === '\x03' || out === '\x04') {
         pendingCmdRef.current = '';
+        pendingCmdReliable = true;
+        if (!screenScrollbackRef.current.active) screenScrollbackRef.current.pending = false;
         awaitingPasswordRef.current = false; // Ctrl+C/D 取消当前输入，重置密码等待状态，避免下一条普通命令被误跳过
+      } else {
+        pendingCmdReliable = false;
       }
 
       // Local Echo 逻辑 (恢复默认开启)
@@ -1932,6 +2019,8 @@ export default function Terminal({
       lineFeedDisposable.dispose();
       writeParsedDisposable.dispose();
       bufferChangeDisposable.dispose();
+      screenAltModeSetDisposable.dispose();
+      screenAltModeResetDisposable.dispose();
       resizeDisposable.dispose();
       try { linkProviderDisposable.dispose(); } catch (_) {}
       try { searchResultsDisposable.dispose(); } catch (_) {}
@@ -1957,6 +2046,9 @@ export default function Terminal({
         delete window.__luminTerminalSnapshots[sessionId];
       }
       smartWriteRef.current = null;
+      screenScrollbackRef.current.pending = false;
+      screenScrollbackRef.current.active = false;
+      prepareScreenScrollbackRef.current = () => {};
       alternateBufferActiveRef.current = false;
       termRef.current     = null;
       fitAddonRef.current = null;
@@ -1990,6 +2082,11 @@ export default function Terminal({
   // 浏览器连接和 Go ReadMessage goroutine。重连后只重建 WS，不重建 xterm。
   useEffect(() => {
     if (status === 'closed' || status === 'error') {
+      screenScrollbackRef.current.pending = false;
+      screenScrollbackRef.current.active = false;
+      const actualAlternate = termRef.current?.buffer.active.type === 'alternate';
+      alternateBufferActiveRef.current = actualAlternate;
+      setAlternateBufferActive(actualAlternate);
       const ws = wsRef.current;
       wsRef.current = null;
       if (ws) {
@@ -2978,6 +3075,7 @@ export default function Terminal({
       : multiLineWrapEnabled && lineCount > 1
         ? buildWrappedMultiLineCommand(normalizedText)
         : text + '\r';
+    prepareScreenScrollbackRef.current(text);
     AppGo.WriteTerminal(sessionId, finalPayload).catch((err) => {
       console.error('WriteTerminal failed:', err);
     });
@@ -3022,6 +3120,9 @@ export default function Terminal({
       : multiLineWrapEnabled && lineCount > 1
         ? buildWrappedMultiLineCommand(text)
         : text + '\r';
+    if (pending.item.addCR !== false) {
+      prepareScreenScrollbackRef.current(text);
+    }
     AppGo.WriteTerminal(sessionId, payload).catch((err) => {
       console.error('WriteTerminal failed:', err);
     });

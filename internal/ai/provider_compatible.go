@@ -373,9 +373,9 @@ func (a *App) requestCompatibleAIChatRound(ctx context.Context, requestID string
 		}
 
 		for _, choice := range chunk.Choices {
-			reasoningDelta := strings.TrimSpace(choice.Delta.ReasoningContent)
+			reasoningDelta := choice.Delta.ReasoningContent
 			if reasoningDelta == "" {
-				reasoningDelta = strings.TrimSpace(choice.Delta.Reasoning)
+				reasoningDelta = choice.Delta.Reasoning
 			}
 			emitReasoningDelta(reasoningDelta)
 

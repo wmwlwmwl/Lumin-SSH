@@ -3277,10 +3277,29 @@ export default function FileManager({ sessionId, sessionGroupId = sessionId, add
       cancelFileListSwitch(switchToken);
       setLoading(false);
       if (!resolvedOptions.silent) {
-        const msg = String(err).toLowerCase().includes('permission denied')
-          ? `${t('权限不足')}: SFTP ${t('仍以')} ${sessionId ? t('原用户') : ''} ${t('身份运行，终端内 sudo 不影响文件管理器')}`
-          : `${t('读取目录失败')}: ${err}`;
-        addToast?.(`${msg} [${normalizedPath}]`, 'error');
+        const rawMsg = String(err);
+        // OpenWrt 缺省无 SFTP 子系统:后端错误串带安装命令,提取后给出可复制提示
+        const openwrtInstall = rawMsg.match(/opkg update && opkg install openssh-sftp-server/);
+        if (openwrtInstall) {
+          const installCmd = openwrtInstall[0];
+          addToast?.(
+            `${t('检测到 OpenWrt 设备，文件管理器需要 SFTP 子系统，请执行以下命令安装')}：${installCmd}。${t('安装完成后请重新连接会话')}`,
+            'warning',
+            20000,
+            [{
+              label: t('复制安装命令'),
+              onClick: () => {
+                navigator.clipboard.writeText(installCmd);
+                addToast?.(t('安装命令已复制'), 'success');
+              },
+            }],
+          );
+        } else {
+          const msg = rawMsg.toLowerCase().includes('permission denied')
+            ? `${t('权限不足')}: SFTP ${t('仍以')} ${sessionId ? t('原用户') : ''} ${t('身份运行，终端内 sudo 不影响文件管理器')}`
+            : `${t('读取目录失败')}: ${rawMsg}`;
+          addToast?.(`${msg} [${normalizedPath}]`, 'error');
+        }
       }
       return false;
     } finally {
