@@ -90,10 +90,12 @@ export default function MCPAccessView({
   const { t } = useTranslation();
 
   // 发给外部 AI Agent 的一键配置话术：URL 跟随实际 MCP 地址
+  // type 用客户端配置格式（streamable-http → http），与上方 configText 保持一致
   const agentPromptText = useMemo(() => {
     const url = mcpInfo.url || 'http://127.0.0.1:5779/mcp';
+    const configType = mcpInfo.transport === 'streamable-http' ? 'http' : (mcpInfo.transport || 'http');
     return `请帮我配置这个MCP "lumin-ssh": {
-  "type": "streamable-http",
+  "type": "${configType}",
   "url": "${url}",
   "oauth": false,
   "alwaysAllow": [],
@@ -101,7 +103,7 @@ export default function MCPAccessView({
   "timeout": 0,
   "disabledForPrompts": false
 }`;
-  }, [mcpInfo.url]);
+  }, [mcpInfo.url, mcpInfo.transport]);
   const [agentPromptCopied, setAgentPromptCopied] = useState(false);
   const copyAgentPrompt = () => {
     navigator.clipboard?.writeText(agentPromptText).then(() => {

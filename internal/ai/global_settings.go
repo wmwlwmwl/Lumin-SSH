@@ -347,6 +347,10 @@ func normalizeAIGlobalSettings(settings AIGlobalSettings) AIGlobalSettings {
 	if settings.ToolResultTokenThreshold <= 0 {
 		settings.ToolResultTokenThreshold = defaultAIGlobalSettings().ToolResultTokenThreshold
 	}
+	// 审批依赖活动弹窗（审批按钮位于弹窗内），开启审批时强制开启弹窗，避免审批静默超时
+	if settings.MCPRequireApproval && !settings.MCPActivityVisible {
+		settings.MCPActivityVisible = true
+	}
 	return settings
 }
 

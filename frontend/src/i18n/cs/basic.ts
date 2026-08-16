@@ -1830,10 +1830,7 @@ export default {
   "默认明文同步，选择加密后需设置恢复密码": "默认明文同步，选择加密后需设置恢复密码",
   "同步服务": "同步服务",
 
-  "外部 MCP 操作可见": "Zobrazit externí aktivitu MCP",
-  "在 MCP 活动面板中显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出": "Zobrazit v panelu aktivity MCP záznam operací externích klientů (např. Claude Code): server, příkaz, stav a výstup",
   "外部 MCP 写操作需审批": "Operace zápisu externího MCP vyžadují schválení",
-  "开启后，外部客户端的写操作（is_mutating）需在应用内手动批准才执行。关闭则自动执行。": "Je-li tato možnost zapnutá, operace zápisu (is_mutating) z externích klientů se provedou až po ručním schválení v aplikaci. Je-li vypnutá, provedou se automaticky.",
   "MCP 活动": "Aktivita MCP",
   "外部 MCP（如 Claude Code）的操作会显示在这里": "Zde se zobrazí operace externích klientů MCP (např. Claude Code)",
   "输出预览": "Náhled výstupu",
