@@ -66,12 +66,6 @@ func (noopReporter) RequestApproval(ActivityEvent) (bool, error) { return true, 
 // NoopReporter returns a reporter that does nothing and auto-approves.
 func NoopReporter() ActivityReporter { return noopReporter{} }
 
-// ActivityReporterCarrier is an optional capability interface. Hosts that can
-// supply a reporter implement this; mcp.StartServer type-asserts to inject it.
-type ActivityReporterCarrier interface {
-	MCPActivityReporter() ActivityReporter
-}
-
 // NewRequestID generates a short unique identifier for correlating the lifecycle
 // events of a single tool invocation.
 func NewRequestID() string {

@@ -93,6 +93,7 @@ func (c *Catalog) CallWithContext(ctx context.Context, name string, arguments ma
 	sessionID := extractSessionID(arguments)
 	serverName := clone.resolveServerName(sessionID)
 	requestID := NewRequestID()
+	isMutating := isMutatingTool(name)
 
 	baseEvent := ActivityEvent{
 		RequestID:  requestID,
@@ -101,8 +102,28 @@ func (c *Catalog) CallWithContext(ctx context.Context, name string, arguments ma
 		Tool:       name,
 		SessionID:  sessionID,
 		ServerName: serverName,
+		IsMutating: isMutating,
+		Command:    extractToolTarget(name, arguments),
 	}
 	reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusStarted, "", nil))
+
+	// 写操作审批门：与 execute_command 的 isMutating 审批对齐，
+	// 覆盖 write_to_file / search_replace / apply_diff / edit_file / apply_patch / transfer_batch。
+	if isMutating {
+		approvalEvent := baseEvent
+		approvalEvent.Status = ActivityStatusApprovalRequired
+		approvalEvent.Timestamp = Now()
+		approved, err := reporter.RequestApproval(approvalEvent)
+		if err != nil {
+			reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusError, "approval error: "+err.Error(), nil))
+			return nil, err
+		}
+		if !approved {
+			reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusRejected, "rejected by user", nil))
+			return nil, fmt.Errorf("%s rejected by user", name)
+		}
+		reporter.ReportActivity(fillTimestamp(baseEvent, ActivityStatusApproved, "", nil))
+	}
 
 	result, err := clone.dispatchTool(name, arguments)
 	if err != nil {
@@ -154,6 +175,42 @@ func extractSessionID(arguments map[string]any) string {
 	}
 	text, _ := value.(string)
 	return text
+}
+
+// isMutatingTool reports whether a tool modifies the remote server or transfers
+// files. These tools are gated by the MCPRequireApproval setting, matching the
+// isMutating approval already applied to execute_command.
+func isMutatingTool(name string) bool {
+	switch name {
+	case "write_to_file", "search_replace", "apply_diff", "edit_file", "apply_patch", "transfer_batch":
+		return true
+	default:
+		return false
+	}
+}
+
+// extractToolTarget returns a short human-readable description of the target
+// (file path or transfer direction) for display in the activity panel.
+func extractToolTarget(name string, arguments map[string]any) string {
+	if arguments == nil {
+		return ""
+	}
+	// 文件编辑类工具：取 path 参数
+	if path, ok := arguments["path"].(string); ok && path != "" {
+		return path
+	}
+	// transfer_batch：取 operation + remote_parent
+	if name == "transfer_batch" {
+		op, _ := arguments["operation"].(string)
+		parent, _ := arguments["remote_parent"].(string)
+		if op != "" && parent != "" {
+			return op + " → " + parent
+		}
+		if op != "" {
+			return op
+		}
+	}
+	return ""
 }
 
 func (c *Catalog) resolveServerName(sessionID string) string {
