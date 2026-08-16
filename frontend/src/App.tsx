@@ -1998,8 +1998,8 @@ export default function App() {
         shared={{ addToast: looseAddToast, t: looseT }}
       />
 
-      {/* ── MCP Activity popup（设置中手动开启；面板常驻挂载以保留事件与审批） ── */}
-      {mcpActivityEnabled && (
+      {/* ── MCP Activity popup（设置中手动开启；无已连接会话时不显示） ── */}
+      {mcpActivityEnabled && sessions.some((s) => s.status === 'connected') && (
         <>
           <MCPActivityFloatingToggle
             visible={!showMCPActivity}
