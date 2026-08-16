@@ -1841,4 +1841,10 @@ export default {
   "等待审批": "Awaiting approval",
   "已批准": "Approved",
   "审批超时": "Approval timed out",
+  '外部 MCP 操作弹窗': 'External MCP Activity Popup',
+  '默认关闭。开启后弹出 MCP 活动弹窗，实时显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出': 'Off by default. When enabled, an MCP activity popup appears and shows external clients\' (e.g. Claude Code) operations in real time: server, command, status, output',
+  '开启后，外部客户端的写操作（is_mutating）需在活动弹窗中手动批准才执行（会同时开启活动弹窗）。关闭则自动执行。': 'When enabled, write operations (is_mutating) from external clients must be approved in the activity popup before running (this also turns on the popup). When disabled, they run automatically.',
+  '您可以将这一句话发送给您的 AI Agent': 'You can send this message to your AI Agent',
+  '拖动标题栏移动，双击复位': 'Drag the title bar to move; double-click to reset',
+  '拖动按钮移动，双击复位': 'Drag the button to move; double-click to reset',
 } satisfies I18nDict;

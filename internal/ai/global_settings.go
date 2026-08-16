@@ -79,7 +79,7 @@ func defaultAIGlobalSettings() AIGlobalSettings {
 		MCPEnabled:                true,
 		MCPAllowBrowserCalls:      false,
 		MCPRequireApproval:        false,
-		MCPActivityVisible:        true,
+		MCPActivityVisible:        false,
 		TerminalIsolation:             true,
 		ConfirmDelete:                 true,
 		ContinueAfterToolRejection:    true,

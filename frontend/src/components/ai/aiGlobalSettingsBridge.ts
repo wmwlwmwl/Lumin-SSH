@@ -39,6 +39,8 @@ export type AIGlobalSettings = {
   soundVolume: number
   mcpEnabled: boolean
   mcpAllowBrowserCalls: boolean
+  mcpRequireApproval: boolean
+  mcpActivityVisible: boolean
   terminalIsolation: boolean
   confirmDelete: boolean
   continueAfterToolRejection: boolean
@@ -77,6 +79,8 @@ const DEFAULT_AI_GLOBAL_SETTINGS: AIGlobalSettings = {
   soundVolume: 0.06,
   mcpEnabled: true,
   mcpAllowBrowserCalls: false,
+  mcpRequireApproval: false,
+  mcpActivityVisible: false,
   terminalIsolation: true,
   confirmDelete: true,
   continueAfterToolRejection: true,
@@ -267,6 +271,8 @@ export function normalizeAIGlobalSettings(settings: unknown): AIGlobalSettings {
     toolResultTokenThreshold,
     mcpEnabled: s.mcpEnabled !== false,
     mcpAllowBrowserCalls: Boolean(s.mcpAllowBrowserCalls),
+    mcpRequireApproval: Boolean(s.mcpRequireApproval),
+    mcpActivityVisible: Boolean(s.mcpActivityVisible),
     terminalIsolation: s.terminalIsolation !== false,
     confirmDelete: s.confirmDelete !== false,
     continueAfterToolRejection: s.continueAfterToolRejection !== false,

@@ -1841,4 +1841,10 @@ export default {
   "等待审批": "Pendiente de aprobación",
   "已批准": "Aprobado",
   "审批超时": "Se agotó el tiempo de aprobación",
+  '外部 MCP 操作弹窗': 'Ventana emergente de actividad MCP externa',
+  '默认关闭。开启后弹出 MCP 活动弹窗，实时显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出': 'Desactivado por defecto. Al activarlo, se abre una ventana emergente de actividad MCP que muestra en tiempo real las operaciones de clientes externos (p. ej. Claude Code): servidor, comando, estado, salida',
+  '开启后，外部客户端的写操作（is_mutating）需在活动弹窗中手动批准才执行（会同时开启活动弹窗）。关闭则自动执行。': 'Al activarlo, las operaciones de escritura (is_mutating) de clientes externos deben aprobarse manualmente en la ventana de actividad (que también se activa). Desactivado, se ejecutan automáticamente.',
+  '您可以将这一句话发送给您的 AI Agent': 'Puede enviar esta frase a su agente de IA',
+  '拖动标题栏移动，双击复位': 'Arrastre la barra de título para mover; doble clic para restablecer',
+  '拖动按钮移动，双击复位': 'Arrastre el botón para mover; doble clic para restablecer',
 } satisfies I18nDict;

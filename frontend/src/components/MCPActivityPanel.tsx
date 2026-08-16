@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { EventsOn } from '../../wailsjs/runtime/runtime.js'
+import { Activity } from 'lucide-react'
 import { useTranslation, type I18nKey } from '../i18n.js'
 
 export interface MCPActivityEvent {
@@ -80,20 +81,31 @@ function resolveApproval(requestId: string, approved: boolean) {
 export interface MCPActivityPanelProps {
   height?: string
   onClose?: () => void
+  /** 审批请求到来时回调（弹窗被关闭时用于自动弹出） */
+  onApprovalRequired?: () => void
+  /** 标题栏按下（用于拖动整个弹窗） */
+  onHeaderPointerDown?: (e: ReactPointerEvent<HTMLDivElement>) => void
+  /** 标题栏双击（用于复位弹窗位置） */
+  onHeaderDoubleClick?: () => void
 }
 
 export interface MCPActivityFloatingToggleProps {
   visible: boolean
+  offset: { x: number; y: number }
   onClick: () => void
+  onPointerDown: (e: { button?: number; clientX: number; clientY: number }) => void
+  onDoubleClick: () => void
 }
 
-export function MCPActivityFloatingToggle({ visible, onClick }: MCPActivityFloatingToggleProps) {
+export function MCPActivityFloatingToggle({ visible, offset, onClick, onPointerDown, onDoubleClick }: MCPActivityFloatingToggleProps) {
   const { t } = useTranslation()
   if (!visible) return null
   return (
     <button
       onClick={onClick}
-      title={t('MCP 活动')}
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      title={t('拖动按钮移动，双击复位')}
       style={{
         position: 'fixed',
         bottom: '16px',
@@ -104,27 +116,31 @@ export function MCPActivityFloatingToggle({ visible, onClick }: MCPActivityFloat
         border: '1px solid rgba(255,255,255,0.12)',
         background: 'var(--lumin-bg-tertiary, #1a2335)',
         color: 'var(--lumin-text-secondary, #8892b0)',
-        cursor: 'pointer',
+        cursor: 'grab',
         zIndex: 9998,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '18px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        transform: `translate(${offset.x}px, ${offset.y}px)`,
+        userSelect: 'none',
+        touchAction: 'none',
       }}
     >
-      🤖
+      <Activity size={17} strokeWidth={2} />
     </button>
   )
 }
 
-export default function MCPActivityPanel({ height = '100%', onClose }: MCPActivityPanelProps) {
+export default function MCPActivityPanel({ height = '100%', onClose, onApprovalRequired, onHeaderPointerDown, onHeaderDoubleClick }: MCPActivityPanelProps) {
   const { t } = useTranslation()
   const [activities, setActivities] = useState<ActivityMap>(new Map())
   const activitiesRef = useRef<ActivityMap>(new Map())
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
   const cardOrderRef = useRef<string[]>([])
+  const onApprovalRequiredRef = useRef(onApprovalRequired)
+  useEffect(() => { onApprovalRequiredRef.current = onApprovalRequired }, [onApprovalRequired])
 
   const flushState = useCallback(() => {
     setActivities(new Map(activitiesRef.current))
@@ -148,6 +164,9 @@ export default function MCPActivityPanel({ height = '100%', onClose }: MCPActivi
           const removed = cardOrderRef.current.pop()
           if (removed) map.delete(removed)
         }
+      }
+      if (payload.status === 'approval_required') {
+        onApprovalRequiredRef.current?.()
       }
       flushState()
     })
@@ -180,15 +199,24 @@ export default function MCPActivityPanel({ height = '100%', onClose }: MCPActivi
       overflow: 'hidden',
       border: '1px solid var(--lumin-border, rgba(255,255,255,0.08))',
     }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '10px 14px',
-        borderBottom: '1px solid var(--lumin-border, rgba(255,255,255,0.08))',
-        flexShrink: 0,
-      }}>
+      {/* Header（可拖动弹窗的把手） */}
+      <div
+        onPointerDown={onHeaderPointerDown}
+        onDoubleClick={onHeaderDoubleClick}
+        title={onHeaderPointerDown ? t('拖动标题栏移动，双击复位') : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '10px 14px',
+          borderBottom: '1px solid var(--lumin-border, rgba(255,255,255,0.08))',
+          flexShrink: 0,
+          cursor: onHeaderPointerDown ? 'grab' : 'default',
+          userSelect: 'none',
+          touchAction: 'none',
+        }}
+      >
+        <Activity size={14} strokeWidth={2.2} style={{ color: '#5b9cf6', flexShrink: 0 }} />
         <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--lumin-text-primary, #e0e6f0)' }}>
           {t('MCP 活动')}
         </span>
@@ -205,6 +233,8 @@ export default function MCPActivityPanel({ height = '100%', onClose }: MCPActivi
         {onClose && (
           <button
             onClick={onClose}
+            onPointerDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             style={{
               background: 'none',
               border: 'none',

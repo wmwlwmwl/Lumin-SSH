@@ -1841,4 +1841,10 @@ export default {
   "等待审批": "Onay bekliyor",
   "已批准": "Onaylandı",
   "审批超时": "Onay süresi doldu",
+  '外部 MCP 操作弹窗': 'Harici MCP etkinlik açılır penceresi',
+  '默认关闭。开启后弹出 MCP 活动弹窗，实时显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出': 'Varsayılan olarak kapalıdır. Etkinleştirildiğinde bir MCP etkinlik açılır penceresi açılır ve harici istemcilerin (örn. Claude Code) işlemlerini gerçek zamanlı gösterir: sunucu, komut, durum, çıktı',
+  '开启后，外部客户端的写操作（is_mutating）需在活动弹窗中手动批准才执行（会同时开启活动弹窗）。关闭则自动执行。': 'Etkinleştirildiğinde harici istemcilerin yazma işlemleri (is_mutating) etkinlik penceresinde manuel onay gerektirir (pencere de etkinleşir). Devre dışıyken otomatik yürütülür.',
+  '您可以将这一句话发送给您的 AI Agent': 'Bu cümleyi yapay zeka ajanınıza gönderebilirsiniz',
+  '拖动标题栏移动，双击复位': 'Taşımak için başlık çubuğunu sürükleyin; sıfırlamak için çift tıklayın',
+  '拖动按钮移动，双击复位': 'Taşımak için düğmeyi sürükleyin; sıfırlamak için çift tıklayın',
 } satisfies I18nDict;

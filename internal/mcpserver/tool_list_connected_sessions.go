@@ -5,7 +5,7 @@ import "fmt"
 func listConnectedSessionsToolDefinition() ToolDefinition {
 	return ToolDefinition{
 		Name: "list_connected_sessions",
-		Description: "List currently connected SSH terminal sessions and return the session_id required by subsequent MCP tools.",
+		Description: "List currently connected SSH terminal sessions and return the session_id required by subsequent MCP tools. Each session includes an address field (user@host:port) that distinguishes servers sharing the same display name.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{},

@@ -6,6 +6,7 @@ import ProbePanel, { type ProbeSnapshot } from './components/ProbePanel.tsx';
 import FileManager from './components/FileManager.tsx';
 import AIPanel from './components/AIPanel.tsx';
 import MCPActivityPanel, { MCPActivityFloatingToggle } from './components/MCPActivityPanel.tsx';
+import { getAIGlobalSettings } from './components/ai/aiGlobalSettingsBridge.ts';
 import { isRecoveryPasswordError, syncWithRecoveryPassword } from './utils/recoveryPasswordSync.ts';
 import {
   getAllSessionFileManagerWorkspaces,
@@ -524,7 +525,75 @@ export default function App() {
     updateLeftSplitWidth,
     updateProbePanelWidth,
   });
+  const [mcpActivityEnabled, setMcpActivityEnabled] = useState(false);
   const [showMCPActivity, setShowMCPActivity] = useState(false);
+  const [mcpActivityOffset, setMcpActivityOffset] = useState({ x: 0, y: 0 });
+  const mcpActivityEnabledRef = useRef(false);
+  const mcpActivityOffsetRef = useRef({ x: 0, y: 0 });
+  useEffect(() => { mcpActivityOffsetRef.current = mcpActivityOffset; }, [mcpActivityOffset]);
+  useEffect(() => {
+    // 外部 MCP 活动弹窗默认关闭，需在设置中手动开启；开启后自动弹出
+    getAIGlobalSettings()
+      .then((settings) => { setMcpActivityEnabled(settings.mcpActivityVisible); })
+      .catch(() => {});
+    const unbind = EventsOn('mcp-activity-visibility-changed', (enabled: unknown) => {
+      const visible = Boolean(enabled);
+      setMcpActivityEnabled(visible);
+      setShowMCPActivity(visible);
+      // 重新开启时回到默认右下角位置
+      setMcpActivityOffset({ x: 0, y: 0 });
+      setMcpToggleOffset({ x: 0, y: 0 });
+    });
+    return () => { unbind(); };
+  }, []);
+  const openMCPActivity = useCallback(() => {
+    if (mcpActivityEnabledRef.current) setShowMCPActivity(true);
+  }, []);
+  useEffect(() => { mcpActivityEnabledRef.current = mcpActivityEnabled; }, [mcpActivityEnabled]);
+  // 按住活动弹窗标题栏拖动（transform 偏移，双击复位）
+  const handleMCPActivityDragStart = useCallback((e: { button?: number; clientX: number; clientY: number }) => {
+    if (e.button != null && e.button !== 0) return;
+    const start = { px: e.clientX, py: e.clientY, ox: mcpActivityOffsetRef.current.x, oy: mcpActivityOffsetRef.current.y };
+    const onMove = (ev: PointerEvent) => {
+      setMcpActivityOffset({ x: start.ox + (ev.clientX - start.px), y: start.oy + (ev.clientY - start.py) });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
+  // 悬浮小圆钮同样可拖动；拖动距离超过阈值则视为拖动而非点击
+  const [mcpToggleOffset, setMcpToggleOffset] = useState({ x: 0, y: 0 });
+  const mcpToggleOffsetRef = useRef({ x: 0, y: 0 });
+  useEffect(() => { mcpToggleOffsetRef.current = mcpToggleOffset; }, [mcpToggleOffset]);
+  const mcpToggleDragConsumedRef = useRef(false);
+  const handleMCPToggleDragStart = useCallback((e: { button?: number; clientX: number; clientY: number }) => {
+    if (e.button != null && e.button !== 0) return;
+    const start = { px: e.clientX, py: e.clientY, ox: mcpToggleOffsetRef.current.x, oy: mcpToggleOffsetRef.current.y };
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - start.px;
+      const dy = ev.clientY - start.py;
+      if (!mcpToggleDragConsumedRef.current && Math.hypot(dx, dy) < 4) return;
+      mcpToggleDragConsumedRef.current = true;
+      setMcpToggleOffset({ x: start.ox + dx, y: start.oy + dy });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
+  const handleMCPToggleClick = useCallback(() => {
+    // 拖动结束时 click 也会触发，这里消费掉，只有纯点击才打开弹窗
+    if (mcpToggleDragConsumedRef.current) {
+      mcpToggleDragConsumedRef.current = false;
+      return;
+    }
+    setShowMCPActivity(true);
+  }, []);
   const [showSessionList, setShowSessionList] = useState(false);
   const [terminalThemeToggle, setTerminalThemeToggle] = useState(0);
   const [sessionListPos, setSessionListPos] = useState({ x: 0, y: 0 });
@@ -1929,25 +1998,38 @@ export default function App() {
         shared={{ addToast: looseAddToast, t: looseT }}
       />
 
-      {/* ── MCP Activity floating panel ──────────────────── */}
-      <MCPActivityFloatingToggle
-        visible={!showMCPActivity}
-        onClick={() => setShowMCPActivity(true)}
-      />
-      {showMCPActivity && (
-        <div style={{
-          position: 'fixed',
-          bottom: '16px',
-          right: '16px',
-          width: '380px',
-          maxWidth: 'calc(100vw - 32px)',
-          height: '60vh',
-          maxHeight: '600px',
-          zIndex: 9999,
-        }}>
-          <MCPActivityPanel onClose={() => setShowMCPActivity(false)} />
-        </div>
+      {/* ── MCP Activity popup（设置中手动开启；面板常驻挂载以保留事件与审批） ── */}
+      {mcpActivityEnabled && (
+        <>
+          <MCPActivityFloatingToggle
+            visible={!showMCPActivity}
+            offset={mcpToggleOffset}
+            onClick={handleMCPToggleClick}
+            onPointerDown={handleMCPToggleDragStart}
+            onDoubleClick={() => setMcpToggleOffset({ x: 0, y: 0 })}
+          />
+          <div style={{
+            position: 'fixed',
+            bottom: '16px',
+            right: '16px',
+            width: '380px',
+            maxWidth: 'calc(100vw - 32px)',
+            height: '60vh',
+            maxHeight: '600px',
+            zIndex: 9999,
+            display: showMCPActivity ? 'block' : 'none',
+            transform: `translate(${mcpActivityOffset.x}px, ${mcpActivityOffset.y}px)`,
+          }}>
+            <MCPActivityPanel
+              onClose={() => setShowMCPActivity(false)}
+              onApprovalRequired={openMCPActivity}
+              onHeaderPointerDown={handleMCPActivityDragStart}
+              onHeaderDoubleClick={() => setMcpActivityOffset({ x: 0, y: 0 })}
+            />
+          </div>
+        </>
       )}
     </div>
   );
 }
+

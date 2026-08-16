@@ -17,6 +17,7 @@ import (
 	"luminssh-go/internal/sshmanager"
 
 	"github.com/pkg/sftp"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -228,6 +229,11 @@ func (b *AIBindings) SaveAIGlobalSettings(jsonStr string) error {
 	current := b.runtime().GetAIGlobalSettings()
 	if previous.MCPEnabled != current.MCPEnabled || previous.MCPAllowBrowserCalls != current.MCPAllowBrowserCalls {
 		mcpbridge.ApplyServiceState(b.app.configManager.GetConfigDir(), newMCPHost(b.app))
+	}
+	if previous.MCPActivityVisible != current.MCPActivityVisible {
+		if b != nil && b.app != nil && b.app.ctx != nil {
+			runtime.EventsEmit(b.app.ctx, "mcp-activity-visibility-changed", current.MCPActivityVisible)
+		}
 	}
 	previous.CurrentProviderID = ""
 	current.CurrentProviderID = ""

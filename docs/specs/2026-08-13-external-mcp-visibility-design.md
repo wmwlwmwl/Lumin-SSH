@@ -120,7 +120,7 @@ type ActivityReporter interface {
 
 `AIGlobalSettings` 增加：
 - `MCPRequireApproval bool`（json `mcpRequireApproval`，默认 false）
-- `MCPActivityVisible bool`（json `mcpActivityVisible`，默认 true）
+- `MCPActivityVisible bool`（json `mcpActivityVisible`，默认 false；设置 UI 手动开启后弹出活动弹窗）
 - `defaultAIGlobalSettings()` 设默认值；`LoadServiceSettings` 透传。
 
 ### 4.8 前端 — MCP 活动面板（新组件）

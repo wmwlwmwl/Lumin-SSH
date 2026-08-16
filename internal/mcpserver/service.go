@@ -36,6 +36,7 @@ func (s *Service) ListConnectedSessions() ([]ConnectedSession, error) {
 			GroupSessionID: groupSessionID,
 			ConnectionRef: descriptor.ConnectionRef,
 			ConnectionID: descriptor.ConnectionID,
+			Address: descriptor.Address,
 			Tags: append([]string(nil), descriptor.Tags...),
 			SFTPAvailable: descriptor.SFTPAvailable,
 			IsChildTerminal: descriptor.GroupSessionID != "",

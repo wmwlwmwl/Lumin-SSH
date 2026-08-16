@@ -1841,4 +1841,10 @@ export default {
   "等待审批": "Oczekuje na zatwierdzenie",
   "已批准": "Zatwierdzono",
   "审批超时": "Upłynął czas zatwierdzania",
+  '外部 MCP 操作弹窗': 'Okno aktywności MCP zewnętrznych',
+  '默认关闭。开启后弹出 MCP 活动弹窗，实时显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出': 'Domyślnie wyłączone. Po włączeniu pojawia się okno aktywności MCP pokazujące na żywo operacje zewnętrznych klientów (np. Claude Code): serwer, polecenie, status, wynik',
+  '开启后，外部客户端的写操作（is_mutating）需在活动弹窗中手动批准才执行（会同时开启活动弹窗）。关闭则自动执行。': 'Po włączeniu operacje zapisu (is_mutating) zewnętrznych klientów wymagają ręcznego zatwierdzenia w oknie aktywności (które też zostaje włączone). Wyłączone — wykonywane automatycznie.',
+  '您可以将这一句话发送给您的 AI Agent': 'Możesz wysłać to zdanie do swojego agenta AI',
+  '拖动标题栏移动，双击复位': 'Przeciągnij pasek tytułu, aby przenieść; kliknij dwukrotnie, aby zresetować',
+  '拖动按钮移动，双击复位': 'Przeciągnij przycisk, aby przenieść; kliknij dwukrotnie, aby zresetować',
 } satisfies I18nDict;

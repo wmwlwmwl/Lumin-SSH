@@ -6,19 +6,28 @@ Lumin 内置 MCP 服务（Streamable HTTP），监听 `127.0.0.1:5779/mcp`。Cla
 
 ### Claude Code
 
-在 Claude Code 的 MCP 配置中添加：
+在 `~/.claude.json` 顶层的 `mcpServers` 对象里加入 `lumin` 条目（**只加内层条目，不要再包一层 `mcpServers`**）：
 
 ```json
 {
   "mcpServers": {
+    "ui-kit": {
+      "type": "sse",
+      "url": "https://ui-kit-mcp.example.com/sse"
+    },
     "lumin": {
+      "type": "http",
       "url": "http://127.0.0.1:5779/mcp"
     }
   }
 }
 ```
 
-或通过命令行：
+注意：
+- 条目必须带 `type` 字段：Streamable HTTP 用 `"http"`，SSE 端点（URL 以 `/sse` 结尾）用 `"sse"`，本地命令用 `"stdio"`。
+- 如果文件里已有顶层 `"mcpServers": { ... }`，只把 `"lumin": { ... }` 这一段粘进去，整段示例再粘一遍会形成双层嵌套，导致条目被识别为无效服务器而跳过。
+
+或通过命令行（推荐，免去手工编辑）：
 
 ```bash
 claude mcp add lumin --transport http http://127.0.0.1:5779/mcp
@@ -26,12 +35,13 @@ claude mcp add lumin --transport http http://127.0.0.1:5779/mcp
 
 ### Codex / 其他 MCP 客户端
 
-在客户端的 MCP 配置（通常是 `mcp.json` 或类似）中加入：
+在客户端的 MCP 配置（通常是 `mcp.json` 或类似）中加入，同样只加内层条目并带 `type`：
 
 ```json
 {
   "mcpServers": {
     "lumin": {
+      "type": "http",
       "url": "http://127.0.0.1:5779/mcp"
     }
   }
@@ -48,7 +58,7 @@ claude mcp add lumin --transport http http://127.0.0.1:5779/mcp
 
 | 工具 | 说明 |
 |------|------|
-| `list_connected_sessions` | 列出所有已连接的 SSH 会话 |
+| `list_connected_sessions` | 列出所有已连接的 SSH 会话（含 `address` 字段 `user@host:port`，可区分同名服务器） |
 | `get_work_path` | 获取会话当前工作目录 |
 | `list_files` | 列出远程目录 |
 | `read_file` | 读取远程文件 |
@@ -63,8 +73,8 @@ claude mcp add lumin --transport http http://127.0.0.1:5779/mcp
 外部 MCP 的操作会在以下位置留下痕迹：
 
 - **终端**：命令直接在 SSH 终端中执行（与手动输入无异）
-- **MCP 活动面板**：右下角 🤖 按钮打开，显示客户端名称、服务器、命令、状态、输出
-- **审批**（可选）：在 AI 设置 → MCP 中开启「外部 MCP 写操作需审批」后，写操作需手动批准
+- **MCP 活动弹窗**：默认关闭；在 AI 设置 → MCP 中开启「外部 MCP 操作弹窗」后自动弹出（右下角活动按钮可重新打开），显示客户端名称、服务器、命令、状态、输出
+- **审批**（可选）：在 AI 设置 → MCP 中开启「外部 MCP 写操作需审批」后，写操作需在活动弹窗中手动批准（开启审批会同时开启活动弹窗）
 
 ## 安全说明
 

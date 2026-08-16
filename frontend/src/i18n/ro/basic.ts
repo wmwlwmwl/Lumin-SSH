@@ -1841,4 +1841,10 @@ export default {
   "等待审批": "Se așteaptă aprobarea",
   "已批准": "Aprobat",
   "审批超时": "Timpul pentru aprobare a expirat",
+  '外部 MCP 操作弹窗': 'Fereastră popup pentru activitatea MCP externă',
+  '默认关闭。开启后弹出 MCP 活动弹窗，实时显示外部客户端（如 Claude Code）的操作痕迹：服务器、命令、状态、输出': 'Implicit dezactivat. Când este activat, apare un popup de activitate MCP care afișează în timp real operațiunile clienților externi (ex. Claude Code): server, comandă, stare, ieșire',
+  '开启后，外部客户端的写操作（is_mutating）需在活动弹窗中手动批准才执行（会同时开启活动弹窗）。关闭则自动执行。': 'Când este activat, operațiunile de scriere (is_mutating) ale clienților externi necesită aprobare manuală în popup-ul de activitate (care se activează și el). Dezactivat, se execută automat.',
+  '您可以将这一句话发送给您的 AI Agent': 'Puteți trimite această frază agentului dumneavoastră AI',
+  '拖动标题栏移动，双击复位': 'Trageți bara de titlu pentru a muta; dublu clic pentru resetare',
+  '拖动按钮移动，双击复位': 'Trageți butonul pentru a muta; dublu clic pentru resetare',
 } satisfies I18nDict;

@@ -101,6 +101,10 @@ func (h Host) ListSessionDescriptors() ([]mcpserver.SessionDescriptor, error) {
 		if connection, ok := connectionMap[sessionData.ConnKey]; ok {
 			descriptor.ConnectionID = connection.ID
 			descriptor.Tags = buildSessionTags(connection)
+			descriptor.Address = buildConnectionAddress(connection)
+		} else if strings.Contains(sessionData.ConnKey, "@") {
+			// 无配置 ID 时 ConnKey 本身就是 user@host:port
+			descriptor.Address = sessionData.ConnKey
 		}
 		result = append(result, descriptor)
 	}
@@ -264,6 +268,19 @@ func buildSessionTags(connection config.Connection) []string {
 		tags = append(tags, osName)
 	}
 	return tags
+}
+
+// buildConnectionAddress 返回 user@host:port 形式的服务器地址，供外部 AI 区分同名服务器。
+func buildConnectionAddress(connection config.Connection) string {
+	host := strings.TrimSpace(connection.Host)
+	if host == "" {
+		return ""
+	}
+	address := sshmanager.DialAddr(connection.Host, connection.Port)
+	if username := strings.TrimSpace(connection.Username); username != "" {
+		return username + "@" + address
+	}
+	return address
 }
 
 func containsSessionTag(tags []string, value string) bool {
