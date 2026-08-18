@@ -1,8 +1,11 @@
 package sshmanager
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -473,13 +476,13 @@ func TestDynamicProbeScriptRemoteTopProcs(t *testing.T) {
 			t.Fatalf("%s 段应为 时间戳 + %s, 实际:\n%s", c.marker, c.pass, dynamicProbeScript)
 		}
 	}
-	// pass1 落盘(sleep 1 之前):时间戳 + sample_procs | sort > proctmp
+	// pass1 落盘(sleep 1 之前):时间戳 + sample_procs > proctmp
 	if !strings.Contains(dynamicProbeScript, `ts1p=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || date +%s)
-sample_procs | sort > "$proctmp"`) {
-		t.Fatal("pass1 须落盘 proctmp(sample_procs | sort),且在 sleep 1 之前")
+sample_procs > "$proctmp"`) {
+		t.Fatal("pass1 须落盘 proctmp(sample_procs),且在 sleep 1 之前")
 	}
-	// pass2 选 top6:sample_procs | sort | sample_procs_select > proctop
-	if !strings.Contains(dynamicProbeScript, `sample_procs | sort | sample_procs_select "$proctmp" > "$proctop"`) {
+	// pass2 选 top6:sample_procs | sample_procs_select > proctop
+	if !strings.Contains(dynamicProbeScript, `sample_procs | sample_procs_select "$proctmp" > "$proctop"`) {
 		t.Fatal("pass2 须经 sample_procs_select 选 top6 落 proctop")
 	}
 	// 三个函数定义齐全
@@ -492,9 +495,9 @@ sample_procs | sort > "$proctmp"`) {
 	if !strings.Contains(dynamicProbeScript, "IFS= read -r s") {
 		t.Fatal("sample_procs 必须用 read 内建读取 stat")
 	}
-	// select 必须用 join 配对 + 按 delta 降序取前 6
-	if !strings.Contains(dynamicProbeScript, `join -t "$sep" -1 1 -2 1`) {
-		t.Fatal("sample_procs_select 必须用 join 按 pid 配对双采样")
+	// select 必须用 awk 配对(不得依赖 join:OpenWrt BusyBox 无该 applet)+ 按 delta 降序取前 6
+	if !strings.Contains(dynamicProbeScript, "awk -F") {
+		t.Fatal("sample_procs_select 必须用 awk 按 pid 配对双采样")
 	}
 	if !strings.Contains(dynamicProbeScript, "sort -rn | head -6") {
 		t.Fatal("sample_procs_select 必须按 delta 降序取前 6")
@@ -752,5 +755,120 @@ func TestWrapShCmd(t *testing.T) {
 	}
 	if got := string(out); got != "quoted double\nline2\n" {
 		t.Fatalf("回环输出不符: %q", got)
+	}
+}
+
+// ─── dynamicProbeScript 进程采样端到端(OpenWrt 兼容回归) ─────────────
+
+// sample_procs_select 不得依赖 join:OpenWrt 官方 BusyBox 配置树(main/24.10/
+// 23.05)不含 join applet(有 sort/head/awk 却无 join),stock OpenWrt 上
+// `join: not found` 导致 PROC 段静默为空,系统监控 top6 不显示任何进程且不报错。
+// BusyBox awk 是 OpenWrt 默认编入的 applet(BUSYBOX_DEFAULT_AWK=y),配对应走 awk。
+func TestDynamicProbeScriptNoJoinDependency(t *testing.T) {
+	if strings.Contains(dynamicProbeScript, "join -t") {
+		t.Fatal("sample_procs_select 不得依赖 join(OpenWrt BusyBox 无该 applet),应改用 awk 配对双采样")
+	}
+	if !strings.Contains(dynamicProbeScript, "awk -F") {
+		t.Fatal("sample_procs_select 应用 awk -F 按分隔符解析字段并按 pid 配对双采样")
+	}
+}
+
+// 端到端:伪造 /proc(含无 cmdline 的内核线程、comm 被 15 字符截断的用户进程),
+// 在真实 POSIX sh 下执行 dynamicProbeScript,经 parseProbeOutput 全链解析,
+// 断言 top6 进程名干净。回归覆盖:
+//  1. comm 提取模式写错(${comm%)*)} 永不匹配)导致内核线程(cmdline 空,
+//     回退 comm)显示整行 stat 垃圾,如 "kworker/u:2) S 1 0 0 0..."。
+//  2. 段落/时间戳/双采样配对在真实 sh 管线下的正确性(Go 端单测覆盖不到)。
+// 生产环境目标为 BusyBox ash,同为 POSIX 子集;awk/sort/head/cut/tr 为
+// OpenWrt BusyBox 默认编入的 applet。
+func TestDynamicProbeScriptEndToEndCleanProcessNames(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no POSIX sh available")
+	}
+	if _, err := exec.LookPath("awk"); err != nil {
+		t.Skip("no awk available")
+	}
+
+	dir := t.TempDir()
+	procDir := filepath.ToSlash(filepath.Join(dir, "proc"))
+	if err := os.MkdirAll(filepath.Join(dir, "proc", "100"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "proc", "200"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "proc", "300"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "tmp", ".lumin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "proc", "net"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// statLine(pid, comm, utime, stime, starttime, rss):三进程 utime 静态,
+	// 双采样 delta=0,断言聚焦名称与字段而非排序。
+	write := func(rel, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 真实 /proc/pid/stat 以 \n 结尾,无换行时 read 返回非零会被 || continue 跳过
+	write("proc/100/stat", statLine(100, "nginx", 3000, 1500, 900, 512)+"\n")
+	write("proc/200/stat", statLine(200, "kworker/u:2", 800, 400, 700, 64)+"\n")
+	// comm 恰为 15 字符截断形态(TASK_COMM_LEN-1),cmdline 含完整名验证 basename 提取
+	write("proc/300/stat", statLine(300, "openclaw-gatewa", 600, 200, 800, 128)+"\n")
+	write("proc/100/cmdline", "/usr/sbin/nginx\x00")
+	write("proc/300/cmdline", "/opt/openclaw/bin/openclaw-gateway\x00")
+	write("proc/200/cmdline", "") // 内核线程 cmdline 为空,须回退 comm
+	write("proc/uptime", "12345.67 99999.99\n")
+	write("proc/loadavg", "0.00 0.00 0.00 1/500 1000\n")
+	write("proc/meminfo", "MemTotal: 1024 kB\nMemFree: 512 kB\n")
+	write("proc/stat", "cpu 100 0 100 1000 0 0 0 0 0 0\n")
+	write("proc/net/dev", "Inter-|   Receive                    |  Transmit\n face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n  eth0: 123 4 0 0 0 0 0 0 56 7 0 0 0 0 0 0\n")
+	write("proc/diskstats", "")
+
+	// 把脚本中的 /proc 与 /tmp/.lumin 重定向到临时目录,其余逐字保留
+	script := strings.ReplaceAll(dynamicProbeScript, "/proc/", procDir+"/")
+	script = strings.ReplaceAll(script, "/tmp/.lumin", filepath.ToSlash(filepath.Join(dir, "tmp", ".lumin")))
+	scriptPath := filepath.Join(dir, "probe.sh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(sh, scriptPath, "procs")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("探针脚本执行失败: %v, stderr: %s, stdout: %s", err, stderr.String(), stdout.String())
+	}
+
+	result, err := parseProbeOutput(stdout.String(), false)
+	if err != nil {
+		t.Fatalf("探针输出解析失败: %v, 输出:\n%s", err, stdout.String())
+	}
+	procs, _ := result["processes"].([]map[string]interface{})
+	want := map[string]string{
+		"100": "nginx",              // 用户进程:cmdline argv[0] basename
+		"200": "kworker/u:2",        // 内核线程:cmdline 空回退 comm,必须干净无 stat 尾巴
+		"300": "openclaw-gateway",   // comm 截断 15 字符,cmdline basename 还原全名
+	}
+	if len(procs) != len(want) {
+		t.Fatalf("应有 %d 个进程, 得到 %d, stderr:\n%s\n输出:\n%s", len(want), len(procs), stderr.String(), stdout.String())
+	}
+	got := map[string]string{}
+	for _, p := range procs {
+		pid, _ := p["pid"].(string)
+		cmdName, _ := p["cmd"].(string)
+		got[pid] = cmdName
+	}
+	for pid, name := range want {
+		if got[pid] != name {
+			t.Fatalf("pid %s 进程名应为 %q, 得到 %q(全部: %v), 输出:\n%s", pid, name, got[pid], got, stdout.String())
+		}
 	}
 }

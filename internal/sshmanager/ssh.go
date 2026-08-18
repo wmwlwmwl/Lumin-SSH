@@ -2231,7 +2231,7 @@ const dynamicProbeScript = `#!/bin/sh
 # ── 进程双采样 + 远端选 top6(只传 6 条,流量与 1.2.7 ps|head -6 持平)──
 # sample_procs 逐进程 read /proc/[pid]/stat(不逐 PID fork),输出 6 字段
 # (pid comm utime stime starttime rss,\x1f 分隔)。供 pass1 落盘与 pass2 流式输入。
-# sample_procs_select 按 pid 配对双采样(join),算 CPU delta,按 delta 降序取前 6。
+# sample_procs_select 用 awk 按 pid 配对双采样,算 CPU delta,按 delta 降序取前 6。
 # emit_procs_pass 把选出的 6 条转成 Go 端 parseProcStatSample 的 6 字段格式,
 # 分 PROC1(pass1)/PROC2(pass2)两段输出——Go 端 parseProbeProcSections 照旧
 # 算 delta 并校验 starttime(PID 复用);远端只负责「选哪 6 个」,不越权算 cpu%。
@@ -2240,7 +2240,7 @@ sample_procs() {
     [ -r "$f" ] || continue
     IFS= read -r s < "$f" || continue
     pid=${s%% *}
-    comm=${s#*\(}; comm=${comm%)*)}
+    comm=${s#*\(}; comm=${comm%)*}
     rest=${s##*)}
     set -- $rest
     # $1=state $12=utime $13=stime $20=starttime $22=rss (1-based in rest)
@@ -2249,24 +2249,34 @@ sample_procs() {
   done
 }
 
-# sample_procs_select: pass1 文件($1, 须按 pid 排序)与 pass2(stdin, 须按 pid
-# 排序)按 pid join 配对,算 CPU delta,按 delta 降序取前 6。
+# sample_procs_select: pass1 文件($1)载入 awk 关联数组,pass2(stdin)逐条按
+# pid 配对,算 CPU delta,按 delta 降序取前 6。
 # 出参(stdout): 至多 6 行,每行 10 个 \x1f 字段:
 #   delta pid comm ut1 st1 start1 ut2 st2 start2 rss2
-# join 默认只输出双侧均有的 pid(等价丢弃单侧样本,即采样窗口内创建/退出);
-# starttime 不一致(PID 复用)在 while 中剔除。
-# ponytail: 依赖 join(POSIX,BusyBox 含 applet);join 缺失则无输出,进程段为空,
-# 与无 /proc 的非 Linux 同路径降级(进程列表空,不报错)。升级路径:若需去 join
-# 依赖,可改纯 sh 归并排序(双流 read 指针推进,O(n) 无 fork),但脚本复杂度翻倍。
+# 仅双侧均有的 pid 配对(等价丢弃单侧样本,即采样窗口内创建/退出);
+# starttime 不一致(PID 复用)剔除。
+# ponytail: 配对用 BusyBox awk(OpenWrt 默认编入,BUSYBOX_DEFAULT_AWK=y),
+# 不得依赖 join——OpenWrt 官方 BusyBox 配置树(main/24.10/23.05)不含 join
+# applet,stock OpenWrt 上 join 缺失会让进程段静默为空(系统监控
+# top6 不显示任何进程且不报错)。awk 缺失同理降级为空,与无 /proc 的非
+# Linux 同路径(进程列表空,不报错)。BEGIN+getline 读 pass1 而非 FILENAME
+# 判别输入流:对 "-" 的 FILENAME 取值各 awk 实现有差异,getline 语义无歧义。
 sample_procs_select() {
   sep=$(printf '\037')
-  join -t "$sep" -1 1 -2 1 "$1" - | while IFS="$sep" read -r \
-    pid comm1 ut1 st1 start1 rss1 comm2 ut2 st2 start2 rss2; do
-    [ "$start1" = "$start2" ] || continue
-    d=$(( ut2 + st2 - ut1 - st1 ))
-    [ "$d" -lt 0 ] && d=0
-    printf '%s\n' "$d${sep}$pid${sep}$comm2${sep}$ut1${sep}$st1${sep}$start1${sep}$ut2${sep}$st2${sep}$start2${sep}$rss2"
-  done | sort -rn | head -6
+  awk -F"$sep" -v SEP="$sep" -v F1="$1" '
+    BEGIN {
+      while ((getline line < F1) > 0) {
+        split(line, a, SEP)
+        ut1[a[1]] = a[3]; st1[a[1]] = a[4]; start1[a[1]] = a[5]
+      }
+      close(F1)
+    }
+    ($1 in ut1) && start1[$1] == $5 {
+      d = $3 + $4 - ut1[$1] - st1[$1]
+      if (d < 0) d = 0
+      printf "%d%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n", d, SEP, $1, SEP, $2, SEP, ut1[$1], SEP, st1[$1], SEP, start1[$1], SEP, $3, SEP, $4, SEP, $5, SEP, $6
+    }
+  ' - | sort -rn | head -6
 }
 
 # emit_procs_pass: 将 sample_procs_select 输出($1 文件)按采样($2=1|2)转成
@@ -2316,7 +2326,7 @@ if [ "$1" = "procs" ]; then
 mkdir -p /tmp/.lumin 2>/dev/null
 proctmp=/tmp/.lumin/.ptop.$$
 ts1p=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || date +%s)
-sample_procs | sort > "$proctmp"
+sample_procs > "$proctmp"
 fi
 sleep 1
 echo ---CPU2---
@@ -2330,7 +2340,7 @@ cat /proc/diskstats
 if [ "$1" = "procs" ]; then
 ts2p=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || date +%s)
 proctop=/tmp/.lumin/.ptop6.$$
-sample_procs | sort | sample_procs_select "$proctmp" > "$proctop"
+sample_procs | sample_procs_select "$proctmp" > "$proctop"
 rm -f "$proctmp"
 echo ---PROC1---
 printf '%s\n' "$ts1p"
