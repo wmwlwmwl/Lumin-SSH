@@ -584,6 +584,21 @@ export default function Terminal({
   const [termSearchCaseSensitive, setTermSearchCaseSensitive] = useState(false);
   const [termSearchResult, setTermSearchResult] = useState({ resultIndex: -1, resultCount: 0 });
   const cmdInputRef                           = useRef<HTMLTextAreaElement | null>(null);
+  const [cmdInputWidth, setCmdInputWidth]     = useState<number>(600);
+
+  useEffect(() => {
+    const el = cmdInputRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect && entry.contentRect.width > 0) {
+          setCmdInputWidth(entry.contentRect.width);
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const historyBtnRef                         = useRef<HTMLButtonElement | null>(null);
   const historySearchInputRef                 = useRef<HTMLInputElement | null>(null);
   const historyScrollRef                      = useRef<HTMLDivElement | null>(null);
@@ -3954,146 +3969,191 @@ export default function Terminal({
       {/* ── 底部命令输入栏 ── */}
       <div className="term-input-bar">
         {/* 命令输入框 */}
-        <textarea
-          ref={cmdInputRef}
-          className="input term-command-input"
-          name="terminalCommand"
-          value={cmdInput}
-          rows={1}
-          spellCheck={false}
-          autoComplete="off"
-          onContextMenu={handleInputContextMenu}
-          onChange={e => {
-            const nextValue = e.target.value;
-            setCmdInput(nextValue);
-            if (commandAutocompleteFocusedRef.current) {
-              scheduleCommandAutocompleteSuggestions(nextValue);
-            }
-          }}
-          onFocus={() => {
-            commandAutocompleteFocusedRef.current = true;
-            clearCommandAutocompleteBlurTimer();
-            updateCommandAutocompletePopupPosition();
-            if (cmdInput.trim()) {
-              scheduleCommandAutocompleteSuggestions(cmdInput);
-            }
-          }}
-          onBlur={() => {
-            commandAutocompleteFocusedRef.current = false;
-            clearCommandAutocompleteBlurTimer();
-            commandAutocompleteBlurTimerRef.current = setTimeout(() => {
-              closeCommandAutocomplete();
-            }, 120);
-          }}
-          onScroll={() => {
-            if (commandAutocomplete.open || commandAutocomplete.loading) {
+        <Tiptop
+          text={!cmdInput && !commandAutocomplete.open ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '2px 4px', fontSize: 11, lineHeight: 1.5, textAlign: 'left', minWidth: 190 }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 4, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>⌨️</span> <span>{t('命令输入快捷键')}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('执行命令')}</span>
+                <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>Enter</kbd>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('换行多行输入')}</span>
+                <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>Shift + Enter</kbd>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('快捷命令列表')}</span>
+                <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>/</kbd>
+              </div>
+              {altOpenHistoryEnabled && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{t('搜索历史指令')}</span>
+                  <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>Alt</kbd>
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('补全候选项')}</span>
+                <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>Tab</kbd>
+              </div>
+            </div>
+          ) : undefined}
+          placement="top"
+          style={{ flex: 1, display: 'flex', minWidth: 0 }}
+        >
+          <textarea
+            ref={cmdInputRef}
+            className="input term-command-input"
+            name="terminalCommand"
+            value={cmdInput}
+            rows={1}
+            spellCheck={false}
+            autoComplete="off"
+            onContextMenu={handleInputContextMenu}
+            onChange={e => {
+              const nextValue = e.target.value;
+              setCmdInput(nextValue);
+              if (commandAutocompleteFocusedRef.current) {
+                scheduleCommandAutocompleteSuggestions(nextValue);
+              }
+            }}
+            onFocus={() => {
+              commandAutocompleteFocusedRef.current = true;
+              clearCommandAutocompleteBlurTimer();
               updateCommandAutocompletePopupPosition();
-            }
-          }}
-          onSelect={() => {
-            if (commandAutocomplete.open || commandAutocomplete.loading) {
-              updateCommandAutocompletePopupPosition();
-            }
-            if (commandAutocompleteFocusedRef.current && cmdInput.trim()) {
-              scheduleCommandAutocompleteSuggestions(cmdInput);
-            }
-          }}
-          onKeyDown={async (e) => {
-            if (e.key === 'Alt' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.repeat) {
-              if (!altOpenHistoryEnabled) return;
-              e.preventDefault();
-              e.stopPropagation();
-              closeCommandAutocomplete();
-              openHistoryAndFocusSearch();
-              return;
-            }
-
-            if (commandAutocomplete.open && e.key === 'ArrowDown') {
-              e.preventDefault();
-              if (commandAutocomplete.items.length === 0) {
+              if (cmdInput.trim()) {
+                scheduleCommandAutocompleteSuggestions(cmdInput);
+              }
+            }}
+            onBlur={() => {
+              commandAutocompleteFocusedRef.current = false;
+              clearCommandAutocompleteBlurTimer();
+              commandAutocompleteBlurTimerRef.current = setTimeout(() => {
+                closeCommandAutocomplete();
+              }, 120);
+            }}
+            onScroll={() => {
+              if (commandAutocomplete.open || commandAutocomplete.loading) {
+                updateCommandAutocompletePopupPosition();
+              }
+            }}
+            onSelect={() => {
+              if (commandAutocomplete.open || commandAutocomplete.loading) {
+                updateCommandAutocompletePopupPosition();
+              }
+              if (commandAutocompleteFocusedRef.current && cmdInput.trim()) {
+                scheduleCommandAutocompleteSuggestions(cmdInput);
+              }
+            }}
+            onKeyDown={async (e) => {
+              if (e.key === 'Alt' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.repeat) {
+                if (!altOpenHistoryEnabled) return;
+                e.preventDefault();
+                e.stopPropagation();
+                closeCommandAutocomplete();
+                openHistoryAndFocusSearch();
                 return;
               }
-              commandAutocompleteKeyboardNavigationRef.current = true;
-              setCommandAutocomplete((previous) => ({
-                ...previous,
-                selectedIndex: previous.selectedIndex < 0
-                  ? 0
-                  : (previous.selectedIndex + 1) % previous.items.length,
-              }));
-              return;
-            }
 
-            if (commandAutocomplete.open && e.key === 'ArrowUp') {
-              e.preventDefault();
-              if (commandAutocomplete.items.length === 0) {
-                return;
-              }
-              commandAutocompleteKeyboardNavigationRef.current = true;
-              setCommandAutocomplete((previous) => ({
-                ...previous,
-                selectedIndex: previous.selectedIndex < 0
-                  ? previous.items.length - 1
-                  : (previous.selectedIndex - 1 + previous.items.length) % previous.items.length,
-              }));
-              return;
-            }
-
-            if (e.key === 'Tab' && cmdInput.trim()) {
-              e.preventDefault();
-              let items = commandAutocomplete.items;
-              if (items.length === 0) {
-                items = await loadCommandAutocompleteSuggestions(cmdInput);
-              }
-              const selectedIndex = commandAutocomplete.selectedIndex >= 0 ? commandAutocomplete.selectedIndex : 0;
-              const selectedItem = items[selectedIndex] || items[0];
-              if (selectedItem) {
-                applyCommandAutocompleteItem(selectedItem);
-              }
-              return;
-            }
-
-            if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
-              requestAnimationFrame(() => {
-                if (commandAutocompleteFocusedRef.current && cmdInputRef.current) {
-                  updateCommandAutocompletePopupPosition();
-                  void loadCommandAutocompleteSuggestions(cmdInputRef.current.value);
+              if (commandAutocomplete.open && e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (commandAutocomplete.items.length === 0) {
+                  return;
                 }
-              });
-            }
+                commandAutocompleteKeyboardNavigationRef.current = true;
+                setCommandAutocomplete((previous) => ({
+                  ...previous,
+                  selectedIndex: previous.selectedIndex < 0
+                    ? 0
+                    : (previous.selectedIndex + 1) % previous.items.length,
+                }));
+                return;
+              }
 
-            if (e.key === 'Escape') {
-              if (commandAutocomplete.open) {
+              if (commandAutocomplete.open && e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (commandAutocomplete.items.length === 0) {
+                  return;
+                }
+                commandAutocompleteKeyboardNavigationRef.current = true;
+                setCommandAutocomplete((previous) => ({
+                  ...previous,
+                  selectedIndex: previous.selectedIndex < 0
+                    ? previous.items.length - 1
+                    : (previous.selectedIndex - 1 + previous.items.length) % previous.items.length,
+                }));
+                return;
+              }
+
+              if (e.key === 'Tab' && cmdInput.trim()) {
+                e.preventDefault();
+                let items = commandAutocomplete.items;
+                if (items.length === 0) {
+                  items = await loadCommandAutocompleteSuggestions(cmdInput);
+                }
+                const selectedIndex = commandAutocomplete.selectedIndex >= 0 ? commandAutocomplete.selectedIndex : 0;
+                const selectedItem = items[selectedIndex] || items[0];
+                if (selectedItem) {
+                  applyCommandAutocompleteItem(selectedItem);
+                }
+                return;
+              }
+
+              if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+                requestAnimationFrame(() => {
+                  if (commandAutocompleteFocusedRef.current && cmdInputRef.current) {
+                    updateCommandAutocompletePopupPosition();
+                    void loadCommandAutocompleteSuggestions(cmdInputRef.current.value);
+                  }
+                });
+              }
+
+              if (e.key === 'Escape') {
+                if (commandAutocomplete.open) {
+                  e.preventDefault();
+                  closeCommandAutocomplete();
+                  return;
+                }
+                setShowHistory(false);
+              }
+
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                if (e.shiftKey) {
+                  return;
+                }
                 e.preventDefault();
                 closeCommandAutocomplete();
-                return;
+                executeCommand();
               }
-              setShowHistory(false);
-            }
-
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              if (e.shiftKey) {
-                return;
+            }}
+            placeholder={(() => {
+              if (cmdInputWidth >= 520) {
+                return altOpenHistoryEnabled
+                  ? `${t('输入命令')} (/ ${t('快捷命令')}) · Shift+Enter ${t('换行')} · Alt → ${t('历史指令')}`
+                  : `${t('输入命令')} (/ ${t('快捷命令')}) · Shift+Enter ${t('换行')}`;
               }
-              e.preventDefault();
-              closeCommandAutocomplete();
-              executeCommand();
-            }
-          }}
-          placeholder={altOpenHistoryEnabled
-            ? `${t('输入命令')} (/ ${t('快捷命令')}) · Shift+Enter ${t('换行')} · Alt → ${t('历史指令')} ${t('搜索')}`
-            : `${t('输入命令')} (/ ${t('快捷命令')}) · Shift+Enter ${t('换行')}`}
-          style={{
-            flex: 1,
-            fontSize: 12,
-            fontFamily: 'var(--font-terminal)',
-            padding: '7px 10px',
-            height: 32,
-            minHeight: 32,
-            background: 'var(--term-input-bg)',
-            color: 'var(--term-input-color)',
-            borderColor: cmdInput ? 'var(--border-focus)' : 'var(--term-btn-border)',
-          }}
-        />
+              if (cmdInputWidth >= 360) {
+                return `${t('输入命令')} (/ ${t('快捷命令')}) · Shift+Enter ${t('换行')}`;
+              }
+              if (cmdInputWidth >= 240) {
+                return `${t('输入命令')} (/ ${t('快捷命令')})`;
+              }
+              return `${t('输入命令')}...`;
+            })()}
+            style={{
+              width: '100%',
+              fontSize: 12,
+              fontFamily: 'var(--font-terminal)',
+              padding: '7px 10px',
+              height: 32,
+              minHeight: 32,
+              background: 'var(--term-input-bg)',
+              color: 'var(--term-input-color)',
+              borderColor: cmdInput ? 'var(--border-focus)' : 'var(--term-btn-border)',
+            }}
+          />
+        </Tiptop>
 
         {/* 历史按钮 */}
         <Tiptop text={t('历史指令')}>

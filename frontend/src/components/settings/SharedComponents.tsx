@@ -85,8 +85,8 @@ export function SettingsField({ definition, title, description, action, children
   const resolvedTitle = title ?? (definition?.titleKey ? $t(definition.titleKey) : title);
   const resolvedDescription = description ?? (definition?.descriptionKey ? $t(definition.descriptionKey) : description);
   return (
-    <div data-settings-field-id={definition?.id} style={{ ...style, ...(children ? { display: 'flex', flexDirection: 'column', gap: 8 } : { display: 'flex', justifyContent: 'space-between', alignItems, gap }) }}>
-      <div style={{ minWidth: 0 }}>
+    <div data-settings-field-id={definition?.id} style={{ ...style, ...(children ? { display: 'flex', flexDirection: 'column', gap: 8 } : { display: 'flex', justifyContent: 'space-between', alignItems, gap, flexWrap: 'wrap' }) }}>
+      <div style={{ minWidth: 0, flex: '1 1 180px' }}>
         {resolvedTitle ? <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{resolvedTitle}</div> : null}
         {resolvedDescription ? <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{resolvedDescription}</div> : null}
       </div>

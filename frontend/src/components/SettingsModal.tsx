@@ -2158,7 +2158,7 @@ export default function SettingsModal({
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
           {/* Settings Sidebar */}
-          <div style={{ width: 220, borderRight: '1px solid var(--border-subtle)', padding: '10px 6px', display: 'flex', flexDirection: 'column', gap: 2, background: 'var(--surface-base)' }}>
+          <div className="settings-sidebar">
             <div style={{ padding: '0 4px 8px' }}>
               <div style={{ position: 'relative' }}>
                 <input
@@ -2257,7 +2257,7 @@ export default function SettingsModal({
           </div>
 
           {/* Settings Content */}
-          <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto', background: 'var(--surface-raised)' }}>
+          <div className="settings-content-pane">
             
             {activeTab === 'app' && (
               <AppTab

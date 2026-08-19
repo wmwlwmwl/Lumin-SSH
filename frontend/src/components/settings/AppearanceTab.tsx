@@ -183,7 +183,7 @@ export default function AppearanceTab({
                 {programFontImporting ? $t('导入中...') : $t('添加字体')}
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 280px) minmax(0, 1fr)', gap: 16, alignItems: 'stretch' }}>
+            <div className="settings-font-manager-grid">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 22, padding: '0 8px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 11 }}>
@@ -273,20 +273,21 @@ export default function AppearanceTab({
                         border: `1px solid ${isHighlighted ? 'var(--accent)' : 'var(--border)'}`,
                         background: isHighlighted ? 'rgba(var(--accent-rgb), 0.08)' : 'var(--surface-base)',
                         boxShadow: isHighlighted ? '0 0 0 1px rgba(var(--accent-rgb), 0.18) inset' : 'none',
-                        padding: 14,
-                        minHeight: 88,
+                        padding: 12,
+                        minHeight: 84,
                         flex: 1,
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
-                        gap: 10,
+                        gap: 8,
                         transition: 'var(--transition-fast)',
+                        minWidth: 0,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-                        <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{target.title}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>{target.description}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5, wordBreak: 'break-word' }}>{target.description}</div>
                         </div>
                         <button
                           className="btn btn-ghost btn-sm"
@@ -297,11 +298,11 @@ export default function AppearanceTab({
                           {$t('恢复默认')}
                         </button>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 24, padding: '0 10px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface-overlay)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 22, padding: '0 8px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--surface-overlay)', color: 'var(--text-primary)', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
                           {assignedFont ? assignedFont.displayName : $t('默认')}
                         </span>
-                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
                           {assignedFont ? assignedFont.fileName : target.defaultText}
                         </span>
                       </div>
@@ -451,7 +452,7 @@ export default function AppearanceTab({
             <button className="btn btn-secondary btn-sm" onClick={onTuneActiveThemeWithAI} disabled={themePackageBusy}>{$t('AI调色')}</button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+          <div className="settings-theme-palette-grid">
             <ThemePackagePalette
               definition={appearanceSettings.fields.lightThemePackage}
               title={$t('浅色主题包')}

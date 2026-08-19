@@ -250,7 +250,7 @@ export default function Dashboard({
       <div className="dashboard-right">
         <div className="hosts-section-container">
           <div className="section-title-container">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 0 280px', minWidth: 'min(100%, 280px)', maxWidth: '100%' }}>
               {/* 主机 / 最近连接 切换 */}
               <div className="segment-control dashboard-page-switch">
                 <Tiptop text={t('主机')} placement="bottom">
@@ -282,7 +282,7 @@ export default function Dashboard({
                   </button>
                 </Tiptop>
               </div>
-              <div style={{ position: 'relative', flex: 1, maxWidth: 240, minWidth: 120 }}>
+              <div style={{ position: 'relative', flex: '1 1 100px', maxWidth: 300, minWidth: 80 }}>
                 <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
                 <input
                   id="server-search"
@@ -298,7 +298,7 @@ export default function Dashboard({
                 />
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: '0 0 auto', marginLeft: 'auto' }}>
               {/* 本地连接 / 串口 快速连接下拉菜单 */}
               <div ref={localMenuRef} style={{ position: 'relative' }}>
                 <Tiptop text={t('本地终端 & 串口')} placement="bottom">
@@ -425,7 +425,7 @@ export default function Dashboard({
                       }}
                       style={{
                         height: 28,
-                        padding: '0 10px',
+                        padding: '0 8px',
                         fontSize: 12,
                         border: '1px solid var(--border)',
                         borderRadius: 'var(--radius-sm)',
@@ -435,6 +435,8 @@ export default function Dashboard({
                         alignItems: 'center',
                         gap: 5,
                         fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
                       }}
                     >
                       {allCollapsed ? <Folder size={13} /> : <FolderOpen size={13} />}
@@ -449,7 +451,7 @@ export default function Dashboard({
                       aria-label={t('数据管理')}
                       style={{
                         height: 28,
-                        padding: '0 10px',
+                        padding: '0 8px',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 5,
@@ -458,6 +460,8 @@ export default function Dashboard({
                         background: 'var(--surface-overlay)',
                         color: 'var(--text-secondary)',
                         fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
                       }}
                     >
                       <Database size={13} />

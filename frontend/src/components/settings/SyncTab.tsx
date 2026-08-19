@@ -71,7 +71,7 @@ function ProviderCard({ provider, providerKey, form, configured, editing, onEdit
               {$t('修改配置')}
             </button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '4px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '4px' }}>
             {provider.summaryFields(form).map((sf, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--surface-overlay)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', ...(sf.fullWidth ? { gridColumn: '1 / -1' } : {}) }}>
                 <span style={{ fontSize: 12, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{sf.label}</span>
