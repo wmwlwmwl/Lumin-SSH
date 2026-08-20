@@ -20,7 +20,7 @@
     "@codemirror/theme-one-dark": "^6.1.2",
     "@uiw/react-codemirror": "^4.23.0",
     "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^5.5.0",
     "lucide-react": "^1.17.0",
     "monaco-editor": "^0.56.0",
