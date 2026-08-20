@@ -15,7 +15,7 @@ require (
 	github.com/studio-b12/gowebdav v0.12.0
 	github.com/wailsapp/wails/v2 v2.14.0
 	go.bug.st/serial v1.8.0
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.57.0
 	golang.org/x/text v0.41.0
 	modernc.org/sqlite v1.53.0
