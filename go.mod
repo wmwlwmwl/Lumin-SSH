@@ -12,7 +12,7 @@ require (
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pkg/sftp v1.13.11
 	github.com/pkoukk/tiktoken-go v0.1.8
-	github.com/studio-b12/gowebdav v0.12.0
+	github.com/studio-b12/gowebdav v0.13.0
 	github.com/wailsapp/wails/v2 v2.14.0
 	go.bug.st/serial v1.8.0
 	golang.org/x/crypto v0.55.0
