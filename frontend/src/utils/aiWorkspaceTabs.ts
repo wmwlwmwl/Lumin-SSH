@@ -245,13 +245,22 @@ export function getAllAIWorkspaceTabGroups(): Record<string, AIWorkspaceTabGroup
     Object.entries(createStore())
       .map(([terminalId, value]) => {
         const group = normalizeAIWorkspaceTabGroup(value)
-        const tabs = group.tabs.filter((tab) => tab.transient !== true)
-        return [normalizeTerminalId(terminalId), {
-          activeTabId: tabs.some((tab) => tab.id === group.activeTabId) ? group.activeTabId : (tabs[0]?.id || ''),
-          tabs,
-        }] as const
+        return [normalizeTerminalId(terminalId), group] as const
       })
       .filter(([terminalId, group]) => terminalId && group.tabs.length > 0),
+  )
+}
+
+export function getPersistableAIWorkspaceTabGroups(): Record<string, AIWorkspaceTabGroup> {
+  return Object.fromEntries(
+    Object.entries(getAllAIWorkspaceTabGroups()).flatMap(([terminalId, group]) => {
+      const tabs = group.tabs.filter((tab) => tab.transient !== true)
+      if (tabs.length === 0) return []
+      return [[terminalId, {
+        activeTabId: tabs.some((tab) => tab.id === group.activeTabId) ? group.activeTabId : tabs[0].id,
+        tabs,
+      }]]
+    }),
   )
 }
 

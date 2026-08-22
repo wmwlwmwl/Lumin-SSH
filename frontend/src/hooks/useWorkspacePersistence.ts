@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { getAllSessionFileManagerWorkspaces } from '../utils/fileWorkbench.ts';
-import { getAllAIWorkspaceTabGroups, subscribeAIWorkspaceTabGroups } from '../utils/aiWorkspaceTabs.ts';
+import { getPersistableAIWorkspaceTabGroups, subscribeAIWorkspaceTabGroups } from '../utils/aiWorkspaceTabs.ts';
 import { normalizeWorkspaceContentTab, type SessionLike, type WorkspaceContentTab } from '../utils/sessionWorkspace.ts';
 import { sortTerminalPaneCells, type TerminalPaneLayout } from '../utils/terminalPaneLayout.ts';
 
@@ -97,7 +97,7 @@ export function useWorkspaceSessionPersistence({
       Object.entries(getAllSessionFileManagerWorkspaces()).filter(([terminalId]) => terminalIds.has(terminalId)),
     );
     const aiTabWorkspaces = Object.fromEntries(
-      Object.entries(getAllAIWorkspaceTabGroups()).filter(([terminalId]) => terminalIds.has(terminalId)),
+      Object.entries(getPersistableAIWorkspaceTabGroups()).filter(([terminalId]) => terminalIds.has(terminalId)),
     );
     const preferredTerminalId = overrides.activeTerminalId
       || (activeSessionIdRef.current === nextSession.id ? activeTerminalIdRef.current : lastTerminalRef.current[nextSession.id]);
@@ -270,7 +270,7 @@ export default function useWorkspacePersistence({
       Object.entries(getAllSessionFileManagerWorkspaces()).filter(([terminalId]) => openTerminalIds.has(terminalId)),
     );
     const savedAITabWorkspaces = Object.fromEntries(
-      Object.entries(getAllAIWorkspaceTabGroups()).filter(([terminalId]) => openTerminalIds.has(terminalId)),
+      Object.entries(getPersistableAIWorkspaceTabGroups()).filter(([terminalId]) => openTerminalIds.has(terminalId)),
     );
     const savedActiveSessionId = openSessions.some((session) => session.id === nextActiveSessionId)
       ? nextActiveSessionId : (openSessions[openSessions.length - 1]?.id || null);

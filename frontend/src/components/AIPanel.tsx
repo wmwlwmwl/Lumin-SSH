@@ -3690,13 +3690,22 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     const previousRequestId = previousPanel?.activeRequestId || ''
     const previousConversation = previousPanel?.conversation
     const persistCurrentConversation = previousConversation?.transient === true && !deletedConversationIdsRef.current.has(previousConversation.id)
-      ? Promise.resolve(upsertTemporaryAIConversation({
-          ...previousConversation,
-          updatedAt: Date.now(),
-          status: 'idle',
-          messages: Array.isArray(previousPanel?.messages) ? previousPanel.messages : [],
-          apiMessages: Array.isArray(previousPanel?.apiMessages) ? previousPanel.apiMessages : [],
-        }))
+      ? (() => {
+          const assistantMessageId = previousPanel?.activeAssistantMessageId || previousRequestId
+          const messages = (Array.isArray(previousPanel?.messages) ? previousPanel.messages : []).filter((message) => (
+            !(
+              (message.id === assistantMessageId || message.id === `${assistantMessageId}-reasoning`)
+              && (message.kind === 'assistant' || message.kind === 'reasoning')
+            )
+          ))
+          return Promise.resolve(upsertTemporaryAIConversation({
+            ...previousConversation,
+            updatedAt: Date.now(),
+            status: 'idle',
+            messages,
+            apiMessages: Array.isArray(previousPanel?.apiMessages) ? previousPanel.apiMessages : [],
+          }))
+        })()
       : previousConversation && !deletedConversationIdsRef.current.has(previousConversation.id)
       ? (() => {
           const assistantMessageId = previousPanel?.activeAssistantMessageId || previousRequestId
@@ -4081,25 +4090,32 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   const handleMakeConversationPermanent = useCallback(async (conversationId: string) => {
     const temporarySnapshot = temporaryAIConversations.get(conversationId)
     if (!temporarySnapshot) return
-    const created = await createAIConversation(temporarySnapshot.title || t('新对话'))
-    const permanentSnapshot = await saveAIConversation({
-      ...temporarySnapshot,
-      id: created.id,
-      createdAt: created.createdAt,
-      updatedAt: Date.now(),
-      transient: false,
-      status: 'idle',
-    })
-    removeTemporaryAIConversation(conversationId)
-    persistConversationOrganizer((current) => {
-      const assignments = { ...current.assignments }
-      if (assignments[conversationId]) assignments[permanentSnapshot.id] = assignments[conversationId]
-      delete assignments[conversationId]
-      return { ...current, assignments }
-    })
-    setConversationList((current) => upsertConversationSummary(current.filter((item) => item.id !== conversationId), permanentSnapshot))
-    addToast?.(`${t('临时会话')} · ${t('保存')}`, 'success')
-    await handleOpenConversation(permanentSnapshot.id)
+    let createdConversationId = ''
+    try {
+      const created = await createAIConversation(temporarySnapshot.title || t('新对话'))
+      createdConversationId = created.id
+      const permanentSnapshot = await saveAIConversation({
+        ...temporarySnapshot,
+        id: created.id,
+        createdAt: created.createdAt,
+        updatedAt: Date.now(),
+        transient: false,
+        status: 'idle',
+      })
+      removeTemporaryAIConversation(conversationId)
+      persistConversationOrganizer((current) => {
+        const assignments = { ...current.assignments }
+        if (assignments[conversationId]) assignments[permanentSnapshot.id] = assignments[conversationId]
+        delete assignments[conversationId]
+        return { ...current, assignments }
+      })
+      setConversationList((current) => upsertConversationSummary(current.filter((item) => item.id !== conversationId), permanentSnapshot))
+      addToast?.(`${t('临时会话')} · ${t('保存')}`, 'success')
+      await handleOpenConversation(permanentSnapshot.id)
+    } catch {
+      if (createdConversationId) await deleteAIConversation(createdConversationId).catch(() => {})
+      addToast?.(t('保存失败'), 'error')
+    }
   }, [addToast, handleOpenConversation, persistConversationOrganizer, t])
 
   const handleCreateConversationGroup = useCallback(async () => {
@@ -4171,6 +4187,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   }, [addToast, showAlert, t])
 
   useEffect(() => {
+    if (!isWorkspaceTabActive) return
     const handleRenameShortcut = (event: KeyboardEvent) => {
       if (event.key !== 'F2' || editingConversationGroupId) return
       if (conversationFilter === 'all' || conversationFilter === 'archived') {
@@ -4184,7 +4201,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     }
     window.addEventListener('keydown', handleRenameShortcut)
     return () => window.removeEventListener('keydown', handleRenameShortcut)
-  }, [beginRenameConversationGroup, conversationFilter, conversationOrganizer.groups, editingConversationGroupId, showSystemGroupRenameUnsupported])
+  }, [beginRenameConversationGroup, conversationFilter, conversationOrganizer.groups, editingConversationGroupId, isWorkspaceTabActive, showSystemGroupRenameUnsupported])
 
   useEffect(() => {
     if (conversationFilter === 'ungrouped') setConversationFilter('all')
@@ -4238,8 +4255,17 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   const handleSetSelectedArchived = useCallback(async (archived: boolean) => {
     const ids = Array.from(selectedConversationIds)
     await Promise.all(ids.map(async (conversationId) => {
-      const snapshot = await getAIConversation(conversationId)
-      await saveAIConversation({ ...snapshot, archived, updatedAt: Date.now() })
+      try {
+        const temporarySnapshot = temporaryAIConversations.get(conversationId)
+        if (temporarySnapshot) {
+          upsertTemporaryAIConversation({ ...temporarySnapshot, archived, updatedAt: Date.now() })
+          return
+        }
+        const snapshot = await getAIConversation(conversationId)
+        await saveAIConversation({ ...snapshot, archived, updatedAt: Date.now() })
+      } catch {
+        // Continue processing the remaining selected conversations.
+      }
     }))
     clearConversationSelection()
     await refreshConversationList()

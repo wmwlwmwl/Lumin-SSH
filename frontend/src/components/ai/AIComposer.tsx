@@ -2096,6 +2096,7 @@ export default function AIComposer({
                 type="button"
                 aria-label={t('临时会话')}
                 aria-pressed={temporarySessionEnabled}
+                disabled={typeof onTemporarySessionEnabledChange !== 'function'}
                 onClick={() => onTemporarySessionEnabledChange?.(!temporarySessionEnabled)}
                 style={{
                   height: 28,

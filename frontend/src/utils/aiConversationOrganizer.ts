@@ -43,7 +43,11 @@ export function loadAIConversationOrganizer(): AIConversationOrganizerState {
 
 export function saveAIConversationOrganizer(state: AIConversationOrganizerState): AIConversationOrganizerState {
   const normalized = normalizeState(state)
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+  } catch {
+    // Keep the in-memory organizer usable when storage is unavailable or full.
+  }
   return normalized
 }
 
