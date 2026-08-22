@@ -1748,7 +1748,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   )
   const activeConversationRelationType = typeof activeConversation?.relationType === 'string' ? activeConversation.relationType.trim() : ''
   const activeConversationArchived = activeConversation?.archived === true
-  const isThemeTuningConversation = activeConversation?.transient === true
+  const isThemeTuningConversation = activeConversation?.toolScope === 'theme_tuning'
   const runtimePhase = normalizeAIRuntimePhase(panelState.runtimePhase)
   const isStreaming = panelState.requestPhase === 'streaming'
   const isAwaitingToolApproval = panelState.requestPhase === 'awaiting_tool_approval'
