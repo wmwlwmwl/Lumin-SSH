@@ -58,6 +58,7 @@ import {
 
 import { useTranslation } from './i18n.ts';
 import { getTerminalTheme } from './utils/theme.ts';
+import { initializeGlobalAppearance } from './utils/globalAppearance.ts';
 import { formatUpdateError, useUpdateChecker, type UpdateCheckResult } from './hooks/useUpdateChecker.ts';
 import useServerPing, { type PingServerLike } from './hooks/useServerPing.ts';
 import useToasts from './hooks/useToasts.ts';
@@ -114,6 +115,7 @@ interface DockPreviewZone {
 }
 
 export default function App() {
+  useEffect(() => initializeGlobalAppearance(), []);
   const { t, lang } = useTranslation();
   const [servers, setServers] = useState<config.Connection[]>([]);
   const [credentials, setCredentials] = useState<config.Credential[]>([]);

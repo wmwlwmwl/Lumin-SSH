@@ -76,6 +76,13 @@ export interface AppearanceTabProps {
   onTermBgReset: () => void;
   termBgOpacity: number;
   onTermBgOpacityChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  globalBgImage: string;
+  onGlobalBgUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onGlobalBgReset: () => void;
+  globalBgOpacity: number;
+  onGlobalBgOpacityChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  globalIconOpacity: number;
+  onGlobalIconOpacityChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   rememberWindowSize: boolean;
   onToggleRememberWindowSize: () => void;
   onResetWindowSize: () => void;
@@ -121,6 +128,9 @@ export default function AppearanceTab({
   terminalToolbarIconOnly, onToggleTerminalToolbarIconOnly,
   termBgImage, onTermBgUpload, onTermBgReset,
   termBgOpacity, onTermBgOpacityChange,
+  globalBgImage, onGlobalBgUpload, onGlobalBgReset,
+  globalBgOpacity, onGlobalBgOpacityChange,
+  globalIconOpacity, onGlobalIconOpacityChange,
   rememberWindowSize, onToggleRememberWindowSize, onResetWindowSize,
 }: AppearanceTabProps) {
   const fontMap = new Map((Array.isArray(programFonts) ? programFonts : []).map((font) => [font.fileName, font]));
@@ -506,10 +516,40 @@ export default function AppearanceTab({
       <div>
         <SettingsSectionTitle definition={appearanceSettings.sections.background} />
         <SettingsPanel>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('全局背景图')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('显示在整个软件界面上的背景图片')}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+              {globalBgImage && <button className="btn btn-ghost btn-sm" onClick={onGlobalBgReset}>{$t('恢复默认')}</button>}
+              <label htmlFor="appearance-global-wallpaper-upload" className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', fontSize: 12, borderRadius: 'var(--radius-sm)' }}>
+                {$t('上传图片')}
+                <input id="appearance-global-wallpaper-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={onGlobalBgUpload} />
+              </label>
+            </div>
+          </div>
+          <SettingsDivider />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('全局背景可见度')}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input type="range" min="0" max="0.5" step="0.02" value={globalBgOpacity} onChange={onGlobalBgOpacityChange} />
+              <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{Math.round(globalBgOpacity * 100)}%</span>
+            </div>
+          </div>
+          <SettingsDivider />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('图标透明度')}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input type="range" min="0.4" max="1" step="0.05" value={globalIconOpacity} onChange={onGlobalIconOpacityChange} />
+              <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{Math.round(globalIconOpacity * 100)}%</span>
+            </div>
+          </div>
+          <SettingsDivider />
           <div data-settings-field-id={appearanceSettings.fields.terminalWallpaper.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('自定义终端壁纸')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('设置终端底部的自定义背景图片')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{globalBgImage ? $t('设置全局背景后不可设置终端壁纸') : $t('设置终端底部的自定义背景图片')}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {termBgImage && (
@@ -517,9 +557,9 @@ export default function AppearanceTab({
                   {$t('恢复默认')}
                 </button>
               )}
-              <label htmlFor="appearance-wallpaper-upload" className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', fontSize: 12, borderRadius: 'var(--radius-sm)' }}>
+              <label htmlFor="appearance-wallpaper-upload" className="btn btn-secondary btn-sm" aria-disabled={Boolean(globalBgImage)} style={{ cursor: globalBgImage ? 'not-allowed' : 'pointer', opacity: globalBgImage ? 0.45 : 1, fontSize: 12, borderRadius: 'var(--radius-sm)' }}>
                 {$t('上传图片')}
-                <input id="appearance-wallpaper-upload" name="appearance-wallpaper-upload" autoComplete="off" type="file" accept="image/*" style={{ display: 'none' }} onChange={onTermBgUpload} />
+                <input id="appearance-wallpaper-upload" name="appearance-wallpaper-upload" autoComplete="off" type="file" accept="image/*" disabled={Boolean(globalBgImage)} style={{ display: 'none' }} onChange={onTermBgUpload} />
               </label>
             </div>
           </div>
@@ -538,8 +578,9 @@ export default function AppearanceTab({
                 max="1.0"
                 step="0.05"
                 value={termBgOpacity}
+                disabled={Boolean(globalBgImage)}
                 onChange={onTermBgOpacityChange}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: globalBgImage ? 'not-allowed' : 'pointer', opacity: globalBgImage ? 0.45 : 1 }}
               />
               <span style={{ fontSize: 13, width: 32, textAlign: 'right', color: 'var(--text-primary)' }}>{Math.round(termBgOpacity * 100)}%</span>
             </div>

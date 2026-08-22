@@ -1895,4 +1895,9 @@ export default {
   "全部批准": "Tutto approvato",
   "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Le regole di base vengono eseguite in base alla whitelist dei comandi, l'approvazione di sola lettura mantiene la whitelist dei comandi di modifica e tutte le approvazioni rilasciano automaticamente tutti i comandi.",
   "当前启用时可以自动执行的命令前缀.": "Prefissi di comando che possono essere eseguiti automaticamente quando attualmente abilitati.",
+  "全局背景图": "Global background image",
+  "显示在整个软件界面上的背景图片": "A background image displayed across the entire app",
+  "全局背景可见度": "Global background visibility",
+  "图标透明度": "Icon opacity",
+  "设置全局背景后不可设置终端壁纸": "Terminal wallpaper is unavailable while a global background is set",
 } satisfies I18nDict;

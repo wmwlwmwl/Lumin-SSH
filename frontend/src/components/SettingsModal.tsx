@@ -12,6 +12,7 @@ import { deleteProgramFont, getProgramFontAssignmentSnapshot, listProgramFonts, 
 import { getAppThemeMode, getThemePackageSettings as getStoredThemePackageSettings, getTerminalTheme, listThemePackages, loadThemePackages, saveThemePackageSettings, type ThemePackage } from '../utils/theme.ts';
 import { loadKeywordRulesFromStorage, saveKeywordRulesToStorage, resetKeywordRulesToDefault, setKeywordRules, type KeywordRule } from '../utils/terminalKeywordHighlight.ts';
 import { syncWithRecoveryPassword } from '../utils/recoveryPasswordSync.ts';
+import { getGlobalAppearanceSettings, notifyGlobalAppearanceChanged } from '../utils/globalAppearance.ts';
 import AppTab from './settings/AppTab';
 import GeneralTab from './settings/GeneralTab';
 import NetworkTab from './settings/NetworkTab';
@@ -471,6 +472,9 @@ export default function SettingsModal({
   const [terminalFontSize, setTerminalFontSize] = useState(parseInt(localStorage.getItem('terminalFontSize') || '13', 10));
   const [termBgImage, setTermBgImage] = useState(localStorage.getItem('termBgImage') || '');
   const [termBgOpacity, setTermBgOpacity] = useState(parseFloat(localStorage.getItem('termBgOpacity') || '0.15'));
+  const [globalBgImage, setGlobalBgImage] = useState(() => getGlobalAppearanceSettings().backgroundImage);
+  const [globalBgOpacity, setGlobalBgOpacity] = useState(() => getGlobalAppearanceSettings().backgroundOpacity);
+  const [globalIconOpacity, setGlobalIconOpacity] = useState(() => getGlobalAppearanceSettings().iconOpacity);
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
   const [terminalCommandBlocks, setTerminalCommandBlocks] = useState(localStorage.getItem('terminalCommandBlocks') === 'true');
@@ -941,6 +945,7 @@ export default function SettingsModal({
   };
 
   const handleTermBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (globalBgImage) return;
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -960,6 +965,49 @@ export default function SettingsModal({
       addToast($t('读取图片失败'), 'error');
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleGlobalBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = typeof ev.target?.result === 'string' ? ev.target.result : '';
+      try {
+        localStorage.setItem('globalBgImage', base64);
+        localStorage.removeItem('termBgImage');
+        setGlobalBgImage(base64);
+        setTermBgImage('');
+        notifyGlobalAppearanceChanged();
+        window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+        addToast($t('全局背景已更新'), 'success');
+      } catch {
+        addToast($t('图片过大，无法保存，请使用较小的图片'), 'error');
+      }
+    };
+    reader.onerror = () => addToast($t('读取图片失败'), 'error');
+    reader.readAsDataURL(file);
+  };
+
+  const handleGlobalBgReset = () => {
+    localStorage.removeItem('globalBgImage');
+    setGlobalBgImage('');
+    notifyGlobalAppearanceChanged();
+    addToast($t('已恢复默认背景'), 'success');
+  };
+
+  const handleGlobalBgOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Math.min(0.5, Math.max(0, Number.parseFloat(e.target.value) || 0));
+    localStorage.setItem('globalBgOpacity', String(value));
+    setGlobalBgOpacity(value);
+    notifyGlobalAppearanceChanged();
+  };
+
+  const handleGlobalIconOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Math.min(1, Math.max(0.4, Number.parseFloat(e.target.value) || 1));
+    localStorage.setItem('globalIconOpacity', String(value));
+    setGlobalIconOpacity(value);
+    notifyGlobalAppearanceChanged();
   };
 
   const handleTermBgReset = () => {
@@ -2457,6 +2505,13 @@ export default function SettingsModal({
                 onTermBgReset={handleTermBgReset}
                 termBgOpacity={termBgOpacity}
                 onTermBgOpacityChange={handleTermBgOpacityChange}
+                globalBgImage={globalBgImage}
+                onGlobalBgUpload={handleGlobalBgUpload}
+                onGlobalBgReset={handleGlobalBgReset}
+                globalBgOpacity={globalBgOpacity}
+                onGlobalBgOpacityChange={handleGlobalBgOpacityChange}
+                globalIconOpacity={globalIconOpacity}
+                onGlobalIconOpacityChange={handleGlobalIconOpacityChange}
                 rememberWindowSize={rememberWindowSize}
                 onToggleRememberWindowSize={handleToggleRememberWindowSize}
                 onResetWindowSize={handleResetWindowSize}

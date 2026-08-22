@@ -1895,4 +1895,9 @@ export default {
   "全部批准": "همه تایید شده",
   "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "قوانین اساسی طبق لیست سفید فرمان اجرا می شوند، تأیید فقط خواندنی لیست سفید دستور تغییر را حفظ می کند و همه تأییدها به طور خودکار همه دستورات را آزاد می کنند.",
   "当前启用时可以自动执行的命令前缀.": "پیشوندهای دستوری که در صورت فعال بودن به طور خودکار قابل اجرا هستند.",
+  "全局背景图": "Global background image",
+  "显示在整个软件界面上的背景图片": "A background image displayed across the entire app",
+  "全局背景可见度": "Global background visibility",
+  "图标透明度": "Icon opacity",
+  "设置全局背景后不可设置终端壁纸": "Terminal wallpaper is unavailable while a global background is set",
 } satisfies I18nDict;

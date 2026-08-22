@@ -420,6 +420,16 @@ textarea:focus:not(:focus-visible) {
   border: none;
 }
 
+/* 全局背景图层由 utils/globalAppearance.ts 动态创建
+   （#global-wallpaper-layer，fixed + z-index:10000 + 内联样式），
+   不再使用 CSS 变量 + ::after 伪元素方案 */
+
+button svg,
+[role='button'] svg,
+.codicon {
+  opacity: var(--app-icon-opacity, 1);
+}
+
 /* ── 顶栏 ───────────────────────────────────────────────────── */
 .topbar {
   display: flex;
