@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Bot, ChevronLeft, ChevronRight, FolderOpen, Loader2, Pencil, Scissors, Search } from 'lucide-react'
+import { Archive, ArchiveRestore, Bot, CheckSquare, ChevronLeft, ChevronRight, FolderOpen, FolderPlus, Loader2, Pencil, Scissors, Search, Trash2 } from 'lucide-react'
 import { EventsOn } from '../../wailsjs/runtime/runtime.js'
 import * as AppGo from '../../wailsjs/go/wailsapp/App.js'
 import { useTranslation, t as translate, getLanguage, type I18nKey } from '../i18n.ts'
@@ -36,6 +36,7 @@ import {
 import { AIWorkspaceTabProvider } from './ai/aiWorkspaceTabContext.ts'
 import assistantThinkingActiveImg from '../assets/assistant-thinking-active.webm'
 import Tiptop from './Tiptop.tsx'
+import { createAIConversationGroup, loadAIConversationOrganizer, saveAIConversationOrganizer, type AIConversationOrganizerState } from '../utils/aiConversationOrganizer.ts'
 
 // ============================================================
 // AIPanel 类型契约（props 见 AIPanelProps；内部数据模型见下）
@@ -177,7 +178,37 @@ interface ConversationSummary {
   relationSource?: string
   parentTitleSnapshot?: string
   archived: boolean
+  transient?: boolean
   messages?: unknown[]
+}
+
+const temporaryAIConversations = new Map<string, AIConversationSnapshot>()
+const TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT = 'lumin:ai-temporary-conversations-changed'
+
+function listTemporaryAIConversations() {
+  return Array.from(temporaryAIConversations.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+}
+
+function notifyTemporaryAIConversationsChanged() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT))
+}
+
+function upsertTemporaryAIConversation(snapshot: AIConversationSnapshot) {
+  const normalized = {
+    ...snapshot,
+    transient: true,
+    updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
+    messageCount: typeof snapshot.messageCount === 'number' ? snapshot.messageCount : Array.isArray(snapshot.messages) ? snapshot.messages.length : 0,
+  }
+  temporaryAIConversations.set(normalized.id, normalized)
+  notifyTemporaryAIConversationsChanged()
+  return normalized
+}
+
+function removeTemporaryAIConversation(conversationId: string) {
+  const removed = temporaryAIConversations.delete(conversationId)
+  if (removed) notifyTemporaryAIConversationsChanged()
+  return removed
 }
 
 interface DisplayConversationItem extends ConversationSummary {
@@ -1064,6 +1095,7 @@ function upsertConversationSummary(list: unknown, snapshot: AIConversationSnapsh
     relationSource: typeof snapshot.relationSource === 'string' ? snapshot.relationSource : '',
     parentTitleSnapshot: typeof snapshot.parentTitleSnapshot === 'string' ? snapshot.parentTitleSnapshot : '',
     archived: snapshot.archived === true,
+    transient: snapshot.transient === true,
   }
 
   const nextList = Array.isArray(list) ? [...list] : []
@@ -1417,6 +1449,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   const [activeSettingsTab, setActiveSettingsTab] = useState('')
   const [tasksDirMigrating, setTasksDirMigrating] = useState(false)
   const [isDevilMode, setIsDevilMode] = useState(false)
+  const [temporarySessionEnabled, setTemporarySessionEnabled] = useState(false)
   const [themeToolPreview, setThemeToolPreview] = useState<unknown>(null)
   const [pendingConversationId, setPendingConversationId] = useState('')
   const [conversationList, setConversationList] = useState<ConversationSummary[]>([])
@@ -1429,7 +1462,17 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   const [composerEditState, setComposerEditState] = useState<ComposerEditState>({ mode: 'new', targetMessageId: '', targetMessageText: '' })
   const [conversationScrollSignal, setConversationScrollSignal] = useState(0)
   const [providerBalanceRefreshSignal, setProviderBalanceRefreshSignal] = useState(0)
-  const [hoveredConversationActionKey, setHoveredConversationActionKey] = useState('')
+  const [conversationOrganizer, setConversationOrganizer] = useState<AIConversationOrganizerState>(() => loadAIConversationOrganizer())
+  const [conversationFilter, setConversationFilter] = useState('all')
+  const [conversationSelectionMode, setConversationSelectionMode] = useState(false)
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Set<string>>(() => new Set())
+  const [moveToGroupOpen, setMoveToGroupOpen] = useState(false)
+  const [editingConversationGroupId, setEditingConversationGroupId] = useState('')
+  const [editingConversationGroupName, setEditingConversationGroupName] = useState('')
+  const [draggingConversationGroupId, setDraggingConversationGroupId] = useState('')
+  const [dragOverConversationGroupId, setDragOverConversationGroupId] = useState('')
+  const conversationGroupRenameInputRef = useRef<HTMLInputElement | null>(null)
+  const conversationGroupRenameCancelledRef = useRef(false)
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
   const [globalSearchQuery, setGlobalSearchQuery] = useState('')
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false)
@@ -1544,14 +1587,22 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       if (!panelMountedRef.current) {
         return
       }
-      setConversationList(Array.isArray(conversations) ? conversations : [])
+      setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), Array.isArray(conversations) ? conversations : []))
     } catch {
       if (!panelMountedRef.current) {
         return
       }
-      setConversationList([])
+      setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), []))
     }
   }, [refreshMCPOutputCompressionSettings, refreshMCPServerInfo])
+
+  useEffect(() => {
+    const syncTemporaryConversations = () => {
+      setConversationList((current) => listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), current.filter((item) => item.transient !== true)))
+    }
+    window.addEventListener(TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT, syncTemporaryConversations)
+    return () => window.removeEventListener(TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT, syncTemporaryConversations)
+  }, [])
 
   const showAlert = useCallback(async (message: string) => {
     // message 为动态内容（可能不在翻译表），t() 内部有兜底
@@ -2165,17 +2216,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     const shouldHydrate = options?.hydrate === true
     const isTransientConversation = snapshot?.transient === true
     const saved = isTransientConversation
-      ? {
-          ...snapshot,
-          updatedAt: typeof snapshot?.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
-          messageCount: typeof snapshot?.messageCount === 'number'
-            ? snapshot.messageCount
-            : Array.isArray(snapshot?.messages) ? snapshot.messages.length : 0,
-        }
+      ? upsertTemporaryAIConversation(snapshot)
       : await saveAIConversation(snapshot)
-    if (!isTransientConversation) {
-      setConversationList((prev) => upsertConversationSummary(prev, saved))
-    }
+    setConversationList((prev) => upsertConversationSummary(prev, saved))
     setPanelState(targetPanelKey, (current) => {
       if (current.activeConversationId !== saved.id) {
         return current
@@ -3646,7 +3689,15 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     const previousPanel = terminalPanelsRef.current[panelInstanceKey]
     const previousRequestId = previousPanel?.activeRequestId || ''
     const previousConversation = previousPanel?.conversation
-    const persistCurrentConversation = previousConversation && !previousConversation.transient && !deletedConversationIdsRef.current.has(previousConversation.id)
+    const persistCurrentConversation = previousConversation?.transient === true && !deletedConversationIdsRef.current.has(previousConversation.id)
+      ? Promise.resolve(upsertTemporaryAIConversation({
+          ...previousConversation,
+          updatedAt: Date.now(),
+          status: 'idle',
+          messages: Array.isArray(previousPanel?.messages) ? previousPanel.messages : [],
+          apiMessages: Array.isArray(previousPanel?.apiMessages) ? previousPanel.apiMessages : [],
+        }))
+      : previousConversation && !deletedConversationIdsRef.current.has(previousConversation.id)
       ? (() => {
           const assistantMessageId = previousPanel?.activeAssistantMessageId || previousRequestId
           const messages = (Array.isArray(previousPanel?.messages) ? previousPanel.messages : []).filter((message) => (
@@ -3730,12 +3781,13 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   }, [panelInstanceKey])
 
   const handleOpenConversation = useCallback(async (conversationId: string, delegateToWorkspace = true) => {
-    if (delegateToWorkspace && onOpenConversationRequested) {
-      await onOpenConversationRequested(conversationId)
-      return
-    }
     const normalizedConversationId = typeof conversationId === 'string' ? conversationId.trim() : ''
     if (!normalizedConversationId) {
+      return
+    }
+    const temporarySnapshot = temporaryAIConversations.get(normalizedConversationId)
+    if (!temporarySnapshot && delegateToWorkspace && onOpenConversationRequested) {
+      await onOpenConversationRequested(conversationId)
       return
     }
     const requestToken = conversationLoadRequestRef.current + 1
@@ -3747,7 +3799,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     resetGlobalSearchState()
     resetConversationSearchState()
     try {
-      const snapshot = await getAIConversation(normalizedConversationId)
+      const snapshot = temporarySnapshot || await getAIConversation(normalizedConversationId)
       if (!panelMountedRef.current || conversationLoadRequestRef.current !== requestToken) {
         return
       }
@@ -3759,7 +3811,8 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
         return
       }
       const latestProviders = Array.isArray(latestProviderState?.providers) ? latestProviderState.providers : []
-      const resolvedProviderId = resolveAvailableProviderId(latestProviders, snapshot?.settings?.currentProviderId)
+      const snapshotSettings = snapshot?.settings && typeof snapshot.settings === 'object' ? snapshot.settings as Record<string, unknown> : null
+      const resolvedProviderId = resolveAvailableProviderId(latestProviders, typeof snapshotSettings?.currentProviderId === 'string' ? snapshotSettings.currentProviderId : '')
       const nextSnapshot = buildConversationWithProviderId(snapshot, resolvedProviderId)
       setAIProviderState({
         currentProviderId: resolvedProviderId,
@@ -3998,7 +4051,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     if (!confirmed) {
       return
     }
-    await deleteAIConversation(conversationId)
+    const removedTemporaryConversation = removeTemporaryAIConversation(conversationId)
+    if (!removedTemporaryConversation) await deleteAIConversation(conversationId)
+    else deletedConversationIdsRef.current.add(conversationId)
     tokenLedgerRef.current.delete(conversationId)
     setComposerEditState((current) => (
       current.mode !== 'new' && deletingActiveConversation
@@ -4010,7 +4065,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       return
     }
     const refreshedConversations = await listAIConversations().catch(() => [])
-    setConversationList(Array.isArray(refreshedConversations) ? refreshedConversations : [])
+    setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), Array.isArray(refreshedConversations) ? refreshedConversations : []))
     const currentActiveConversationId = typeof terminalPanelsRef.current?.[panelInstanceKey]?.activeConversationId === 'string'
       ? terminalPanelsRef.current[panelInstanceKey].activeConversationId.trim()
       : ''
@@ -4018,6 +4073,191 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       await handleOpenConversation(currentActiveConversationId)
     }
   }, [clearRestorePreview, handleGoHome, handleOpenConversation, panelInstanceKey, panelState.activeConversationId, requestDeleteConfirmation, t])
+
+  const persistConversationOrganizer = useCallback((updater: (current: AIConversationOrganizerState) => AIConversationOrganizerState) => {
+    setConversationOrganizer((current) => saveAIConversationOrganizer(updater(current)))
+  }, [])
+
+  const handleMakeConversationPermanent = useCallback(async (conversationId: string) => {
+    const temporarySnapshot = temporaryAIConversations.get(conversationId)
+    if (!temporarySnapshot) return
+    const created = await createAIConversation(temporarySnapshot.title || t('新对话'))
+    const permanentSnapshot = await saveAIConversation({
+      ...temporarySnapshot,
+      id: created.id,
+      createdAt: created.createdAt,
+      updatedAt: Date.now(),
+      transient: false,
+      status: 'idle',
+    })
+    removeTemporaryAIConversation(conversationId)
+    persistConversationOrganizer((current) => {
+      const assignments = { ...current.assignments }
+      if (assignments[conversationId]) assignments[permanentSnapshot.id] = assignments[conversationId]
+      delete assignments[conversationId]
+      return { ...current, assignments }
+    })
+    setConversationList((current) => upsertConversationSummary(current.filter((item) => item.id !== conversationId), permanentSnapshot))
+    addToast?.(`${t('临时会话')} · ${t('保存')}`, 'success')
+    await handleOpenConversation(permanentSnapshot.id)
+  }, [addToast, handleOpenConversation, persistConversationOrganizer, t])
+
+  const handleCreateConversationGroup = useCallback(async () => {
+    const name = window?.luminDialog?.prompt
+      ? await window.luminDialog.prompt(t('请输入分组名称'), '', t('新建分组'))
+      : window.prompt(t('请输入分组名称'))
+    const normalizedName = typeof name === 'string' ? name.trim() : ''
+    if (!normalizedName) return
+    const group = createAIConversationGroup(normalizedName)
+    persistConversationOrganizer((current) => ({ ...current, groups: [...current.groups, group] }))
+    setConversationFilter(group.id)
+  }, [persistConversationOrganizer, t])
+
+  const beginRenameConversationGroup = useCallback((groupId: string) => {
+    const group = conversationOrganizer.groups.find((item) => item.id === groupId)
+    if (!group) return
+    setConversationFilter(groupId)
+    conversationGroupRenameCancelledRef.current = false
+    setEditingConversationGroupId(groupId)
+    setEditingConversationGroupName(group.name)
+    window.requestAnimationFrame(() => {
+      conversationGroupRenameInputRef.current?.focus()
+      conversationGroupRenameInputRef.current?.select()
+    })
+  }, [conversationOrganizer.groups])
+
+  const cancelRenameConversationGroup = useCallback(() => {
+    conversationGroupRenameCancelledRef.current = true
+    setEditingConversationGroupId('')
+    setEditingConversationGroupName('')
+  }, [])
+
+  const commitRenameConversationGroup = useCallback(() => {
+    if (conversationGroupRenameCancelledRef.current) {
+      conversationGroupRenameCancelledRef.current = false
+      setEditingConversationGroupId('')
+      setEditingConversationGroupName('')
+      return
+    }
+    const groupId = editingConversationGroupId
+    const normalizedName = editingConversationGroupName.trim()
+    if (groupId && normalizedName) {
+      persistConversationOrganizer((current) => ({ ...current, groups: current.groups.map((item) => item.id === groupId ? { ...item, name: normalizedName } : item) }))
+    }
+    setEditingConversationGroupId('')
+    setEditingConversationGroupName('')
+  }, [editingConversationGroupId, editingConversationGroupName, persistConversationOrganizer])
+
+  const reorderConversationGroup = useCallback((sourceGroupId: string, targetGroupId: string) => {
+    if (!sourceGroupId || !targetGroupId || sourceGroupId === targetGroupId) return
+    persistConversationOrganizer((current) => {
+      const sourceIndex = current.groups.findIndex((group) => group.id === sourceGroupId)
+      const targetIndex = current.groups.findIndex((group) => group.id === targetGroupId)
+      if (sourceIndex < 0 || targetIndex < 0) return current
+      const groups = [...current.groups]
+      const [moved] = groups.splice(sourceIndex, 1)
+      groups.splice(targetIndex, 0, moved)
+      return { ...current, groups }
+    })
+  }, [persistConversationOrganizer])
+
+  const showSystemGroupRenameUnsupported = useCallback(() => {
+    const message = t('系统分组不支持重命名')
+    if (typeof addToast === 'function') {
+      addToast(message, 'info', 2200)
+      return
+    }
+    void showAlert(message)
+  }, [addToast, showAlert, t])
+
+  useEffect(() => {
+    const handleRenameShortcut = (event: KeyboardEvent) => {
+      if (event.key !== 'F2' || editingConversationGroupId) return
+      if (conversationFilter === 'all' || conversationFilter === 'archived') {
+        event.preventDefault()
+        showSystemGroupRenameUnsupported()
+        return
+      }
+      if (!conversationOrganizer.groups.some((group) => group.id === conversationFilter)) return
+      event.preventDefault()
+      beginRenameConversationGroup(conversationFilter)
+    }
+    window.addEventListener('keydown', handleRenameShortcut)
+    return () => window.removeEventListener('keydown', handleRenameShortcut)
+  }, [beginRenameConversationGroup, conversationFilter, conversationOrganizer.groups, editingConversationGroupId, showSystemGroupRenameUnsupported])
+
+  useEffect(() => {
+    if (conversationFilter === 'ungrouped') setConversationFilter('all')
+  }, [conversationFilter])
+
+  const handleDeleteConversationGroup = useCallback(async (groupId: string) => {
+    const group = conversationOrganizer.groups.find((item) => item.id === groupId)
+    if (!group) return
+    const confirmed = await requestDeleteConfirmation(t('删除分组后,其中的会话将移到未分组.是否继续?'))
+    if (!confirmed) return
+    persistConversationOrganizer((current) => ({
+      groups: current.groups.filter((item) => item.id !== groupId),
+      assignments: Object.fromEntries(Object.entries(current.assignments).filter(([, assignedGroupId]) => assignedGroupId !== groupId)),
+    }))
+    if (conversationFilter === groupId) setConversationFilter('ungrouped')
+  }, [conversationFilter, conversationOrganizer.groups, persistConversationOrganizer, requestDeleteConfirmation, t])
+
+  const toggleConversationSelection = useCallback((conversationId: string) => {
+    setSelectedConversationIds((current) => {
+      const next = new Set(current)
+      if (next.has(conversationId)) next.delete(conversationId)
+      else next.add(conversationId)
+      return next
+    })
+  }, [])
+
+  const clearConversationSelection = useCallback(() => {
+    setSelectedConversationIds(new Set())
+    setConversationSelectionMode(false)
+    setMoveToGroupOpen(false)
+  }, [])
+
+  const refreshConversationList = useCallback(async () => {
+    const conversations = await listAIConversations().catch(() => [])
+    setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), Array.isArray(conversations) ? conversations : []))
+  }, [])
+
+  const handleMoveSelectedConversations = useCallback((groupId: string) => {
+    const selected = new Set(selectedConversationIds)
+    persistConversationOrganizer((current) => {
+      const assignments = { ...current.assignments }
+      selected.forEach((conversationId) => {
+        if (groupId) assignments[conversationId] = groupId
+        else delete assignments[conversationId]
+      })
+      return { ...current, assignments }
+    })
+    clearConversationSelection()
+  }, [clearConversationSelection, persistConversationOrganizer, selectedConversationIds])
+
+  const handleSetSelectedArchived = useCallback(async (archived: boolean) => {
+    const ids = Array.from(selectedConversationIds)
+    await Promise.all(ids.map(async (conversationId) => {
+      const snapshot = await getAIConversation(conversationId)
+      await saveAIConversation({ ...snapshot, archived, updatedAt: Date.now() })
+    }))
+    clearConversationSelection()
+    await refreshConversationList()
+  }, [clearConversationSelection, refreshConversationList, selectedConversationIds])
+
+  const handleDeleteSelectedConversations = useCallback(async () => {
+    const ids = Array.from(selectedConversationIds)
+    if (ids.length === 0) return
+    const confirmed = await requestDeleteConfirmation(t('确定删除选中的对话吗？此操作不可撤销。'))
+    if (!confirmed) return
+    await Promise.all(ids.map((conversationId) => removeTemporaryAIConversation(conversationId) ? Promise.resolve() : deleteAIConversation(conversationId)))
+    persistConversationOrganizer((current) => ({
+      ...current,
+      assignments: Object.fromEntries(Object.entries(current.assignments).filter(([conversationId]) => !selectedConversationIds.has(conversationId))),
+    }))
+    clearConversationSelection()
+    await refreshConversationList()
+  }, [clearConversationSelection, persistConversationOrganizer, refreshConversationList, requestDeleteConfirmation, selectedConversationIds, t])
 
   const handleProviderChange = useCallback(async (providerId: string) => {
     const normalizedProviderId = typeof providerId === 'string' ? providerId.trim() : ''
@@ -4307,7 +4547,10 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       : activeConversationToolScopeSlot
     const isThemeTuningConversation = effectiveToolScope === 'theme_tuning'
     let targetConversationSnapshot = normalizedRuntimeOptions?.forceNewConversation === true ? null : (targetConversationFromOptions || activeConversation)
-    if (targetConversationSnapshot?.transient === true && !effectiveToolScope) {
+    if (temporarySessionEnabled && targetConversationSnapshot?.transient !== true && !effectiveToolScope) {
+      targetConversationSnapshot = null
+    }
+    if (!temporarySessionEnabled && targetConversationSnapshot?.transient === true && !effectiveToolScope) {
       targetConversationSnapshot = null
     }
     if (targetConversationSnapshot?.archived === true && targetConversationSnapshot?.relationType === 'agent') {
@@ -4388,11 +4631,11 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
 
     let targetConversation = targetConversationSnapshot
     if (!targetConversation) {
-      if (isThemeTuningConversation) {
+      if (isThemeTuningConversation || temporarySessionEnabled) {
         const now = Date.now()
         targetConversation = {
-          id: `theme-tuning-${now}-${Math.random().toString(36).slice(2, 8)}`,
-          title: translate('AI调色'),
+          id: `${isThemeTuningConversation ? 'theme-tuning' : 'temporary'}-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          title: isThemeTuningConversation ? translate('AI调色') : truncateConversationTitle(nextText),
           createdAt: now,
           updatedAt: now,
           status: 'idle',
@@ -4616,7 +4859,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       await saveConversationSnapshot(erroredConversation, panelInstanceKey)
       return false
     }
-  }, [activeConversation, aiProviderState, availableAIProviders, buildConversationWithProviderId, composerEditState, composerImages, effectiveAutoApprovalEnabled, getAIAssistantFirstReply, globalAISettings, isDevilMode, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, resolveAIRequestModelMeta, resolveAvailableProviderId, saveConversationSnapshot, setPanelState, shouldLockAssistantCollaboration, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
+  }, [activeConversation, aiProviderState, availableAIProviders, buildConversationWithProviderId, composerEditState, composerImages, effectiveAutoApprovalEnabled, getAIAssistantFirstReply, globalAISettings, isDevilMode, isQueueBlocked, normalizedGlobalAISettings.slashCommands, panelInstanceKey, panelState.activeRequestId, panelState.requestPhase, requestConversationSmoothScrollToBottom, resetComposerEditState, resolveAIRequestModelMeta, resolveAvailableProviderId, saveConversationSnapshot, setPanelState, shouldLockAssistantCollaboration, temporarySessionEnabled, terminalId, terminalOutputCharacterLimit, terminalOutputLineLimit, truncateConversationAfterMessage])
 
   const handleFollowupResponse = useCallback(async (payload: Record<string, unknown>) => {
     if (!payload || typeof payload !== 'object') {
@@ -5679,6 +5922,18 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
 
   const renderedConversationList = useMemo(() => {
     let content = null
+    const getConversationGroupId = (item: ConversationSummary) => {
+      const ownerId = item.rootConversationId || item.parentConversationId || item.id
+      return conversationOrganizer.assignments[item.id] || conversationOrganizer.assignments[ownerId] || ''
+    }
+    const visibleConversationList = conversationList.filter((item) => {
+      if (conversationFilter === 'archived') return item.archived === true
+      if (item.archived === true) return false
+      if (conversationFilter === 'all') return true
+      const groupId = getConversationGroupId(item)
+      return conversationFilter === 'ungrouped' ? !groupId : groupId === conversationFilter
+    })
+    const displayConversationList = buildAIConversationDisplayList(visibleConversationList)
 
     if (globalSearchOpen) {
       content = (
@@ -5789,20 +6044,16 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
           )}
         </div>
       )
-    } else if (conversationList.length === 0) {
+    } else if (displayConversationList.length === 0) {
       content = (
         <div style={{ minHeight: 'calc(100% - 53px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12, lineHeight: 1.8 }}>
           <div style={{ maxWidth: '80%', display: 'grid', gap: 2 }}>
-            <div>{t('当前还没有对话.点击下方发送消息后')}</div>
-            <div>{t('将自动创建一条新对话.')}</div>
+            <div>{conversationFilter === 'archived' ? t('当前没有已归档会话') : t('当前分组没有会话')}</div>
           </div>
         </div>
       )
     } else {
-      content = buildAIConversationDisplayList(conversationList).map((item) => {
-        const isFolderHovered = hoveredConversationActionKey === `${item.id}:folder`
-        const isRenameHovered = hoveredConversationActionKey === `${item.id}:rename`
-        const isDeleteHovered = hoveredConversationActionKey === `${item.id}:delete`
+      content = displayConversationList.map((item) => {
         const isAgentSubtask = item.relationType === 'agent'
         const isArchivedAgentSubtask = isAgentSubtask && item.archived === true
         const isSummarySubtask = item.relationType === 'phase' && item.relationSource === 'summary_condense'
@@ -5811,6 +6062,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
         const displayTitle = typeof item.title === 'string'
           ? item.title.replace(/\s*·\s*摘要子任务\s*$/u, '').replace(/\s*·\s*子代理任务\s*$/u, '').trim()
           : ''
+        const selected = selectedConversationIds.has(item.id)
         return (
           <div
             key={item.id}
@@ -5819,15 +6071,29 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
               display: 'flex',
               alignItems: 'center',
               borderBottom: '1px solid var(--border)',
-              background: panelState.activeConversationId === item.id ? 'rgba(var(--accent-rgb), 0.08)' : 'transparent',
+              background: selected ? 'rgba(var(--accent-rgb), 0.12)' : panelState.activeConversationId === item.id ? 'rgba(var(--accent-rgb), 0.08)' : 'transparent',
               borderLeft: panelState.activeConversationId === item.id ? '2px solid var(--accent)' : '2px solid transparent',
               transition: 'var(--transition)',
               opacity: item.archived === true ? 0.72 : 1,
+              contentVisibility: 'auto',
+              containIntrinsicSize: '56px',
+              contain: 'layout paint style',
             }}
           >
+            {conversationSelectionMode ? (
+              <button
+                type="button"
+                className="ai-conversation-row-action"
+                aria-label={selected ? t('取消选择') : t('选择')}
+                aria-pressed={selected}
+                onClick={() => toggleConversationSelection(item.id)}
+                style={{ width: 34, alignSelf: 'stretch', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: selected ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', flexShrink: 0 }}>
+                <span style={{ width: 16, height: 16, borderRadius: 4, border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`, background: selected ? 'var(--accent)' : 'transparent', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>{selected ? '✓' : ''}</span>
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => void handleOpenConversation(item.id)}
+              onClick={() => conversationSelectionMode ? toggleConversationSelection(item.id) : void handleOpenConversation(item.id)}
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -5885,6 +6151,11 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
                       </span>
                     </Tiptop>
                   ) : null}
+                  {item.transient === true ? (
+                    <span title={t('临时会话')} style={{ flexShrink: 0, padding: '1px 5px', borderRadius: 4, background: 'rgba(var(--accent-rgb), 0.12)', color: 'var(--accent)', fontSize: 10, fontWeight: 600 }}>
+                      {t('临时会话')}
+                    </span>
+                  ) : null}
                   <div style={{ minWidth: 0, fontSize: 13, fontWeight: panelState.activeConversationId === item.id ? 600 : 500, color: isArchivedAgentSubtask ? 'var(--text-secondary)' : 'var(--text-primary)', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayTitle || item.title}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexWrap: 'wrap' }}>
@@ -5898,16 +6169,26 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
                 </div>
               </div>
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 10, flexShrink: 0 }}>
+            {!conversationSelectionMode ? <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 10, flexShrink: 0 }}>
+              {item.transient === true ? (
+                <button
+                  type="button"
+                  className="ai-conversation-row-action"
+                  title={`${t('临时会话')} → ${t('保存')}`}
+                  aria-label={`${t('临时会话')} → ${t('保存')}`}
+                  onClick={() => void handleMakeConversationPermanent(item.id)}
+                  style={{ width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, color: 'var(--accent)', background: 'transparent', border: '1px solid transparent', boxShadow: 'none', flexShrink: 0, cursor: 'pointer', transition: 'background 120ms ease, border-color 120ms ease, color 120ms ease' }}
+                >
+                  <ArchiveRestore size={13} />
+                </button>
+              ) : null}
+              {item.transient !== true ? (
               <button
                 type="button"
+                className="ai-conversation-row-action"
                 title={t('打开任务所在文件夹')}
                 aria-label={t('打开任务所在文件夹')}
                 onClick={() => void handleOpenConversationFolder(item.id)}
-                onMouseEnter={() => setHoveredConversationActionKey(`${item.id}:folder`)}
-                onMouseLeave={() => setHoveredConversationActionKey((current) => (current === `${item.id}:folder` ? '' : current))}
-                onFocus={() => setHoveredConversationActionKey(`${item.id}:folder`)}
-                onBlur={() => setHoveredConversationActionKey((current) => (current === `${item.id}:folder` ? '' : current))}
                 style={{
                   width: 26,
                   height: 26,
@@ -5915,9 +6196,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: 6,
-                  color: isFolderHovered ? 'var(--accent)' : 'var(--text-muted)',
-                  background: isFolderHovered ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
-                  border: isFolderHovered ? '1px solid rgba(var(--accent-rgb), 0.22)' : '1px solid transparent',
+                  color: 'var(--text-muted)',
+                  background: 'transparent',
+                  border: '1px solid transparent',
                   boxShadow: 'none',
                   flexShrink: 0,
                   cursor: 'pointer',
@@ -5926,15 +6207,14 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
               >
                 <FolderOpen size={13} />
               </button>
+              ) : null}
+              {item.transient !== true ? (
               <button
                 type="button"
+                className="ai-conversation-row-action"
                 title={t('编辑任务标题')}
                 aria-label={t('编辑任务标题')}
                 onClick={() => void handleRenameConversationTitle(item.id)}
-                onMouseEnter={() => setHoveredConversationActionKey(`${item.id}:rename`)}
-                onMouseLeave={() => setHoveredConversationActionKey((current) => (current === `${item.id}:rename` ? '' : current))}
-                onFocus={() => setHoveredConversationActionKey(`${item.id}:rename`)}
-                onBlur={() => setHoveredConversationActionKey((current) => (current === `${item.id}:rename` ? '' : current))}
                 style={{
                   width: 26,
                   height: 26,
@@ -5942,9 +6222,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: 6,
-                  color: isRenameHovered ? 'var(--accent)' : 'var(--text-muted)',
-                  background: isRenameHovered ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
-                  border: isRenameHovered ? '1px solid rgba(var(--accent-rgb), 0.22)' : '1px solid transparent',
+                  color: 'var(--text-muted)',
+                  background: 'transparent',
+                  border: '1px solid transparent',
                   boxShadow: 'none',
                   flexShrink: 0,
                   cursor: 'pointer',
@@ -5953,18 +6233,15 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
               >
                 <Pencil size={13} />
               </button>
+              ) : null}
               <button
                 type="button"
+                className="ai-conversation-row-action ai-conversation-row-action-danger"
                 title={t('删除')}
                 aria-label={t('删除')}
                 onClick={() => {
-                  setHoveredConversationActionKey('')
                   void handleDeleteConversation(item.id)
                 }}
-                onMouseEnter={() => setHoveredConversationActionKey(`${item.id}:delete`)}
-                onMouseLeave={() => setHoveredConversationActionKey((current) => (current === `${item.id}:delete` ? '' : current))}
-                onFocus={() => setHoveredConversationActionKey(`${item.id}:delete`)}
-                onBlur={() => setHoveredConversationActionKey((current) => (current === `${item.id}:delete` ? '' : current))}
                 style={{
                   width: 26,
                   height: 26,
@@ -5972,9 +6249,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: 6,
-                  color: isDeleteHovered ? 'var(--danger)' : 'var(--text-muted)',
-                  background: isDeleteHovered ? 'var(--danger-dim)' : 'transparent',
-                  border: isDeleteHovered ? '1px solid rgba(var(--danger-rgb), 0.28)' : '1px solid transparent',
+                  color: 'var(--text-muted)',
+                  background: 'transparent',
+                  border: '1px solid transparent',
                   boxShadow: 'none',
                   flexShrink: 0,
                   cursor: 'pointer',
@@ -5983,7 +6260,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
               >
                 ×
               </button>
-            </div>
+            </div> : null}
           </div>
         )
       })
@@ -5991,8 +6268,12 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
 
     return (
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: 'var(--surface-base)' }}>
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', position: 'sticky', top: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('对话历史')}</div>
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', position: 'sticky', top: 0, zIndex: 2, display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{conversationSelectionMode ? t('已选择 {count} 项').replace('{count}', String(selectedConversationIds.size)) : t('对话历史')}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" title={conversationSelectionMode ? t('退出多选') : t('多选')} aria-label={conversationSelectionMode ? t('退出多选') : t('多选')} onClick={() => conversationSelectionMode ? clearConversationSelection() : setConversationSelectionMode(true)} style={{ width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: conversationSelectionMode ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)', background: conversationSelectionMode ? 'rgba(var(--accent-rgb), 0.10)' : 'var(--surface-sunken)', color: conversationSelectionMode ? 'var(--accent)' : 'var(--text-tertiary)', cursor: 'pointer' }}><CheckSquare size={14} /></button>
+          <button type="button" title={t('新建分组')} aria-label={t('新建分组')} onClick={() => void handleCreateConversationGroup()} style={{ width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--surface-sunken)', color: 'var(--text-tertiary)', cursor: 'pointer' }}><FolderPlus size={14} /></button>
           <button
             type="button"
             title={t('全局搜索对话')}
@@ -6015,11 +6296,70 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
           >
             <Search size={14} />
           </button>
+          </div>
+          </div>
+          <div role="tablist" aria-label={t('分组')} style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 1 }}>
+            <button role="tab" aria-selected={conversationFilter === 'all'} type="button" onClick={() => { setConversationFilter('all'); clearConversationSelection(); cancelRenameConversationGroup() }} onDoubleClick={showSystemGroupRenameUnsupported} style={{ height: 26, padding: '0 9px', borderRadius: 7, border: conversationFilter === 'all' ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)', background: conversationFilter === 'all' ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent', color: conversationFilter === 'all' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0 }}>{t('全部')}</button>
+            {conversationOrganizer.groups.map((group) => {
+              const selected = conversationFilter === group.id
+              const editing = editingConversationGroupId === group.id
+              const dragging = draggingConversationGroupId === group.id
+              const dragOver = dragOverConversationGroupId === group.id && !dragging
+              return editing ? (
+                <input
+                  key={group.id}
+                  ref={conversationGroupRenameInputRef}
+                  aria-label={t('重命名分组')}
+                  value={editingConversationGroupName}
+                  onChange={(event) => setEditingConversationGroupName(event.target.value)}
+                  onBlur={commitRenameConversationGroup}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') { event.preventDefault(); commitRenameConversationGroup() }
+                    if (event.key === 'Escape') { event.preventDefault(); cancelRenameConversationGroup() }
+                  }}
+                  style={{ width: Math.max(72, Math.min(150, editingConversationGroupName.length * 12 + 24)), height: 26, padding: '0 8px', borderRadius: 7, border: '1px solid var(--accent-border)', background: 'var(--surface-sunken)', color: 'var(--text-primary)', fontSize: 11, outline: '2px solid rgba(var(--accent-rgb), 0.16)', flexShrink: 0 }}
+                />
+              ) : (
+                <button
+                  key={group.id}
+                  role="tab"
+                  aria-selected={selected}
+                  draggable
+                  type="button"
+                  onClick={() => { setConversationFilter(group.id); clearConversationSelection() }}
+                  onDoubleClick={() => beginRenameConversationGroup(group.id)}
+                  onContextMenu={(event) => { event.preventDefault(); void handleDeleteConversationGroup(group.id) }}
+                  onDragStart={(event) => { setDraggingConversationGroupId(group.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', group.id) }}
+                  onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverConversationGroupId(group.id) }}
+                  onDrop={(event) => { event.preventDefault(); reorderConversationGroup(draggingConversationGroupId || event.dataTransfer.getData('text/plain'), group.id); setDraggingConversationGroupId(''); setDragOverConversationGroupId('') }}
+                  onDragEnd={() => { setDraggingConversationGroupId(''); setDragOverConversationGroupId('') }}
+                  style={{ height: 26, padding: '0 9px', borderRadius: 7, border: dragOver ? '1px solid var(--accent)' : selected ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)', background: selected ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent', color: selected ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap', cursor: dragging ? 'grabbing' : 'grab', flexShrink: 0, opacity: dragging ? 0.5 : 1, transform: dragOver ? 'translateX(2px)' : 'none', transition: 'var(--transition-fast)' }}>
+                  {group.name}
+                </button>
+              )
+            })}
+            <button role="tab" aria-selected={conversationFilter === 'archived'} type="button" onClick={() => { setConversationFilter('archived'); clearConversationSelection(); cancelRenameConversationGroup() }} onDoubleClick={showSystemGroupRenameUnsupported} style={{ height: 26, padding: '0 9px', borderRadius: 7, border: conversationFilter === 'archived' ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)', background: conversationFilter === 'archived' ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent', color: conversationFilter === 'archived' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer', flexShrink: 0 }}>{t('已归档')}</button>
+          </div>
         </div>
         {content}
+        {conversationSelectionMode && selectedConversationIds.size > 0 ? (
+          <div style={{ position: 'sticky', bottom: 0, zIndex: 3, display: 'grid', gap: 6, padding: 8, borderTop: '1px solid var(--border)', background: 'var(--surface-raised)' }}>
+            {moveToGroupOpen ? (
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}>
+                <button type="button" onClick={() => handleMoveSelectedConversations('')} className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}>{t('移出分组')}</button>
+                {conversationOrganizer.groups.map((group) => <button key={group.id} type="button" onClick={() => handleMoveSelectedConversations(group.id)} className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }}>{group.name}</button>)}
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMoveToGroupOpen((current) => !current)} style={{ flex: 1 }}>{t('移动到分组')}</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => void handleSetSelectedArchived(conversationFilter !== 'archived')} style={{ flex: 1, display: 'inline-flex', gap: 5, alignItems: 'center', justifyContent: 'center' }}>{conversationFilter === 'archived' ? <ArchiveRestore size={13} /> : <Archive size={13} />}{conversationFilter === 'archived' ? t('恢复') : t('归档')}</button>
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => void handleDeleteSelectedConversations()} aria-label={t('删除')} style={{ width: 34, padding: 0 }}><Trash2 size={13} /></button>
+            </div>
+          </div>
+        ) : null}
       </div>
     )
-  }, [conversationList, getLanguage, globalSearchLoading, globalSearchOpen, globalSearchQuery, globalSearchResults, handleDeleteConversation, handleOpenConversation, handleOpenConversationFolder, handleOpenGlobalSearch, handleSelectGlobalSearchResult, hoveredConversationActionKey, isDevilMode, normalizedGlobalSearchQuery, panelState.activeConversationId, resetGlobalSearchState, t])
+  }, [beginRenameConversationGroup, cancelRenameConversationGroup, clearConversationSelection, commitRenameConversationGroup, conversationFilter, conversationList, conversationOrganizer, conversationSelectionMode, dragOverConversationGroupId, draggingConversationGroupId, editingConversationGroupId, editingConversationGroupName, getLanguage, globalSearchLoading, globalSearchOpen, globalSearchQuery, globalSearchResults, handleCreateConversationGroup, handleDeleteConversation, handleDeleteConversationGroup, handleDeleteSelectedConversations, handleMakeConversationPermanent, handleMoveSelectedConversations, handleOpenConversation, handleOpenConversationFolder, handleOpenGlobalSearch, handleSelectGlobalSearchResult, handleSetSelectedArchived, isDevilMode, moveToGroupOpen, normalizedGlobalSearchQuery, panelState.activeConversationId, reorderConversationGroup, resetGlobalSearchState, selectedConversationIds, showSystemGroupRenameUnsupported, t, toggleConversationSelection])
 
   return (
     <AIWorkspaceTabProvider value={{ sessionId: sessionId || '', terminalId: terminalId || '', tabId: workspaceTabId || '' }}>
@@ -6315,6 +6655,8 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
           collaborationPromptPresets={normalizedGlobalAISettings.collaborationPromptPresets}
           onCollaborationPromptPresetsChange={handleCollaborationPromptPresetsChange}
           collaborationPromptScopeIsTask={Boolean(activeConversation)}
+          temporarySessionEnabled={temporarySessionEnabled}
+          onTemporarySessionEnabledChange={setTemporarySessionEnabled}
           onInterruptCollaboration={handleInterruptCollaboration}
           approvalRequired={isAwaitingToolApproval}
           toolRunning={isToolRunning}
@@ -6588,7 +6930,7 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
         ? current
         : {
             activeTabId: tabId,
-            tabs: [{ id: tabId, conversationId: '', title: t('新对话') }],
+            tabs: [{ id: tabId, conversationId: '', title: t('新对话'), transient: false }],
           }
     ))
   }, [t, tabGroup.activeTabId, tabGroup.tabs, updateTabGroup])
@@ -6641,7 +6983,7 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
     const tabId = createAIWorkspaceTabId()
     updateTabGroup((current) => ({
       activeTabId: tabId,
-      tabs: [...current.tabs, { id: tabId, conversationId: '', title: t('新对话') }],
+      tabs: [...current.tabs, { id: tabId, conversationId: '', title: t('新对话'), transient: false }],
     }))
     return tabId
   }, [t, updateTabGroup])
@@ -6650,7 +6992,7 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
       ...current,
       tabs: current.tabs.map((tab) => (
         tab.id === tabId
-          ? { ...tab, conversationId: '', title: t('新对话') }
+          ? { ...tab, conversationId: '', title: t('新对话'), transient: false }
           : tab
       )),
     }))
@@ -6726,13 +7068,14 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
       tabs: current.tabs.some((tab) => tab.id === tabId)
         ? current.tabs.map((tab) => (
             tab.id === tabId
-              ? { ...tab, conversationId: normalizedConversationId, title: '' }
+              ? { ...tab, conversationId: normalizedConversationId, title: '', transient: false }
               : tab
           ))
         : [...current.tabs, {
             id: tabId,
             conversationId: normalizedConversationId,
             title: '',
+            transient: false,
           }],
     }))
     queueAIWorkspaceTabLocation(terminalId, tabId, normalizedConversationId, messageId)
@@ -6763,17 +7106,17 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
         [tabId]: state.activeRequestId,
       }
     })
-    const title = state.transient ? t('AI调色') : (conversationId ? state.title : t('新对话'))
+    const title = state.transient ? (state.title || t('临时会话')) : (conversationId ? state.title : t('新对话'))
     const currentTab = tabGroupRef.current.tabs.find((tab) => tab.id === tabId)
     flushAIWorkspaceTabPendingLocation(tabId)
-    if (!currentTab || (currentTab.conversationId === conversationId && currentTab.title === title)) {
+    if (!currentTab || (currentTab.conversationId === conversationId && currentTab.title === title && currentTab.transient === state.transient)) {
       return
     }
     updateTabGroup((current) => ({
       ...current,
       tabs: current.tabs.map((tab) => (
         tab.id === tabId
-          ? { ...tab, conversationId, title }
+          ? { ...tab, conversationId, title, transient: state.transient }
           : tab
       )),
     }))
@@ -6817,11 +7160,11 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
       onClickCapture={suppressAIWorkspaceTabCloseInteraction}
       onDoubleClickCapture={suppressAIWorkspaceTabCloseInteraction}
       style={{
-        height: 36,
+        height: 40,
         display: 'flex',
         alignItems: 'stretch',
-        gap: 2,
-        padding: '0 6px',
+        gap: 0,
+        padding: '4px 6px 0',
         borderBottom: '1px solid var(--border)',
         background: 'var(--surface-base)',
         flexShrink: 0,
@@ -6846,20 +7189,27 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
         {tabGroup.tabs.map((tab: AIWorkspaceTab, index) => {
           const active = tab.id === activeTabId
           const running = Boolean(tabRequestIds[tab.id])
-          const tabLabel = String(index + 1)
+          const transient = tab.transient === true
+          const tabTitle = tab.title || t('新对话')
+          const tabLabel = `${index + 1}. ${tabTitle}${transient ? ` · ${t('临时会话')}` : ''}`
           return (
             <div
               key={tab.id}
               data-ai-workspace-tab-id={tab.id}
               style={{
                 flex: '0 0 auto',
-                minWidth: 0,
+                width: 176,
+                minWidth: 132,
+                maxWidth: 220,
                 display: 'flex',
                 alignItems: 'center',
-                borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
-                background: active ? 'rgba(var(--accent-rgb), 0.10)' : 'transparent',
+                border: `1px solid ${active ? 'var(--border)' : 'transparent'}`,
+                borderBottom: active ? '1px solid var(--surface-raised)' : '1px solid transparent',
+                borderRadius: '8px 8px 0 0',
+                background: active ? 'var(--surface-raised)' : 'transparent',
+                marginBottom: -1,
               }}>
-              <Tiptop text="双击关闭标签页" placement="bottom" style={{ display: 'flex', height: '100%' }}>
+              <Tiptop text={tabLabel} placement="bottom" style={{ display: 'flex', height: '100%', minWidth: 0, flex: 1 }}>
                 <button
                   type="button"
                   onClick={() => activateWorkspaceTab(tab.id)}
@@ -6879,13 +7229,14 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
                   }}
                   aria-label={tabLabel}
                   style={{
-                    minWidth: 30,
-                    flex: '0 0 auto',
+                    minWidth: 0,
+                    flex: '1 1 auto',
                     height: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '0 8px',
+                    justifyContent: 'flex-start',
+                    gap: 7,
+                    padding: '0 8px 0 10px',
                     border: 'none',
                     position: 'relative',
                     background: 'transparent',
@@ -6895,10 +7246,30 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
                     fontWeight: active ? 700 : 500,
                     fontVariantNumeric: 'tabular-nums',
                   }}>
-                  {running ? <span style={{ position: 'absolute', left: 6, width: 6, height: 6, borderRadius: 999, background: 'var(--accent)' }} /> : null}
-                  <span>{tabLabel}</span>
+                  {running ? <span aria-label={t('执行中')} style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--accent)', flexShrink: 0 }} /> : null}
+                  <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{index + 1}</span>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tabTitle}</span>
+                  {transient ? (
+                    <span title={t('临时会话')} style={{ flexShrink: 0, padding: '1px 5px', borderRadius: 4, background: 'rgba(var(--accent-rgb), 0.12)', color: 'var(--accent)', fontSize: 10, fontWeight: 600 }}>
+                      {t('临时会话')}
+                    </span>
+                  ) : null}
                 </button>
               </Tiptop>
+              {tabGroup.tabs.length > 1 ? (
+                <button
+                  type="button"
+                  aria-label={`${t('关闭')} ${tabTitle}`}
+                  title={t('关闭')}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    closeWorkspaceTab(tab.id)
+                  }}
+                  style={{ width: 24, height: 24, marginRight: 4, padding: 0, border: 'none', borderRadius: 5, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0, fontSize: 15, lineHeight: 1 }}>
+                  ×
+                </button>
+              ) : null}
             </div>
           )
         })}

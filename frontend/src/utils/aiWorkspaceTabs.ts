@@ -7,6 +7,7 @@ export interface AIWorkspaceTab {
   id: string
   conversationId: string
   title: string
+  transient?: boolean
 }
 
 export interface AIWorkspaceTabGroup {
@@ -42,6 +43,7 @@ function cloneTab(tab: AIWorkspaceTab): AIWorkspaceTab {
     id: tab.id,
     conversationId: tab.conversationId,
     title: tab.title,
+    transient: tab.transient === true,
   }
 }
 
@@ -87,6 +89,7 @@ export function normalizeAIWorkspaceTabGroup(value: unknown): AIWorkspaceTabGrou
       id,
       conversationId,
       title: typeof tab.title === 'string' ? tab.title.trim() : '',
+      transient: tab.transient === true,
     }]
   })
   const requestedActiveTabId = typeof source.activeTabId === 'string' ? source.activeTabId.trim() : ''
@@ -240,7 +243,14 @@ function retainAIWorkspaceTabPendingLocations(groups: Record<string, AIWorkspace
 export function getAllAIWorkspaceTabGroups(): Record<string, AIWorkspaceTabGroup> {
   return Object.fromEntries(
     Object.entries(createStore())
-      .map(([terminalId, value]) => [normalizeTerminalId(terminalId), normalizeAIWorkspaceTabGroup(value)] as const)
+      .map(([terminalId, value]) => {
+        const group = normalizeAIWorkspaceTabGroup(value)
+        const tabs = group.tabs.filter((tab) => tab.transient !== true)
+        return [normalizeTerminalId(terminalId), {
+          activeTabId: tabs.some((tab) => tab.id === group.activeTabId) ? group.activeTabId : (tabs[0]?.id || ''),
+          tabs,
+        }] as const
+      })
       .filter(([terminalId, group]) => terminalId && group.tabs.length > 0),
   )
 }

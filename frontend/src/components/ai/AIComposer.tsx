@@ -354,6 +354,8 @@ export interface AIComposerProps {
   collaborationPromptPresets?: unknown
   onCollaborationPromptPresetsChange?: (presets: unknown) => void
   collaborationPromptScopeIsTask?: boolean
+  temporarySessionEnabled?: boolean
+  onTemporarySessionEnabledChange?: (enabled: boolean) => void
   conversationInputLocked?: boolean
   conversationInputLockedLabel?: string
   collaborationStatus?: Record<string, unknown> | null
@@ -407,6 +409,8 @@ export default function AIComposer({
   collaborationPromptPresets = [],
   onCollaborationPromptPresetsChange,
   collaborationPromptScopeIsTask = false,
+  temporarySessionEnabled = false,
+  onTemporarySessionEnabledChange,
   conversationInputLocked = false,
   conversationInputLockedLabel = '',
   collaborationStatus = null,
@@ -2084,6 +2088,35 @@ export default function AIComposer({
                       transition: 'var(--transition)',
                     }}
                   />
+                </span>
+              </button>
+            </Tiptop>
+            <Tiptop text={t('开启后对话仅在本次软件运行期间保留')}>
+              <button
+                type="button"
+                aria-label={t('临时会话')}
+                aria-pressed={temporarySessionEnabled}
+                onClick={() => onTemporarySessionEnabledChange?.(!temporarySessionEnabled)}
+                style={{
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '0 10px',
+                  borderRadius: 8,
+                  border: `1px solid ${temporarySessionEnabled ? 'var(--accent-border)' : 'var(--border)'}`,
+                  background: temporarySessionEnabled ? 'rgba(var(--accent-rgb), 0.12)' : 'transparent',
+                  color: temporarySessionEnabled ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  transition: 'var(--transition)',
+                  whiteSpace: 'nowrap',
+                  cursor: typeof onTemporarySessionEnabledChange === 'function' ? 'pointer' : 'not-allowed',
+                  opacity: typeof onTemporarySessionEnabledChange === 'function' ? 1 : 0.45,
+                }}>
+                <span>{t('临时会话')}</span>
+                <span style={{ position: 'relative', width: 26, height: 16, borderRadius: 999, background: temporarySessionEnabled ? 'var(--accent)' : 'var(--border)', transition: 'var(--transition)', flexShrink: 0 }}>
+                  <span style={{ position: 'absolute', top: 2, left: temporarySessionEnabled ? 12 : 2, width: 12, height: 12, borderRadius: 999, background: '#fff', transition: 'var(--transition)' }} />
                 </span>
               </button>
             </Tiptop>

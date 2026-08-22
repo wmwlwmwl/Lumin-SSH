@@ -1398,6 +1398,20 @@ input::-ms-clear {
   filter: none;
 }
 
+.ai-conversation-row-action:hover,
+.ai-conversation-row-action:focus-visible {
+  color: var(--accent) !important;
+  background: rgba(var(--accent-rgb), 0.10) !important;
+  border-color: rgba(var(--accent-rgb), 0.22) !important;
+}
+
+.ai-conversation-row-action-danger:hover,
+.ai-conversation-row-action-danger:focus-visible {
+  color: var(--danger) !important;
+  background: var(--danger-dim) !important;
+  border-color: rgba(var(--danger-rgb), 0.28) !important;
+}
+
 .tiptop {
   position: relative;
   display: inline-flex;
