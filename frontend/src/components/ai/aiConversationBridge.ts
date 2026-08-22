@@ -7,6 +7,8 @@ function getAppBridge() {
 
 const AI_CONVERSATION_CHANGED_EVENT = 'lumin:ai-conversations-changed'
 
+export type AIExecuteApprovalMode = 'basic' | 'read_only' | 'all'
+
 const DEFAULT_TASK_SETTINGS = {
   currentProviderId: '',
   autoApprovalEnabled: false,
@@ -16,15 +18,13 @@ const DEFAULT_TASK_SETTINGS = {
   alwaysAllowWriteOutsideWorkspace: false,
   alwaysAllowWriteProtected: false,
   alwaysAllowExecute: false,
-  alwaysAllowExecuteReadOnly: false,
-  alwaysAllowExecuteAllCommands: false,
+  executeApprovalMode: 'basic' as AIExecuteApprovalMode,
   alwaysAllowMcp: false,
   alwaysAllowModeSwitch: false,
   alwaysAllowSubtasks: false,
   alwaysAllowFollowupQuestions: false,
 }
 
-/** 对话摘要（normalizeAIConversationSummary 输出） */
 export type AIConversationSummary = {
   id: string
   title: string
@@ -42,7 +42,6 @@ export type AIConversationSummary = {
   archived: boolean
 }
 
-/** 对话任务设置（normalizeAIConversationTaskSettings 输出） */
 export type AIConversationTaskSettings = {
   currentProviderId: string
   autoApprovalEnabled: boolean
@@ -52,8 +51,7 @@ export type AIConversationTaskSettings = {
   alwaysAllowWriteOutsideWorkspace: boolean
   alwaysAllowWriteProtected: boolean
   alwaysAllowExecute: boolean
-  alwaysAllowExecuteReadOnly: boolean
-  alwaysAllowExecuteAllCommands: boolean
+  executeApprovalMode: AIExecuteApprovalMode
   alwaysAllowMcp: boolean
   alwaysAllowModeSwitch: boolean
   alwaysAllowSubtasks: boolean
@@ -253,19 +251,23 @@ export function normalizeAIConversationTaskSettings(settings: unknown): AIConver
   const alwaysAllowReadOnly = Boolean(s.alwaysAllowReadOnly)
   const alwaysAllowWrite = Boolean(s.alwaysAllowWrite)
   const alwaysAllowExecute = Boolean(s.alwaysAllowExecute)
-  const alwaysAllowExecuteReadOnly = Boolean(s.alwaysAllowExecuteReadOnly)
+  const rawExecuteApprovalMode = typeof s.executeApprovalMode === 'string' ? s.executeApprovalMode.trim() : ''
+  const executeApprovalMode: AIExecuteApprovalMode = rawExecuteApprovalMode === 'read_only'
+    ? 'read_only'
+    : rawExecuteApprovalMode === 'all'
+      ? 'all'
+      : 'basic'
 
   return {
     currentProviderId: typeof s.currentProviderId === 'string' ? s.currentProviderId.trim() : '',
-    autoApprovalEnabled: alwaysAllowReadOnly || alwaysAllowWrite || alwaysAllowExecute || alwaysAllowExecuteReadOnly,
+    autoApprovalEnabled: alwaysAllowReadOnly || alwaysAllowWrite || alwaysAllowExecute,
     alwaysAllowReadOnly,
     alwaysAllowReadOnlyOutsideWorkspace: Boolean(s.alwaysAllowReadOnlyOutsideWorkspace),
     alwaysAllowWrite,
     alwaysAllowWriteOutsideWorkspace: Boolean(s.alwaysAllowWriteOutsideWorkspace),
     alwaysAllowWriteProtected: Boolean(s.alwaysAllowWriteProtected),
     alwaysAllowExecute,
-    alwaysAllowExecuteReadOnly,
-    alwaysAllowExecuteAllCommands: false,
+    executeApprovalMode,
     alwaysAllowMcp: Boolean(s.alwaysAllowMcp),
     alwaysAllowModeSwitch: Boolean(s.alwaysAllowModeSwitch),
     alwaysAllowSubtasks: Boolean(s.alwaysAllowSubtasks),

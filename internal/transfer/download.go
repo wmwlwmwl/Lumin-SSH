@@ -367,6 +367,11 @@ func extractTarGzArchive(ctx context.Context, archivePath string, destinationDir
 				return err
 			}
 		case tar.TypeSymlink:
+			// 校验符号链接目标解析后仍落在解压目录内，防止恶意包借链接写出界
+			linkDest := filepath.Clean(filepath.Join(filepath.Dir(cleanTargetPath), filepath.FromSlash(header.Linkname)))
+			if linkDest != cleanDestination && !strings.HasPrefix(linkDest, cleanDestination+string(os.PathSeparator)) {
+				return fmt.Errorf("archive symlink escapes destination: %s", header.Name)
+			}
 			if err := os.MkdirAll(filepath.Dir(cleanTargetPath), 0o755); err != nil {
 				return err
 			}

@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Copy install command",
   "安装命令已复制": "Install command copied",
   "安装完成后请重新连接会话": "Reconnect the session after installation",
+  "执行规则": "enforce rules",
+  "基本规则": "Basic rules",
+  "全部批准": "All approved",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Basic rules are executed according to the command whitelist, read-only approval retains the change command whitelist, and all approval automatically releases all commands.",
+  "当前启用时可以自动执行的命令前缀.": "Command prefixes that can be automatically executed when currently enabled.",
 } satisfies I18nDict;

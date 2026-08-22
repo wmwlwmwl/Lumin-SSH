@@ -75,6 +75,7 @@ type PendingToolBatch struct {
 	AssistantRetryCount            int
 	CollaborationRetryCount        int
 	SuppressNextCommandActionSound bool
+	DuplicateToolCount             int
 	AutoApprovalSettings           AIConversationTaskSettings
 	AutoApprovalSettingsRefreshed  bool
 	ForceCollaboration             bool
@@ -787,7 +788,7 @@ func findLongestAICommandPatternMatch(command string, patterns []string) string 
 		if lowerPattern == "" {
 			continue
 		}
-		if lowerPattern == "*" || strings.HasPrefix(trimmedCommand, lowerPattern) {
+		if strings.HasPrefix(trimmedCommand, lowerPattern) {
 			if longestMatch == "" || aiJSStringLength(lowerPattern) > aiJSStringLength(longestMatch) {
 				longestMatch = lowerPattern
 			}
@@ -1214,13 +1215,19 @@ func stripFirstAIRedirection(command string) string {
 	return command[:match[0]] + command[match[1]:]
 }
 
-func getAISingleCommandDecision(command string, allowedCommands []string, deniedCommands []string) aiApprovalDecision {
+func getAISingleCommandDecision(command string, allowedCommands []string, deniedCommands []string, allowAll bool) aiApprovalDecision {
 	if command == "" {
 		return aiApprovalDecisionAutoApprove
 	}
 
 	longestAllowedMatch := findLongestAICommandPatternMatch(command, allowedCommands)
 	longestDeniedMatch := findLongestAICommandPatternMatch(command, deniedCommands)
+	if allowAll {
+		if longestDeniedMatch != "" {
+			return aiApprovalDecisionAutoDeny
+		}
+		return aiApprovalDecisionAutoApprove
+	}
 
 	if longestAllowedMatch != "" && longestDeniedMatch == "" {
 		return aiApprovalDecisionAutoApprove
@@ -1237,7 +1244,7 @@ func getAISingleCommandDecision(command string, allowedCommands []string, denied
 	return aiApprovalDecisionAskUser
 }
 
-func getAICommandDecision(command string, allowedCommands []string, deniedCommands []string) aiApprovalDecision {
+func getAICommandDecision(command string, allowedCommands []string, deniedCommands []string, allowAll bool) aiApprovalDecision {
 	if strings.TrimSpace(command) == "" {
 		return aiApprovalDecisionAutoApprove
 	}
@@ -1246,7 +1253,7 @@ func getAICommandDecision(command string, allowedCommands []string, deniedComman
 	decisions := make([]aiApprovalDecision, 0, len(subCommands))
 	for _, subCommand := range subCommands {
 		commandWithoutRedirection := strings.TrimSpace(stripFirstAIRedirection(subCommand))
-		decisions = append(decisions, getAISingleCommandDecision(commandWithoutRedirection, allowedCommands, deniedCommands))
+		decisions = append(decisions, getAISingleCommandDecision(commandWithoutRedirection, allowedCommands, deniedCommands, allowAll))
 	}
 
 	for _, decision := range decisions {
@@ -1280,12 +1287,10 @@ func getAIExecuteCommandDecision(settings AIConversationTaskSettings, command st
 	}
 
 	deniedCommands := normalizeAICommandList(settings.DeniedCommands)
-	if strings.TrimSpace(rawIsMutating) != "1" && settings.AlwaysAllowExecuteReadOnly {
-		return getAICommandDecision(command, []string{"*"}, deniedCommands)
-	}
-
 	allowedCommands := normalizeAICommandList(settings.AllowedCommands)
-	return getAICommandDecision(command, allowedCommands, deniedCommands)
+	executeApprovalMode := normalizeAIExecuteApprovalMode(settings.ExecuteApprovalMode)
+	allowAll := executeApprovalMode == "all" || (executeApprovalMode == "read_only" && strings.TrimSpace(rawIsMutating) != "1")
+	return getAICommandDecision(command, allowedCommands, deniedCommands, allowAll)
 }
 
 func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiParsedToolUse) aiApprovalDecision {
@@ -1537,7 +1542,6 @@ func sanitizeAIAssistantToolProtocolText(content string) string {
 	text = fixAIBareToolOpenTags(text)
 	text = aiToolProtocolWrapperTagPattern.ReplaceAllString(text, "")
 	text = aiToolProtocolStreamJunkPattern.ReplaceAllString(text, "")
-	text = removeAIDuplicateToolXML(text)
 	return strings.TrimSpace(text)
 }
 
@@ -1573,22 +1577,28 @@ func isAIAssistantToolProtocolIgnorableRemainder(remaining string) bool {
 }
 
 func parseAssistantToolUses(content string) ([]aiParsedToolUse, error) {
+	tools, _, err := parseAssistantToolUsesWithDuplicateCount(content)
+	return tools, err
+}
+
+func parseAssistantToolUsesWithDuplicateCount(content string) ([]aiParsedToolUse, int, error) {
 	trimmedContent := sanitizeAIAssistantToolProtocolText(content)
 	if trimmedContent == "" {
-		return nil, fmt.Errorf("assistant response did not contain any tool calls")
+		return nil, 0, fmt.Errorf("assistant response did not contain any tool calls")
 	}
-	parsedTools := dedupeParsedToolUses(parseToolUsesFromXML(trimmedContent))
+	allParsedTools := parseToolUsesFromXML(trimmedContent)
+	parsedTools, duplicateToolCount := dedupeParsedToolUsesWithCount(allParsedTools)
 	if len(parsedTools) == 0 {
-		return nil, fmt.Errorf("assistant response did not contain any recognized tool calls")
+		return nil, 0, fmt.Errorf("assistant response did not contain any recognized tool calls")
 	}
-	remainingText := stripParsedToolUsesFromText(trimmedContent, parsedTools)
+	remainingText := stripParsedToolUsesFromText(trimmedContent, allParsedTools)
 	if remainingText != "" && !isAIAssistantToolProtocolIgnorableRemainder(remainingText) {
-		return nil, fmt.Errorf("assistant response must contain only direct tool calls with no extra text or XML container")
+		return nil, duplicateToolCount, fmt.Errorf("assistant response must contain only direct tool calls with no extra text or XML container")
 	}
 	if err := validateAIStandaloneOnlyBatchTools(parsedTools); err != nil {
-		return nil, err
+		return nil, duplicateToolCount, err
 	}
-	return parsedTools, nil
+	return parsedTools, duplicateToolCount, nil
 }
 
 func isAIStandaloneOnlyBatchTool(name string) bool {
@@ -1705,55 +1715,66 @@ Do not add explanation or recovery commentary outside the tool reply.
 Output the tool reply and stop.`, trimmedDetail))
 }
 
-func buildParsedToolUseDedupeKey(tool aiParsedToolUse) string {
-	name := strings.TrimSpace(tool.Name)
-	params := tool.Params
-	if params == nil {
-		params = map[string]string{}
+func buildAIDuplicateToolProtocolConflictMessage(duplicateToolCount int) string {
+	if duplicateToolCount <= 0 {
+		return ""
 	}
-	switch name {
-	case "read_file":
-		return strings.Join([]string{
-			name,
-			strings.TrimSpace(params["session_id"]),
-			strings.TrimSpace(params["path"]),
-			strings.TrimSpace(params["start_line"]),
-			strings.TrimSpace(params["end_line"]),
-		}, "\n")
-	case "list_files":
-		return strings.Join([]string{
-			name,
-			strings.TrimSpace(params["session_id"]),
-			strings.TrimSpace(params["path"]),
-			strings.ToLower(strings.TrimSpace(params["recursive"])),
-		}, "\n")
-	case "list_connected_sessions":
-		return name
-	case "live_search":
-		return strings.Join([]string{
-			name,
-			strings.TrimSpace(params["query"]),
-		}, "\n")
-	default:
-		paramBytes, _ := json.Marshal(params)
-		return name + "\n" + string(paramBytes)
+	envelopeLabel := "duplicate top-level tool XML element was"
+	if duplicateToolCount != 1 {
+		envelopeLabel = "duplicate top-level tool XML elements were"
 	}
+	return strings.TrimSpace(fmt.Sprintf(`[SYSTEM_TOOL_PROTOCOL_CONFLICT]
+The current host uses direct XML tool calls as its only authoritative tool protocol. %d %s detected in the same assistant response because the complete RawXML string was exactly identical to an earlier tool call. Later duplicate tool call(s) were ignored; the first occurrence was retained.
+This indicates a protocol compatibility conflict between the current host XML protocol and an additional provider or model response protocol. Do not repeat the ignored tool call(s). Do not emit native tool_calls/function calling, commentary/final_answer copies, extra XML containers, or duplicate XML tool tags. Continue with one direct XML tool tag per logical tool call.`, duplicateToolCount, envelopeLabel))
 }
 
-func dedupeParsedToolUses(tools []aiParsedToolUse) []aiParsedToolUse {
+func (a *App) emitAIDuplicateToolProtocolConflictMessage(requestID string, duplicateToolCount int) AIChatRequestMessage {
+	content := buildAIDuplicateToolProtocolConflictMessage(duplicateToolCount)
+	if content == "" {
+		return AIChatRequestMessage{}
+	}
+	a.emitAIChatEvent(map[string]interface{}{
+		"kind":      "api_message_append",
+		"requestId": requestID,
+		"message": map[string]interface{}{
+			"messageId": fmt.Sprintf("api-tool-protocol-conflict-%d", time.Now().UnixNano()),
+			"role":      "user",
+			"content":   content,
+			"ts":        time.Now().UnixMilli(),
+		},
+	})
+	return AIChatRequestMessage{Role: "user", Content: content}
+}
+
+func buildParsedToolUseDedupeKey(tool aiParsedToolUse) string {
+	return tool.RawXML
+}
+
+func dedupeParsedToolUsesWithCount(tools []aiParsedToolUse) ([]aiParsedToolUse, int) {
 	if len(tools) <= 1 {
-		return tools
+		return tools, 0
 	}
 	seen := make(map[string]struct{}, len(tools))
 	deduped := make([]aiParsedToolUse, 0, len(tools))
+	duplicateToolCount := 0
 	for _, tool := range tools {
 		key := buildParsedToolUseDedupeKey(tool)
+		if key == "" {
+			deduped = append(deduped, tool)
+			continue
+		}
 		if _, exists := seen[key]; exists {
+			duplicateToolCount++
 			continue
 		}
 		seen[key] = struct{}{}
 		deduped = append(deduped, tool)
 	}
+	return deduped, duplicateToolCount
+}
+
+func dedupeParsedToolUses(tools []aiParsedToolUse) []aiParsedToolUse {
+	deduped, _ := dedupeParsedToolUsesWithCount(tools)
 	return deduped
 }
 
@@ -2568,7 +2589,7 @@ func buildToolPreviewMessages(turnID string, tools []aiParsedToolUse) []map[stri
 	return messages
 }
 
-func (a *App) executeParsedToolUses(requestID string, assistantMessageID string, payload AIChatRequestPayload, profile AIProviderProfile, tools []aiParsedToolUse) []AIChatRequestMessage {
+func (a *App) executeParsedToolUses(requestID string, assistantMessageID string, payload AIChatRequestPayload, profile AIProviderProfile, tools []aiParsedToolUse, duplicateToolCount int) []AIChatRequestMessage {
 	if a == nil {
 		return nil
 	}
@@ -2682,6 +2703,9 @@ func (a *App) executeParsedToolUses(requestID string, assistantMessageID string,
 		}
 	}
 
+	if duplicateToolCount > 0 {
+		results = append(results, a.emitAIDuplicateToolProtocolConflictMessage(requestID, duplicateToolCount))
+	}
 	a.emitAIChatToolExecutionPersistRequested(requestID)
 	return results
 }
@@ -2702,7 +2726,7 @@ func (a *App) requestAIProviderChatRound(ctx context.Context, requestID string, 
 
 func (a *App) continueCompatibleAIChatAfterTools(ctx context.Context, requestID string, batch *aiPendingToolBatch) {
 	requestMessages := append([]AIChatRequestMessage{}, batch.RequestMessages...)
-	requestMessages = append(requestMessages, a.executeParsedToolUses(requestID, batch.AssistantMessageID, batch.Payload, batch.Profile, batch.ParsedTools)...)
+	requestMessages = append(requestMessages, a.executeParsedToolUses(requestID, batch.AssistantMessageID, batch.Payload, batch.Profile, batch.ParsedTools, batch.DuplicateToolCount)...)
 
 	nextAssistantMessageID := fmt.Sprintf("%s-cont-%d", requestID, time.Now().UnixNano())
 	a.emitAIChatEvent(map[string]interface{}{
@@ -2823,7 +2847,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			continue
 		}
 
-		parsedTools, parseErr := parseAssistantToolUses(roundResult.Text)
+		parsedTools, duplicateToolCount, parseErr := parseAssistantToolUsesWithDuplicateCount(roundResult.Text)
 		if parseErr == nil {
 			parseErr = validateAIParsedToolScope(payload.ToolScope, parsedTools)
 		}
@@ -3033,6 +3057,7 @@ func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, pay
 			RequestMessages:          requestMessages,
 			ParsedTools:              parsedTools,
 			NextToolIndex:            0,
+			DuplicateToolCount:       duplicateToolCount,
 			AssistantRetryCount:      assistantRetryCount,
 			CollaborationRetryCount:  collaborationRetryCount,
 			AutoApprovalSettings:     autoApprovalSettings,

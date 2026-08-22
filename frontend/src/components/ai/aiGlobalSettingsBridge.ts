@@ -14,7 +14,8 @@ export type ApprovalButtonOrder = 'reject-approve' | 'approve-reject'
 /** 命令操作按钮顺序 */
 export type CommandActionButtonOrder = 'terminate-continue' | 'continue-terminate'
 
-/** 归一化后的 AI 全局设置（normalizeAIGlobalSettings 输出；type 而非 interface 以兼容消费方索引签名） */
+export type ExecuteApprovalMode = 'basic' | 'read_only' | 'all'
+
 export type AIGlobalSettings = {
   currentProviderId: string
   autoApprovalEnabled: boolean
@@ -24,8 +25,7 @@ export type AIGlobalSettings = {
   alwaysAllowWriteOutsideWorkspace: boolean
   alwaysAllowWriteProtected: boolean
   alwaysAllowExecute: boolean
-  alwaysAllowExecuteReadOnly: boolean
-  alwaysAllowExecuteAllCommands: boolean
+  executeApprovalMode: ExecuteApprovalMode
   allowedCommands: string[]
   deniedCommands: string[]
   slashCommands: AISlashCommand[]
@@ -64,8 +64,7 @@ const DEFAULT_AI_GLOBAL_SETTINGS: AIGlobalSettings = {
   alwaysAllowWriteOutsideWorkspace: false,
   alwaysAllowWriteProtected: false,
   alwaysAllowExecute: false,
-  alwaysAllowExecuteReadOnly: false,
-  alwaysAllowExecuteAllCommands: false,
+  executeApprovalMode: 'basic',
   allowedCommands: [],
   deniedCommands: [],
   slashCommands: [],
@@ -231,7 +230,12 @@ export function normalizeAIGlobalSettings(settings: unknown): AIGlobalSettings {
   const alwaysAllowReadOnly = Boolean(s.alwaysAllowReadOnly)
   const alwaysAllowWrite = Boolean(s.alwaysAllowWrite)
   const alwaysAllowExecute = Boolean(s.alwaysAllowExecute)
-  const alwaysAllowExecuteReadOnly = Boolean(s.alwaysAllowExecuteReadOnly)
+  const rawExecuteApprovalMode = typeof s.executeApprovalMode === 'string' ? s.executeApprovalMode.trim() : ''
+  const executeApprovalMode: ExecuteApprovalMode = rawExecuteApprovalMode === 'read_only'
+    ? 'read_only'
+    : rawExecuteApprovalMode === 'all'
+      ? 'all'
+      : 'basic'
   const allowedCommands = normalizeStringList(s.allowedCommands)
   const deniedCommands = normalizeStringList(s.deniedCommands)
   const slashCommands = normalizeAISlashCommands(s.slashCommands)
@@ -255,8 +259,7 @@ export function normalizeAIGlobalSettings(settings: unknown): AIGlobalSettings {
     alwaysAllowWriteOutsideWorkspace: Boolean(s.alwaysAllowWriteOutsideWorkspace),
     alwaysAllowWriteProtected: Boolean(s.alwaysAllowWriteProtected),
     alwaysAllowExecute,
-    alwaysAllowExecuteReadOnly,
-    alwaysAllowExecuteAllCommands: allowedCommands.includes('*'),
+    executeApprovalMode,
     allowedCommands,
     deniedCommands,
     slashCommands,

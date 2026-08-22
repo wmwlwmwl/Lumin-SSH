@@ -21,8 +21,7 @@ type AIConversationTaskSettings struct {
 	AlwaysAllowWriteOutsideWorkspace    bool     `json:"alwaysAllowWriteOutsideWorkspace"`
 	AlwaysAllowWriteProtected           bool     `json:"alwaysAllowWriteProtected"`
 	AlwaysAllowExecute                  bool     `json:"alwaysAllowExecute"`
-	AlwaysAllowExecuteReadOnly          bool     `json:"alwaysAllowExecuteReadOnly"`
-	AlwaysAllowExecuteAllCommands       bool     `json:"alwaysAllowExecuteAllCommands"`
+	ExecuteApprovalMode                 string   `json:"executeApprovalMode"`
 	AllowedCommands                     []string `json:"allowedCommands,omitempty"`
 	DeniedCommands                      []string `json:"deniedCommands,omitempty"`
 	AlwaysAllowMcp                      bool     `json:"alwaysAllowMcp"`
@@ -41,41 +40,41 @@ type AIConversationFollowUpOption struct {
 }
 
 type AIConversationFollowUpQuestion struct {
-	ID      string                       `json:"id,omitempty"`
-	Text    string                       `json:"text,omitempty"`
-	Type    string                       `json:"type,omitempty"`
+	ID      string                         `json:"id,omitempty"`
+	Text    string                         `json:"text,omitempty"`
+	Type    string                         `json:"type,omitempty"`
 	Options []AIConversationFollowUpOption `json:"options,omitempty"`
 }
 
 type AIConversationMessage struct {
-	ID                 string                       `json:"id,omitempty"`
-	TurnID             string                       `json:"turnId,omitempty"`
-	Kind               string                       `json:"kind"`
-	Text               string                       `json:"text,omitempty"`
-	Time               string                       `json:"time,omitempty"`
-	Metrics            []string                     `json:"metrics,omitempty"`
-	Streaming          bool                         `json:"streaming,omitempty"`
-	Duration           string                       `json:"duration,omitempty"`
-	ActionLabel        string                       `json:"actionLabel,omitempty"`
-	Title              string                       `json:"title,omitempty"`
-	Summary            string                       `json:"summary,omitempty"`
-	Code               string                       `json:"code,omitempty"`
-	Status             string                       `json:"status,omitempty"`
-	Result             string                       `json:"result,omitempty"`
-	RemainingFileEdits int                          `json:"remainingFileEdits,omitempty"`
-	Purpose            string                       `json:"purpose,omitempty"`
-	Command            string                       `json:"command,omitempty"`
-	Output             string                       `json:"output,omitempty"`
-	Images             []string                     `json:"images,omitempty"`
-	ServerName         string                       `json:"serverName,omitempty"`
-	ToolName           string                       `json:"toolName,omitempty"`
-	Args               string                       `json:"args,omitempty"`
-	Response           string                       `json:"response,omitempty"`
-	RequestID          string                       `json:"requestId,omitempty"`
-	Question           string                       `json:"question,omitempty"`
+	ID                 string                           `json:"id,omitempty"`
+	TurnID             string                           `json:"turnId,omitempty"`
+	Kind               string                           `json:"kind"`
+	Text               string                           `json:"text,omitempty"`
+	Time               string                           `json:"time,omitempty"`
+	Metrics            []string                         `json:"metrics,omitempty"`
+	Streaming          bool                             `json:"streaming,omitempty"`
+	Duration           string                           `json:"duration,omitempty"`
+	ActionLabel        string                           `json:"actionLabel,omitempty"`
+	Title              string                           `json:"title,omitempty"`
+	Summary            string                           `json:"summary,omitempty"`
+	Code               string                           `json:"code,omitempty"`
+	Status             string                           `json:"status,omitempty"`
+	Result             string                           `json:"result,omitempty"`
+	RemainingFileEdits int                              `json:"remainingFileEdits,omitempty"`
+	Purpose            string                           `json:"purpose,omitempty"`
+	Command            string                           `json:"command,omitempty"`
+	Output             string                           `json:"output,omitempty"`
+	Images             []string                         `json:"images,omitempty"`
+	ServerName         string                           `json:"serverName,omitempty"`
+	ToolName           string                           `json:"toolName,omitempty"`
+	Args               string                           `json:"args,omitempty"`
+	Response           string                           `json:"response,omitempty"`
+	RequestID          string                           `json:"requestId,omitempty"`
+	Question           string                           `json:"question,omitempty"`
 	Questions          []AIConversationFollowUpQuestion `json:"questions,omitempty"`
-	Suggestions        []string                     `json:"suggestions,omitempty"`
-	Extra              map[string]interface{}       `json:"extra,omitempty"`
+	Suggestions        []string                         `json:"suggestions,omitempty"`
+	Extra              map[string]interface{}           `json:"extra,omitempty"`
 }
 
 type AIConversationOpenAIResponsesCacheObject struct {
@@ -91,49 +90,49 @@ type AIConversationProviderCacheObjects struct {
 }
 
 type AIConversationAPIMessage struct {
-	Role         string                            `json:"role"`
-	Content      string                            `json:"content"`
-	MessageID    string                            `json:"messageId,omitempty"`
-	UIMessageIDs []string                          `json:"uiMessageIds,omitempty"`
-	Images       []string                          `json:"images,omitempty"`
+	Role         string                              `json:"role"`
+	Content      string                              `json:"content"`
+	MessageID    string                              `json:"messageId,omitempty"`
+	UIMessageIDs []string                            `json:"uiMessageIds,omitempty"`
+	Images       []string                            `json:"images,omitempty"`
 	CacheObjects *AIConversationProviderCacheObjects `json:"cacheObjects,omitempty"`
-	Ts           int64                             `json:"ts,omitempty"`
+	Ts           int64                               `json:"ts,omitempty"`
 }
 
 type AIConversationSummary struct {
-	ID                        string `json:"id"`
-	Title                     string `json:"title"`
-	CreatedAt                 int64  `json:"createdAt"`
-	UpdatedAt                 int64  `json:"updatedAt"`
-	Status                    string `json:"status"`
-	ToolProtocol              string `json:"toolProtocol"`
-	MessageCount              int    `json:"messageCount"`
+	ID                         string `json:"id"`
+	Title                      string `json:"title"`
+	CreatedAt                  int64  `json:"createdAt"`
+	UpdatedAt                  int64  `json:"updatedAt"`
+	Status                     string `json:"status"`
+	ToolProtocol               string `json:"toolProtocol"`
+	MessageCount               int    `json:"messageCount"`
 	PromptCacheBypassTimestamp string `json:"promptCacheBypassTimestamp,omitempty"`
-	ParentConversationID      string `json:"parentConversationId,omitempty"`
-	RootConversationID        string `json:"rootConversationId,omitempty"`
-	RelationType              string `json:"relationType,omitempty"`
-	RelationSource            string `json:"relationSource,omitempty"`
-	ParentTitleSnapshot       string `json:"parentTitleSnapshot,omitempty"`
-	Archived                  bool   `json:"archived,omitempty"`
+	ParentConversationID       string `json:"parentConversationId,omitempty"`
+	RootConversationID         string `json:"rootConversationId,omitempty"`
+	RelationType               string `json:"relationType,omitempty"`
+	RelationSource             string `json:"relationSource,omitempty"`
+	ParentTitleSnapshot        string `json:"parentTitleSnapshot,omitempty"`
+	Archived                   bool   `json:"archived,omitempty"`
 }
 
 type AIConversationSnapshot struct {
-	ID                        string                     `json:"id"`
-	Title                     string                     `json:"title"`
-	CreatedAt                 int64                      `json:"createdAt"`
-	UpdatedAt                 int64                      `json:"updatedAt"`
-	Status                    string                     `json:"status"`
-	ToolProtocol              string                     `json:"toolProtocol"`
+	ID                         string                     `json:"id"`
+	Title                      string                     `json:"title"`
+	CreatedAt                  int64                      `json:"createdAt"`
+	UpdatedAt                  int64                      `json:"updatedAt"`
+	Status                     string                     `json:"status"`
+	ToolProtocol               string                     `json:"toolProtocol"`
 	PromptCacheBypassTimestamp string                     `json:"promptCacheBypassTimestamp,omitempty"`
-	ParentConversationID      string                     `json:"parentConversationId,omitempty"`
-	RootConversationID        string                     `json:"rootConversationId,omitempty"`
-	RelationType              string                     `json:"relationType,omitempty"`
-	RelationSource            string                     `json:"relationSource,omitempty"`
-	ParentTitleSnapshot       string                     `json:"parentTitleSnapshot,omitempty"`
-	Archived                  bool                       `json:"archived,omitempty"`
-	Messages                  []AIConversationMessage    `json:"messages"`
-	APIMessages               []AIConversationAPIMessage `json:"apiMessages"`
-	Settings                  AIConversationTaskSettings `json:"settings"`
+	ParentConversationID       string                     `json:"parentConversationId,omitempty"`
+	RootConversationID         string                     `json:"rootConversationId,omitempty"`
+	RelationType               string                     `json:"relationType,omitempty"`
+	RelationSource             string                     `json:"relationSource,omitempty"`
+	ParentTitleSnapshot        string                     `json:"parentTitleSnapshot,omitempty"`
+	Archived                   bool                       `json:"archived,omitempty"`
+	Messages                   []AIConversationMessage    `json:"messages"`
+	APIMessages                []AIConversationAPIMessage `json:"apiMessages"`
+	Settings                   AIConversationTaskSettings `json:"settings"`
 }
 
 func defaultAIConversationTaskSettings(globalSettings AIGlobalSettings) AIConversationTaskSettings {
@@ -146,8 +145,7 @@ func defaultAIConversationTaskSettings(globalSettings AIGlobalSettings) AIConver
 		AlwaysAllowWriteOutsideWorkspace:    globalSettings.AlwaysAllowWriteOutsideWorkspace,
 		AlwaysAllowWriteProtected:           globalSettings.AlwaysAllowWriteProtected,
 		AlwaysAllowExecute:                  globalSettings.AlwaysAllowExecute,
-		AlwaysAllowExecuteReadOnly:          globalSettings.AlwaysAllowExecuteReadOnly,
-		AlwaysAllowExecuteAllCommands:       globalSettings.AlwaysAllowExecuteAllCommands,
+		ExecuteApprovalMode:                 globalSettings.ExecuteApprovalMode,
 		AlwaysAllowMcp:                      globalSettings.AlwaysAllowMcp,
 		AlwaysAllowModeSwitch:               globalSettings.AlwaysAllowModeSwitch,
 		AlwaysAllowSubtasks:                 globalSettings.AlwaysAllowSubtasks,
@@ -161,7 +159,7 @@ func normalizeAIConversationTaskSettings(settings AIConversationTaskSettings) AI
 	settings.CollaborationExtraPrompt = strings.TrimSpace(strings.ReplaceAll(settings.CollaborationExtraPrompt, "\r\n", "\n"))
 	settings.AllowedCommands = normalizeAIStringList(settings.AllowedCommands)
 	settings.DeniedCommands = normalizeAIStringList(settings.DeniedCommands)
-	settings.AlwaysAllowExecuteAllCommands = containsAICommandWildcard(settings.AllowedCommands)
+	settings.ExecuteApprovalMode = normalizeAIExecuteApprovalMode(settings.ExecuteApprovalMode)
 	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute
 	return settings
 }
@@ -564,20 +562,20 @@ func (c *ConfigManager) writeAIConversationSnapshot(snapshot AIConversationSnaps
 	}
 
 	summary := normalizeAIConversationSummary(AIConversationSummary{
-		ID:                        snapshot.ID,
-		Title:                     snapshot.Title,
-		CreatedAt:                 snapshot.CreatedAt,
-		UpdatedAt:                 snapshot.UpdatedAt,
-		Status:                    snapshot.Status,
-		ToolProtocol:              snapshot.ToolProtocol,
-		MessageCount:              len(snapshot.Messages),
+		ID:                         snapshot.ID,
+		Title:                      snapshot.Title,
+		CreatedAt:                  snapshot.CreatedAt,
+		UpdatedAt:                  snapshot.UpdatedAt,
+		Status:                     snapshot.Status,
+		ToolProtocol:               snapshot.ToolProtocol,
+		MessageCount:               len(snapshot.Messages),
 		PromptCacheBypassTimestamp: snapshot.PromptCacheBypassTimestamp,
-		ParentConversationID:      snapshot.ParentConversationID,
-		RootConversationID:        snapshot.RootConversationID,
-		RelationType:              snapshot.RelationType,
-		RelationSource:            snapshot.RelationSource,
-		ParentTitleSnapshot:       snapshot.ParentTitleSnapshot,
-		Archived:                  snapshot.Archived,
+		ParentConversationID:       snapshot.ParentConversationID,
+		RootConversationID:         snapshot.RootConversationID,
+		RelationType:               snapshot.RelationType,
+		RelationSource:             snapshot.RelationSource,
+		ParentTitleSnapshot:        snapshot.ParentTitleSnapshot,
+		Archived:                   snapshot.Archived,
 	})
 
 	metadataBytes, err := marshalAIConversationJSON(summary)
@@ -652,16 +650,16 @@ func (c *ConfigManager) CreateAIConversation(title string) (AIConversationSnapsh
 
 	globalSettings := c.GetAIGlobalSettings()
 	snapshot := normalizeAIConversationSnapshot(AIConversationSnapshot{
-		ID:                        aiConversationID(),
-		Title:                     strings.TrimSpace(title),
-		CreatedAt:                 time.Now().UnixMilli(),
-		UpdatedAt:                 time.Now().UnixMilli(),
-		Status:                    "idle",
-		ToolProtocol:              "xml",
+		ID:                         aiConversationID(),
+		Title:                      strings.TrimSpace(title),
+		CreatedAt:                  time.Now().UnixMilli(),
+		UpdatedAt:                  time.Now().UnixMilli(),
+		Status:                     "idle",
+		ToolProtocol:               "xml",
 		PromptCacheBypassTimestamp: formatAIPromptCacheBypassTimestamp(time.Now()),
-		Messages:                  []AIConversationMessage{},
-		APIMessages:               []AIConversationAPIMessage{},
-		Settings:                  defaultAIConversationTaskSettings(globalSettings),
+		Messages:                   []AIConversationMessage{},
+		APIMessages:                []AIConversationAPIMessage{},
+		Settings:                   defaultAIConversationTaskSettings(globalSettings),
 	}, defaultAIConversationTaskSettings(globalSettings))
 
 	c.mu.Lock()
@@ -692,22 +690,22 @@ func (c *ConfigManager) GetAIConversation(conversationID string) (AIConversation
 	}
 
 	snapshot := AIConversationSnapshot{
-		ID:                        summary.ID,
-		Title:                     summary.Title,
-		CreatedAt:                 summary.CreatedAt,
-		UpdatedAt:                 summary.UpdatedAt,
-		Status:                    summary.Status,
-		ToolProtocol:              summary.ToolProtocol,
+		ID:                         summary.ID,
+		Title:                      summary.Title,
+		CreatedAt:                  summary.CreatedAt,
+		UpdatedAt:                  summary.UpdatedAt,
+		Status:                     summary.Status,
+		ToolProtocol:               summary.ToolProtocol,
 		PromptCacheBypassTimestamp: summary.PromptCacheBypassTimestamp,
-		ParentConversationID:      summary.ParentConversationID,
-		RootConversationID:        summary.RootConversationID,
-		RelationType:              summary.RelationType,
-		RelationSource:            summary.RelationSource,
-		ParentTitleSnapshot:       summary.ParentTitleSnapshot,
-		Archived:                  summary.Archived,
-		Messages:                  c.readAIConversationMessages(conversationID),
-		APIMessages:               c.readAIConversationAPIMessages(conversationID),
-		Settings:                  c.readAIConversationSettings(conversationID, fallbackSettings),
+		ParentConversationID:       summary.ParentConversationID,
+		RootConversationID:         summary.RootConversationID,
+		RelationType:               summary.RelationType,
+		RelationSource:             summary.RelationSource,
+		ParentTitleSnapshot:        summary.ParentTitleSnapshot,
+		Archived:                   summary.Archived,
+		Messages:                   c.readAIConversationMessages(conversationID),
+		APIMessages:                c.readAIConversationAPIMessages(conversationID),
+		Settings:                   c.readAIConversationSettings(conversationID, fallbackSettings),
 	}
 
 	return normalizeAIConversationSnapshot(snapshot, fallbackSettings), nil

@@ -33,53 +33,52 @@ type AIProxyNode struct {
 }
 
 type AIGlobalSettings struct {
-	CurrentProviderID                   string           `json:"currentProviderId"`
-	AutoApprovalEnabled                 bool             `json:"autoApprovalEnabled"`
-	AlwaysAllowReadOnly                 bool             `json:"alwaysAllowReadOnly"`
-	AlwaysAllowReadOnlyOutsideWorkspace bool             `json:"alwaysAllowReadOnlyOutsideWorkspace"`
-	AlwaysAllowWrite                    bool             `json:"alwaysAllowWrite"`
-	AlwaysAllowWriteOutsideWorkspace    bool             `json:"alwaysAllowWriteOutsideWorkspace"`
-	AlwaysAllowWriteProtected           bool             `json:"alwaysAllowWriteProtected"`
-	AlwaysAllowExecute                  bool             `json:"alwaysAllowExecute"`
-	AlwaysAllowExecuteReadOnly          bool             `json:"alwaysAllowExecuteReadOnly"`
-	AlwaysAllowExecuteAllCommands       bool             `json:"alwaysAllowExecuteAllCommands"`
-	AllowedCommands                     []string         `json:"allowedCommands,omitempty"`
-	DeniedCommands                      []string         `json:"deniedCommands,omitempty"`
+	CurrentProviderID                   string                        `json:"currentProviderId"`
+	AutoApprovalEnabled                 bool                          `json:"autoApprovalEnabled"`
+	AlwaysAllowReadOnly                 bool                          `json:"alwaysAllowReadOnly"`
+	AlwaysAllowReadOnlyOutsideWorkspace bool                          `json:"alwaysAllowReadOnlyOutsideWorkspace"`
+	AlwaysAllowWrite                    bool                          `json:"alwaysAllowWrite"`
+	AlwaysAllowWriteOutsideWorkspace    bool                          `json:"alwaysAllowWriteOutsideWorkspace"`
+	AlwaysAllowWriteProtected           bool                          `json:"alwaysAllowWriteProtected"`
+	AlwaysAllowExecute                  bool                          `json:"alwaysAllowExecute"`
+	ExecuteApprovalMode                 string                        `json:"executeApprovalMode"`
+	AllowedCommands                     []string                      `json:"allowedCommands,omitempty"`
+	DeniedCommands                      []string                      `json:"deniedCommands,omitempty"`
 	SlashCommands                       []AISlashCommand              `json:"slashCommands,omitempty"`
 	CollaborationPromptPresets          []AICollaborationPromptPreset `json:"collaborationPromptPresets,omitempty"`
 	CollaborationExtraPrompt            string                        `json:"collaborationExtraPrompt,omitempty"`
-	AlwaysAllowMcp                      bool             `json:"alwaysAllowMcp"`
-	AlwaysAllowModeSwitch               bool             `json:"alwaysAllowModeSwitch"`
-	AlwaysAllowSubtasks                 bool             `json:"alwaysAllowSubtasks"`
-	AlwaysAllowFollowupQuestions        bool             `json:"alwaysAllowFollowupQuestions"`
-	SoundEnabled                        bool             `json:"soundEnabled"`
-	SoundVolume                         float64          `json:"soundVolume,omitempty"`
-	MCPEnabled                          bool             `json:"mcpEnabled"`
-	MCPAllowBrowserCalls                bool             `json:"mcpAllowBrowserCalls"`
-	MCPRequireApproval                  bool             `json:"mcpRequireApproval"`
-	MCPActivityVisible                  bool             `json:"mcpActivityVisible"`
-	TerminalIsolation                   bool             `json:"terminalIsolation"`
-	ConfirmDelete                       bool             `json:"confirmDelete"`
-	ContinueAfterToolRejection          bool             `json:"continueAfterToolRejection"`
-	ConversationAutoBackupEnabled       bool             `json:"conversationAutoBackupEnabled"`
-	MessageActionBarAtBottom            bool             `json:"messageActionBarAtBottom"`
-	MessageNavEnabled                   bool             `json:"messageNavEnabled"`
-	ApprovalButtonOrder                 string           `json:"approvalButtonOrder"`
-	CommandActionButtonOrder            string           `json:"commandActionButtonOrder"`
-	ToolResultTokenThreshold            int              `json:"toolResultTokenThreshold,omitempty"`
-	AIRequestProxyID                    string           `json:"aiRequestProxyId,omitempty"`
-	UpdatedAt                           int64            `json:"updatedAt,omitempty"`
-	ProxyNodes                          []AIProxyNode    `json:"proxyNodes,omitempty"`
+	AlwaysAllowMcp                      bool                          `json:"alwaysAllowMcp"`
+	AlwaysAllowModeSwitch               bool                          `json:"alwaysAllowModeSwitch"`
+	AlwaysAllowSubtasks                 bool                          `json:"alwaysAllowSubtasks"`
+	AlwaysAllowFollowupQuestions        bool                          `json:"alwaysAllowFollowupQuestions"`
+	SoundEnabled                        bool                          `json:"soundEnabled"`
+	SoundVolume                         float64                       `json:"soundVolume,omitempty"`
+	MCPEnabled                          bool                          `json:"mcpEnabled"`
+	MCPAllowBrowserCalls                bool                          `json:"mcpAllowBrowserCalls"`
+	MCPRequireApproval                  bool                          `json:"mcpRequireApproval"`
+	MCPActivityVisible                  bool                          `json:"mcpActivityVisible"`
+	TerminalIsolation                   bool                          `json:"terminalIsolation"`
+	ConfirmDelete                       bool                          `json:"confirmDelete"`
+	ContinueAfterToolRejection          bool                          `json:"continueAfterToolRejection"`
+	ConversationAutoBackupEnabled       bool                          `json:"conversationAutoBackupEnabled"`
+	MessageActionBarAtBottom            bool                          `json:"messageActionBarAtBottom"`
+	MessageNavEnabled                   bool                          `json:"messageNavEnabled"`
+	ApprovalButtonOrder                 string                        `json:"approvalButtonOrder"`
+	CommandActionButtonOrder            string                        `json:"commandActionButtonOrder"`
+	ToolResultTokenThreshold            int                           `json:"toolResultTokenThreshold,omitempty"`
+	AIRequestProxyID                    string                        `json:"aiRequestProxyId,omitempty"`
+	UpdatedAt                           int64                         `json:"updatedAt,omitempty"`
+	ProxyNodes                          []AIProxyNode                 `json:"proxyNodes,omitempty"`
 }
 
 func defaultAIGlobalSettings() AIGlobalSettings {
 	return AIGlobalSettings{
-		SoundEnabled:              true,
-		SoundVolume:               0.06,
-		MCPEnabled:                true,
-		MCPAllowBrowserCalls:      false,
-		MCPRequireApproval:        false,
-		MCPActivityVisible:        false,
+		SoundEnabled:                  true,
+		SoundVolume:                   0.06,
+		MCPEnabled:                    true,
+		MCPAllowBrowserCalls:          false,
+		MCPRequireApproval:            false,
+		MCPActivityVisible:            false,
 		TerminalIsolation:             true,
 		ConfirmDelete:                 true,
 		ContinueAfterToolRejection:    true,
@@ -191,13 +190,15 @@ func normalizeAIStringList(values []string) []string {
 	return normalized
 }
 
-func containsAICommandWildcard(values []string) bool {
-	for _, value := range values {
-		if strings.TrimSpace(value) == "*" {
-			return true
-		}
+func normalizeAIExecuteApprovalMode(value string) string {
+	switch strings.TrimSpace(value) {
+	case "read_only":
+		return "read_only"
+	case "all":
+		return "all"
+	default:
+		return "basic"
 	}
-	return false
 }
 
 func normalizeAIApprovalButtonOrder(value string) string {
@@ -334,7 +335,7 @@ func normalizeAIGlobalSettings(settings AIGlobalSettings) AIGlobalSettings {
 	settings.CollaborationExtraPrompt = strings.TrimSpace(strings.ReplaceAll(settings.CollaborationExtraPrompt, "\r\n", "\n"))
 	settings.AllowedCommands = normalizeAIStringList(settings.AllowedCommands)
 	settings.DeniedCommands = normalizeAIStringList(settings.DeniedCommands)
-	settings.AlwaysAllowExecuteAllCommands = containsAICommandWildcard(settings.AllowedCommands)
+	settings.ExecuteApprovalMode = normalizeAIExecuteApprovalMode(settings.ExecuteApprovalMode)
 	settings.AutoApprovalEnabled = settings.AlwaysAllowReadOnly || settings.AlwaysAllowWrite || settings.AlwaysAllowExecute
 	settings.ApprovalButtonOrder = normalizeAIApprovalButtonOrder(settings.ApprovalButtonOrder)
 	settings.CommandActionButtonOrder = normalizeAICommandActionButtonOrder(settings.CommandActionButtonOrder)

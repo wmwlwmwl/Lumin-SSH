@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Kopiuj polecenie instalacji",
   "安装命令已复制": "Polecenie instalacji skopiowane",
   "安装完成后请重新连接会话": "Po instalacji ponownie połącz sesję",
+  "执行规则": "egzekwować zasady",
+  "基本规则": "Podstawowe zasady",
+  "全部批准": "Wszystko zatwierdzone",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Podstawowe reguły są wykonywane zgodnie z białą listą poleceń, zatwierdzenie tylko do odczytu zachowuje białą listę poleceń zmiany, a każde zatwierdzenie automatycznie zwalnia wszystkie polecenia.",
+  "当前启用时可以自动执行的命令前缀.": "Przedrostki poleceń, które mogą być wykonywane automatycznie, jeśli są aktualnie włączone.",
 } satisfies I18nDict;

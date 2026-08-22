@@ -86,9 +86,33 @@ func TestParseAssistantToolUses_RemovesDuplicateToolXML(t *testing.T) {
 	if len(tools) != 1 || tools[0].Name != "execute_command" {
 		t.Fatalf("unexpected tools: %+v", tools)
 	}
-	cleaned := sanitizeAIAssistantToolProtocolText(raw)
+	cleaned := removeAIDuplicateToolXML(raw)
 	if strings.Count(cleaned, "<execute_command>") != 1 {
 		t.Fatalf("duplicate tool XML was not removed: %q", cleaned)
+	}
+}
+
+func TestParseAssistantToolUsesWithDuplicateCount_UsesExactRawXML(t *testing.T) {
+	raw := `<list_files><path>/root</path></list_files><read_file><path>/root/a</path></read_file><list_files><path>/root</path></list_files>`
+	tools, duplicateCount, err := parseAssistantToolUsesWithDuplicateCount(raw)
+	if err != nil {
+		t.Fatalf("expected parse success, got %v", err)
+	}
+	if len(tools) != 2 || duplicateCount != 1 {
+		t.Fatalf("expected 2 unique tools and 1 duplicate, got %d and %d", len(tools), duplicateCount)
+	}
+	if tools[0].Name != "list_files" || tools[1].Name != "read_file" {
+		t.Fatalf("unexpected tools: %+v", tools)
+	}
+	whitespaceVariant := `<list_files><path>/root</path></list_files><list_files>
+<path>/root</path>
+</list_files>`
+	variantTools, variantDuplicateCount, err := parseAssistantToolUsesWithDuplicateCount(whitespaceVariant)
+	if err != nil {
+		t.Fatalf("expected whitespace variant parse success, got %v", err)
+	}
+	if len(variantTools) != 2 || variantDuplicateCount != 0 {
+		t.Fatalf("expected whitespace variant to remain distinct, got %d and %d", len(variantTools), variantDuplicateCount)
 	}
 }
 

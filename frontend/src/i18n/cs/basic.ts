@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Zkopírovat instalační příkaz",
   "安装命令已复制": "Instalační příkaz zkopírován",
   "安装完成后请重新连接会话": "Po instalaci prosím znovu připojte relaci",
+  "执行规则": "prosazovat pravidla",
+  "基本规则": "Základní pravidla",
+  "全部批准": "Vše schváleno",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Základní pravidla se provádějí podle whitelistu příkazů, schválení pouze pro čtení zachová whitelist příkazů změn a veškeré schválení automaticky uvolní všechny příkazy.",
+  "当前启用时可以自动执行的命令前缀.": "Předpony příkazů, které lze automaticky spustit, když jsou aktuálně povoleny.",
 } satisfies I18nDict;

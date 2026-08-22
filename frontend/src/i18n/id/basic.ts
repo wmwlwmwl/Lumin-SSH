@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Salin perintah instalasi",
   "安装命令已复制": "Perintah instalasi disalin",
   "安装完成后请重新连接会话": "Sambungkan ulang sesi setelah instalasi",
+  "执行规则": "menegakkan aturan",
+  "基本规则": "Aturan dasar",
+  "全部批准": "Semua disetujui",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Aturan dasar dijalankan sesuai dengan daftar putih perintah, persetujuan baca-saja mempertahankan daftar putih perintah perubahan, dan semua persetujuan secara otomatis melepaskan semua perintah.",
+  "当前启用时可以自动执行的命令前缀.": "Awalan perintah yang dapat dijalankan secara otomatis saat diaktifkan.",
 } satisfies I18nDict;

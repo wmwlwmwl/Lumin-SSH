@@ -14,6 +14,7 @@ interface ContextMenuItemInput {
   shortcut?: string;
   danger?: boolean;
   disabled?: boolean;
+  children?: unknown;
   onSelect?: unknown;
 }
 
@@ -26,6 +27,7 @@ type NormalizedMenuItem =
       shortcut: string;
       danger: boolean;
       disabled: boolean;
+      children: NormalizedMenuItem[];
       onSelect: ((item: NormalizedMenuItem) => void) | null;
     };
 
@@ -46,6 +48,7 @@ function normalizeMenuItems(items: unknown): NormalizedMenuItem[] {
         return null;
       }
       const onSelect = item?.onSelect;
+      const rawChildren = item?.children;
       return {
         key: typeof item?.key === 'string' && item.key.trim() ? item.key.trim() : `item-${index}`,
         type: 'item',
@@ -53,6 +56,7 @@ function normalizeMenuItems(items: unknown): NormalizedMenuItem[] {
         shortcut: typeof item?.shortcut === 'string' ? item.shortcut.trim() : '',
         danger: item?.danger === true,
         disabled: item?.disabled === true,
+        children: Array.isArray(rawChildren) ? normalizeMenuItems(rawChildren) : [],
         onSelect: typeof onSelect === 'function' ? (onSelect as (item: NormalizedMenuItem) => void) : null,
       };
     })
@@ -97,10 +101,12 @@ interface MenuState {
 export default function GlobalContextMenu() {
   const { t } = useTranslation();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [openSubmenuKey, setOpenSubmenuKey] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const closeMenu = useCallback(() => {
     setMenu(null);
+    setOpenSubmenuKey(null);
   }, []);
 
   const handleInputAction = useCallback(async (targetInput: HTMLInputElement | HTMLTextAreaElement, action: EditableAction) => {
@@ -277,10 +283,11 @@ export default function GlobalContextMenu() {
     return null;
   }
 
+  const hasSubmenu = menu.items.some((item) => item.type === 'item' && item.children.length > 0);
   return createPortal(
     <div
       ref={menuRef}
-      className="context-menu"
+      className={hasSubmenu ? 'context-menu has-submenu' : 'context-menu'}
       style={{ left: menu.x, top: menu.y }}
       onMouseDown={(event) => {
         event.stopPropagation();
@@ -293,6 +300,8 @@ export default function GlobalContextMenu() {
         if (item.type === 'divider') {
           return <div key={item.key} className="context-menu-divider" />;
         }
+        const hasChildren = item.children.length > 0;
+        const submenuToLeft = typeof window !== 'undefined' && menu.x > window.innerWidth * 0.5;
         const className = [
           'context-menu-item',
           item.danger ? 'danger' : '',
@@ -302,10 +311,45 @@ export default function GlobalContextMenu() {
           <div
             key={item.key}
             className={className}
-            onClick={item.disabled ? undefined : () => handleMenuItemClick(item)}
+            style={hasChildren ? { position: 'relative' } : undefined}
+            onMouseEnter={() => setOpenSubmenuKey(hasChildren && !item.disabled ? item.key : null)}
+            onClick={item.disabled || hasChildren ? undefined : () => handleMenuItemClick(item)}
           >
             <span className="item-label">{item.label}</span>
-            {item.shortcut ? <span className="item-shortcut">{item.shortcut}</span> : null}
+            {hasChildren
+              ? <span className="item-shortcut" aria-hidden="true">›</span>
+              : item.shortcut ? <span className="item-shortcut">{item.shortcut}</span> : null}
+            {hasChildren && openSubmenuKey === item.key ? (
+              <div
+                className="context-menu"
+                style={submenuToLeft
+                  ? { position: 'absolute', right: '100%', top: -5, marginRight: 2 }
+                  : { position: 'absolute', left: '100%', top: -5, marginLeft: 2 }}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {item.children.map((child) => {
+                  if (child.type === 'divider') {
+                    return <div key={child.key} className="context-menu-divider" />;
+                  }
+                  const childClassName = [
+                    'context-menu-item',
+                    child.danger ? 'danger' : '',
+                    child.disabled ? 'disabled' : '',
+                  ].filter(Boolean).join(' ');
+                  return (
+                    <div
+                      key={child.key}
+                      className={childClassName}
+                      onClick={child.disabled ? undefined : () => handleMenuItemClick(child)}
+                    >
+                      <span className="item-label">{child.label}</span>
+                      {child.shortcut ? <span className="item-shortcut">{child.shortcut}</span> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         );
       })}

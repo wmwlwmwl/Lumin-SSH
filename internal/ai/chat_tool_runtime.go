@@ -1328,6 +1328,10 @@ func (a *App) continueCompatibleAIChatAfterResolvedTools(ctx context.Context, re
 		a.skipCompatibleAIChatAfterResolvedTools(requestID)
 		return
 	}
+	requestMessages := append([]AIChatRequestMessage{}, batch.RequestMessages...)
+	if batch.DuplicateToolCount > 0 {
+		requestMessages = append(requestMessages, a.emitAIDuplicateToolProtocolConflictMessage(requestID, batch.DuplicateToolCount))
+	}
 	nextAssistantMessageID := fmt.Sprintf("%s-cont-%d", requestID, time.Now().UnixNano())
 	a.emitAIChatRuntimePhase(requestID, "api_request")
 	a.emitAIChatEvent(map[string]interface{}{
@@ -1335,7 +1339,7 @@ func (a *App) continueCompatibleAIChatAfterResolvedTools(ctx context.Context, re
 		"requestId": requestID,
 		"messageId": nextAssistantMessageID,
 	})
-	a.runCompatibleAIChatLoop(ctx, requestID, batch.Payload, batch.Profile, append([]AIChatRequestMessage{}, batch.RequestMessages...), batch.AutoApprovalSettings, nextAssistantMessageID, batch.AssistantRetryCount, batch.CollaborationRetryCount)
+	a.runCompatibleAIChatLoop(ctx, requestID, batch.Payload, batch.Profile, requestMessages, batch.AutoApprovalSettings, nextAssistantMessageID, batch.AssistantRetryCount, batch.CollaborationRetryCount)
 }
 
 func (a *App) resumeAIChatAfterToolBatch(requestID string, batch *aiPendingToolBatch) {

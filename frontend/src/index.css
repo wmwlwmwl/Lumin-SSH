@@ -3108,6 +3108,7 @@ body.theme-light .batch-operation-bar {
   animation: contextMenuIn 0.12s ease;
   transform-origin: top left;
 }
+.context-menu.has-submenu { overflow: visible; }
 .context-menu-item {
   display: flex;
   justify-content: space-between;

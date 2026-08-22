@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Copiază comanda de instalare",
   "安装命令已复制": "Comanda de instalare a fost copiată",
   "安装完成后请重新连接会话": "Reconectați sesiunea după instalare",
+  "执行规则": "aplica regulile",
+  "基本规则": "Reguli de bază",
+  "全部批准": "Toate aprobate",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Regulile de bază sunt executate conform listei albe de comenzi, aprobarea numai în citire păstrează lista albă a comenzilor de modificare, iar aprobarea eliberează automat toate comenzile.",
+  "当前启用时可以自动执行的命令前缀.": "Prefixe de comandă care pot fi executate automat atunci când sunt activate în prezent.",
 } satisfies I18nDict;

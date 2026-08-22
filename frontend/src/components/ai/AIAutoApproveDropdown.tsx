@@ -2,14 +2,14 @@ import { CheckCheck, Eye, SquarePen, Terminal, X, type LucideIcon } from 'lucide
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation, type I18nKey } from '../../i18n.ts'
 
-/** 自动批准设置（宽松结构） */
+type ExecuteApprovalMode = 'basic' | 'read_only' | 'all'
+
 export interface AutoApprovalSettings {
   autoApprovalEnabled: boolean
   alwaysAllowReadOnly: boolean
   alwaysAllowWrite: boolean
   alwaysAllowExecute: boolean
-  alwaysAllowExecuteReadOnly: boolean
-  alwaysAllowExecuteAllCommands: boolean
+  executeApprovalMode: ExecuteApprovalMode
   allowedCommands: string[]
   deniedCommands: string[]
 }
@@ -19,8 +19,7 @@ const DEFAULT_AUTO_APPROVAL_SETTINGS: AutoApprovalSettings = {
   alwaysAllowReadOnly: false,
   alwaysAllowWrite: false,
   alwaysAllowExecute: false,
-  alwaysAllowExecuteReadOnly: false,
-  alwaysAllowExecuteAllCommands: false,
+  executeApprovalMode: 'basic',
   allowedCommands: [],
   deniedCommands: [],
 }
@@ -29,6 +28,12 @@ const VISIBLE_OPTIONS: Array<{ key: 'alwaysAllowReadOnly' | 'alwaysAllowWrite' |
   { key: 'alwaysAllowReadOnly', labelKey: '读取', icon: Eye },
   { key: 'alwaysAllowWrite', labelKey: '写入', icon: SquarePen },
   { key: 'alwaysAllowExecute', labelKey: '执行', icon: Terminal },
+]
+
+const EXECUTE_APPROVAL_MODE_OPTIONS: Array<{ value: ExecuteApprovalMode; labelKey: I18nKey }> = [
+  { value: 'basic', labelKey: '基本规则' },
+  { value: 'read_only', labelKey: '只读批准' },
+  { value: 'all', labelKey: '全部批准' },
 ]
 
 function normalizeStringList(values: unknown): string[] {
@@ -51,6 +56,17 @@ function normalizeStringList(values: unknown): string[] {
   return normalized
 }
 
+function normalizeExecuteApprovalMode(value: unknown): ExecuteApprovalMode {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  if (normalized === 'read_only') {
+    return 'read_only'
+  }
+  if (normalized === 'all') {
+    return 'all'
+  }
+  return 'basic'
+}
+
 function isAutoApprovalEffectivelyEnabled(settings: AutoApprovalSettings) {
   return Boolean(
     settings?.alwaysAllowReadOnly
@@ -69,8 +85,7 @@ function normalizeAutoApprovalSettings(settings: unknown): AutoApprovalSettings 
     alwaysAllowReadOnly: Boolean(raw?.alwaysAllowReadOnly),
     alwaysAllowWrite: Boolean(raw?.alwaysAllowWrite),
     alwaysAllowExecute: Boolean(raw?.alwaysAllowExecute),
-    alwaysAllowExecuteReadOnly: Boolean(raw?.alwaysAllowExecuteReadOnly),
-    alwaysAllowExecuteAllCommands: allowedCommands.includes('*'),
+    executeApprovalMode: normalizeExecuteApprovalMode(raw?.executeApprovalMode),
     allowedCommands,
     deniedCommands,
   }
@@ -85,12 +100,9 @@ function buildTriggerLabel(t: (key: I18nKey, vars?: Record<string, unknown>) => 
   if (enabledCount === 0) {
     return `${t('自动批准')} 0`
   }
-  if (enabledCount === VISIBLE_OPTIONS.length) {
-    return `${t('自动批准')} ${t('全部')}`
-  }
-  return `${t('自动批准')} ${enabledCount}`
+  const approvalCount = enabledCount + (settings.alwaysAllowExecute && settings.executeApprovalMode === 'all' ? 1 : 0)
+  return `${t('自动批准')} ${approvalCount}`
 }
-
 interface OptionButtonProps {
   active: boolean
   icon: LucideIcon
@@ -156,62 +168,6 @@ function CommandChip({ text, onRemove }: CommandChipProps) {
   )
 }
 
-interface InlineSwitchProps {
-  active: boolean
-  label: string
-  onClick?: () => void
-}
-
-function InlineSwitch({ active, label, onClick }: InlineSwitchProps) {
-  return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation()
-        onClick?.()
-      }}
-      style={{
-        height: 24,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '0 8px',
-        borderRadius: 999,
-        border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
-        background: active ? 'rgba(var(--accent-rgb), 0.14)' : 'var(--surface-sunken)',
-        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-        fontSize: 11,
-        fontWeight: 600,
-        transition: 'var(--transition)',
-        cursor: 'pointer',
-      }}>
-      <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
-      <span
-        style={{
-          position: 'relative',
-          width: 28,
-          height: 16,
-          borderRadius: 999,
-          background: active ? 'var(--accent)' : 'var(--border)',
-          transition: 'var(--transition)',
-          flexShrink: 0,
-        }}>
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: active ? 14 : 2,
-            width: 12,
-            height: 12,
-            borderRadius: 999,
-            background: '#fff',
-            transition: 'var(--transition)',
-          }}
-        />
-      </span>
-    </button>
-  )
-}
 
 export interface AIAutoApproveDropdownProps {
   settings?: unknown
@@ -303,7 +259,7 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
       alwaysAllowReadOnly: nextSettings.alwaysAllowReadOnly,
       alwaysAllowWrite: nextSettings.alwaysAllowWrite,
       alwaysAllowExecute: nextSettings.alwaysAllowExecute,
-      alwaysAllowExecuteReadOnly: nextSettings.alwaysAllowExecuteReadOnly,
+      executeApprovalMode: nextSettings.executeApprovalMode,
       allowedCommands: nextSettings.allowedCommands,
       deniedCommands: nextSettings.deniedCommands,
       autoApprovalEnabled: nextSettings.autoApprovalEnabled,
@@ -343,15 +299,16 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
     } as Partial<AutoApprovalSettings>)
   }
 
-  const handleExecuteReadOnlyToggle = () => {
-    patchSettings({
-      alwaysAllowExecuteReadOnly: !normalizedSettings.alwaysAllowExecuteReadOnly,
-    })
+  const handleExecuteApprovalModeChange = (executeApprovalMode: ExecuteApprovalMode) => {
+    if (normalizedSettings.executeApprovalMode === executeApprovalMode) {
+      return
+    }
+    patchSettings({ executeApprovalMode })
   }
 
   const handleAddAllowedCommand = () => {
     const nextValue = commandInput.trim()
-    if (!nextValue || normalizedSettings.allowedCommands.includes(nextValue)) {
+    if (!nextValue || nextValue === '*' || normalizedSettings.allowedCommands.includes(nextValue)) {
       return
     }
     patchSettings({
@@ -362,7 +319,7 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
 
   const handleAddDeniedCommand = () => {
     const nextValue = deniedCommandInput.trim()
-    if (!nextValue || normalizedSettings.deniedCommands.includes(nextValue)) {
+    if (!nextValue || nextValue === '*' || normalizedSettings.deniedCommands.includes(nextValue)) {
       return
     }
     patchSettings({
@@ -452,68 +409,102 @@ export default function AIAutoApproveDropdown({ settings, onPatchSettings, disab
           {normalizedSettings.alwaysAllowExecute ? (
             <div style={{ padding: '0 12px 12px', display: 'grid', gap: 12, overflowX: 'hidden' }}>
               <div style={{ padding: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-base)', display: 'grid', gap: 12, overflowX: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700 }}>{t('执行')}</div>
-                  <InlineSwitch active={normalizedSettings.alwaysAllowExecuteReadOnly} label={t('只读批准')} onClick={handleExecuteReadOnlyToggle} />
-                </div>
-                {normalizedSettings.alwaysAllowExecute ? (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{t('命令白名单')}</div>
-                    <div style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.5 }}>
-                      {t('当前启用时可以自动执行的命令前缀,添加 * 以允许所有命令.')}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <input
-                        id="ai-auto-approve-allowed"
-                        name="ai-auto-approve-allowed"
-                        autoComplete="off"
-                        value={commandInput}
-                        onChange={(event) => setCommandInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            void handleAddAllowedCommand()
-                          }
-                        }}
-                        placeholder={t("输入命令前缀(例如 'git')")}
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          height: 34,
-                          borderRadius: 8,
-                          border: '1px solid var(--border)',
-                          background: 'var(--surface-sunken)',
-                          color: 'var(--text-primary)',
-                          padding: '0 10px',
-                          boxSizing: 'border-box',
-                          outline: 'none',
-                          fontSize: 12,
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleAddAllowedCommand()}
-                        style={{
-                          height: 34,
-                          padding: '0 12px',
-                          borderRadius: 8,
-                          border: '1px solid var(--border)',
-                          background: 'var(--surface-base)',
-                          color: 'var(--text-primary)',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          transition: 'var(--transition)',
-                        }}>
-                        {t('添加')}
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minWidth: 0, overflow: 'hidden' }}>
-                      {normalizedSettings.allowedCommands.map((command) => (
-                        <CommandChip key={command} text={command} onRemove={() => void handleRemoveAllowedCommand(command)} />
-                      ))}
-                    </div>
+                <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700 }}>{t('执行')}</div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{t('执行规则')}</div>
+                  <div role="group" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-sunken)' }}>
+                    {EXECUTE_APPROVAL_MODE_OPTIONS.map((option, index) => {
+                      const active = normalizedSettings.executeApprovalMode === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => handleExecuteApprovalModeChange(option.value)}
+                          style={{
+                            minWidth: 0,
+                            height: 30,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '0 6px',
+                            border: 'none',
+                            borderLeft: index === 0 ? 'none' : '1px solid var(--border)',
+                            background: active ? 'var(--accent)' : 'transparent',
+                            color: active ? '#fff' : 'var(--text-secondary)',
+                            fontSize: 12,
+                            fontWeight: active ? 600 : 500,
+                            transition: 'var(--transition)',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                          {t(option.labelKey)}
+                        </button>
+                      )
+                    })}
                   </div>
-                ) : null}
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.5 }}>
+                    {t('基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.')}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{t('命令白名单')}</div>
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.5 }}>
+                    {t('当前启用时可以自动执行的命令前缀.')}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <input
+                      id="ai-auto-approve-allowed"
+                      name="ai-auto-approve-allowed"
+                      autoComplete="off"
+                      value={commandInput}
+                      onChange={(event) => setCommandInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          void handleAddAllowedCommand()
+                        }
+                      }}
+                      placeholder={t("输入命令前缀(例如 'git')")}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        height: 34,
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        background: 'var(--surface-sunken)',
+                        color: 'var(--text-primary)',
+                        padding: '0 10px',
+                        boxSizing: 'border-box',
+                        outline: 'none',
+                        fontSize: 12,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleAddAllowedCommand()}
+                      style={{
+                        height: 34,
+                        padding: '0 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border)',
+                        background: 'var(--surface-base)',
+                        color: 'var(--text-primary)',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        transition: 'var(--transition)',
+                      }}>
+                      {t('添加')}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minWidth: 0, overflow: 'hidden' }}>
+                    {normalizedSettings.allowedCommands.map((command) => (
+                      <CommandChip key={command} text={command} onRemove={() => void handleRemoveAllowedCommand(command)} />
+                    ))}
+                  </div>
+                </div>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 600 }}>{t('拒绝的命令')}</div>
                   <div style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.5 }}>

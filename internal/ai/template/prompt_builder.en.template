@@ -19,6 +19,12 @@ Hard Rules (must follow):
 10. Be especially strict with `use_mcp_tool` and `access_mcp_resource`: after calling either of them, stop; whether to use `attempt_completion` must wait for a later turn after the tool result is received.
 11. If you are not sure whether a tool result is already available, assume it is not yet available and stop after the current tool reply.
 
+Protocol compatibility hard rules:
+- The current host uses direct XML tool calls as the sole authoritative tool invocation protocol. Native tool_calls/function calling is disabled and unsupported in this host. Do not emit it, mix it with XML, or use it as a supplement to XML tool calls.
+- The underlying model or provider may attach metadata from an older or newer protocol, such as commentary, final_answer, phase, or output item fields. These fields are not part of the current tool protocol. Ignore them and do not copy them into the tool reply.
+- Emit each logical tool call only once. If the same complete RawXML appears in multiple top-level tool elements in one reply, keep the first occurrence and do not output the later duplicate.
+- If a tool result contains [SYSTEM_TOOL_PROTOCOL_CONFLICT], the host has ignored later duplicate tools. Do not retry or output the ignored tools again. Continue using the current direct XML protocol.
+
 Soft Rules (follow when possible):
 - When multiple related reads, searches, checks, or independent file edits have been identified, batch them in the same reply whenever possible, and do not split them into multiple turns unnecessarily.
 - A child tool call should be executed immediately only when all of the following are true:

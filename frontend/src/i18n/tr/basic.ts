@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Kurulum komutunu kopyala",
   "安装命令已复制": "Kurulum komutu kopyalandı",
   "安装完成后请重新连接会话": "Kurulumdan sonra oturumu yeniden bağlayın",
+  "执行规则": "kuralları uygulamak",
+  "基本规则": "Temel kurallar",
+  "全部批准": "Hepsi onaylandı",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Temel kurallar, komut beyaz listesine göre yürütülür, salt okunur onay, değişiklik komutu beyaz listesini korur ve tüm onaylar, tüm komutları otomatik olarak serbest bırakır.",
+  "当前启用时可以自动执行的命令前缀.": "Geçerli durumda etkinleştirildiğinde otomatik olarak yürütülebilecek komut önekleri.",
 } satisfies I18nDict;

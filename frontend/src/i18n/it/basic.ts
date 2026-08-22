@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Copia comando di installazione",
   "安装命令已复制": "Comando di installazione copiato",
   "安装完成后请重新连接会话": "Riconnetti la sessione dopo l'installazione",
+  "执行规则": "applicare le regole",
+  "基本规则": "Regole di base",
+  "全部批准": "Tutto approvato",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Le regole di base vengono eseguite in base alla whitelist dei comandi, l'approvazione di sola lettura mantiene la whitelist dei comandi di modifica e tutte le approvazioni rilasciano automaticamente tutti i comandi.",
+  "当前启用时可以自动执行的命令前缀.": "Prefissi di comando che possono essere eseguiti automaticamente quando attualmente abilitati.",
 } satisfies I18nDict;

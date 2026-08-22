@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Installationsbefehl kopieren",
   "安装命令已复制": "Installationsbefehl kopiert",
   "安装完成后请重新连接会话": "Bitte verbinden Sie die Sitzung nach der Installation erneut",
+  "执行规则": "Regeln durchsetzen",
+  "基本规则": "Grundregeln",
+  "全部批准": "Alles genehmigt",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Grundregeln werden gemäß der Befehls-Whitelist ausgeführt, die schreibgeschützte Genehmigung behält die Änderungsbefehls-Whitelist bei und alle Genehmigungen geben alle Befehle automatisch frei.",
+  "当前启用时可以自动执行的命令前缀.": "Befehlspräfixe, die automatisch ausgeführt werden können, wenn sie derzeit aktiviert sind.",
 } satisfies I18nDict;

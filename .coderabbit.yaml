@@ -14,6 +14,3 @@ reviews:
 
 chat:
   auto_reply: true         # 在 PR 里 @coderabbitai 可对话追问
-
-summarize:
-  auto_summary_insights: true   # 生成 PR 洞察总结

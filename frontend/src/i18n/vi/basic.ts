@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Sao chép lệnh cài đặt",
   "安装命令已复制": "Đã sao chép lệnh cài đặt",
   "安装完成后请重新连接会话": "Vui lòng kết nối lại phiên sau khi cài đặt",
+  "执行规则": "thực thi các quy tắc",
+  "基本规则": "Quy tắc cơ bản",
+  "全部批准": "Tất cả đã được phê duyệt",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Các quy tắc cơ bản được thực thi theo danh sách trắng lệnh, phê duyệt chỉ đọc sẽ giữ lại danh sách trắng lệnh thay đổi và tất cả phê duyệt sẽ tự động giải phóng tất cả các lệnh.",
+  "当前启用时可以自动执行的命令前缀.": "Tiền tố lệnh có thể được thực thi tự động khi được bật hiện tại.",
 } satisfies I18nDict;

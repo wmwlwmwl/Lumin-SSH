@@ -1890,4 +1890,9 @@ export default {
   "复制安装命令": "Installatieopdracht kopiëren",
   "安装命令已复制": "Installatieopdracht gekopieerd",
   "安装完成后请重新连接会话": "Verbind de sessie na de installatie opnieuw",
+  "执行规则": "regels afdwingen",
+  "基本规则": "Basisregels",
+  "全部批准": "Allemaal goedgekeurd",
+  "基本规则按命令白名单执行,只读批准保留变更命令白名单,全部批准自动放行全部命令.": "Basisregels worden uitgevoerd volgens de witte lijst met opdrachten, alleen-lezen goedkeuring behoudt de witte lijst met wijzigingsopdrachten en bij elke goedkeuring worden automatisch alle opdrachten vrijgegeven.",
+  "当前启用时可以自动执行的命令前缀.": "Commandovoorvoegsels die automatisch kunnen worden uitgevoerd als ze momenteel zijn ingeschakeld.",
 } satisfies I18nDict;
