@@ -954,31 +954,37 @@ export default function SettingsModal({
     if (mode === bgTargetMode) return;
     localStorage.setItem('bgTargetMode', mode);
     // 切换背景类型：将当前背景图迁移到新目标（图像保留，仅切换应用范围）
-    if (mode === 'terminal') {
-      // 全局 → 终端：图像写入终端并清除全局
-      if (globalBgImage) {
-        localStorage.setItem('termBgImage', globalBgImage);
-      } else {
-        localStorage.removeItem('termBgImage');
-      }
-      setTermBgImage(globalBgImage);
-      localStorage.setItem('termBgOpacity', String(globalBgOpacity));
-      setTermBgOpacity(globalBgOpacity);
-      localStorage.removeItem('globalBgImage');
-      setGlobalBgImage('');
-    } else {
-      // 终端 → 全局：图像写入全局并清除终端
-      if (termBgImage) {
-        localStorage.setItem('globalBgImage', termBgImage);
-      } else {
+    // 先删旧键再写新键，避免大图在 localStorage 中瞬时双份导致配额溢出
+    try {
+      if (mode === 'terminal') {
+        // 全局 → 终端：图像迁移到终端
         localStorage.removeItem('globalBgImage');
+        if (globalBgImage) {
+          localStorage.setItem('termBgImage', globalBgImage);
+        } else {
+          localStorage.removeItem('termBgImage');
+        }
+        setTermBgImage(globalBgImage);
+        localStorage.setItem('termBgOpacity', String(globalBgOpacity));
+        setTermBgOpacity(globalBgOpacity);
+        setGlobalBgImage('');
+      } else {
+        // 终端 → 全局：图像迁移到全局
+        localStorage.removeItem('termBgImage');
+        if (termBgImage) {
+          localStorage.setItem('globalBgImage', termBgImage);
+        } else {
+          localStorage.removeItem('globalBgImage');
+        }
+        setGlobalBgImage(termBgImage);
+        const opacity = Math.min(0.5, Math.max(0, termBgOpacity));
+        localStorage.setItem('globalBgOpacity', String(opacity));
+        setGlobalBgOpacity(opacity);
+        setTermBgImage('');
       }
-      setGlobalBgImage(termBgImage);
-      const opacity = Math.min(0.5, Math.max(0, termBgOpacity));
-      localStorage.setItem('globalBgOpacity', String(opacity));
-      setGlobalBgOpacity(opacity);
-      localStorage.removeItem('termBgImage');
-      setTermBgImage('');
+    } catch {
+      addToast($t('图片过大，无法保存，请使用较小的图片'), 'error');
+      return;
     }
     setBgTargetMode(mode);
     notifyGlobalAppearanceChanged();
@@ -994,16 +1000,16 @@ export default function SettingsModal({
       const base64 = typeof ev.target?.result === 'string' ? ev.target.result : '';
       try {
         if (bgTargetMode === 'global') {
-          localStorage.setItem('globalBgImage', base64);
           localStorage.removeItem('termBgImage');
+          localStorage.setItem('globalBgImage', base64);
           setGlobalBgImage(base64);
           setTermBgImage('');
           notifyGlobalAppearanceChanged();
           window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
           addToast($t('全局背景已更新'), 'success');
         } else {
-          localStorage.setItem('termBgImage', base64);
           localStorage.removeItem('globalBgImage');
+          localStorage.setItem('termBgImage', base64);
           setTermBgImage(base64);
           setGlobalBgImage('');
           notifyGlobalAppearanceChanged();
