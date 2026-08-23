@@ -475,6 +475,12 @@ export default function SettingsModal({
   const [globalBgImage, setGlobalBgImage] = useState(() => getGlobalAppearanceSettings().backgroundImage);
   const [globalBgOpacity, setGlobalBgOpacity] = useState(() => getGlobalAppearanceSettings().backgroundOpacity);
   const [globalIconOpacity, setGlobalIconOpacity] = useState(() => getGlobalAppearanceSettings().iconOpacity);
+  const [bgTargetMode, setBgTargetMode] = useState<'global' | 'terminal'>(() => {
+    const stored = localStorage.getItem('bgTargetMode');
+    if (stored === 'terminal' || stored === 'global') return stored;
+    // 无记录时推断：仅有终端壁纸则默认终端，否则全局
+    return localStorage.getItem('termBgImage') && !localStorage.getItem('globalBgImage') ? 'terminal' : 'global';
+  });
   const [terminalLocalEcho, setTerminalLocalEcho] = useState(localStorage.getItem('terminalLocalEcho') === 'true');
   const [terminalTimestamps, setTerminalTimestamps] = useState(localStorage.getItem('terminalTimestamps') === 'true');
   const [terminalCommandBlocks, setTerminalCommandBlocks] = useState(localStorage.getItem('terminalCommandBlocks') === 'true');
@@ -944,43 +950,44 @@ export default function SettingsModal({
     localStorage.setItem('terminalTabDoubleClickAction', next);
   };
 
-  const handleTermBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (globalBgImage) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      // readAsDataURL 始终产出字符串 data URL
-      const base64 = typeof ev.target?.result === 'string' ? ev.target.result : '';
-      try {
-        localStorage.setItem('termBgImage', base64);
-        setTermBgImage(base64);
-        window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-        addToast($t('终端壁纸已更新'), 'success');
-      } catch (err) {
-        addToast($t('图片过大，无法保存，请使用较小的图片'), 'error');
-      }
-    };
-    reader.onerror = () => {
-      addToast($t('读取图片失败'), 'error');
-    };
-    reader.readAsDataURL(file);
+  const handleBgTargetModeChange = (mode: 'global' | 'terminal') => {
+    if (mode === bgTargetMode) return;
+    localStorage.setItem('bgTargetMode', mode);
+    // 切换背景类型：清除原有背景图
+    localStorage.removeItem('globalBgImage');
+    localStorage.removeItem('termBgImage');
+    setGlobalBgImage('');
+    setTermBgImage('');
+    setBgTargetMode(mode);
+    notifyGlobalAppearanceChanged();
+    window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+    addToast($t('已切换背景类型'), 'success');
   };
 
-  const handleGlobalBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       const base64 = typeof ev.target?.result === 'string' ? ev.target.result : '';
       try {
-        localStorage.setItem('globalBgImage', base64);
-        localStorage.removeItem('termBgImage');
-        setGlobalBgImage(base64);
-        setTermBgImage('');
-        notifyGlobalAppearanceChanged();
-        window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-        addToast($t('全局背景已更新'), 'success');
+        if (bgTargetMode === 'global') {
+          localStorage.setItem('globalBgImage', base64);
+          localStorage.removeItem('termBgImage');
+          setGlobalBgImage(base64);
+          setTermBgImage('');
+          notifyGlobalAppearanceChanged();
+          window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+          addToast($t('全局背景已更新'), 'success');
+        } else {
+          localStorage.setItem('termBgImage', base64);
+          localStorage.removeItem('globalBgImage');
+          setTermBgImage(base64);
+          setGlobalBgImage('');
+          notifyGlobalAppearanceChanged();
+          window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+          addToast($t('终端壁纸已更新'), 'success');
+        }
       } catch {
         addToast($t('图片过大，无法保存，请使用较小的图片'), 'error');
       }
@@ -989,18 +996,32 @@ export default function SettingsModal({
     reader.readAsDataURL(file);
   };
 
-  const handleGlobalBgReset = () => {
-    localStorage.removeItem('globalBgImage');
-    setGlobalBgImage('');
-    notifyGlobalAppearanceChanged();
-    addToast($t('已恢复默认背景'), 'success');
+  const handleBgReset = () => {
+    if (bgTargetMode === 'global') {
+      localStorage.removeItem('globalBgImage');
+      setGlobalBgImage('');
+      notifyGlobalAppearanceChanged();
+      addToast($t('已恢复默认背景'), 'success');
+    } else {
+      localStorage.removeItem('termBgImage');
+      setTermBgImage('');
+      window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+      addToast($t('已恢复默认壁纸'), 'success');
+    }
   };
 
-  const handleGlobalBgOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = Math.min(0.5, Math.max(0, Number.parseFloat(e.target.value) || 0));
-    localStorage.setItem('globalBgOpacity', String(value));
-    setGlobalBgOpacity(value);
-    notifyGlobalAppearanceChanged();
+  const handleBgOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (bgTargetMode === 'global') {
+      const value = Math.min(0.5, Math.max(0, Number.parseFloat(e.target.value) || 0));
+      localStorage.setItem('globalBgOpacity', String(value));
+      setGlobalBgOpacity(value);
+      notifyGlobalAppearanceChanged();
+    } else {
+      const val = Math.min(1, Math.max(0, Number.parseFloat(e.target.value) || 0));
+      localStorage.setItem('termBgOpacity', String(val));
+      setTermBgOpacity(val);
+      window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
+    }
   };
 
   const handleGlobalIconOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1008,20 +1029,6 @@ export default function SettingsModal({
     localStorage.setItem('globalIconOpacity', String(value));
     setGlobalIconOpacity(value);
     notifyGlobalAppearanceChanged();
-  };
-
-  const handleTermBgReset = () => {
-    setTermBgImage('');
-    localStorage.removeItem('termBgImage');
-    window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-    addToast($t('已恢复默认壁纸'), 'success');
-  };
-
-  const handleTermBgOpacityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setTermBgOpacity(val);
-    localStorage.setItem('termBgOpacity', String(val));
-    window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
   };
 
   const handleToggleRememberWindowSize = () => {
@@ -2501,15 +2508,14 @@ export default function SettingsModal({
                 terminalToolbarIconOnly={terminalToolbarIconOnly}
                 onToggleTerminalToolbarIconOnly={handleToggleTerminalToolbarIconOnly}
                 termBgImage={termBgImage}
-                onTermBgUpload={handleTermBgUpload}
-                onTermBgReset={handleTermBgReset}
-                termBgOpacity={termBgOpacity}
-                onTermBgOpacityChange={handleTermBgOpacityChange}
                 globalBgImage={globalBgImage}
-                onGlobalBgUpload={handleGlobalBgUpload}
-                onGlobalBgReset={handleGlobalBgReset}
+                bgTargetMode={bgTargetMode}
+                onBgTargetModeChange={handleBgTargetModeChange}
+                onBgUpload={handleBgUpload}
+                onBgReset={handleBgReset}
+                termBgOpacity={termBgOpacity}
                 globalBgOpacity={globalBgOpacity}
-                onGlobalBgOpacityChange={handleGlobalBgOpacityChange}
+                onBgOpacityChange={handleBgOpacityChange}
                 globalIconOpacity={globalIconOpacity}
                 onGlobalIconOpacityChange={handleGlobalIconOpacityChange}
                 rememberWindowSize={rememberWindowSize}

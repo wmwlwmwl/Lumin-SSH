@@ -447,6 +447,12 @@ button svg,
   -webkit-user-select: none;
 }
 
+/* 全局背景启用时：顶栏背景透明，使壁纸覆盖顶栏区域 */
+.has-global-wallpaper .topbar {
+  background: transparent;
+  border-bottom-color: transparent;
+}
+
 .topbar-content {
   display: flex;
   align-items: center;
