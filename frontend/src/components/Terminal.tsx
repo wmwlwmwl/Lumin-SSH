@@ -2229,18 +2229,24 @@ export default function Terminal({
   // ── 背景管理与刷新 ─────────────────────────────────────────────────
   const [bgInfo, setBgInfo] = useState({
     image: localStorage.getItem('termBgImage') || '',
-    opacity: parseFloat(localStorage.getItem('termBgOpacity') || '0.15')
+    opacity: parseFloat(localStorage.getItem('termBgOpacity') || '0.15'),
+    globalActive: Boolean(localStorage.getItem('globalBgImage')),
   });
 
   useEffect(() => {
     const handleBgChange = () => {
       setBgInfo({
         image: localStorage.getItem('termBgImage') || '',
-        opacity: parseFloat(localStorage.getItem('termBgOpacity') || '0.15')
+        opacity: parseFloat(localStorage.getItem('termBgOpacity') || '0.15'),
+        globalActive: Boolean(localStorage.getItem('globalBgImage')),
       });
     };
     window.addEventListener('terminal-bg-changed', handleBgChange);
-    return () => window.removeEventListener('terminal-bg-changed', handleBgChange);
+    window.addEventListener('global-appearance-changed', handleBgChange);
+    return () => {
+      window.removeEventListener('terminal-bg-changed', handleBgChange);
+      window.removeEventListener('global-appearance-changed', handleBgChange);
+    };
   }, []);
 
   // 监听终端颜色主题切换，即时更新 xterm 主题
@@ -3678,10 +3684,11 @@ export default function Terminal({
         zIndex: Z.STACK,
       }} />
       {/* 壁纸层：叠在内容上方，浅色底下使用 multiply 混合模式，避免亮色/白色壁纸部分遮盖冲淡字色 */}
+      {/* 全局背景激活时不渲染默认终端纹理，避免与全局壁纸叠加 */}
       <div style={{
         position: 'absolute',
         inset: 0,
-        backgroundImage: `url(${bgInfo.image || defaultTermBg})`,
+        backgroundImage: `url(${bgInfo.image || (bgInfo.globalActive ? '' : defaultTermBg)})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         opacity: Number.isFinite(bgInfo.opacity) ? bgInfo.opacity : 0.15,
