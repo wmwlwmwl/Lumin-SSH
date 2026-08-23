@@ -953,11 +953,33 @@ export default function SettingsModal({
   const handleBgTargetModeChange = (mode: 'global' | 'terminal') => {
     if (mode === bgTargetMode) return;
     localStorage.setItem('bgTargetMode', mode);
-    // 切换背景类型：清除原有背景图
-    localStorage.removeItem('globalBgImage');
-    localStorage.removeItem('termBgImage');
-    setGlobalBgImage('');
-    setTermBgImage('');
+    // 切换背景类型：将当前背景图迁移到新目标（图像保留，仅切换应用范围）
+    if (mode === 'terminal') {
+      // 全局 → 终端：图像写入终端并清除全局
+      if (globalBgImage) {
+        localStorage.setItem('termBgImage', globalBgImage);
+      } else {
+        localStorage.removeItem('termBgImage');
+      }
+      setTermBgImage(globalBgImage);
+      localStorage.setItem('termBgOpacity', String(globalBgOpacity));
+      setTermBgOpacity(globalBgOpacity);
+      localStorage.removeItem('globalBgImage');
+      setGlobalBgImage('');
+    } else {
+      // 终端 → 全局：图像写入全局并清除终端
+      if (termBgImage) {
+        localStorage.setItem('globalBgImage', termBgImage);
+      } else {
+        localStorage.removeItem('globalBgImage');
+      }
+      setGlobalBgImage(termBgImage);
+      const opacity = Math.min(0.5, Math.max(0, termBgOpacity));
+      localStorage.setItem('globalBgOpacity', String(opacity));
+      setGlobalBgOpacity(opacity);
+      localStorage.removeItem('termBgImage');
+      setTermBgImage('');
+    }
     setBgTargetMode(mode);
     notifyGlobalAppearanceChanged();
     window.dispatchEvent(new CustomEvent('terminal-bg-changed'));

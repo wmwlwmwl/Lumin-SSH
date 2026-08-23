@@ -1901,6 +1901,6 @@ export default {
   "图标透明度": "Icon opacity",
   "设置全局背景后不可设置终端壁纸": "Terminal wallpaper is unavailable while a global background is set",
   "全局背景": "全域背景",
-  "切换将清除当前背景图": "切換將清除目前背景圖",
+  "切换将迁移当前背景图": "切換將遷移目前背景圖",
   "已切换背景类型": "已切換背景類型",
 } satisfies I18nDict;

@@ -519,7 +519,7 @@ export default function AppearanceTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('全局背景图')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('切换将清除当前背景图')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('切换将迁移当前背景图')}</div>
             </div>
             <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', flexShrink: 0 }}>
               {(['global', 'terminal'] as const).map((mode) => (
