@@ -2221,6 +2221,10 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   }, [buildAIConversationCurrentApiMessageIds, computeAITokenLedgerContextTokens, panelInstanceKey, rebuildAIConversationTokenLedger, setPanelState, terminalId])
 
   const saveConversationSnapshot = useCallback(async (snapshot: AIConversationSnapshot, targetPanelKey = panelInstanceKey, options: { hydrate?: boolean } = {}) => {
+    // 已删除会话不允许被并发保存请求写回（避免流式输出中删除后被重新创建）
+    if (deletedConversationIdsRef.current.has(snapshot.id)) {
+      return
+    }
     const shouldHydrate = options?.hydrate === true
     const isTransientConversation = snapshot?.transient === true
     const saved = isTransientConversation
@@ -4071,10 +4075,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     }
     const removedTemporaryConversation = removeTemporaryAIConversation(conversationId)
     if (removedTemporaryConversation) await deleteTemporaryAIConversation(conversationId)
-    else {
-      await deleteAIConversation(conversationId)
-      deletedConversationIdsRef.current.add(conversationId)
-    }
+    else await deleteAIConversation(conversationId)
+    // 登记已删除 ID：拦截仍在途的并发保存，防止临时会话文件复活
+    deletedConversationIdsRef.current.add(conversationId)
     tokenLedgerRef.current.delete(conversationId)
     setComposerEditState((current) => (
       current.mode !== 'new' && deletingActiveConversation
@@ -4293,14 +4296,19 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     if (ids.length === 0) return
     const confirmed = await requestDeleteConfirmation(t('确定删除选中的对话吗？此操作不可撤销。'))
     if (!confirmed) return
-    await Promise.all(ids.map(async (conversationId) => removeTemporaryAIConversation(conversationId) ? deleteTemporaryAIConversation(conversationId) : deleteAIConversation(conversationId)))
+    const results = await Promise.allSettled(ids.map(async (conversationId) => removeTemporaryAIConversation(conversationId) ? deleteTemporaryAIConversation(conversationId) : deleteAIConversation(conversationId)))
     persistConversationOrganizer((current) => ({
       ...current,
       assignments: Object.fromEntries(Object.entries(current.assignments).filter(([conversationId]) => !selectedConversationIds.has(conversationId))),
     }))
     clearConversationSelection()
     await refreshConversationList()
-  }, [clearConversationSelection, persistConversationOrganizer, refreshConversationList, requestDeleteConfirmation, selectedConversationIds, t])
+    // 容错：部分失败时提示，不影响已成功的删除
+    const failedCount = results.filter((result) => result.status === 'rejected').length
+    if (failedCount > 0) {
+      addToast?.(`${t('部分对话删除失败')}（${failedCount}），其余删除已生效`, 'error')
+    }
+  }, [addToast, clearConversationSelection, persistConversationOrganizer, refreshConversationList, requestDeleteConfirmation, selectedConversationIds, t])
   useEffect(() => {
     const handleDeleteWorkspaceTabConversation = (event: Event) => {
       const detail = (event as CustomEvent).detail || {}
@@ -7118,7 +7126,7 @@ export default function AIPanel({ width, side, sessionId, terminalId, sessionTer
       const forkedSnapshot = await saveAIConversation({
         ...snapshot,
         id: '',
-        title: `${baseTitle} - 副本`,
+        title: `${baseTitle} - ${t('副本')}`,
         parentConversationId: '',
         rootConversationId: '',
         relationType: '',

@@ -989,7 +989,7 @@ export default function SettingsModal({
     setBgTargetMode(mode);
     notifyGlobalAppearanceChanged();
     window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-    addToast($t('终端壁纸已更新'), 'success');
+    addToast(mode === 'global' ? $t('全局背景已更新') : $t('终端壁纸已更新'), 'success');
   };
 
   const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1006,7 +1006,7 @@ export default function SettingsModal({
           setTermBgImage('');
           notifyGlobalAppearanceChanged();
           window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-        addToast($t('终端壁纸已更新'), 'success');
+          addToast($t('全局背景已更新'), 'success');
         } else {
           localStorage.removeItem('globalBgImage');
           localStorage.setItem('termBgImage', base64);
@@ -1029,7 +1029,7 @@ export default function SettingsModal({
       localStorage.removeItem('globalBgImage');
       setGlobalBgImage('');
       notifyGlobalAppearanceChanged();
-    addToast($t('已恢复默认壁纸'), 'success');
+      addToast($t('已恢复默认背景'), 'success');
     } else {
       localStorage.removeItem('termBgImage');
       setTermBgImage('');
