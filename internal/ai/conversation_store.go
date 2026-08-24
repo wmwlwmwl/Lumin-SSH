@@ -114,6 +114,7 @@ type AIConversationSummary struct {
 	RelationSource             string `json:"relationSource,omitempty"`
 	ParentTitleSnapshot        string `json:"parentTitleSnapshot,omitempty"`
 	Archived                   bool   `json:"archived,omitempty"`
+	Transient                  bool   `json:"transient,omitempty"`
 }
 
 type AIConversationSnapshot struct {
@@ -130,6 +131,7 @@ type AIConversationSnapshot struct {
 	RelationSource             string                     `json:"relationSource,omitempty"`
 	ParentTitleSnapshot        string                     `json:"parentTitleSnapshot,omitempty"`
 	Archived                   bool                       `json:"archived,omitempty"`
+	Transient                  bool                       `json:"transient,omitempty"`
 	Messages                   []AIConversationMessage    `json:"messages"`
 	APIMessages                []AIConversationAPIMessage `json:"apiMessages"`
 	Settings                   AIConversationTaskSettings `json:"settings"`

@@ -8,7 +8,7 @@ import AIConversationBackupSettings from './ai/AIConversationBackupSettings.tsx'
 import AIPanelSettingsOverlay from './ai/AIPanelSettingsOverlay.tsx'
 import AIComposer from './ai/AIComposer.tsx'
 import { approveAIChatTools, assignAIChatToolTerminal, cancelAIChat, continueAIChatTool, disableAIChatCollaboration, listAIChatCommandTerminalCandidates, previewAIChatToolDiff, previewAIChatToolRestore, rejectAIChatTools, rejectAIChatToolsForQueuedSubmission, resolveAIChatFollowup, restoreAIChatTool, setAIChatSkipNextAutomaticRequest, startAIChat, startAIChatCollaboration, terminateAIChatTool } from './ai/aiChatBridge.ts'
-import { buildAIConversationTokenLedger, condenseAIConversationContext, countAIConversationAPIMessageRawTokens, createAIConversation, createAIConversationSummarySubtask, deleteAIConversation, getAIAssistantFirstReply, getAIConversation, listAIConversations, normalizeAIConversationMessageSearchResult, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation, searchAIConversationMessages, subscribeAIConversationChanges, type AIConversationMessageSearchResult } from './ai/aiConversationBridge.ts'
+import { buildAIConversationTokenLedger, condenseAIConversationContext, countAIConversationAPIMessageRawTokens, createAIConversation, createAIConversationSummarySubtask, deleteAIConversation, deleteTemporaryAIConversation, getAIAssistantFirstReply, getAIConversation, getTemporaryAIConversation, listAIConversations, listTemporaryAIConversations as listTemporaryAIConversationsFromDisk, normalizeAIConversationMessageSearchResult, normalizeAIConversationSnapshot, normalizeAIConversationTaskSettings, openAIConversationFolder, preprocessAIConversationLongText, readAIConversationWrappedFile, saveAIConversation, saveTemporaryAIConversation, searchAIConversationMessages, subscribeAIConversationChanges, type AIConversationMessageSearchResult } from './ai/aiConversationBridge.ts'
 import { buildExecutionContextDetails, getExecutionContextSnapshot } from './ai/aiExecutionContext.ts'
 import { getAIGlobalSettings, normalizeAIGlobalSettings, saveAIGlobalSettings, type AIGlobalSettings } from './ai/aiGlobalSettingsBridge.ts'
 import { getAIProviderState, getAIProviderTokenGroup, type AIProviderState } from './ai/aiProviderBridge.ts'
@@ -183,7 +183,7 @@ interface ConversationSummary {
   messages?: unknown[]
 }
 
-const temporaryAIConversations = new Map<string, AIConversationSnapshot>()
+const temporaryAIConversations = new Map<string, ConversationSummary>()
 const TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT = 'lumin:ai-temporary-conversations-changed'
 
 function listTemporaryAIConversations() {
@@ -201,7 +201,10 @@ function upsertTemporaryAIConversation(snapshot: AIConversationSnapshot) {
     updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
     messageCount: typeof snapshot.messageCount === 'number' ? snapshot.messageCount : Array.isArray(snapshot.messages) ? snapshot.messages.length : 0,
   }
-  temporaryAIConversations.set(normalized.id, normalized)
+  temporaryAIConversations.set(normalized.id, {
+    ...upsertConversationSummary([], normalized)[0],
+    transient: true,
+  })
   notifyTemporaryAIConversationsChanged()
   return normalized
 }
@@ -1588,18 +1591,22 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       if (!panelMountedRef.current) {
         return
       }
-      setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), Array.isArray(conversations) ? conversations : []))
+      const temporarySummaries = await listTemporaryAIConversationsFromDisk().catch(() => [])
+      temporarySummaries.forEach((summary) => temporaryAIConversations.set(summary.id, { ...summary, transient: true }))
+      setConversationList([...temporarySummaries.map((summary) => ({ ...summary, transient: true })), ...(Array.isArray(conversations) ? conversations : [])])
     } catch {
       if (!panelMountedRef.current) {
         return
       }
-      setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), []))
+      const temporarySummaries = await listTemporaryAIConversationsFromDisk().catch(() => [])
+      temporarySummaries.forEach((summary) => temporaryAIConversations.set(summary.id, { ...summary, transient: true }))
+      setConversationList(temporarySummaries.map((summary) => ({ ...summary, transient: true })))
     }
   }, [refreshMCPOutputCompressionSettings, refreshMCPServerInfo])
 
   useEffect(() => {
     const syncTemporaryConversations = () => {
-      setConversationList((current) => listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), current.filter((item) => item.transient !== true)))
+      setConversationList((current) => [...listTemporaryAIConversations(), ...current.filter((item) => item.transient !== true)])
     }
     window.addEventListener(TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT, syncTemporaryConversations)
     return () => window.removeEventListener(TEMPORARY_AI_CONVERSATIONS_CHANGED_EVENT, syncTemporaryConversations)
@@ -2217,8 +2224,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     const shouldHydrate = options?.hydrate === true
     const isTransientConversation = snapshot?.transient === true
     const saved = isTransientConversation
-      ? upsertTemporaryAIConversation(snapshot)
+      ? await saveTemporaryAIConversation(snapshot)
       : await saveAIConversation(snapshot)
+    if (isTransientConversation) upsertTemporaryAIConversation(saved)
     setConversationList((prev) => upsertConversationSummary(prev, saved))
     setPanelState(targetPanelKey, (current) => {
       if (current.activeConversationId !== saved.id) {
@@ -3699,13 +3707,13 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
               && (message.kind === 'assistant' || message.kind === 'reasoning')
             )
           ))
-          return Promise.resolve(upsertTemporaryAIConversation({
+          return saveTemporaryAIConversation({
             ...previousConversation,
             updatedAt: Date.now(),
             status: 'idle',
             messages,
             apiMessages: Array.isArray(previousPanel?.apiMessages) ? previousPanel.apiMessages : [],
-          }))
+          }).then((saved) => { upsertTemporaryAIConversation(saved); return saved })
         })()
       : previousConversation && !deletedConversationIdsRef.current.has(previousConversation.id)
       ? (() => {
@@ -3795,8 +3803,8 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     if (!normalizedConversationId) {
       return
     }
-    const temporarySnapshot = temporaryAIConversations.get(normalizedConversationId)
-    if (!temporarySnapshot && delegateToWorkspace && onOpenConversationRequested) {
+    const temporarySummary = temporaryAIConversations.get(normalizedConversationId)
+    if (!temporarySummary && delegateToWorkspace && onOpenConversationRequested) {
       await onOpenConversationRequested(conversationId)
       return
     }
@@ -3809,7 +3817,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     resetGlobalSearchState()
     resetConversationSearchState()
     try {
-      const snapshot = temporarySnapshot || await getAIConversation(normalizedConversationId)
+      const snapshot = temporarySummary ? await getTemporaryAIConversation(normalizedConversationId) : await getAIConversation(normalizedConversationId)
       if (!panelMountedRef.current || conversationLoadRequestRef.current !== requestToken) {
         return
       }
@@ -4062,8 +4070,11 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       return
     }
     const removedTemporaryConversation = removeTemporaryAIConversation(conversationId)
-    if (!removedTemporaryConversation) await deleteAIConversation(conversationId)
-    else deletedConversationIdsRef.current.add(conversationId)
+    if (removedTemporaryConversation) await deleteTemporaryAIConversation(conversationId)
+    else {
+      await deleteAIConversation(conversationId)
+      deletedConversationIdsRef.current.add(conversationId)
+    }
     tokenLedgerRef.current.delete(conversationId)
     setComposerEditState((current) => (
       current.mode !== 'new' && deletingActiveConversation
@@ -4075,7 +4086,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
       return
     }
     const refreshedConversations = await listAIConversations().catch(() => [])
-    setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), Array.isArray(refreshedConversations) ? refreshedConversations : []))
+    setConversationList([...listTemporaryAIConversations(), ...(Array.isArray(refreshedConversations) ? refreshedConversations : [])])
     const currentActiveConversationId = typeof terminalPanelsRef.current?.[panelInstanceKey]?.activeConversationId === 'string'
       ? terminalPanelsRef.current[panelInstanceKey].activeConversationId.trim()
       : ''
@@ -4089,10 +4100,11 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
   }, [])
 
   const handleMakeConversationPermanent = useCallback(async (conversationId: string) => {
-    const temporarySnapshot = temporaryAIConversations.get(conversationId)
-    if (!temporarySnapshot) return
+    const temporarySummary = temporaryAIConversations.get(conversationId)
+    if (!temporarySummary) return
     let createdConversationId = ''
     try {
+      const temporarySnapshot = await getTemporaryAIConversation(conversationId)
       const created = await createAIConversation(temporarySnapshot.title || t('新对话'))
       createdConversationId = created.id
       const permanentSnapshot = await saveAIConversation({
@@ -4237,7 +4249,9 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
 
   const refreshConversationList = useCallback(async () => {
     const conversations = await listAIConversations().catch(() => [])
-    setConversationList(listTemporaryAIConversations().reduce<ConversationSummary[]>((list, snapshot) => upsertConversationSummary(list, snapshot), Array.isArray(conversations) ? conversations : []))
+    const temporarySummaries = await listTemporaryAIConversationsFromDisk().catch(() => [])
+    temporarySummaries.forEach((summary) => temporaryAIConversations.set(summary.id, { ...summary, transient: true }))
+    setConversationList([...temporarySummaries.map((summary) => ({ ...summary, transient: true })), ...(Array.isArray(conversations) ? conversations : [])])
   }, [])
 
   const handleMoveSelectedConversations = useCallback((groupId: string) => {
@@ -4257,9 +4271,11 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     const ids = Array.from(selectedConversationIds)
     await Promise.all(ids.map(async (conversationId) => {
       try {
-        const temporarySnapshot = temporaryAIConversations.get(conversationId)
-        if (temporarySnapshot) {
-          upsertTemporaryAIConversation({ ...temporarySnapshot, archived, updatedAt: Date.now() })
+        const temporarySummary = temporaryAIConversations.get(conversationId)
+        if (temporarySummary) {
+          const temporarySnapshot = await getTemporaryAIConversation(conversationId)
+          const saved = await saveTemporaryAIConversation({ ...temporarySnapshot, archived, updatedAt: Date.now() })
+          upsertTemporaryAIConversation(saved)
           return
         }
         const snapshot = await getAIConversation(conversationId)
@@ -4277,7 +4293,7 @@ function AIConversationTabPanel({ width, side, terminalId = 'global', sessionId 
     if (ids.length === 0) return
     const confirmed = await requestDeleteConfirmation(t('确定删除选中的对话吗？此操作不可撤销。'))
     if (!confirmed) return
-    await Promise.all(ids.map((conversationId) => removeTemporaryAIConversation(conversationId) ? Promise.resolve() : deleteAIConversation(conversationId)))
+    await Promise.all(ids.map(async (conversationId) => removeTemporaryAIConversation(conversationId) ? deleteTemporaryAIConversation(conversationId) : deleteAIConversation(conversationId)))
     persistConversationOrganizer((current) => ({
       ...current,
       assignments: Object.fromEntries(Object.entries(current.assignments).filter(([conversationId]) => !selectedConversationIds.has(conversationId))),

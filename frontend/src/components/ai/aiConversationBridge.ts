@@ -40,6 +40,7 @@ export type AIConversationSummary = {
   relationSource: string
   parentTitleSnapshot: string
   archived: boolean
+  transient?: boolean
 }
 
 export type AIConversationTaskSettings = {
@@ -148,6 +149,7 @@ export type AIConversationSnapshot = {
   relationSource: string
   parentTitleSnapshot: string
   archived: boolean
+  transient?: boolean
   messages: AIConversationMessage[]
   apiMessages: AIConversationAPIMessage[]
   settings: AIConversationTaskSettings
@@ -243,6 +245,7 @@ export function normalizeAIConversationSummary(summary: unknown): AIConversation
     relationSource: typeof s.relationSource === 'string' ? s.relationSource.trim() : '',
     parentTitleSnapshot: typeof s.parentTitleSnapshot === 'string' ? s.parentTitleSnapshot.trim() : '',
     archived: s.archived === true,
+    transient: s.transient === true,
   }
 }
 
@@ -385,6 +388,7 @@ export function normalizeAIConversationSnapshot(snapshot: unknown): AIConversati
     relationSource: typeof s.relationSource === 'string' ? s.relationSource.trim() : '',
     parentTitleSnapshot: typeof s.parentTitleSnapshot === 'string' ? s.parentTitleSnapshot.trim() : '',
     archived: s.archived === true,
+    transient: s.transient === true,
     messages: Array.isArray(s.messages) ? s.messages.map(normalizeAIConversationMessage) : [],
     apiMessages: Array.isArray(s.apiMessages) ? s.apiMessages.map(normalizeAIConversationAPIMessage) : [],
     settings: normalizeAIConversationTaskSettings(s.settings),
@@ -453,6 +457,31 @@ export async function listAIConversations(): Promise<AIConversationSummary[]> {
   }
   const result = await bridge.ListAIConversations()
   return Array.isArray(result) ? result.map(normalizeAIConversationSummary) : []
+}
+
+export async function listTemporaryAIConversations(): Promise<AIConversationSummary[]> {
+  const bridge = getAppBridge()
+  if (!bridge?.ListTemporaryAIConversations) return []
+  const result = await bridge.ListTemporaryAIConversations()
+  return Array.isArray(result) ? result.map(normalizeAIConversationSummary) : []
+}
+
+export async function getTemporaryAIConversation(conversationId: string): Promise<AIConversationSnapshot> {
+  const bridge = getAppBridge()
+  if (!bridge?.GetTemporaryAIConversation) throw new Error(t('读取对话能力未就绪'))
+  return normalizeAIConversationSnapshot(await bridge.GetTemporaryAIConversation(conversationId))
+}
+
+export async function saveTemporaryAIConversation(snapshot: unknown): Promise<AIConversationSnapshot> {
+  const bridge = getAppBridge()
+  const outgoing = { ...normalizeAIConversationSnapshot(snapshot), transient: true }
+  if (!bridge?.SaveTemporaryAIConversation) return outgoing
+  return normalizeAIConversationSnapshot(await bridge.SaveTemporaryAIConversation(JSON.stringify(outgoing)))
+}
+
+export async function deleteTemporaryAIConversation(conversationId: string): Promise<void> {
+  const bridge = getAppBridge()
+  if (bridge?.DeleteTemporaryAIConversation) await bridge.DeleteTemporaryAIConversation(conversationId)
 }
 
 export async function createAIConversation(title: unknown): Promise<AIConversationSnapshot> {

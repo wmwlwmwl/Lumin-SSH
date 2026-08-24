@@ -2,10 +2,14 @@ package wailsapp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	ai "luminssh-go/internal/ai"
@@ -22,12 +26,125 @@ import (
 )
 
 type AIBindings struct {
-	app        *App
-	runtimeApp *ai.App
+	app                       *App
+	runtimeApp                *ai.App
+	temporaryConversationsDir string
+	temporaryConversationsMu  sync.RWMutex
 }
 
 func NewAIBindings(app *App) *AIBindings {
-	return &AIBindings{app: app}
+	root := os.TempDir()
+	if matches, err := filepath.Glob(filepath.Join(root, "lumin-ai-temporary-conversations-*")); err == nil {
+		for _, match := range matches {
+			_ = os.RemoveAll(match)
+		}
+	}
+	tempDir, _ := os.MkdirTemp(root, "lumin-ai-temporary-conversations-*")
+	return &AIBindings{app: app, temporaryConversationsDir: tempDir}
+}
+
+func (b *AIBindings) temporaryConversationPath(conversationID string) (string, error) {
+	id := strings.TrimSpace(conversationID)
+	if id == "" || filepath.Base(id) != id || !strings.HasPrefix(id, "temporary-") {
+		return "", fmt.Errorf("invalid temporary conversation id")
+	}
+	if b.temporaryConversationsDir == "" {
+		return "", fmt.Errorf("temporary conversation storage unavailable")
+	}
+	return filepath.Join(b.temporaryConversationsDir, id+".json"), nil
+}
+
+func temporaryConversationSummary(snapshot ai.AIConversationSnapshot) ai.AIConversationSummary {
+	return ai.AIConversationSummary{ID: snapshot.ID, Title: snapshot.Title, CreatedAt: snapshot.CreatedAt, UpdatedAt: snapshot.UpdatedAt, Status: snapshot.Status, ToolProtocol: snapshot.ToolProtocol, MessageCount: len(snapshot.Messages), PromptCacheBypassTimestamp: snapshot.PromptCacheBypassTimestamp, ParentConversationID: snapshot.ParentConversationID, RootConversationID: snapshot.RootConversationID, RelationType: snapshot.RelationType, RelationSource: snapshot.RelationSource, ParentTitleSnapshot: snapshot.ParentTitleSnapshot, Archived: snapshot.Archived, Transient: true}
+}
+
+func (b *AIBindings) ListTemporaryAIConversations() []ai.AIConversationSummary {
+	b.temporaryConversationsMu.RLock()
+	defer b.temporaryConversationsMu.RUnlock()
+	entries, err := os.ReadDir(b.temporaryConversationsDir)
+	if err != nil {
+		return []ai.AIConversationSummary{}
+	}
+	summaries := make([]ai.AIConversationSummary, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(b.temporaryConversationsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var snapshot ai.AIConversationSnapshot
+		if json.Unmarshal(data, &snapshot) != nil {
+			continue
+		}
+		summaries = append(summaries, temporaryConversationSummary(snapshot))
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].UpdatedAt > summaries[j].UpdatedAt })
+	return summaries
+}
+
+func (b *AIBindings) GetTemporaryAIConversation(conversationID string) (ai.AIConversationSnapshot, error) {
+	path, err := b.temporaryConversationPath(conversationID)
+	if err != nil {
+		return ai.AIConversationSnapshot{}, err
+	}
+	b.temporaryConversationsMu.RLock()
+	defer b.temporaryConversationsMu.RUnlock()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ai.AIConversationSnapshot{}, err
+	}
+	var snapshot ai.AIConversationSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return ai.AIConversationSnapshot{}, err
+	}
+	snapshot.Transient = true
+	return snapshot, nil
+}
+
+func (b *AIBindings) SaveTemporaryAIConversation(jsonStr string) (ai.AIConversationSnapshot, error) {
+	var snapshot ai.AIConversationSnapshot
+	if err := json.Unmarshal([]byte(jsonStr), &snapshot); err != nil {
+		return snapshot, err
+	}
+	path, err := b.temporaryConversationPath(snapshot.ID)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Transient = true
+	if snapshot.UpdatedAt == 0 {
+		snapshot.UpdatedAt = time.Now().UnixMilli()
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return snapshot, err
+	}
+	b.temporaryConversationsMu.Lock()
+	defer b.temporaryConversationsMu.Unlock()
+	temporaryPath := path + ".new"
+	if err := os.WriteFile(temporaryPath, data, 0600); err != nil {
+		return snapshot, err
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		_ = os.Remove(temporaryPath)
+		return snapshot, err
+	}
+	return snapshot, nil
+}
+
+func (b *AIBindings) DeleteTemporaryAIConversation(conversationID string) error {
+	path, err := b.temporaryConversationPath(conversationID)
+	if err != nil {
+		return err
+	}
+	b.temporaryConversationsMu.Lock()
+	defer b.temporaryConversationsMu.Unlock()
+	err = os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 func (b *AIBindings) runtime() *ai.App {
