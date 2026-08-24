@@ -519,7 +519,7 @@ export default function AppearanceTab({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ color: 'var(--text-primary)', fontSize: 13 }}>{$t('全局背景图')}</div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('切换将迁移当前背景图')}</div>
+              <div style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>{$t('设置全局背景后不可设置终端壁纸')}</div>
             </div>
             <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', flexShrink: 0 }}>
               {(['global', 'terminal'] as const).map((mode) => (
@@ -536,7 +536,7 @@ export default function AppearanceTab({
                     color: bgTargetMode === mode ? '#fff' : 'var(--text-secondary)',
                   }}
                 >
-                  {mode === 'global' ? $t('全局背景') : $t('终端背景')}
+                  {mode === 'global' ? $t('全局背景图') : $t('终端背景')}
                 </button>
               ))}
             </div>

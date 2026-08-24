@@ -989,7 +989,7 @@ export default function SettingsModal({
     setBgTargetMode(mode);
     notifyGlobalAppearanceChanged();
     window.dispatchEvent(new CustomEvent('terminal-bg-changed'));
-    addToast($t('已切换背景类型'), 'success');
+    addToast($t('终端壁纸已更新'), 'success');
   };
 
   const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
