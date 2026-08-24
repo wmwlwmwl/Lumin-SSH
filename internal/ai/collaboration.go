@@ -231,25 +231,6 @@ func resolveAICollaborationCompletionResult(tool aiParsedToolUse) string {
 	return resultText
 }
 
-func (a *App) emitAICollaborationFollowupResolved(requestID string, batch *aiPendingToolBatch, status string) {
-	trimmedRequestID := strings.TrimSpace(requestID)
-	if a == nil || trimmedRequestID == "" || batch == nil || batch.NextToolIndex >= len(batch.ParsedTools) {
-		return
-	}
-	tool := batch.ParsedTools[batch.NextToolIndex]
-	message, err := buildAIFollowupMessage(batch.AssistantMessageID, trimmedRequestID, tool, batch.NextToolIndex)
-	if err != nil {
-		return
-	}
-	message["status"] = strings.TrimSpace(status)
-	message["requestId"] = ""
-	a.emitAIChatEvent(map[string]interface{}{
-		"kind":      "upsert_message",
-		"requestId": trimmedRequestID,
-		"message":   message,
-	})
-}
-
 func (a *App) emitAICollaborationCompletionCard(requestID string, batch *aiPendingToolBatch, status string, sound string) {
 	trimmedRequestID := strings.TrimSpace(requestID)
 	if a == nil || trimmedRequestID == "" || batch == nil || batch.NextToolIndex >= len(batch.ParsedTools) {

@@ -9,7 +9,7 @@ import type { AutocompletePlan, CommandNode } from './terminalCommandAutocomplet
 
 const COMMAND_AUTOCOMPLETE_LIMIT = 10
 
-export type AutocompleteItemSource =
+type AutocompleteItemSource =
   | 'server-history'
   | 'global-history'
   | 'quick'

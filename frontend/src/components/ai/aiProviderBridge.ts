@@ -1,7 +1,7 @@
 import { t } from '../../i18n.ts'
 import { canUseDedicatedWebSearchCandidate } from './providers/index.ts'
 
-export type AIProvider = {
+type AIProvider = {
   id: string
   name: string
   provider: string
@@ -26,7 +26,7 @@ export type AIProvider = {
   updatedAt: number
 }
 
-export type AIProviderPromptCacheFormatPolicy = {
+type AIProviderPromptCacheFormatPolicy = {
   format: string
   durations: string[]
 }

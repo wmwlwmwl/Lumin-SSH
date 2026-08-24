@@ -77,7 +77,7 @@ export function getExecutionContextSnapshot({ sessionId = '', terminalId = '' } 
   }
 }
 
-export function buildExecutionContextCardText(snapshot: ExecutionContextSnapshot): string {
+function buildExecutionContextCardText(snapshot: ExecutionContextSnapshot): string {
   const lines = buildExecutionContextLines(snapshot)
   return lines.join('\n').trim()
 }

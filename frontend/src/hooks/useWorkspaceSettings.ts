@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-export type WorkspacePersistenceLevel = 'program' | 'session';
+type WorkspacePersistenceLevel = 'program' | 'session';
 
 export interface UseWorkspaceSettingsResult {
   rememberWorkspace: boolean;

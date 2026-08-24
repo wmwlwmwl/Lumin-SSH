@@ -149,33 +149,6 @@ func buildAIConversationSummarySubtaskTitle(title string) string {
 	return normalizedTitle
 }
 
-func buildAIConversationSummarySeedSystemContent(summary string) string {
-	trimmedSummary := strings.TrimSpace(summary)
-	if trimmedSummary == "" {
-		return ""
-	}
-	return "<user_message>\n" + trimmedSummary + "\n</user_message>"
-}
-
-func buildAIConversationSummarySubtaskUIMessage(parentSnapshot AIConversationSnapshot, summary string, prevContextTokens int, newContextTokens int) AIConversationMessage {
-	now := time.Now()
-	messageID := fmt.Sprintf("summary-subtask-%d", now.UnixNano())
-	return AIConversationMessage{
-		ID:     messageID,
-		TurnID: messageID,
-		Kind:   "condense_context",
-		Text:   strings.TrimSpace(summary),
-		Time:   now.Format("15:04"),
-		Extra: map[string]interface{}{
-			"derivedSubtask":       true,
-			"parentConversationId": strings.TrimSpace(parentSnapshot.ID),
-			"parentTitleSnapshot":  strings.TrimSpace(parentSnapshot.Title),
-			"prevContextTokens":    prevContextTokens,
-			"newContextTokens":     newContextTokens,
-		},
-	}
-}
-
 func buildAIConversationSummarySubtaskFinalInstructionMessage() AIChatRequestMessage {
 	return AIChatRequestMessage{
 		Role: "user",

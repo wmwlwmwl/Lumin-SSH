@@ -357,12 +357,6 @@ func pickBestMainWindow(windows []syscall.Handle) syscall.Handle {
 	return pickBestCandidate(candidates)
 }
 
-// findMainWindowHWND 枚举顶层窗找 Lumin 主窗。
-// matchPID!=0：限本进程；matchPID==0：跨进程二次启动，只认标题。
-func findMainWindowHWND(matchPID uint32) syscall.Handle {
-	return pickBestMainWindow(findMainWindowCandidates(matchPID))
-}
-
 // findAndShowWindow 二次启动时唤醒已有实例窗口（按标题，跨进程）
 func findAndShowWindow() {
 	cands := findMainWindowCandidates(0)

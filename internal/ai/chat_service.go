@@ -483,30 +483,6 @@ type aiToolResultSafetyState struct {
 	CollectionItems   int
 }
 
-func aiJSRuneLength(value rune) int {
-	if value <= 0xFFFF {
-		return 1
-	}
-	return 2
-}
-
-func truncateAIStringByJSLength(value string, maxLength int) string {
-	if maxLength <= 0 {
-		return ""
-	}
-	currentLength := 0
-	var builder strings.Builder
-	for _, currentRune := range value {
-		nextLength := aiJSRuneLength(currentRune)
-		if currentLength+nextLength > maxLength {
-			break
-		}
-		builder.WriteRune(currentRune)
-		currentLength += nextLength
-	}
-	return builder.String()
-}
-
 func sanitizeAIToolResultText(value string) string {
 	return strings.TrimSpace(value)
 }
@@ -1319,28 +1295,6 @@ func getAIParsedToolUseDecision(settings AIConversationTaskSettings, tool aiPars
 	return aiApprovalDecisionAskUser
 }
 
-func getAIParsedToolBatchDecision(settings AIConversationTaskSettings, tools []aiParsedToolUse) aiApprovalDecision {
-	if len(tools) == 0 {
-		return aiApprovalDecisionAskUser
-	}
-
-	hasAskUserDecision := false
-	for _, tool := range tools {
-		decision := getAIParsedToolUseDecision(settings, tool)
-		if decision == aiApprovalDecisionAutoDeny {
-			return aiApprovalDecisionAutoDeny
-		}
-		if decision != aiApprovalDecisionAutoApprove {
-			hasAskUserDecision = true
-		}
-	}
-
-	if hasAskUserDecision {
-		return aiApprovalDecisionAskUser
-	}
-	return aiApprovalDecisionAutoApprove
-}
-
 func isRawPreserveToolParam(toolName string, paramName string) bool {
 	return (toolName == "write_to_file" && paramName == "content") || (toolName == "apply_diff" && (paramName == "diff" || paramName == "args"))
 }
@@ -1683,20 +1637,6 @@ func purgeAIProtocolRetryNoiseFromMessages(messages []AIChatRequestMessage) []AI
 	return cleaned
 }
 
-func buildNoToolRetryMessage(conversationID string) string {
-	_ = conversationID
-	return strings.TrimSpace(`[ERROR] You did not use a tool in your previous response.
-
-Your next reply must be a minimal valid tool reply.
-Output direct tool tags only, with no extra XML wrapper or container.
-All opened tool tags and parameter tags must be properly closed.
-For example: <attempt_completion><result>...</result></attempt_completion>
-If the task is complete, reply with only the completion tool.
-If you need more information, reply with only the follow-up tool.
-Otherwise, reply with only the next tool call or direct tool batch.
-Do not add explanation before or after the tool reply.`)
-}
-
 func buildInvalidToolProtocolRetryMessage(conversationID string, detail string) string {
 	_ = conversationID
 	trimmedDetail := strings.TrimSpace(detail)
@@ -1771,11 +1711,6 @@ func dedupeParsedToolUsesWithCount(tools []aiParsedToolUse) ([]aiParsedToolUse, 
 		deduped = append(deduped, tool)
 	}
 	return deduped, duplicateToolCount
-}
-
-func dedupeParsedToolUses(tools []aiParsedToolUse) []aiParsedToolUse {
-	deduped, _ := dedupeParsedToolUsesWithCount(tools)
-	return deduped
 }
 
 func dedupeParsedToolUsesAndText(tools []aiParsedToolUse, content string) ([]aiParsedToolUse, string) {
@@ -2559,157 +2494,6 @@ func buildAIForcedCollaborationFlags(requestMessages []AIChatRequestMessage, rou
 	return true, "assistant_same_output_twice"
 }
 
-func buildToolPreviewMessages(turnID string, tools []aiParsedToolUse) []map[string]interface{} {
-	messages := make([]map[string]interface{}, 0, len(tools))
-	for index, tool := range tools {
-		if tool.Name == "execute_command" {
-			messages = append(messages, map[string]interface{}{
-				"id":      buildToolMessageID(turnID, index),
-				"turnId":  turnID,
-				"kind":    "command",
-				"purpose": tool.Params["purpose"],
-				"command": tool.Params["command"],
-				"output":  "等待批准后执行",
-				"status":  "待批准",
-			})
-			continue
-		}
-		messages = append(messages, map[string]interface{}{
-			"id":                 buildToolMessageID(turnID, index),
-			"turnId":             turnID,
-			"kind":               "tool",
-			"actionLabel":        tool.Name,
-			"title":              titleForParsedToolUse(tool),
-			"summary":            summarizeParsedToolUse(tool),
-			"code":               tool.RawXML,
-			"status":             "待批准",
-			"remainingFileEdits": getAIToolRemainingFileEdits(tool),
-		})
-	}
-	return messages
-}
-
-func (a *App) executeParsedToolUses(requestID string, assistantMessageID string, payload AIChatRequestPayload, profile AIProviderProfile, tools []aiParsedToolUse, duplicateToolCount int) []AIChatRequestMessage {
-	if a == nil {
-		return nil
-	}
-	service := mcpserver.NewService(mcpSessionProvider{app: a})
-	catalog := mcpserver.NewCatalog(service, mcpFileProvider{app: a}, mcpCommandProvider{app: a}, mcpRemoteEditExecutor{app: a}, mcpTransferProvider{app: a})
-	results := make([]AIChatRequestMessage, 0, len(tools))
-
-	for index, tool := range tools {
-		arguments := convertToolArguments(tool, payload.SessionID)
-		var callResult any
-		var callErr error
-		if tool.Name == "ask_followup_question" {
-			callResult, callErr = callAIAskFollowupQuestion(arguments)
-		} else {
-			callResult, callErr = catalog.Call(tool.Name, arguments)
-		}
-
-		uiResultText := formatToolResultContent(callResult)
-		rawResultText := formatAIRawToolResultContent(callResult)
-		if callErr != nil {
-			uiResultText = callErr.Error()
-			rawResultText = callErr.Error()
-		}
-
-		if tool.Name == "execute_command" {
-			outputText := uiResultText
-			statusText := "已执行"
-			if callErr != nil {
-				statusText = "错误"
-			}
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "upsert_message",
-				"requestId": requestID,
-				"message": map[string]interface{}{
-					"id":      buildToolMessageID(assistantMessageID, index),
-					"turnId":  assistantMessageID,
-					"kind":    "command",
-					"purpose": tool.Params["purpose"],
-					"command": tool.Params["command"],
-					"output":  outputText,
-					"status":  statusText,
-				},
-			})
-		} else if tool.Name == "attempt_completion" {
-			statusText := "已完成"
-			resultText := strings.TrimSpace(tool.Params["result"])
-			rawResultText = "Done"
-			if resultText == "" {
-				resultText = uiResultText
-			}
-			if callErr != nil {
-				statusText = "错误"
-				resultText = uiResultText
-				rawResultText = uiResultText
-			}
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "upsert_message",
-				"requestId": requestID,
-				"message": map[string]interface{}{
-					"id":      buildToolMessageID(assistantMessageID, index),
-					"turnId":  assistantMessageID,
-					"kind":    "completion",
-					"title":   titleForParsedToolUse(tool),
-					"summary": "",
-					"result":  resultText,
-					"status":  statusText,
-				},
-			})
-		} else {
-			statusText := "已执行"
-			if callErr != nil {
-				statusText = "错误"
-			}
-			message := map[string]interface{}{
-				"id":                 buildToolMessageID(assistantMessageID, index),
-				"turnId":             assistantMessageID,
-				"kind":               "tool",
-				"actionLabel":        tool.Name,
-				"title":              titleForParsedToolUse(tool),
-				"summary":            summarizeParsedToolUse(tool),
-				"code":               tool.RawXML,
-				"status":             statusText,
-				"remainingFileEdits": getAIToolRemainingFileEdits(tool),
-			}
-			if tool.Name == "read_file" {
-				attachAIReadFileTokenEstimateMeta(message, callResult, profile)
-			}
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "upsert_message",
-				"requestId": requestID,
-				"message":   message,
-			})
-		}
-
-		if !shouldSuppressAIChatToolResultUserMessage(tool.Name) {
-			a.emitAIChatEvent(map[string]interface{}{
-				"kind":      "api_message_append",
-				"requestId": requestID,
-				"message": map[string]interface{}{
-					"messageId":    fmt.Sprintf("api-tool-result-%d", time.Now().UnixNano()),
-					"role":         "user",
-					"content":      fmt.Sprintf("[%s] Result:\n%s", tool.Name, rawResultText),
-					"uiMessageIds": []string{buildToolMessageID(assistantMessageID, index)},
-					"ts":           time.Now().UnixMilli(),
-				},
-			})
-			results = append(results, AIChatRequestMessage{
-				Role:    "user",
-				Content: fmt.Sprintf("[%s] Result:\n%s", tool.Name, rawResultText),
-			})
-		}
-	}
-
-	if duplicateToolCount > 0 {
-		results = append(results, a.emitAIDuplicateToolProtocolConflictMessage(requestID, duplicateToolCount))
-	}
-	a.emitAIChatToolExecutionPersistRequested(requestID)
-	return results
-}
-
 func (a *App) requestAIProviderChatRound(ctx context.Context, requestID string, payload AIChatRequestPayload, profile AIProviderProfile, requestMessages []AIChatRequestMessage) (aiChatRoundResult, error) {
 	if shouldUseAIAssistantFirstReply(payload, requestMessages) {
 		return a.requestAIAssistantFirstReplyRound(ctx, requestID, payload, requestMessages)
@@ -2722,20 +2506,6 @@ func (a *App) requestAIProviderChatRound(ctx context.Context, requestID string, 
 	default:
 		return a.requestCompatibleAIChatRound(ctx, requestID, payload, profile, requestMessages)
 	}
-}
-
-func (a *App) continueCompatibleAIChatAfterTools(ctx context.Context, requestID string, batch *aiPendingToolBatch) {
-	requestMessages := append([]AIChatRequestMessage{}, batch.RequestMessages...)
-	requestMessages = append(requestMessages, a.executeParsedToolUses(requestID, batch.AssistantMessageID, batch.Payload, batch.Profile, batch.ParsedTools, batch.DuplicateToolCount)...)
-
-	nextAssistantMessageID := fmt.Sprintf("%s-cont-%d", requestID, time.Now().UnixNano())
-	a.emitAIChatEvent(map[string]interface{}{
-		"kind":      "assistant_continue",
-		"requestId": requestID,
-		"messageId": nextAssistantMessageID,
-	})
-
-	a.runCompatibleAIChatLoop(ctx, requestID, batch.Payload, batch.Profile, requestMessages, batch.AutoApprovalSettings, nextAssistantMessageID, batch.AssistantRetryCount, batch.CollaborationRetryCount)
 }
 
 func (a *App) runCompatibleAIChatLoop(ctx context.Context, requestID string, payload AIChatRequestPayload, profile AIProviderProfile, requestMessages []AIChatRequestMessage, autoApprovalSettings AIConversationTaskSettings, assistantMessageID string, assistantRetryCount int, collaborationRetryCount int) {

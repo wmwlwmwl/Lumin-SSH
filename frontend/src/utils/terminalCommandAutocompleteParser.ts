@@ -16,7 +16,7 @@ function getSafeCursorPosition(inputValue: string, cursorPosition: unknown): num
 }
 
 /** shell 命令段（按 && / || / ; / | / 换行切分） */
-export interface ShellSegment {
+interface ShellSegment {
   start: number;
   end: number;
   boundaryEnd: number;
@@ -24,7 +24,7 @@ export interface ShellSegment {
 }
 
 /** 段内按空白切分的词元 */
-export interface ShellToken {
+interface ShellToken {
   text: string;
   lowerText: string;
   start: number;
@@ -260,7 +260,7 @@ function getCurrentTokenInfo(raw: string, tokens: ShellToken[], safeCursor: numb
   }
 }
 
-export function finalizeReplacementValue(prefix: string, replacement: string, suffix: string, appendSpace = false): string {
+function finalizeReplacementValue(prefix: string, replacement: string, suffix: string, appendSpace = false): string {
   let normalizedReplacement = String(replacement || '')
   if (appendSpace && (!suffix || !/^[\s;&|]/.test(suffix))) {
     normalizedReplacement = `${normalizedReplacement} `

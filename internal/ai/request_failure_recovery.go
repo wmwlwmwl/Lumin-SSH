@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	aiprovider "luminssh-go/internal/ai/provider"
 )
 
 const aiRequestFailureLivenessProbeText = "Have you received my message? If so, reply OK"
@@ -73,61 +71,6 @@ func calculateAIConversationCondenseRate(prevContextTokens int, newContextTokens
 	return float64(prevContextTokens-newContextTokens) / float64(prevContextTokens)
 }
 
-func resolveAIRequestFailureBudgetHint(profile AIProviderProfile) int {
-	capability := aiprovider.ResolveModelCapability(profile.Provider, profile.Model)
-	if capability.MaxTokens <= 0 {
-		return 0
-	}
-	return capability.MaxTokens * 4
-}
-
-func assessAIRequestFailure(err error, contextTokens int, budgetHint int) aiRequestFailureAssessment {
-	assessment := aiRequestFailureAssessment{
-		Kind:          aiRequestFailureKindUnknown,
-		ContextTokens: contextTokens,
-		BudgetHint:    budgetHint,
-		ReasonCodes:   []string{},
-	}
-	if err == nil {
-		return assessment
-	}
-	errText := strings.TrimSpace(err.Error())
-	if errText == "" {
-		return assessment
-	}
-	if aiRequestFailureContextOverflowPattern.MatchString(errText) {
-		assessment.OverflowScore += 70
-		assessment.ReasonCodes = append(assessment.ReasonCodes, "error_text_context_overflow")
-	}
-	if aiRequestFailureGatewayPattern.MatchString(errText) {
-		assessment.OutageScore += 60
-		assessment.ReasonCodes = append(assessment.ReasonCodes, "error_text_gateway_or_timeout")
-	}
-	if budgetHint > 0 && contextTokens > 0 {
-		ratio := float64(contextTokens) / float64(budgetHint)
-		switch {
-		case ratio >= 0.8:
-			assessment.OverflowScore += 35
-			assessment.ReasonCodes = append(assessment.ReasonCodes, "token_risk_high")
-		case ratio >= 0.55:
-			assessment.OverflowScore += 15
-			assessment.ReasonCodes = append(assessment.ReasonCodes, "token_risk_medium")
-		default:
-			assessment.OutageScore += 10
-			assessment.ReasonCodes = append(assessment.ReasonCodes, "token_risk_low")
-		}
-	}
-	switch {
-	case assessment.OverflowScore >= 60 && assessment.OverflowScore >= assessment.OutageScore:
-		assessment.Kind = aiRequestFailureKindContextOverflow
-	case assessment.OutageScore >= 60 && assessment.OutageScore > assessment.OverflowScore:
-		assessment.Kind = aiRequestFailureKindProviderOutage
-	case assessment.OutageScore > 0 || assessment.OverflowScore > 0:
-		assessment.Kind = aiRequestFailureKindRetryable
-	}
-	return assessment
-}
-
 func buildAIAutoRecoveryRequestID(sourceRequestID string) string {
 	trimmedSourceRequestID := strings.TrimSpace(sourceRequestID)
 	if trimmedSourceRequestID == "" {
@@ -173,56 +116,6 @@ func (a *App) emitAIAutoRecoveryRunFullSummary(requestID string, text string) {
 		"requestId": trimmedRequestID,
 		"text":      strings.TrimSpace(text),
 	})
-}
-
-func extractAIConversationUserMessageBodyForRecovery(content string) string {
-	trimmedContent := strings.TrimSpace(content)
-	if trimmedContent == "" {
-		return ""
-	}
-	startTag := "<user_message>"
-	endTag := "</user_message>"
-	startIndex := strings.Index(trimmedContent, startTag)
-	endIndex := strings.Index(trimmedContent, endTag)
-	if startIndex >= 0 && endIndex > startIndex {
-		body := strings.TrimSpace(trimmedContent[startIndex+len(startTag) : endIndex])
-		if body != "" {
-			return body
-		}
-	}
-	return trimmedContent
-}
-
-func (a *App) appendAIAutoRecoveryPromptToConversationSnapshot(snapshot AIConversationSnapshot, prompt AIChatRequestMessage) (AIConversationSnapshot, error) {
-	if a == nil || a.configManager == nil {
-		return snapshot, fmt.Errorf("配置管理器不可用")
-	}
-	promptContent := strings.TrimSpace(prompt.Content)
-	promptImages := normalizeAIStringList(prompt.Images)
-	if promptContent == "" && len(promptImages) == 0 {
-		return snapshot, nil
-	}
-	now := time.Now()
-	userMessageID := fmt.Sprintf("auto-recovery-user-%d", now.UnixNano())
-	nextSnapshot := snapshot
-	nextSnapshot.UpdatedAt = now.UnixMilli()
-	nextSnapshot.Messages = append(append([]AIConversationMessage{}, nextSnapshot.Messages...), AIConversationMessage{
-		ID:     userMessageID,
-		TurnID: userMessageID,
-		Kind:   "user",
-		Text:   extractAIConversationUserMessageBodyForRecovery(promptContent),
-		Time:   now.Format("15:04"),
-	})
-	nextSnapshot.APIMessages = append(append([]AIConversationAPIMessage{}, nextSnapshot.APIMessages...), AIConversationAPIMessage{
-		Role:         "user",
-		Content:      promptContent,
-		MessageID:    userMessageID + "-api",
-		UIMessageIDs: []string{userMessageID},
-		Images:       promptImages,
-		CacheObjects: cloneAIConversationProviderCacheObjects(prompt.CacheObjects),
-		Ts:           now.UnixMilli(),
-	})
-	return a.configManager.SaveAIConversation(nextSnapshot)
 }
 
 func (a *App) probeAIProviderLiveness(ctx context.Context, requestID string, sessionID string, profile AIProviderProfile) (bool, error) {

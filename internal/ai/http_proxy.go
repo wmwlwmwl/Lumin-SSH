@@ -32,7 +32,9 @@ func configureAINeverTimeoutHTTPTransport(transport *http.Transport) *http.Trans
 	transport.ResponseHeaderTimeout = 0
 	transport.TLSHandshakeTimeout = 0
 	transport.ExpectContinueTimeout = 0
-	transport.IdleConnTimeout = 0
+	// 每请求新建 Transport 且无人调 CloseIdleConnections，
+	// 空闲超时必须有限，否则连接与 Transport 永久滞留（仅作用于闲置连接，不影响进行中的流式请求）
+	transport.IdleConnTimeout = 90 * time.Second
 	return transport
 }
 
@@ -166,10 +168,6 @@ func (a *App) newAIHTTPTransportForProfile(profile *AIProviderProfile) (*http.Tr
 		transport.DialContext = dialContext
 	}
 	return transport, nil
-}
-
-func (a *App) newAIHTTPTransport() (*http.Transport, error) {
-	return a.newAIHTTPTransportForProfile(nil)
 }
 
 func (a *App) newAIHTTPClientForProfile(profile *AIProviderProfile, timeout time.Duration) (*http.Client, error) {

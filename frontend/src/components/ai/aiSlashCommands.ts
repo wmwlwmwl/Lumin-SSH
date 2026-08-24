@@ -53,7 +53,7 @@ export function normalizeAISlashCommands(commands: unknown): AISlashCommand[] {
   })
   return normalized
 }
-export function findAISlashCommandByName(commands: unknown, name: unknown): AISlashCommand | null {
+function findAISlashCommandByName(commands: unknown, name: unknown): AISlashCommand | null {
   const normalizedCommands = normalizeAISlashCommands(commands)
   const normalizedName = normalizeSlashCommandName(name).toLowerCase()
   if (!normalizedName) {

@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-export interface AIWorkspaceTabContextValue {
+interface AIWorkspaceTabContextValue {
   sessionId: string
   terminalId: string
   tabId: string

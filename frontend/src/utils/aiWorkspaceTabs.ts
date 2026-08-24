@@ -61,7 +61,7 @@ export function createAIWorkspaceTabId(): string {
   return `ai-tab-${randomUUID}`
 }
 
-export function normalizeAIWorkspaceTabGroup(value: unknown): AIWorkspaceTabGroup {
+function normalizeAIWorkspaceTabGroup(value: unknown): AIWorkspaceTabGroup {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const seenIds = new Set<string>()
   const seenConversationIds = new Set<string>()

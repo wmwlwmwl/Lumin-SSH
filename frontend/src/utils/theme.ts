@@ -19,7 +19,7 @@ const LEGACY_THEME_PACKAGE_MAP: Record<string, { light: string; dark: string }> 
 };
 
 export type ThemeModeHint = 'light' | 'dark';
-export type ThemeModePreference = 'light' | 'dark' | 'system';
+type ThemeModePreference = 'light' | 'dark' | 'system';
 
 /** 终端 xterm 调色板 */
 export interface TerminalXtermTheme {
@@ -80,7 +80,7 @@ export interface ThemeComponentStyle {
   [key: string]: string | undefined;
 }
 
-export interface ThemeComponents {
+interface ThemeComponents {
   tabs?: ThemeComponentStyle;
   terminal?: {
     xterm?: TerminalXtermTheme;
@@ -1220,15 +1220,6 @@ export function getTerminalTheme(): TerminalTheme {
   };
 }
 
-export function hexToRgb(hex: string): string {
-  if (!/^#[\da-fA-F]{6}$/.test(String(hex || '').trim())) {
-    return '0, 0, 0';
-  }
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `${r}, ${g}, ${b}`;
-}
 
 bindThemeRuntimeListeners();
 themePackageSettingsCache = normalizeThemePackageSettings(readThemePackageSettingsFromLocalStorage(), themePackageMapCache);

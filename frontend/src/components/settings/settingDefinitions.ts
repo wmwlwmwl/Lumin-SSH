@@ -2,8 +2,6 @@
 import type { I18nKey } from '../../i18n.ts'
 import type { SettingsDefinitionNode } from './SharedComponents.tsx'
 
-/** 设置节点类型集合 */
-export type SettingsNodeType = 'root' | 'tab' | 'section' | 'panel' | 'conditional' | 'field' | 'field-group' | 'option' | 'action'
 
 /** 设置节点（宽松形状：config/extra 任意字段透传；含 normalize 产出字段） */
 export interface SettingsTreeNode extends SettingsDefinitionNode {
@@ -51,11 +49,8 @@ function createSettingsNode(config: Record<string, unknown> | null | undefined):
   };
 }
 
-export function createSettingDefinition(config: Record<string, unknown> | null | undefined): SettingsTreeNode {
-  return createSettingsNode(config);
-}
 
-export function createSettingsSectionDefinition(config: Record<string, unknown> | null | undefined): SettingsTreeNode {
+function createSettingsSectionDefinition(config: Record<string, unknown> | null | undefined): SettingsTreeNode {
   return createSettingsNode({
     type: 'section',
     targetId: (config?.targetId as string | undefined) || (config?.id as string | undefined) || '',
@@ -508,8 +503,7 @@ function buildSearchDefinitions(root: SettingsTreeNode): readonly SettingsSearch
 
 export type SettingsTabId = 'general' | 'network' | 'fileManager' | 'runtimeEnvironment' | 'appearance' | 'shortcuts' | 'sync' | 'app';
 
-export const SETTINGS_TREE: SettingsTreeNode = normalizeSettingsTree(settingsTreeSource);
+const SETTINGS_TREE: SettingsTreeNode = normalizeSettingsTree(settingsTreeSource);
 export const settings: Record<SettingsTabId, SettingsTabRegistry> = buildSettingsRegistry(SETTINGS_TREE);
 export const SETTINGS_SECTIONS: readonly SettingsTreeNode[] = Object.freeze(Object.values(settings).flatMap((group) => Object.values(group.sections)));
-export const SETTINGS_DEFINITIONS: readonly SettingsTreeNode[] = Object.freeze(Object.values(settings).flatMap((group) => Object.values(group.fields)));
 export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = Object.freeze(buildSearchDefinitions(SETTINGS_TREE));

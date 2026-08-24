@@ -230,7 +230,7 @@ function buildLoadingNode(text: string) {
 ensureMonacoConfigured()
 
 /** AI 审阅返回的差异块（字段来自 AI 响应，可能缺失，访问处均有防御） */
-export interface ReviewBlock {
+interface ReviewBlock {
   before?: string
   after?: string
   startLine?: number

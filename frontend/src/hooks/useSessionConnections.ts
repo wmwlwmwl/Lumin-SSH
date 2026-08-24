@@ -144,7 +144,7 @@ export interface UseSessionConnectionsDeps {
   workspaceRestoreStartedRef: React.MutableRefObject<boolean>;
 }
 
-export interface ReconnectSessionResult {
+interface ReconnectSessionResult {
   oldToNew: Record<string, string>;
   newTerminals: Array<{ id: string; label: string }>;
 }

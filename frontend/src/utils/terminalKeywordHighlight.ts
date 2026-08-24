@@ -13,7 +13,7 @@
  * - 规则可动态更新（设置变更时重建正则缓存）
  */
 
-export type KeywordColorMode = 'ansi16' | 'truecolor';
+type KeywordColorMode = 'ansi16' | 'truecolor';
 
 export interface KeywordRule {
   id: string;
@@ -167,12 +167,6 @@ function normalizeKeywordRules(rules: unknown): KeywordRule[] {
   return normalized;
 }
 
-/**
- * 获取当前生效的规则列表
- */
-export function getKeywordRules(): KeywordRule[] {
-  return activeRules;
-}
 
 /**
  * 设置规则列表并重建正则缓存。

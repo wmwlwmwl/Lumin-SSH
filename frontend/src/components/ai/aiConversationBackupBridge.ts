@@ -24,7 +24,7 @@ export type AIConversationBackupHistoryEntry = {
   images: string[]
 }
 
-export function normalizeAIConversationBackup(backup: unknown): AIConversationBackup {
+function normalizeAIConversationBackup(backup: unknown): AIConversationBackup {
   const b = (backup ?? {}) as Record<string, unknown>
   return {
     id: typeof b.id === 'string' ? b.id.trim() : '',
@@ -35,7 +35,7 @@ export function normalizeAIConversationBackup(backup: unknown): AIConversationBa
   }
 }
 
-export function normalizeAIConversationBackupHistoryEntry(entry: unknown): AIConversationBackupHistoryEntry {
+function normalizeAIConversationBackupHistoryEntry(entry: unknown): AIConversationBackupHistoryEntry {
   const e = (entry ?? {}) as Record<string, unknown>
   return {
     role: typeof e.role === 'string' ? e.role : '',

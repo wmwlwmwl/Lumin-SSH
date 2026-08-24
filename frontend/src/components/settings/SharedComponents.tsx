@@ -1,16 +1,16 @@
 import React from 'react';
 import { t as $t, type I18nKey } from '../../i18n.ts';
 
-export const SETTINGS_TAB_GAP = 14;
+const SETTINGS_TAB_GAP = 14;
 
-export const SETTINGS_SECTION_TITLE_STYLE = {
+const SETTINGS_SECTION_TITLE_STYLE = {
   fontSize: 13,
   color: 'var(--text-primary)',
   marginBottom: 6,
   fontWeight: 600,
 };
 
-export const SETTINGS_PANEL_STYLE = {
+const SETTINGS_PANEL_STYLE = {
   background: 'var(--surface-overlay)',
   padding: 10,
   borderRadius: 'var(--radius-md)',
@@ -48,9 +48,6 @@ interface SettingsSectionProps {
   style?: React.CSSProperties;
 }
 
-export function SettingsSection({ definition, children, style = {} }: SettingsSectionProps) {
-  return <div data-settings-section-id={definition?.id} style={style}>{children}</div>;
-}
 
 interface SettingsSectionTitleProps {
   children?: React.ReactNode;

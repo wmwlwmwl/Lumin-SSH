@@ -428,7 +428,7 @@ export function subscribeSessionUploadPanelState(
   return () => root.removeEventListener(eventName, handler);
 }
 
-export function getSessionFileManagerPathCache(sessionGroupId: unknown): Record<string, unknown> {
+function getSessionFileManagerPathCache(sessionGroupId: unknown): Record<string, unknown> {
   const store = ensureFileManagerPathCacheStore();
   const key = normalizeSessionGroupId(sessionGroupId);
   const current = store[key];

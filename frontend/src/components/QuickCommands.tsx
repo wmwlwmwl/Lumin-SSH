@@ -10,7 +10,7 @@ import { extractQuickCommandParams, fillQuickCommandParams, normalizeQuickComman
 import { clampMenuPosition } from '../utils/menuPosition.ts';
 
 // ── 命令树节点 ───────────────────────────────────────────
-export interface QuickCommandItem {
+interface QuickCommandItem {
   type?: 'group' | 'command';
   name?: string;
   command?: string;
@@ -28,7 +28,7 @@ export interface QuickCommandsHandle {
   showCloseConfirm: () => void;
 }
 
-export interface QuickCommandsProps {
+interface QuickCommandsProps {
   sessionId: string;
   historySessionId?: string;
   addToast?: (message: string | Error, type?: string, duration?: number, actions?: unknown[]) => number;

@@ -1,7 +1,7 @@
 export const GLOBAL_CONTEXT_MENU_OPEN_EVENT = 'lumin-open-context-menu';
 
 /** 全局右键菜单项 */
-export interface GlobalContextMenuItem {
+interface GlobalContextMenuItem {
   key: string;
   label: string;
   shortcut?: string;

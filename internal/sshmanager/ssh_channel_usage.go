@@ -175,10 +175,6 @@ func (m *SSHManager) emitSSHChannelUsage(connKey string) {
 	})
 }
 
-func (m *SSHManager) emitSSHChannelUsageForSession(sessionId string) {
-	m.emitSSHChannelUsage(m.ConnKeyForSession(sessionId))
-}
-
 func (m *SSHManager) trackUploadChannelDelta(sessionId string, delta int) {
 	connKey := m.ConnKeyForSession(sessionId)
 	if connKey == "" {

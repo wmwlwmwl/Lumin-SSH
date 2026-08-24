@@ -1,5 +1,5 @@
 // 桥接模块（自 .js 收编后类型化）：CallMyVIP 特供供应商主机识别
-export const CALLMY_VIP_PROVIDER_HOSTS: readonly string[] = [
+const CALLMY_VIP_PROVIDER_HOSTS: readonly string[] = [
   'newapi.callmy.vip',
   'newapi2.callmy.vip',
 ]

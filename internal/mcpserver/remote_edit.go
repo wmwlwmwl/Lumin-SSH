@@ -29,10 +29,6 @@ type CancelableRemoteEditExecutor interface {
 	ApplyPatchAtomicContext(ctx context.Context, sessionID string, operations []ApplyPatchFileOperation) (ApplyPatchResult, error)
 }
 
-func getRemoteEditCapabilities(executor RemoteEditExecutor, sessionID string) RemoteEditCapabilities {
-	return getRemoteEditCapabilitiesWithContext(executor, context.Background(), sessionID)
-}
-
 func getRemoteEditCapabilitiesWithContext(executor RemoteEditExecutor, ctx context.Context, sessionID string) RemoteEditCapabilities {
 	if executor == nil {
 		return RemoteEditCapabilities{}

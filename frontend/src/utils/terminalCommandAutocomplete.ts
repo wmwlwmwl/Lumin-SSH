@@ -13,7 +13,6 @@ import {
 } from './terminalCommandAutocompleteProviders.ts'
 
 export { normalizeRemoteAbsolutePath } from './terminalCommandAutocompleteParser.ts'
-export type { CommandInputContext, ShellToken } from './terminalCommandAutocompleteParser.ts'
 export type { AutocompleteItem, AsyncPathContext, AutocompleteSources } from './terminalCommandAutocompleteProviders.ts'
 
 /** 扁平化后的快捷命令项 */

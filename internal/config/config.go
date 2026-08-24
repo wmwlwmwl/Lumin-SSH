@@ -2684,6 +2684,3 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	return atomicWriteFile(path, data, perm)
 }
 
-func ParseIntOrDefault(s string, def int) int {
-	return parseIntOrDefault(s, def)
-}

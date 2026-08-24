@@ -15,7 +15,7 @@ function setSharedDownloadProgress(progress: number): void {
 }
 
 // 语义化版本比较：latest > current 返回 true
-export function compareVersions(latestVer: string, currentVer: string): boolean {
+function compareVersions(latestVer: string, currentVer: string): boolean {
   if (latestVer === currentVer) return false;
   const lParts = latestVer.split('.').map(Number);
   const cParts = currentVer.split('.').map(Number);

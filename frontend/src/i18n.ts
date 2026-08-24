@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { I18nDict, I18nKey, LanguageCode } from './i18n/types.ts';
 
-export type { I18nDict, I18nKey, LanguageCode } from './i18n/types.ts';
+export type { I18nKey, LanguageCode } from './i18n/types.ts';
 
 const DEFAULT_LANG: LanguageCode = 'zh-CN';
 

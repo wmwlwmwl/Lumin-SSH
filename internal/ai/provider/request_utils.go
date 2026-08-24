@@ -624,16 +624,6 @@ func ShouldUseBinaryReasoning(profile Profile, capability AIProviderModelCapabil
 	return profile.EnableReasoningEffort
 }
 
-func ShouldUseReasoningBudget(profile Profile, capability AIProviderModelCapability) bool {
-	if capability.ReasoningMode != AIProviderReasoningModeBudget {
-		return false
-	}
-	if capability.RequiredReasoningBudget {
-		return true
-	}
-	return profile.EnableReasoningEffort
-}
-
 func ResolveMaxOutputTokens(profile Profile, capability AIProviderModelCapability) int {
 	if profile.ModelMaxTokens > 0 {
 		return profile.ModelMaxTokens
@@ -644,20 +634,3 @@ func ResolveMaxOutputTokens(profile Profile, capability AIProviderModelCapabilit
 	return defaultAIProviderMaxOutputTokens
 }
 
-func ResolveMaxThinkingTokens(profile Profile, capability AIProviderModelCapability, maxOutputTokens int) int {
-	maxThinkingTokens := profile.ModelMaxThinkingTokens
-	if maxThinkingTokens <= 0 {
-		maxThinkingTokens = capability.MaxThinkingTokens
-	}
-	if maxThinkingTokens <= 0 {
-		maxThinkingTokens = defaultAIProviderMaxThinkingTokens
-	}
-	limit := int(float64(maxOutputTokens) * 0.8)
-	if limit > 0 && maxThinkingTokens > limit {
-		maxThinkingTokens = limit
-	}
-	if maxThinkingTokens <= 0 {
-		maxThinkingTokens = defaultAIProviderMaxThinkingTokens
-	}
-	return maxThinkingTokens
-}

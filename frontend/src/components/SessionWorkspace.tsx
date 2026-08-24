@@ -41,7 +41,7 @@ interface WorkspaceTerminalTab {
 }
 
 // ── 分组 props（与 App.tsx 传入形状对齐；内部向已转子组件传递时按需收窄） ──
-export interface SessionWorkspaceDashboardProps {
+interface SessionWorkspaceDashboardProps {
   allGroups: string[];
   batchSelectionMode: boolean;
   clearRecentConnections: () => void;
@@ -92,7 +92,7 @@ export interface SessionWorkspaceDashboardProps {
   toggleBatchSelection: (idOrArray: string | Array<string | { id: string; selected: boolean }>) => void;
 }
 
-export interface SessionWorkspaceSessionProps {
+interface SessionWorkspaceSessionProps {
   activeSession: SessionLike | undefined;
   activeSessionId: string | null;
   activeSessionRootTerminals: unknown[];
@@ -128,7 +128,7 @@ export interface SessionWorkspaceSessionProps {
   terminalPaneLayouts: Record<string, TerminalPaneLayout>;
 }
 
-export interface SessionWorkspaceFileManagerProps {
+interface SessionWorkspaceFileManagerProps {
   bottomSplitHeight: number;
   collapseDragIntent: unknown;
   fileManagerCollapsed: boolean;
@@ -149,7 +149,7 @@ export interface SessionWorkspaceFileManagerProps {
   startDrag: (event: React.MouseEvent<HTMLElement> | MouseEvent, direction: PanelResizeDirection) => void;
 }
 
-export interface SessionWorkspaceTerminalTabsProps {
+interface SessionWorkspaceTerminalTabsProps {
   closeTerminal: (sessionId: string, terminalId: string, e?: React.MouseEvent) => void;
   closeTerminalGroup: (sessionId: string, layoutId: string, terminalIds: string[], e?: React.MouseEvent) => void;
   closeTerminalPane: (layoutId: string, paneId: string, e?: React.MouseEvent) => void;
@@ -167,7 +167,7 @@ export interface SessionWorkspaceTerminalTabsProps {
   terminalToolbarIconOnly: boolean;
 }
 
-export interface SessionWorkspaceAIProps {
+interface SessionWorkspaceAIProps {
   activeChangeReview: unknown;
   activeChangeReviewQueue: unknown[];
   activeConversationDiffPanel: unknown;
@@ -191,14 +191,14 @@ export interface SessionWorkspaceAIProps {
   showAIPanel: boolean;
 }
 
-export interface SessionWorkspaceQuickCommandsProps {
+interface SessionWorkspaceQuickCommandsProps {
   handleQuickCommandsOpenChange: (open: boolean) => void;
   quickCmdsRef: React.RefObject<QuickCommandsHandle | null>;
   setShowQuickCommands: (v: boolean) => void;
   showQuickCommands: boolean;
 }
 
-export interface SessionWorkspaceSharedProps {
+interface SessionWorkspaceSharedProps {
   addToast: (message: string | Error, type?: string, duration?: number, actions?: unknown[]) => number;
   t: (key: string, vars?: Record<string, unknown>) => string;
 }

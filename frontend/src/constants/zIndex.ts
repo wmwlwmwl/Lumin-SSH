@@ -56,4 +56,3 @@ export const Z = {
   TOAST: 20003,
 } as const;
 
-export type ZIndexKey = keyof typeof Z;

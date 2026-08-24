@@ -3,18 +3,18 @@ import { normalizeAISlashCommands, type AISlashCommand } from './aiSlashCommands
 import { getProxyNodes, type ProxyNode } from '../settings/proxyNodesBridge.ts'
 
 /** AI 协作提示预设 */
-export interface AICollaborationPromptPreset {
+interface AICollaborationPromptPreset {
   id: string
   title: string
   text: string
 }
 
 /** 审批按钮顺序 */
-export type ApprovalButtonOrder = 'reject-approve' | 'approve-reject'
+type ApprovalButtonOrder = 'reject-approve' | 'approve-reject'
 /** 命令操作按钮顺序 */
-export type CommandActionButtonOrder = 'terminate-continue' | 'continue-terminate'
+type CommandActionButtonOrder = 'terminate-continue' | 'continue-terminate'
 
-export type ExecuteApprovalMode = 'basic' | 'read_only' | 'all'
+type ExecuteApprovalMode = 'basic' | 'read_only' | 'all'
 
 export type AIGlobalSettings = {
   currentProviderId: string
@@ -180,7 +180,7 @@ function normalizeProxyNode(node: unknown, index = 0): ProxyNode | null {
   }
 }
 
-export function normalizeAICollaborationPromptPresets(values: unknown): AICollaborationPromptPreset[] {
+function normalizeAICollaborationPromptPresets(values: unknown): AICollaborationPromptPreset[] {
   if (!Array.isArray(values)) {
     return []
   }

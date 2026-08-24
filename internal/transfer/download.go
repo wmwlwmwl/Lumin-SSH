@@ -301,17 +301,6 @@ func ensureLocalDirectoryAvailable(localDir string) error {
 	return os.MkdirAll(cleaned, 0o755)
 }
 
-func ensureLocalTargetDoesNotExist(localPath string) error {
-	_, err := os.Stat(localPath)
-	if err == nil {
-		return fmt.Errorf("local target already exists: %s", localPath)
-	}
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
-}
-
 func extractTarGzArchive(ctx context.Context, archivePath string, destinationDir string) error {
 	if err := ensureLocalDirectoryAvailable(destinationDir); err != nil {
 		return err

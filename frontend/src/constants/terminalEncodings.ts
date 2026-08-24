@@ -1,4 +1,4 @@
-export interface TerminalEncodingOption {
+interface TerminalEncodingOption {
   value: string;
   label: string;
 }

@@ -505,15 +505,6 @@ func providerSupportsAIQuickEditPromptCache(provider string) bool {
 	}
 }
 
-func providerSupportsAIQuickEditWebSearch(provider string) bool {
-	switch normalizeProviderProtocol(provider) {
-	case "Compatible", "Responses", "Messages":
-		return true
-	default:
-		return false
-	}
-}
-
 func CanBeDedicatedWebSearchCandidate(provider string) bool {
 	switch normalizeProviderProtocol(provider) {
 	case "Compatible", "Responses":

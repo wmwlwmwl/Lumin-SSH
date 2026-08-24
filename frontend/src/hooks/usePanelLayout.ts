@@ -6,7 +6,7 @@ const FILE_MANAGER_BOTTOM_MIN = 100;
 const PROBE_PANEL_MIN = 280;
 const AI_PANEL_MIN = 450;
 
-export type ProbePanelPosition = 'left' | 'right';
+type ProbePanelPosition = 'left' | 'right';
 
 export interface UsePanelLayoutResult {
   leftSplitWidth: number;

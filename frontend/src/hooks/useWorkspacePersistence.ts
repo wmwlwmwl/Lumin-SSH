@@ -182,7 +182,7 @@ export function useWorkspaceSessionPersistence({
 }
 
 /** 工作区标签（getSessionWorkspaceTabs 返回项） */
-export interface WorkspaceTab {
+interface WorkspaceTab {
   id: string;
   type?: string;
   label?: string;

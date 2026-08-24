@@ -34,7 +34,7 @@ export function normalizeProxyNode(node: unknown): ProxyNode {
   };
 }
 
-export function normalizeProxyNodes(nodes: unknown): ProxyNode[] {
+function normalizeProxyNodes(nodes: unknown): ProxyNode[] {
   if (!Array.isArray(nodes)) {
     return [];
   }

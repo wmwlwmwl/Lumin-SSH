@@ -7,7 +7,7 @@ function getAppBridge() {
 
 const AI_CONVERSATION_CHANGED_EVENT = 'lumin:ai-conversations-changed'
 
-export type AIExecuteApprovalMode = 'basic' | 'read_only' | 'all'
+type AIExecuteApprovalMode = 'basic' | 'read_only' | 'all'
 
 const DEFAULT_TASK_SETTINGS = {
   currentProviderId: '',
@@ -61,7 +61,7 @@ export type AIConversationTaskSettings = {
 }
 
 /** 追问选项 */
-export type AIFollowUpOption = {
+type AIFollowUpOption = {
   id: string
   answer: string
   mode: string
@@ -70,7 +70,7 @@ export type AIFollowUpOption = {
 }
 
 /** 追问问题 */
-export type AIFollowUpQuestion = {
+type AIFollowUpQuestion = {
   id: string
   text: string
   type: 'single' | 'multiple' | 'free_text'
@@ -78,7 +78,7 @@ export type AIFollowUpQuestion = {
 }
 
 /** 归一化后的对话消息 */
-export type AIConversationMessage = {
+type AIConversationMessage = {
   id: string
   turnId: string
   kind: string
@@ -110,7 +110,7 @@ export type AIConversationMessage = {
 }
 
 /** 供应商缓存对象（OpenAI Responses 兼容） */
-export type AIConversationCacheObject = {
+type AIConversationCacheObject = {
   responseId: string
   output: unknown[]
   include: string[]
@@ -119,12 +119,12 @@ export type AIConversationCacheObject = {
 }
 
 /** 供应商缓存对象组 */
-export type AIConversationProviderCacheObjects = {
+type AIConversationProviderCacheObjects = {
   openaiResponses: AIConversationCacheObject
 }
 
 /** 归一化后的 API 消息 */
-export type AIConversationAPIMessage = {
+type AIConversationAPIMessage = {
   role: string
   content: string
   messageId: string
@@ -228,7 +228,7 @@ function normalizeAIFollowUpQuestion(question: unknown, index = 0, fallbackQuest
   }
 }
 
-export function normalizeAIConversationSummary(summary: unknown): AIConversationSummary {
+function normalizeAIConversationSummary(summary: unknown): AIConversationSummary {
   const s = (summary ?? {}) as Record<string, unknown>
   return {
     id: typeof s.id === 'string' ? s.id.trim() : '',
@@ -279,7 +279,7 @@ export function normalizeAIConversationTaskSettings(settings: unknown): AIConver
   }
 }
 
-export function normalizeAIConversationMessage(message: unknown): AIConversationMessage {
+function normalizeAIConversationMessage(message: unknown): AIConversationMessage {
   const m = (message ?? {}) as Record<string, unknown>
   const question = typeof m.question === 'string' ? m.question : ''
   const questions = Array.isArray(m.questions)
@@ -359,7 +359,7 @@ function normalizeAIConversationProviderCacheObjects(cacheObjects: unknown): AIC
   }
 }
 
-export function normalizeAIConversationAPIMessage(message: unknown): AIConversationAPIMessage {
+function normalizeAIConversationAPIMessage(message: unknown): AIConversationAPIMessage {
   const m = (message ?? {}) as Record<string, unknown>
   return {
     role: typeof m.role === 'string' ? m.role : 'user',
@@ -564,28 +564,7 @@ export async function condenseAIConversationContext(conversationId: string, sess
   return resultRecord?.snapshot ? { ...resultRecord, snapshot } : snapshot
 }
 
-export async function previewAIConversationContextCondense(conversationId: string, sessionId: string): Promise<AIConversationSnapshot | AIConversationContextCondenseResult> {
-  const bridge = getAppBridge()
-  if (!bridge?.PreviewAIConversationContextCondense) {
-    throw new Error(t('上下文压缩预演能力未就绪'))
-  }
-  const result = await bridge.PreviewAIConversationContextCondense(conversationId, sessionId)
-  const resultRecord = result as unknown as Record<string, unknown> | null
-  const snapshot = normalizeAIConversationSnapshot(resultRecord?.snapshot || result)
-  return resultRecord?.snapshot ? { ...resultRecord, snapshot } : snapshot
-}
 
-export async function probeAIProviderLiveness(conversationId: string, sessionId: string, requestId = ''): Promise<boolean> {
-  const bridge = getAppBridge()
-  if (!bridge?.ProbeAIProviderLiveness) {
-    throw new Error(t('AI测活能力未就绪'))
-  }
-  return (await bridge.ProbeAIProviderLiveness(
-    conversationId,
-    sessionId,
-    typeof requestId === 'string' ? requestId : '',
-  )) === true
-}
 
 /** 摘要子任务结果 */
 export interface AIConversationSummarySubtaskResult {

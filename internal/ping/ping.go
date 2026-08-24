@@ -17,18 +17,6 @@ import (
 // 高频 tick 仍用 TCP 刷新路径信息；真正半开 SSH 握手按此间隔节流。
 const autoBannerVerifyInterval = 30 * time.Second
 
-// isLocalOrPrivateIP checks if the host string points to a local loopback or private subnet
-func isLocalOrPrivateIP(host string) bool {
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
-}
-
 // isLoopbackHost 仅判断本机回环（localhost / 127.x / ::1）。
 // 这类目标一定走本机、不经过 TUN，所以 TUN 判定时要把它们排除掉。
 func isLoopbackHost(host string) bool {

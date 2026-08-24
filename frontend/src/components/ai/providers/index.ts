@@ -9,10 +9,6 @@ export const availableAIProviders = [
   messagesProvider,
 ]
 
-export const availableAIProviderOptions = availableAIProviders.map((provider) => ({
-  value: provider.value,
-  label: provider.label,
-}))
 
 const providerMap = new Map(availableAIProviders.map((provider) => [provider.value, provider]))
 

@@ -12,7 +12,7 @@ const COMPRESSION_QUALITY_MAP = new Map([
 const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024
 const SCALE_DOWN_RATIO = 0.8
 
-export function calculateBase64Size(base64: unknown): number {
+function calculateBase64Size(base64: unknown): number {
   const source = typeof base64 === 'string' ? base64 : ''
   const commaIndex = source.indexOf(',')
   const base64Length = commaIndex >= 0 ? source.length - (commaIndex + 1) : source.length

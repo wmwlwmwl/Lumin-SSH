@@ -83,17 +83,6 @@ func ResolveTargetPath(programDirectory string, settings Settings) string {
 	return filepath.Clean(resolved)
 }
 
-func BuildPlan(programDirectory string, settings Settings) Plan {
-	normalized := NormalizeSettings(settings)
-	return Plan{
-		EnvironmentType:    normalized.EnvironmentType,
-		TargetPathTemplate: normalized.TargetPathTemplate,
-		ProgramDirectory:   strings.TrimSpace(programDirectory),
-		TargetPath:         ResolveTargetPath(programDirectory, normalized),
-		ModulePath:         ModulePath,
-	}
-}
-
 func ManagedStatePath(programDirectory string, settings Settings) string {
 	installRoot := ResolveTargetPath(programDirectory, settings)
 	if strings.TrimSpace(installRoot) == "" {

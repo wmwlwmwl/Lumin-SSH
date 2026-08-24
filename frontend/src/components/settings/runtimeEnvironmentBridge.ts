@@ -34,7 +34,7 @@ function normalizeEnvironmentType(value: unknown): 'uv' {
   return String(value || '').trim().toLowerCase() === 'uv' ? 'uv' : 'uv'
 }
 
-export function normalizeRuntimeEnvironmentSettings(settings: unknown): RuntimeEnvironmentSettings {
+function normalizeRuntimeEnvironmentSettings(settings: unknown): RuntimeEnvironmentSettings {
   const s = (settings ?? {}) as Record<string, unknown>
   return {
     ...DEFAULT_RUNTIME_ENVIRONMENT_SETTINGS,
@@ -49,7 +49,7 @@ export function normalizeRuntimeEnvironmentSettings(settings: unknown): RuntimeE
   }
 }
 
-export function normalizeRuntimeEnvironmentStatus(status: unknown): RuntimeEnvironmentStatus {
+function normalizeRuntimeEnvironmentStatus(status: unknown): RuntimeEnvironmentStatus {
   const s = (status ?? {}) as Record<string, unknown>
   return {
     ...DEFAULT_RUNTIME_ENVIRONMENT_STATUS,

@@ -3,25 +3,27 @@ import { t, getLanguage } from '../../i18n.ts'
 
 const longTextWrapExtension = '.long_text_wrap'
 
-export const mentionRegex = /(?:^|(?<=\s))(?<!\\)@((?:\/)(?:[^\s\\]|\\ )+\/?|terminal\b)(?=[.,;:!?]?(?=[\s\r\n]|$))/i
+export const mentionRegex = /(?:^|(?<=\s))(?<!\\)@((?:\/)(?:[^\s\\]|\\\\|\\ )+\/?|terminal\b)(?=[.,;:!?]?(?=[\s\r\n]|$))/i
 export const mentionRegexGlobal = new RegExp(mentionRegex.source, 'gi')
 
 const terminalMentionRegexGlobal = /(?:^|(?<=\s))(?<!\\)@(terminal)(?=[.,;:!?]?(?=[\s\r\n]|$))/gi
-const remotePathMentionRegexGlobal = /(?:^|(?<=\s))(?<!\\)@((?:\/)(?:[^\s\\]|\\ )+\/?)(?=[.,;:!?]?(?=[\s\r\n]|$))/g
+const remotePathMentionRegexGlobal = /(?:^|(?<=\s))(?<!\\)@((?:\/)(?:[^\s\\]|\\\\|\\ )+\/?)(?=[.,;:!?]?(?=[\s\r\n]|$))/g
 
 const maxRemoteMentionResults = 60
 const maxRemoteMentionVisitedDirs = 160
 const maxRemoteMentionDepth = 6
 
-export function escapeMentionPathSpaces(value: unknown): string {
-  return String(value || '').replace(/ /g, '\\ ')
+// 路径 → 提及文本 的完整转义:反斜杠与空格都转义,保证任意文件名可无损往返
+// (此前仅转义空格,含字面反斜杠的远端文件名无法被正则重新解析)
+function escapeMentionPathSpaces(value: unknown): string {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/ /g, '\\ ')
 }
 
-export function unescapeMentionPathSpaces(value: unknown): string {
-  return String(value || '').replace(/\\ /g, ' ')
+function unescapeMentionPathSpaces(value: unknown): string {
+  return String(value || '').replace(/\\([\\ ])/g, '$1')
 }
 
-export function normalizeMentionAbsolutePath(value: unknown): string {
+function normalizeMentionAbsolutePath(value: unknown): string {
   let normalized = String(value || '').trim()
   normalized = normalized.replace(/^['"]|['"]$/g, '')
   if (normalized.startsWith('@')) {
@@ -406,7 +408,7 @@ interface AIMention {
   path?: string
 }
 
-export interface AIMentionProcessOptions {
+interface AIMentionProcessOptions {
   sessionId?: string
   readFile?: (sessionId: string, path: string) => Promise<unknown> | unknown
   listDir?: (sessionId: string, path: string) => Promise<unknown> | unknown
@@ -414,7 +416,7 @@ export interface AIMentionProcessOptions {
   readLocalWrappedFile?: (path: string) => Promise<unknown> | unknown
 }
 
-export async function processAIMentions(
+async function processAIMentions(
   text: unknown,
   {
     sessionId = '',

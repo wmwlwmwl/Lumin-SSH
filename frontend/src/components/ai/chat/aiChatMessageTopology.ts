@@ -1,6 +1,6 @@
 // 桥接模块（自 .js 收编后类型化）：AI 对话消息分组与回合拓扑
 /** 宽松消息形状（来自 Go 桥/事件 payload，字段按需读取） */
-export interface AIChatMessageLike {
+interface AIChatMessageLike {
   kind?: unknown;
   id?: unknown;
   turnId?: unknown;
@@ -8,7 +8,7 @@ export interface AIChatMessageLike {
 }
 
 /** 助手回合条目（assistant 消息 + 其子消息分组） */
-export interface AssistantTurnEntry {
+interface AssistantTurnEntry {
   type: 'assistant-turn';
   id: unknown;
   turnId: string;
@@ -48,11 +48,11 @@ const ASSISTANT_TURN_CHILD_KINDS = new Set([
 
 const TURN_ID_MARKERS = ['-tool-', '-command-', '-mcp-', '-followup-']
 
-export function isAssistantTurnChildMessage(message: AIChatMessageLike | null | undefined): boolean {
+function isAssistantTurnChildMessage(message: AIChatMessageLike | null | undefined): boolean {
   return ASSISTANT_TURN_CHILD_KINDS.has(normalizeString(message?.kind))
 }
 
-export function deriveAssistantTurnId(message: AIChatMessageLike | null | undefined): string {
+function deriveAssistantTurnId(message: AIChatMessageLike | null | undefined): string {
   const kind = normalizeString(message?.kind)
   const explicitTurnId = normalizeString(message?.turnId)
 

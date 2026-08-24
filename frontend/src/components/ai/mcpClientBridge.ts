@@ -2,7 +2,7 @@
 import * as AppGo from '../../../wailsjs/go/wailsapp/App.js'
 
 /** MCP 服务器工具（normalizeServerTool 输出） */
-export interface MCPServerTool {
+interface MCPServerTool {
   name: string
   description: string
   inputSchema: Record<string, unknown>
@@ -11,7 +11,7 @@ export interface MCPServerTool {
 }
 
 /** MCP 服务器运行时状态（normalizeServerRuntime 输出） */
-export interface MCPServerRuntime {
+interface MCPServerRuntime {
   name: string
   config: string
   status: string

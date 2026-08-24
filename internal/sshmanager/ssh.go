@@ -1146,19 +1146,6 @@ func (m *SSHManager) cleanupClientTransport(connKey string, client *ssh.Client, 
 	}
 }
 
-// sessionParentID 返回前端 tab 用的父会话 id（子终端用 GroupSessionId）。
-func (m *SSHManager) sessionParentID(sessionId string) string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if s, ok := m.sessions[sessionId]; ok {
-		if s.GroupSessionId != "" {
-			return s.GroupSessionId
-		}
-		return sessionId
-	}
-	return sessionId
-}
-
 // disconnectAndNotify 结束单个 terminal 并通知前端。
 // reason=session_end：shell 正常/异常退出；connectionClosed 表示是否同时拆掉了共享 TCP。
 func (m *SSHManager) disconnectAndNotify(sessionId string, expectedSession *ssh.Session, reason string) {
@@ -1736,9 +1723,6 @@ func getKnownHostsPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".ssh", "known_hosts")
 }
-
-// GetKnownHostsPath 导出包装器
-func GetKnownHostsPath() string { return getKnownHostsPath() }
 
 // initKnownHostsCallback 初始化 known_hosts 文件并返回 HostKeyCallback
 func initKnownHostsCallback() (ssh.HostKeyCallback, error) {
@@ -4600,23 +4584,6 @@ type progressReader struct {
 	total     int64
 	current   int64
 	lastEmit  time.Time
-}
-
-func (p *progressReader) Read(data []byte) (int, error) {
-	n, err := p.Reader.Read(data)
-	if n > 0 {
-		p.advance(int64(n))
-	}
-	return n, err
-}
-
-func (p *progressReader) advance(delta int64) {
-	p.current += delta
-	now := time.Now()
-	if now.Sub(p.lastEmit) > 200*time.Millisecond || p.current >= p.total {
-		p.emit(p.current)
-		p.lastEmit = now
-	}
 }
 
 func (p *progressReader) emit(current int64) {

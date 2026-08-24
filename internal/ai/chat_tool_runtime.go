@@ -122,40 +122,6 @@ func aiAskFollowupQuestionToolDefinition() mcpserver.ToolDefinition {
 	}
 }
 
-func callAIAskFollowupQuestion(arguments map[string]any) (any, error) {
-	for key := range arguments {
-		if key != "question" && key != "follow_up" {
-			return nil, fmt.Errorf("unknown argument: %s", key)
-		}
-	}
-	question, _ := arguments["question"].(string)
-	followUp, ok := arguments["follow_up"].(string)
-	if !ok {
-		return nil, fmt.Errorf("missing required argument: follow_up")
-	}
-	questions, suggestions, err := parseAIFollowupPayload(followUp, question)
-	if err != nil {
-		return nil, err
-	}
-	displayQuestion := strings.TrimSpace(question)
-	if displayQuestion == "" && len(questions) > 0 {
-		displayQuestion = strings.TrimSpace(questions[0].Text)
-	}
-	result := map[string]any{
-		"status": "pending",
-	}
-	if displayQuestion != "" {
-		result["question"] = displayQuestion
-	}
-	if len(questions) > 0 {
-		result["questions"] = questions
-	}
-	if len(suggestions) > 0 {
-		result["suggestions"] = suggestions
-	}
-	return result, nil
-}
-
 func parseAIFollowupDisabled(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "1", "true", "yes":

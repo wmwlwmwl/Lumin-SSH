@@ -116,14 +116,6 @@ type App struct {
 	shutdownOnce              sync.Once
 	quitOnce                  sync.Once
 	onBeforeQuit              func()
-	aiChatReqMu               sync.Mutex
-	aiChatReqCancel           map[string]context.CancelFunc
-	aiPendingToolMu           sync.Mutex
-	aiPendingToolBatches      map[string]*ai.PendingToolBatch
-	aiToolExecMu              sync.Mutex
-	aiToolExecutions          map[string]*ai.ToolExecutionState
-	aiSkipNextAutoReqMu       sync.Mutex
-	aiSkipNextAutomaticReqMap map[string]bool
 	liveWorkspaceStateMu      sync.RWMutex
 	liveWorkspaceState        string
 	externalEdit              *externaledit.Manager
@@ -166,10 +158,6 @@ func NewApp() *App {
 		sshManager:                sshmanager.NewSSHManager(),
 		configManager:             config.NewConfigManager(),
 		wsManager:                 wsbuffer.NewManager(),
-		aiChatReqCancel:           make(map[string]context.CancelFunc),
-		aiPendingToolBatches:      make(map[string]*ai.PendingToolBatch),
-		aiToolExecutions:          make(map[string]*ai.ToolExecutionState),
-		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
 	app.mcpReporter = newMCPActivityReporter(app)
 	app.configManager.SetProgramDir(getProgramDirectory())
@@ -1970,87 +1958,6 @@ func (a *App) InstallRuntimeEnvironment(language string) (runtimeenv.Status, err
 	return runtimeinstaller.InstallRuntimeEnvironment(getProgramDirectory(), settings, language)
 }
 
-
-func summarizeWorkspaceStateForLog(jsonStr string) map[string]interface{} {
-	trimmed := strings.TrimSpace(jsonStr)
-	if trimmed == "" {
-		return map[string]interface{}{
-			"hasState": false,
-		}
-	}
-	summary := map[string]interface{}{
-		"hasState": true,
-		"size":     len(trimmed),
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		summary["parseError"] = err.Error()
-		return summary
-	}
-	if value, ok := payload["activeSessionId"].(string); ok {
-		summary["activeSessionId"] = strings.TrimSpace(value)
-	}
-	if value, ok := payload["activeTerminalId"].(string); ok {
-		summary["activeTerminalId"] = strings.TrimSpace(value)
-	}
-	if sessions, ok := payload["sessions"].([]interface{}); ok {
-		summary["sessionCount"] = len(sessions)
-		sessionIds := make([]string, 0, len(sessions))
-		for _, item := range sessions {
-			sessionMap, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			sessionID, ok := sessionMap["id"].(string)
-			if !ok || strings.TrimSpace(sessionID) == "" {
-				continue
-			}
-			sessionIds = append(sessionIds, strings.TrimSpace(sessionID))
-		}
-		if len(sessionIds) > 0 {
-			summary["sessionIds"] = sessionIds
-		}
-	}
-	if workspaces, ok := payload["fileManagerWorkspaces"].(map[string]interface{}); ok {
-		summary["fileManagerWorkspaceCount"] = len(workspaces)
-		workspaceKeys := make([]string, 0, len(workspaces))
-		workspaceTabs := make(map[string]interface{}, len(workspaces))
-		for key, rawWorkspace := range workspaces {
-			trimmedKey := strings.TrimSpace(key)
-			workspaceKeys = append(workspaceKeys, trimmedKey)
-			workspaceMap, ok := rawWorkspace.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			tabSummary := map[string]interface{}{}
-			if activeTabID, ok := workspaceMap["activeTabId"].(string); ok {
-				tabSummary["activeTabId"] = strings.TrimSpace(activeTabID)
-			}
-			if tabs, ok := workspaceMap["tabs"].([]interface{}); ok {
-				tabSummary["tabCount"] = len(tabs)
-				tabPaths := make([]string, 0, len(tabs))
-				for _, rawTab := range tabs {
-					tabMap, ok := rawTab.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					tabPath, ok := tabMap["path"].(string)
-					if !ok {
-						continue
-					}
-					tabPaths = append(tabPaths, strings.TrimSpace(tabPath))
-				}
-				if len(tabPaths) > 0 {
-					tabSummary["tabPaths"] = tabPaths
-				}
-			}
-			workspaceTabs[trimmedKey] = tabSummary
-		}
-		summary["fileManagerWorkspaceKeys"] = workspaceKeys
-		summary["fileManagerWorkspaceTabs"] = workspaceTabs
-	}
-	return summary
-}
 
 func (a *App) GetLiveWorkspaceState() string {
 	if a == nil {

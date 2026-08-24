@@ -1,4 +1,4 @@
-export const GLOBAL_APPEARANCE_CHANGED_EVENT = 'global-appearance-changed'
+const GLOBAL_APPEARANCE_CHANGED_EVENT = 'global-appearance-changed'
 
 export interface GlobalAppearanceSettings {
   backgroundImage: string
@@ -39,7 +39,7 @@ function removeWallpaperLayer(): void {
   document.getElementById(WALLPAYER_LAYER_ID)?.remove()
 }
 
-export function applyGlobalAppearance(settings = getGlobalAppearanceSettings()): void {
+function applyGlobalAppearance(settings = getGlobalAppearanceSettings()): void {
   const root = document.documentElement
   if (settings.backgroundImage) localStorage.removeItem('termBgImage')
 

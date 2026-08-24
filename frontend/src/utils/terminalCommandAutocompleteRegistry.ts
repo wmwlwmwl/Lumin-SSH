@@ -1,14 +1,14 @@
 import type { CommandInputContext } from './terminalCommandAutocompleteParser.ts';
 
 /** 参数提供器类型：path=远程路径补全，literal=固定候选项 */
-export type ArgProviderName = 'path' | 'literal';
+type ArgProviderName = 'path' | 'literal';
 
-export interface ArgRuleItem {
+interface ArgRuleItem {
   value: string;
   description?: string;
 }
 
-export interface ArgRule {
+interface ArgRule {
   provider: ArgProviderName;
   repeat: boolean;
   directoryOnly?: boolean;
@@ -60,7 +60,7 @@ const CHMOD_MODE_ITEMS: ArgRuleItem[] = [
   { value: '1777', description: '共享临时目录常用：公开可写但受粘滞位保护' },
 ]
 
-export const ROOT_COMMAND_REGISTRY: CommandNode[] = [
+const ROOT_COMMAND_REGISTRY: CommandNode[] = [
   createNode('cd', {
     description: '切换目录',
     args: [

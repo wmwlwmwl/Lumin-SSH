@@ -610,6 +610,8 @@ export default function Terminal({
   const awaitingCommandFinishRef              = useRef(false); // 按回车提交命令后，等待命令完成（提示符回归）
   const [terminalCwd, setTerminalCwd]         = useState('/');
   const [commandAutocomplete, setCommandAutocomplete] = useState(createCommandAutocompleteState());
+  // 命令输入快捷键提示浮层开关（F1 切换；关闭持久化到 localStorage）
+  const [cmdInputHintsHidden, setCmdInputHintsHidden] = useState(() => localStorage.getItem('terminalCmdInputHintsHidden') === 'true');
   const commandAutocompleteRequestRef         = useRef(0);
   const commandAutocompleteFocusedRef         = useRef(false);
   const commandAutocompleteKeyboardNavigationRef = useRef(false);
@@ -3317,6 +3319,25 @@ export default function Terminal({
     }
   }, [])
 
+  // F1 切换命令输入快捷键提示；开启/关闭均二次确认，并告知再次切换的方式
+  const toggleCommandInputHints = useCallback(async () => {
+    const detail = cmdInputHintsHidden
+      ? `${t('开启后将在命令输入框显示快捷键提示')}\n${t('随时按 {shortcut} 可再次关闭').replace('{shortcut}', 'F1')}`
+      : `${t('关闭后将不再显示命令输入快捷键提示')}\n${t('随时按 {shortcut} 可重新开启').replace('{shortcut}', 'F1')}`;
+    let confirmed = false;
+    try {
+      confirmed = Boolean(await window.luminDialog?.confirm(detail, t('提示')));
+    } catch {
+      confirmed = false;
+    }
+    if (!confirmed) return;
+    setCmdInputHintsHidden((previous) => {
+      const next = !previous;
+      localStorage.setItem('terminalCmdInputHintsHidden', String(next));
+      return next;
+    });
+  }, [cmdInputHintsHidden, t]);
+
   const ensureCommandAutocompleteData = useCallback(async () => {
     const cache = commandAutocompleteDataRef.current;
     const normalizedHistoryId = String(historyServerId || '').trim();
@@ -3977,7 +3998,7 @@ export default function Terminal({
       <div className="term-input-bar">
         {/* 命令输入框 */}
         <Tiptop
-          text={!cmdInput && !commandAutocomplete.open ? (
+          text={!cmdInputHintsHidden && !cmdInput && !commandAutocomplete.open ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '2px 4px', fontSize: 11, lineHeight: 1.5, textAlign: 'left', minWidth: 190 }}>
               <div style={{ fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 4, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span>{t('命令输入快捷键')}</span>
@@ -4003,6 +4024,10 @@ export default function Terminal({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <span style={{ color: 'var(--text-secondary)' }}>{t('补全候选项')}</span>
                 <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>Tab</kbd>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{t('关闭此提示')}</span>
+                <kbd style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>F1</kbd>
               </div>
             </div>
           ) : undefined}
@@ -4054,6 +4079,13 @@ export default function Terminal({
               }
             }}
             onKeyDown={async (e) => {
+              if (e.key === 'F1' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                void toggleCommandInputHints();
+                return;
+              }
+
               if (e.key === 'Alt' && !e.ctrlKey && !e.shiftKey && !e.metaKey && !e.repeat) {
                 if (!altOpenHistoryEnabled) return;
                 e.preventDefault();

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -609,14 +608,3 @@ func (h *ClientHub) GlobalStore() *ConfigStore {
 	return h.globalStore
 }
 
-func (h *ClientHub) ExportServerConfig(name string, source ServerSource) string {
-	connection := h.findConnection(name, source)
-	if connection == nil {
-		return "{}"
-	}
-	data, err := json.MarshalIndent(connection.config, "", "  ")
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
-}

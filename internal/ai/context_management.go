@@ -40,49 +40,6 @@ var aiConversationEnvironmentDetailsPattern = regexp.MustCompile(`(?s)<environme
 var aiConversationTerminalOutputPattern = regexp.MustCompile(`(?s)<terminal_output>.*?</terminal_output>`)
 var aiConversationFileContentPattern = regexp.MustCompile(`(?s)(<file_content path=["'][^"']*["']>).*?(</file_content>)`)
 
-func buildAIConversationContextTokenBlocks(conversationID string, sessionID string, messages []AIConversationAPIMessage) []TokenCountBlock {
-	return buildAIConversationContextTokenBlocksWithProfile(conversationID, sessionID, messages, AIProviderProfile{})
-}
-
-func buildAIConversationContextTokenBlocksWithProfile(conversationID string, sessionID string, messages []AIConversationAPIMessage, profile AIProviderProfile) []TokenCountBlock {
-	blocks := []TokenCountBlock{
-		{
-			Type: "text",
-			Text: BuildChatSystemPromptWithProfile(nil, conversationID, sessionID, false, profile),
-		},
-	}
-	for _, message := range normalizeAIConversationAPIMessages(messages) {
-		if strings.EqualFold(strings.TrimSpace(profile.Provider), "Responses") &&
-			strings.EqualFold(strings.TrimSpace(message.Role), "assistant") &&
-			message.CacheObjects != nil &&
-			message.CacheObjects.OpenAIResponses != nil &&
-			len(message.CacheObjects.OpenAIResponses.Output) > 0 {
-			responseBlocks := buildAIResponsesOutputTokenCountBlocks(message.CacheObjects.OpenAIResponses.Output)
-			if len(responseBlocks) > 0 {
-				blocks = append(blocks, responseBlocks...)
-				continue
-			}
-		}
-		if message.Content != "" {
-			blocks = append(blocks, TokenCountBlock{
-				Type: "text",
-				Text: message.Content,
-			})
-		}
-		for _, image := range normalizeAIStringList(message.Images) {
-			blocks = append(blocks, TokenCountBlock{
-				Type: "image",
-				Data: image,
-			})
-		}
-	}
-	return blocks
-}
-
-func calculateAIConversationContextTokens(conversationID string, sessionID string, messages []AIConversationAPIMessage) (int, error) {
-	return calculateAIConversationContextTokensWithProfile(conversationID, sessionID, messages, AIProviderProfile{})
-}
-
 func calculateAIConversationContextTokensWithProfile(conversationID string, sessionID string, messages []AIConversationAPIMessage, profile AIProviderProfile) (int, error) {
 	ledger, err := buildAIConversationTokenLedger(conversationID, sessionID, messages, profile)
 	if err != nil {
@@ -104,21 +61,6 @@ func buildAIConversationCondenseUIMessage(summary string, prevContextTokens int,
 			"contextCondense":   true,
 			"prevContextTokens": prevContextTokens,
 			"newContextTokens":  newContextTokens,
-		},
-	}
-}
-
-func buildAIConversationCondenseFollowupUIMessage() AIConversationMessage {
-	now := time.Now()
-	messageID := fmt.Sprintf("condense-followup-%d", now.UnixNano())
-	return AIConversationMessage{
-		ID:     messageID,
-		TurnID: messageID,
-		Kind:   "user",
-		Text:   extractAIConversationUserMessageBodyForRecovery(aiConversationCondenseFollowupPrompt),
-		Time:   now.Format("15:04"),
-		Extra: map[string]interface{}{
-			"contextCondenseFollowup": true,
 		},
 	}
 }

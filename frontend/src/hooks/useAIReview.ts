@@ -7,7 +7,7 @@ import {
 } from '../utils/sessionWorkspace.ts';
 
 /** AI 变更审查（reviewId/requestId 为必填标识） */
-export interface AIChangeReview {
+interface AIChangeReview {
   reviewId: string;
   requestId: string;
   sessionId?: string;
@@ -15,7 +15,7 @@ export interface AIChangeReview {
 }
 
 /** 恢复预览状态（按面板键存储） */
-export interface RestorePreviewState {
+interface RestorePreviewState {
   sessionId: string;
   terminalId: string;
   tabId: string;
@@ -38,7 +38,7 @@ export interface ConversationDiffItem {
 }
 
 /** 对话差异面板 */
-export interface ConversationDiffPanel {
+interface ConversationDiffPanel {
   sessionId: string;
   terminalId: string;
   tabId: string;

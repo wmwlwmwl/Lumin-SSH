@@ -1,15 +1,14 @@
 import * as AppGo from '../../wailsjs/go/wailsapp/App.js'
 import type { programfonts } from '../../wailsjs/go/models.ts'
 
-export const PROGRAM_FONT_STORAGE_KEYS = {
+const PROGRAM_FONT_STORAGE_KEYS = {
   ui: 'programFont.ui.fileName',
   terminal: 'programFont.terminal.fileName',
   ai: 'programFont.ai.fileName',
 } as const;
 
-export type ProgramFontTarget = keyof typeof PROGRAM_FONT_STORAGE_KEYS;
 
-export const DEFAULT_PROGRAM_FONT_STACKS = {
+const DEFAULT_PROGRAM_FONT_STACKS = {
   ui: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   terminal: "'JetBrains Mono', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', 'Fira Code', monospace",
   ai: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
@@ -156,16 +155,13 @@ export async function setProgramFontPreference(target: string, fileName: string)
   return applyProgramFontPreferences()
 }
 
-export function getProgramFontPreference(target: string): string {
-  return getStoredProgramFontFileName(target)
-}
 
 export async function listProgramFonts(): Promise<programfonts.ProgramFontInfo[]> {
   const fonts = await AppGo.ListProgramFonts()
   return Array.isArray(fonts) ? fonts : []
 }
 
-export async function importProgramFontFiles(filePaths: unknown): Promise<programfonts.ProgramFontInfo[]> {
+async function importProgramFontFiles(filePaths: unknown): Promise<programfonts.ProgramFontInfo[]> {
   const normalizedPaths = Array.isArray(filePaths)
     ? filePaths.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
     : []

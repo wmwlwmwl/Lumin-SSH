@@ -381,15 +381,6 @@ func (c *ConfigManager) SaveAIGlobalSettings(settings ai.AIGlobalSettings) error
 	return atomicWriteFile(c.aiGlobalSettingsPath(), data, 0600)
 }
 
-func (c *ConfigManager) clearAIGlobalSettings() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := os.Remove(c.aiGlobalSettingsPath()); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
 func (c *ConfigManager) GetAIProxyNodes() []ai.AIProxyNode {
 	return ai.LoadAIProxyNodes(c.configDir)
 }
@@ -496,18 +487,6 @@ func isUnreadableBackupContentError(err error) bool {
 		strings.Contains(msg, "不支持的 LUMIN2 版本") ||
 		strings.Contains(msg, "LUMIN2 迭代次数无效") ||
 		strings.Contains(msg, "解析最新备份") && (strings.Contains(msg, "LUMIN2") || strings.Contains(msg, "invalid") || strings.Contains(msg, "截断"))
-}
-
-func onlyNoBackupErrors(errs []string) bool {
-	if len(errs) == 0 {
-		return false
-	}
-	for _, err := range errs {
-		if !strings.Contains(err, "云端没有备份文件") {
-			return false
-		}
-	}
-	return true
 }
 
 // fetchLatestBackup 从远端严格下载并解密最新备份，不回退旧文件。
@@ -2023,14 +2002,6 @@ func (c *ConfigManager) getSyncProviders() ([]providerEntry, []providerFailure) 
 		return c.syncProvidersForTest()
 	}
 	return c.configuredSyncProviders(c.GetSyncMode())
-}
-
-// getAllConfiguredSyncProviders 返回全部已配置提供商，不受当前同步模式限制。
-func (c *ConfigManager) getAllConfiguredSyncProviders() ([]providerEntry, []providerFailure) {
-	if c.allSyncProvidersForTest != nil {
-		return c.allSyncProvidersForTest()
-	}
-	return c.configuredSyncProviders("all")
 }
 
 func (c *ConfigManager) configuredSyncProviders(mode string) ([]providerEntry, []providerFailure) {
