@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { t as $t } from '../../i18n.ts';
 import { Lightbulb } from 'lucide-react';
 import { cn } from '../../utils/cn.ts';
 import { Button } from '../ui';
-import { ToggleSwitch, RadioOption, SettingRow, SettingsPanel, SettingsSectionTitle, SettingsTabRoot, type SettingsDefinitionNode } from './SharedComponents';
+import { ToggleSwitch, RadioOption, SettingRow, SettingsPanel, SettingsSectionTitle, SettingsTabRoot } from './SharedComponents';
 import { settings } from './settingDefinitions';
 import { getAIGlobalSettings, saveAIGlobalSettings } from '../ai/aiGlobalSettingsBridge.ts';
 import { getProxyNodes, saveProxyNodes, normalizeProxyNode } from './proxyNodesBridge.ts';
@@ -273,9 +273,9 @@ export default function NetworkTab({ pingEnabled, onTogglePingEnabled, pingMode,
                       'px-3 py-1 rounded-md text-sm font-semibold transition-all duration-150 border',
                       disabled
                         ? 'opacity-45 cursor-not-allowed border-line bg-sunken text-tertiary'
-                        : pingInterval === s
+                        : (pingInterval === s
                           ? 'border-success bg-[rgba(34,197,94,0.1)] text-success'
-                          : 'border-line bg-sunken text-secondary cursor-pointer',
+                          : 'border-line bg-sunken text-secondary cursor-pointer'),
                     )}
                   >{s}s</button>
                 );

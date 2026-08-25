@@ -3,7 +3,7 @@ import { t as $t } from '../../i18n.ts';
 import { Plus, Trash2, RotateCcw, X } from 'lucide-react';
 import { cn } from '../../utils/cn.ts';
 import ColorPicker from './ColorPicker.tsx';
-import { DEFAULT_KEYWORD_RULES, type KeywordRule } from '../../utils/terminalKeywordHighlight.ts';
+import type { KeywordRule } from '../../utils/terminalKeywordHighlight.ts';
 
 /**
  * 日志关键字高亮规则配置面板

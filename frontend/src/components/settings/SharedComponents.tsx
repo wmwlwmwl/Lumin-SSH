@@ -33,7 +33,7 @@ export function SettingsTabRoot({ children, gap = SETTINGS_TAB_GAP, style = {} }
   return <div className="flex flex-col" style={{ gap, ...style }}>{children}</div>;
 }
 
-interface SettingsSectionProps {
+export interface SettingsSectionProps {
   definition?: SettingsDefinitionNode;
   children?: React.ReactNode;
   style?: React.CSSProperties;

@@ -67,7 +67,7 @@ export default function AIPanelHeader({
   conversationSearchActive = false,
   onCondenseContext,
   onCondenseContextFullSummary,
-  fullSummaryCondenseAvailable = false,
+  fullSummaryCondenseAvailable: _fullSummaryCondenseAvailable = false,
 }: AIPanelHeaderProps) {
   const { t } = useTranslation()
   const [condenseActionsVisible, setCondenseActionsVisible] = useState(false)

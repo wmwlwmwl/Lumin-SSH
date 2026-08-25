@@ -1,19 +1,16 @@
-import React, { useMemo } from 'react';
-import { t as $t, type I18nKey } from '../../i18n.ts';
-import { Sun, Monitor, Moon, Trash2, Copy } from 'lucide-react';
+import React from 'react';
+import { t as $t } from '../../i18n.ts';
+import { Sun, Monitor, Moon } from 'lucide-react';
 import { cn } from '../../utils/cn.ts';
 import { Button } from '../ui';
-import { SettingRow, SettingsDivider, SettingsPanel, SettingsSectionTitle, SettingsTabRoot, ToggleSwitch, type SettingsDefinitionNode } from './SharedComponents';
+import { SettingRow, SettingsDivider, SettingsPanel, SettingsSectionTitle, SettingsTabRoot, ToggleSwitch } from './SharedComponents';
 import { settings } from './settingDefinitions';
 import KeywordRulesPanel from './KeywordRulesPanel.tsx';
 import { type KeywordRule } from '../../utils/terminalKeywordHighlight.ts';
-import type { ThemePackage, ThemePackagePreview } from '../../utils/theme.ts';
-
-/** 程序字体条目 */
-interface ProgramFont {
-  fileName: string;
-  displayName?: string;
-}
+import type { ThemePackage } from '../../utils/theme.ts';
+import FontManagerPanel, { type ProgramFont } from './appearance/FontManagerPanel';
+import BackgroundPanel from './appearance/BackgroundPanel';
+import ThemePackagePalette from './appearance/ThemePackagePalette';
 
 /** 主题包设置（SettingsModal 传入的宽松形状） */
 interface ThemePackageSettings {
@@ -134,47 +131,9 @@ export default function AppearanceTab({
   globalIconOpacity, onGlobalIconOpacityChange,
   rememberWindowSize, onToggleRememberWindowSize, onResetWindowSize,
 }: AppearanceTabProps) {
-  const fontMap = new Map((Array.isArray(programFonts) ? programFonts : []).map((font) => [font.fileName, font]));
-  const filteredFonts = (Array.isArray(programFonts) ? programFonts : []).filter((font) => {
-    const query = String(programFontSearchQuery || '').trim().toLowerCase();
-    if (!query) {
-      return true;
-    }
-    return String(font.displayName || '').toLowerCase().includes(query) || String(font.fileName || '').toLowerCase().includes(query);
-  });
-  const fontAssignments = programFontAssignments || { uiFileName: '', terminalFileName: '', aiFileName: '' };
   // settingDefinitions.ts 已类型化，直接使用 settings 注册表
   const settingsData = settings;
   const appearanceSettings = settingsData.appearance;
-  const fontTargets = [
-    {
-      key: 'ui',
-      title: $t('界面文本'),
-      description: $t('作用于应用界面中的普通文本'),
-      defaultText: 'Inter / Segoe UI / sans-serif',
-      fileName: fontAssignments.uiFileName || '',
-    },
-    {
-      key: 'terminal',
-      title: $t('终端输出'),
-      description: $t('只作用于终端输出区域，不影响界面控件'),
-      defaultText: 'JetBrains Mono / Fira Code / monospace',
-      fileName: fontAssignments.terminalFileName || '',
-    },
-    {
-      key: 'ai',
-      title: $t('AI面板'),
-      description: $t('作用于 AI 面板普通文本与输入区，代码块保持默认等宽字体'),
-      defaultText: 'Inter / Segoe UI / sans-serif',
-      fileName: fontAssignments.aiFileName || '',
-    },
-  ];
-
-  const fontTargetDefinitions: Record<string, SettingsDefinitionNode | undefined> = {
-    ui: appearanceSettings.fields.uiFont,
-    terminal: appearanceSettings.fields.terminalFont,
-    ai: appearanceSettings.fields.aiFont,
-  };
   const normalizedThemePackages = Array.isArray(themePackages) ? themePackages : [];
   const lightThemePackages = normalizedThemePackages.filter((themePackage) => themePackage?.modeHint === 'light');
   const darkThemePackages = normalizedThemePackages.filter((themePackage) => themePackage?.modeHint !== 'light');
@@ -184,127 +143,23 @@ export default function AppearanceTab({
       <div>
         <SettingsSectionTitle definition={appearanceSettings.sections.terminal} />
         <SettingsPanel className="p-3 border-line-subtle">
-          <div data-settings-field-id={appearanceSettings.fields.fontManager.id} className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <div className="text-base text-primary font-semibold">{$t('字体管理器')}</div>
-                <div className="text-xs text-tertiary">{$t('从字体目录拖拽字体到右侧区域，为界面文本、终端输出和 AI 面板分别分配字体')}</div>
-              </div>
-              <Button size="sm" className="text-sm" onClick={onAddProgramFonts} disabled={programFontImporting}>
-                {programFontImporting ? $t('导入中...') : $t('添加字体')}
-              </Button>
-            </div>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4 items-stretch">
-              <div className="flex flex-col gap-2.5 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center min-h-[22px] px-2 rounded-full border border-line bg-raised text-secondary text-xs">
-                    {$t('来源：字体目录')}
-                  </span>
-                  <span className="text-xs text-tertiary">{filteredFonts.length} {$t('个字体')}</span>
-                </div>
-                <input
-                  id="appearance-font-search"
-                  name="appearance-font-search"
-                  autoComplete="off"
-                  className="input min-h-[30px] text-sm"
-                  value={programFontSearchQuery}
-                  onChange={(event) => onProgramFontSearchQueryChange(event.target.value)}
-                  placeholder={$t('搜索字体文件名')}
-                />
-                <div className="min-h-[292px] max-h-[292px] overflow-y-auto rounded-md border border-line bg-canvas p-2 flex flex-col gap-2">
-                  {filteredFonts.length === 0 ? (
-                    <div className="flex flex-1 min-h-[120px] items-center justify-center text-center text-tertiary text-sm leading-[1.7]">
-                      {Array.isArray(programFonts) && programFonts.length > 0 ? $t('没有匹配的字体文件') : $t('字体目录中还没有字体，请先添加字体文件')}
-                    </div>
-                  ) : filteredFonts.map((font) => (
-                    <div
-                      key={font.fileName}
-                      draggable={true}
-                      onDragStart={(event) => onProgramFontDragStart(event, font.fileName)}
-                      onDragEnd={onProgramFontDragEnd}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-md border border-line bg-overlay cursor-grab select-none"
-                    >
-                      <div className="flex flex-col gap-1 min-w-0 flex-1">
-                        <div className="text-base font-semibold text-primary truncate">{font.displayName}</div>
-                        <div className="text-xs text-tertiary truncate">{font.fileName}</div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={$t('删除字体')}
-                        title={$t('删除字体')}
-                        disabled={!!programFontDeleting}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onDeleteProgramFont?.(font.fileName);
-                        }}
-                        onMouseDown={(event) => event.stopPropagation()}
-                        className="shrink-0 text-danger"
-                        style={{ opacity: programFontDeleting ? 0.5 : 1 }}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-3 min-w-0 self-stretch">
-                {fontTargets.map((target) => {
-                  const assignedFont = target.fileName ? fontMap.get(target.fileName) : null;
-                  const isHighlighted = activeProgramFontDropTarget === target.key;
-                  return (
-                    <div
-                      key={target.key}
-                      data-settings-field-id={fontTargetDefinitions[target.key]?.id}
-                      onDragEnter={() => onProgramFontDragEnter(target.key)}
-                      onDragLeave={() => onProgramFontDragLeave(target.key)}
-                      onDragOver={(event) => {
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = 'copy';
-                        onProgramFontDragEnter(target.key);
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        const nextFileName = event.dataTransfer.getData('text/plain');
-                        onProgramFontDrop(target.key, nextFileName);
-                      }}
-                      className={cn(
-                        'rounded-md border p-3 min-h-[84px] flex-1 flex flex-col justify-between gap-2 min-w-0 transition-colors duration-[80ms]',
-                        isHighlighted
-                          ? 'border-accent bg-[rgba(var(--accent-rgb),0.08)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb),0.18)]'
-                          : 'border-line bg-canvas',
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-2.5 flex-wrap">
-                        <div className="min-w-0 flex-1">
-                          <div className="text-base font-semibold text-primary">{target.title}</div>
-                          <div className="text-xs text-tertiary leading-[1.5] break-words">{target.description}</div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onProgramFontReset(target.key)}
-                          disabled={!target.fileName}
-                          className="text-sm shrink-0"
-                        >
-                          {$t('恢复默认')}
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        <span className="inline-flex items-center min-h-[22px] px-2 rounded-full border border-line bg-overlay text-primary text-xs font-semibold shrink-0">
-                          {assignedFont ? assignedFont.displayName : $t('默认')}
-                        </span>
-                        <span className="text-xs text-tertiary truncate min-w-0 flex-1">
-                          {assignedFont ? assignedFont.fileName : target.defaultText}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          <FontManagerPanel
+            programFonts={programFonts}
+            programFontSearchQuery={programFontSearchQuery}
+            onProgramFontSearchQueryChange={onProgramFontSearchQueryChange}
+            onAddProgramFonts={onAddProgramFonts}
+            programFontImporting={programFontImporting}
+            programFontDeleting={programFontDeleting}
+            onDeleteProgramFont={onDeleteProgramFont}
+            programFontAssignments={programFontAssignments}
+            onProgramFontDragStart={onProgramFontDragStart}
+            onProgramFontDragEnd={onProgramFontDragEnd}
+            onProgramFontDragEnter={onProgramFontDragEnter}
+            onProgramFontDragLeave={onProgramFontDragLeave}
+            onProgramFontDrop={onProgramFontDrop}
+            onProgramFontReset={onProgramFontReset}
+            activeProgramFontDropTarget={activeProgramFontDropTarget}
+          />
           <SettingsDivider margin="12px 0 8px" />
           <SettingRow
             definition={appearanceSettings.fields.terminalFontSize}
@@ -475,72 +330,19 @@ export default function AppearanceTab({
       <div>
         <SettingsSectionTitle definition={appearanceSettings.sections.background} />
         <SettingsPanel>
-          {/* 背景类型切换：全局 / 终端 */}
-          <div className="flex justify-between items-center gap-3">
-            <div className="min-w-0">
-              <div className="text-base text-primary">{$t('全局背景图')}</div>
-              <div className="text-xs text-tertiary">{$t('设置全局背景后不可设置终端壁纸')}</div>
-            </div>
-            <div className="inline-flex border border-line rounded-sm overflow-hidden shrink-0">
-              {(['global', 'terminal'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => onBgTargetModeChange(mode)}
-                  className={cn(
-                    'px-3 py-1 text-sm cursor-pointer border-none',
-                    bgTargetMode === mode ? 'bg-accent text-white' : 'bg-transparent text-secondary',
-                  )}
-                >
-                  {mode === 'global' ? $t('全局背景图') : $t('终端背景')}
-                </button>
-              ))}
-            </div>
-          </div>
-          <SettingsDivider />
-          {/* 上传 / 恢复（作用于当前选中的类型） */}
-          <div className="flex justify-end items-center gap-3">
-            {(bgTargetMode === 'global' ? globalBgImage : termBgImage) && (
-              <Button variant="ghost" size="sm" onClick={onBgReset}>{$t('恢复默认')}</Button>
-            )}
-            <label htmlFor="appearance-bg-upload" className="inline-flex items-center justify-center gap-1 min-h-6 py-[3px] px-[7px] rounded-sm text-sm font-medium leading-none whitespace-nowrap border select-none cursor-pointer outline-none transition-colors duration-100 bg-raised text-secondary border-line hover:bg-hover hover:text-primary hover:border-focus active:bg-active">
-              {$t('上传图片')}
-              <input id="appearance-bg-upload" type="file" accept="image/*" className="hidden" onChange={onBgUpload} />
-            </label>
-          </div>
-          <SettingsDivider />
-          {/* 可见度（随类型切换范围与标签） */}
-          <div className="flex justify-between items-center">
-            <div className="text-base text-primary">
-              {bgTargetMode === 'global' ? $t('全局背景可见度') : $t('壁纸可见度')}
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="0"
-                max={bgTargetMode === 'global' ? 0.5 : 1}
-                step={bgTargetMode === 'global' ? 0.02 : 0.05}
-                value={bgTargetMode === 'global' ? globalBgOpacity : termBgOpacity}
-                onChange={onBgOpacityChange}
-              />
-              <span className="text-base w-8 text-right text-primary">
-                {Math.round((bgTargetMode === 'global' ? globalBgOpacity : termBgOpacity) * 100)}%
-              </span>
-            </div>
-          </div>
-          {/* 图标透明度仅全局模式有效 */}
-          {bgTargetMode === 'global' && (
-            <>
-              <SettingsDivider />
-              <div className="flex justify-between items-center">
-                <div className="text-base text-primary">{$t('图标透明度')}</div>
-                <div className="flex items-center gap-3">
-                  <input type="range" min="0.4" max="1" step="0.05" value={globalIconOpacity} onChange={onGlobalIconOpacityChange} />
-                  <span className="text-base w-8 text-right text-primary">{Math.round(globalIconOpacity * 100)}%</span>
-                </div>
-              </div>
-            </>
-          )}
+          <BackgroundPanel
+            termBgImage={termBgImage}
+            globalBgImage={globalBgImage}
+            bgTargetMode={bgTargetMode}
+            onBgTargetModeChange={onBgTargetModeChange}
+            onBgUpload={onBgUpload}
+            onBgReset={onBgReset}
+            termBgOpacity={termBgOpacity}
+            globalBgOpacity={globalBgOpacity}
+            onBgOpacityChange={onBgOpacityChange}
+            globalIconOpacity={globalIconOpacity}
+            onGlobalIconOpacityChange={onGlobalIconOpacityChange}
+          />
         </SettingsPanel>
       </div>
 
@@ -561,125 +363,5 @@ export default function AppearanceTab({
         </SettingsPanel>
       </div>
     </SettingsTabRoot>
-  );
-}
-
-interface ThemePackagePaletteProps {
-  definition?: SettingsDefinitionNode;
-  title: string;
-  description: string;
-  packages: ThemePackage[];
-  selectedThemePackageId?: string;
-  onSelectThemePackage: (id: string) => void;
-  onDeleteThemePackage?: (themePackage: ThemePackage) => void;
-  onCopyThemePackageToMode?: (themePackage: ThemePackage, targetMode: string) => void;
-  copyTargetMode: string;
-  themePackageBusy: boolean;
-}
-
-function ThemePackagePalette({
-  definition,
-  title,
-  description,
-  packages,
-  selectedThemePackageId,
-  onSelectThemePackage,
-  onDeleteThemePackage,
-  onCopyThemePackageToMode,
-  copyTargetMode,
-  themePackageBusy,
-}: ThemePackagePaletteProps) {
-  const normalizedPackages = Array.isArray(packages) ? packages : [];
-  const palettePackages = useMemo(() => normalizedPackages.map((themePackage) => ({
-    ...themePackage,
-    preview: themePackage?.preview || ({} as ThemePackagePreview),
-  })), [normalizedPackages]);
-  const copyLabel = copyTargetMode === 'light' ? $t('复制到浅色') : $t('复制到深色');
-
-  return (
-    <div data-settings-field-id={definition?.id} className="flex flex-col gap-2.5 min-w-0">
-      <div className="min-w-0">
-        <div className="text-base text-primary font-semibold">{title}</div>
-        <div className="text-xs text-tertiary">{description}</div>
-      </div>
-      {palettePackages.length === 0 ? (
-        <div className="p-3 rounded-md border border-dashed border-line text-tertiary text-sm">
-          {$t('当前没有可用的主题包')}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {palettePackages.map((themePackage) => {
-            const isActive = selectedThemePackageId === themePackage.id;
-            const canDelete = themePackage.source === 'user';
-            return (
-              <div
-                key={themePackage.id}
-                onClick={() => onSelectThemePackage(themePackage.id)}
-                className={cn(
-                  'flex items-center gap-2.5 px-3 py-2.5 rounded-md cursor-pointer min-w-0 transition-colors duration-[80ms] border',
-                  isActive
-                    ? 'border-accent bg-[rgba(var(--accent-rgb),0.08)] shadow-[inset_0_0_0_1px_rgba(var(--accent-rgb),0.18)]'
-                    : 'border-line bg-canvas',
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn('w-2 h-2 rounded-full shrink-0', isActive ? 'bg-accent' : 'bg-tertiary')}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className={cn('text-base text-primary truncate', isActive ? 'font-bold' : 'font-semibold')}>
-                    {/* themePackage.name 为动态显示名（内置主题为 i18n 键），t() 内部有兜底 */}
-                    {$t(themePackage.name as I18nKey)}
-                  </div>
-                  {themePackage.description ? (
-                    <div className="text-xs text-tertiary leading-[1.5] mt-0.5 truncate">
-                      {/* 同 name：动态描述，t() 内部有兜底 */}
-                      {$t(themePackage.description as I18nKey)}
-                    </div>
-                  ) : null}
-                </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-line text-tertiary shrink-0">
-                  {themePackage.source === 'builtin' ? $t('内置') : $t('用户')}
-                </span>
-                {copyTargetMode ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={copyLabel}
-                    title={copyLabel}
-                    disabled={themePackageBusy}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onCopyThemePackageToMode?.(themePackage, copyTargetMode);
-                    }}
-                    className="w-6 h-6 min-w-6 text-secondary shrink-0"
-                  >
-                    <Copy size={12} />
-                  </Button>
-                ) : null}
-                {canDelete ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={$t('删除主题包')}
-                    title={$t('删除主题包')}
-                    disabled={themePackageBusy}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onDeleteThemePackage?.(themePackage);
-                    }}
-                    className="w-6 h-6 min-w-6 text-danger shrink-0"
-                  >
-                    <Trash2 size={12} />
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
   );
 }

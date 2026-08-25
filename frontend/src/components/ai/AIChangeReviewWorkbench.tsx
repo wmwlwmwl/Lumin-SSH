@@ -20,6 +20,7 @@ const NAV_BUTTON_CLASS = 'inline-flex items-center justify-center w-7 h-7 rounde
 
 export default function AIChangeReviewWorkbench({ review, queueLength = 1, previewOnly = false, onClose = null }: AIChangeReviewWorkbenchProps) {
   const { t } = useTranslation()
+  const diffNavigationRef = useRef<((target: DiffNavigateTarget) => void) | null>(null)
 
   if (!review) {
     return null
@@ -31,7 +32,6 @@ export default function AIChangeReviewWorkbench({ review, queueLength = 1, previ
   const toolName = typeof review.toolName === 'string' ? review.toolName : ''
   const reviewId = typeof review.reviewId === 'string' && review.reviewId.trim() ? review.reviewId.trim() : 'change-review'
   const showBlockBadge = blocks.length > 1
-  const diffNavigationRef = useRef<((target: DiffNavigateTarget) => void) | null>(null)
   const handlePrimaryDiffNavigateReady = (navigate: ((target: DiffNavigateTarget) => void) | null) => {
     diffNavigationRef.current = typeof navigate === 'function' ? navigate : null
   }

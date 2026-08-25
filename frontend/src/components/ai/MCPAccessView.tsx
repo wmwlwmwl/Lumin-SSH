@@ -15,7 +15,7 @@ function ToggleSwitch({ checked, onChange, disabled = false }: ToggleSwitchProps
       disabled={disabled || typeof onChange !== 'function'}
       aria-pressed={checked}
       className={`w-[42px] h-6 rounded-full border border-line p-0.5 flex items-center transition-colors duration-100 shrink-0 ${checked ? 'justify-end' : 'justify-start'} ${
-        disabled ? 'bg-hover opacity-60 cursor-not-allowed' : checked ? 'bg-success cursor-pointer' : 'bg-hover cursor-pointer'
+        disabled ? 'bg-hover opacity-60 cursor-not-allowed' : (checked ? 'bg-success cursor-pointer' : 'bg-hover cursor-pointer')
       }`}
     >
       <span className="w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.3)]" />

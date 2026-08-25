@@ -202,9 +202,9 @@ export default function AIConversationDiffOverlay({
       : null
     const copyContent = typeof item?.copyContent === 'string' && item.copyContent.trim()
       ? item.copyContent.trim()
-      : typeof review?.rawDiff === 'string' && review.rawDiff.trim()
+      : (typeof review?.rawDiff === 'string' && review.rawDiff.trim()
         ? review.rawDiff.trim()
-        : ''
+        : '')
     if (!itemId || !copyContent) {
       return
     }
@@ -276,9 +276,9 @@ export default function AIConversationDiffOverlay({
               : false
             const itemCopyCharacterCount = typeof item.copyContent === 'string' && item.copyContent.trim()
               ? item.copyContent.trim().length
-              : currentRawDiff.trim()
+              : (currentRawDiff.trim()
                 ? currentRawDiff.trim().length
-                : 0
+                : 0)
             return (
               <div
                 key={item.id}

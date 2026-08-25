@@ -838,7 +838,7 @@ let themePackagesCache: ThemePackage[] = BUILTIN_THEME_PACKAGES.map((item) => no
 let themePackageMapCache = buildThemePackageMap(themePackagesCache);
 let themePackageSettingsCache: ThemePackageSettings | null = null;
 let themeRuntimeListenersBound = false;
-let systemThemeChangeUnbind: (() => void) | null = null;
+let _systemThemeChangeUnbind: (() => void) | null = null;
 let themeToolPreviewPackageCache: ThemePackage | null = null;
 
 function normalizeThemePackageSettings(
@@ -1014,10 +1014,10 @@ function bindThemeRuntimeListeners(): void {
     };
     if (typeof media.addEventListener === 'function') {
       media.addEventListener('change', handler);
-      systemThemeChangeUnbind = () => media.removeEventListener('change', handler);
+      _systemThemeChangeUnbind = () => media.removeEventListener('change', handler);
     } else if (typeof media.addListener === 'function') {
       media.addListener(handler);
-      systemThemeChangeUnbind = () => media.removeListener(handler);
+      _systemThemeChangeUnbind = () => media.removeListener(handler);
     }
   }
 }

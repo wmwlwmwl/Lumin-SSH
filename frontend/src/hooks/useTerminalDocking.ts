@@ -168,9 +168,9 @@ export default function useTerminalDocking(deps: TerminalDockingDeps): TerminalD
         const occupiedSplit = occupiedCells.length > 1 ? splitTerminalPaneCells(occupiedCells, target) : null;
         const splitNormalizeOrientation = occupiedSplit?.direction === 'up' || occupiedSplit?.direction === 'down'
           ? 'rows'
-          : occupiedSplit?.direction === 'left' || occupiedSplit?.direction === 'right'
+          : (occupiedSplit?.direction === 'left' || occupiedSplit?.direction === 'right'
             ? 'cols'
-            : occupiedPane.normalizeOrientation;
+            : occupiedPane.normalizeOrientation);
 
         const nextLayouts: Record<string, TerminalPaneLayout> = {
           ...prev,
@@ -214,9 +214,9 @@ export default function useTerminalDocking(deps: TerminalDockingDeps): TerminalD
 
       const normalizeOrientation = rootRect?.width === 1 && rootRect?.height === 2
         ? 'rows'
-        : rootRect?.width === 2 && rootRect?.height === 1
+        : (rootRect?.width === 2 && rootRect?.height === 1
           ? 'cols'
-          : null;
+          : null);
 
       const nextLayouts: Record<string, TerminalPaneLayout> = {
         ...prev,

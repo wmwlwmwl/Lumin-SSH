@@ -73,9 +73,9 @@ function assessSensitiveCommandRisk(command: string): { severity: 'danger' | 'wa
   }, [])
   const severity = matches.some((match) => match.severity === 'danger')
     ? 'danger'
-    : matches.some((match) => match.severity === 'warning')
+    : (matches.some((match) => match.severity === 'warning')
       ? 'warning'
-      : null
+      : null)
   return { severity, matches }
 }
 
@@ -383,7 +383,7 @@ export default function AIChatCommandCard({ purpose, command, output, status = r
           </div>
         </div>
         <div className="grid gap-2.5 px-3 pb-2.5 pt-3">
-          <pre style={{ border: riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.24)' : riskState.severity === 'warning' ? '1px solid rgba(var(--warning-rgb), 0.24)' : mutationPalette.commandBorder, background: riskState.severity ? 'var(--surface-base)' : mutationPalette.commandBackground }} className="m-0 max-h-[260px] overflow-x-auto overflow-y-auto overscroll-contain whitespace-pre-wrap rounded-lg px-3 py-2.5 font-mono text-sm leading-[1.65] text-primary [word-break:break-word]">{highlightedCommand}</pre>
+          <pre style={{ border: riskState.severity === 'danger' ? '1px solid rgba(var(--danger-rgb), 0.24)' : (riskState.severity === 'warning' ? '1px solid rgba(var(--warning-rgb), 0.24)' : mutationPalette.commandBorder), background: riskState.severity ? 'var(--surface-base)' : mutationPalette.commandBackground }} className="m-0 max-h-[260px] overflow-x-auto overflow-y-auto overscroll-contain whitespace-pre-wrap rounded-lg px-3 py-2.5 font-mono text-sm leading-[1.65] text-primary [word-break:break-word]">{highlightedCommand}</pre>
           {expanded && displayOutput ? (
             <pre ref={outputContainerRef} className="m-0 max-h-[320px] overflow-x-auto overflow-y-auto overscroll-contain whitespace-pre-wrap rounded-lg border border-line-subtle bg-canvas px-3 py-2.5 font-mono text-sm leading-[1.65] text-secondary [word-break:break-word]"><span ref={outputContentRef} style={{ display: 'block' }}>{t(displayOutput as I18nKey)}</span></pre>
           ) : null}

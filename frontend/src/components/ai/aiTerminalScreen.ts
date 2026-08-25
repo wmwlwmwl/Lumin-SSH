@@ -164,6 +164,34 @@ function terminalCSIParamValue(params: unknown, index: number, fallback: number)
   return params[index] > 0 ? params[index] : fallback
 }
 
+function applyTerminalCSICommand(finalChar: string, params: number[], lines: TerminalScreenLine[], state: TerminalCursorState) {
+  if (finalChar === 'A') {
+    moveTerminalScreenCursor(lines, state, -terminalCSIParamValue(params, 0, 1), 0)
+  } else if (finalChar === 'B') {
+    moveTerminalScreenCursor(lines, state, terminalCSIParamValue(params, 0, 1), 0)
+  } else if (finalChar === 'C') {
+    moveTerminalScreenCursor(lines, state, 0, terminalCSIParamValue(params, 0, 1))
+  } else if (finalChar === 'D') {
+    moveTerminalScreenCursor(lines, state, 0, -terminalCSIParamValue(params, 0, 1))
+  } else if (finalChar === 'G') {
+    state.col = Math.max(0, terminalCSIParamValue(params, 0, 1) - 1)
+    ensureTerminalScreenRow(lines, state.row)
+  } else if (finalChar === 'H' || finalChar === 'f') {
+    state.row = Math.max(0, terminalCSIParamValue(params, 0, 1) - 1)
+    state.col = Math.max(0, terminalCSIParamValue(params, 1, 1) - 1)
+    ensureTerminalScreenRow(lines, state.row)
+  } else if (finalChar === 'J') {
+    const mode = terminalCSIParamValue(params, 0, 0)
+    if (mode === 2 || mode === 3) {
+      lines.splice(0, lines.length, [])
+      state.row = 0
+      state.col = 0
+    }
+  } else if (finalChar === 'K') {
+    eraseTerminalScreenLine(lines, state, terminalCSIParamValue(params, 0, 0))
+  }
+}
+
 function processTerminalOutputANSISequence(source: string, startIndex: number, lines: TerminalScreenLine[], state: TerminalCursorState) {
   if (startIndex + 1 >= source.length) {
     return 1
@@ -179,32 +207,7 @@ function processTerminalOutputANSISequence(source: string, startIndex: number, l
           rawParams = rawParams.slice(1)
         }
         const params = parseTerminalCSIParams(rawParams)
-        const finalChar = source[endIndex]
-        if (finalChar === 'A') {
-          moveTerminalScreenCursor(lines, state, -terminalCSIParamValue(params, 0, 1), 0)
-        } else if (finalChar === 'B') {
-          moveTerminalScreenCursor(lines, state, terminalCSIParamValue(params, 0, 1), 0)
-        } else if (finalChar === 'C') {
-          moveTerminalScreenCursor(lines, state, 0, terminalCSIParamValue(params, 0, 1))
-        } else if (finalChar === 'D') {
-          moveTerminalScreenCursor(lines, state, 0, -terminalCSIParamValue(params, 0, 1))
-        } else if (finalChar === 'G') {
-          state.col = Math.max(0, terminalCSIParamValue(params, 0, 1) - 1)
-          ensureTerminalScreenRow(lines, state.row)
-        } else if (finalChar === 'H' || finalChar === 'f') {
-          state.row = Math.max(0, terminalCSIParamValue(params, 0, 1) - 1)
-          state.col = Math.max(0, terminalCSIParamValue(params, 1, 1) - 1)
-          ensureTerminalScreenRow(lines, state.row)
-        } else if (finalChar === 'J') {
-          const mode = terminalCSIParamValue(params, 0, 0)
-          if (mode === 2 || mode === 3) {
-            lines.splice(0, lines.length, [])
-            state.row = 0
-            state.col = 0
-          }
-        } else if (finalChar === 'K') {
-          eraseTerminalScreenLine(lines, state, terminalCSIParamValue(params, 0, 0))
-        }
+        applyTerminalCSICommand(source[endIndex], params, lines, state)
         return endIndex - startIndex + 1
       }
       endIndex += 1

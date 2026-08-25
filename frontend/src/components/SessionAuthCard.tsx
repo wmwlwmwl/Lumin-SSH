@@ -127,7 +127,7 @@ export default function SessionAuthCard({ prompt, isActive, t, onResolve }: Sess
     } catch {}
   };
 
-  const Icon: LucideIcon = isPassword ? KeyRound : prompt.danger ? ShieldAlert : ShieldQuestion;
+  const Icon: LucideIcon = isPassword ? KeyRound : (prompt.danger ? ShieldAlert : ShieldQuestion);
 
   return (
     <div

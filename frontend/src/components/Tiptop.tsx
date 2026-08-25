@@ -48,7 +48,7 @@ export default function Tiptop({
       left: rect.left + rect.width / 2,
       top: placement === 'bottom' && finiteMinTop(resolvedMinTop)
         ? Math.max(triggerBottom, resolvedMinTop)
-        : placement === 'bottom' ? triggerBottom : rect.top - 6,
+        : (placement === 'bottom' ? triggerBottom : rect.top - 6),
     })
   }, [minTop, placement])
 

@@ -1,10 +1,9 @@
 // AIPanel 的数据模型契约与纯逻辑（状态归一化、消息/API 历史操作、协作流解析等），
 // 从 AIPanel.tsx 抽出，无 React 状态依赖。
-import type { I18nKey } from '../../i18n.ts';
 import { t as translate } from '../../i18n.ts';
 import type { AIProviderLike } from './AIProviderSelector.tsx';
 import { getAIProviderDefinition } from './providers/index.ts';
-import { upsertConversationSummary, type ConversationSummary } from './aiConversationSummary.ts';
+import type { ConversationSummary } from './aiConversationSummary.ts';
 // 来自 Go 桥或事件 payload 的外部数据形状：字段均以 typeof 守卫读取，
 // 无索引签名（字段名拼错编译期报错）；新增字段时在此补充。
 // ============================================================
@@ -351,7 +350,7 @@ export function buildRequestMessages(apiMessages: unknown): AIRequestMessage[] {
     ? apiMessages
         .filter((message) => message && typeof message === 'object')
         .map((message) => ({
-          role: message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user',
+          role: message.role === 'assistant' ? 'assistant' : (message.role === 'system' ? 'system' : 'user'),
           content: typeof message.content === 'string' ? message.content.trim() : '',
           images: normalizeMessageImages(message.images),
           cacheObjects: cloneAIConversationCacheObjects(message.cacheObjects),
@@ -458,7 +457,7 @@ export function findApiAnchorIndexByUiMessageId(apiMessages: unknown, uiMessageI
 }
 
 export function upsertAPIHistoryMessage(apiMessages: unknown, rawMessage: AIAPIHistoryMessageLike, currentMessages: unknown = []): APIHistoryMessage[] {
-  const role = rawMessage?.role === 'assistant' ? 'assistant' : rawMessage?.role === 'system' ? 'system' : 'user'
+  const role = rawMessage?.role === 'assistant' ? 'assistant' : (rawMessage?.role === 'system' ? 'system' : 'user')
   const content = typeof rawMessage?.content === 'string' ? rawMessage.content.trim() : ''
   const images = normalizeMessageImages(rawMessage?.images)
   if (!content && images.length === 0) {
@@ -769,7 +768,7 @@ export function computeAILastAssistantTurnState(messages: unknown): { lastAssist
     }
     lastAssistantTurnId = typeof message?.turnId === 'string' && message.turnId.trim()
       ? message.turnId.trim()
-      : typeof message?.id === 'string' ? message.id.trim() : ''
+      : (typeof message?.id === 'string' ? message.id.trim() : '')
     break
   }
   if (!lastAssistantTurnId) {

@@ -20,7 +20,7 @@ function ToggleSwitch({ checked, onChange, disabled = false }: ToggleSwitchProps
       disabled={disabled}
       aria-pressed={checked}
       className={`w-[42px] h-6 rounded-full border border-line p-0.5 flex items-center transition-colors duration-100 shrink-0 ${checked ? 'justify-end' : 'justify-start'} ${
-        disabled ? 'bg-hover opacity-60 cursor-not-allowed' : checked ? 'bg-success cursor-pointer' : 'bg-hover cursor-pointer'
+        disabled ? 'bg-hover opacity-60 cursor-not-allowed' : (checked ? 'bg-success cursor-pointer' : 'bg-hover cursor-pointer')
       }`}
     >
       <span className="w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.3)]" />
@@ -195,11 +195,11 @@ export default function MCPServersView({
                     <span className={`px-2 py-0.5 rounded-full border border-line text-xs font-bold ${
                       server.status === 'connected'
                         ? 'bg-[rgba(var(--success-rgb),0.08)] text-success'
-                        : server.status === 'connecting'
+                        : (server.status === 'connecting'
                           ? 'bg-[rgba(var(--warning-rgb),0.08)] text-warning'
-                          : 'bg-[rgba(var(--danger-rgb),0.08)] text-danger'
+                          : 'bg-[rgba(var(--danger-rgb),0.08)] text-danger')
                     }`}>
-                      {t(server.status === 'connected' ? '已连接' : server.status === 'connecting' ? '连接中...' : '已断开')}
+                      {t(server.status === 'connected' ? '已连接' : (server.status === 'connecting' ? '连接中...' : '已断开'))}
                     </span>
                   </div>
                   <div className="text-sm text-tertiary leading-[1.6] max-h-40 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words pr-1">

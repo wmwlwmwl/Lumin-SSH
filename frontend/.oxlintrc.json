@@ -1,0 +1,72 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "react",
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "warn"
+  },
+  "rules": {
+    "no-var": "error",
+    "no-debugger": "error",
+    "no-eval": "error",
+    "no-caller": "error",
+    "no-delete-var": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-func-assign": "error",
+    "no-import-assign": "error",
+    "no-self-assign": "error",
+    "no-unreachable": "error",
+    "no-unsafe-finally": "error",
+    "use-isnan": "error",
+    "valid-typeof": "error",
+    "no-control-regex": "off",
+    "max-depth": ["error", 4],
+    "max-params": ["error", 5],
+    "no-unused-expressions": "error",
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
+    "react/rules-of-hooks": "error",
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "off",
+    "react/exhaustive-deps": "off",
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/immutability": "off",
+    "react/preserve-manual-memoization": "off",
+    "react/purity": "off",
+    "react/jsx-key": "error",
+    "react/no-direct-mutation-state": "error",
+    "react/no-find-dom-node": "error",
+    "react/no-is-mounted": "error",
+    "react/no-render-return-value": "error",
+    "react/no-string-refs": "error",
+    "react/jsx-no-duplicate-props": "error",
+    "react/jsx-no-useless-fragment": "warn",
+    "unicorn/no-nested-ternary": "off",
+    "unicorn/no-useless-fallback-in-spread": "off",
+    "unicorn/no-empty-file": "warn",
+    "unicorn/no-new-array": "off",
+    "oxc/only-used-in-recursion": "off",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-extra-non-null-assertion": "warn",
+    "typescript/no-misused-new": "error",
+    "typescript/prefer-as-const": "warn"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "wailsjs/**",
+    "*.md5"
+  ]
+}

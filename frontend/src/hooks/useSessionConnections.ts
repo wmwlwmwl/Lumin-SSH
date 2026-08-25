@@ -322,19 +322,20 @@ export default function useSessionConnections(deps: UseSessionConnectionsDeps): 
       }
     } catch (_) {
     } finally {
-      if (!serverId) return;
-      recordRecentConnection(serverId);
-      setServers(prevServers => {
-        const currentServer = prevServers.find(s => s.id === serverId);
-        if (!currentServer) return prevServers;
-        const detectedOs = staticInfo?.os || '';
-        // 连接成功后统一同步；OS 检测失败时保留已有值，避免清空。
-        AppGo.SetConnectionOS(serverId, String(detectedOs || currentServer.os || '')).catch(console.error);
-        if (detectedOs && currentServer.os !== detectedOs) {
-          return prevServers.map(s => s.id === serverId ? { ...s, os: String(detectedOs) } : s);
-        }
-        return prevServers;
-      });
+      if (serverId) {
+        recordRecentConnection(serverId);
+        setServers(prevServers => {
+          const currentServer = prevServers.find(s => s.id === serverId);
+          if (!currentServer) return prevServers;
+          const detectedOs = staticInfo?.os || '';
+          // 连接成功后统一同步；OS 检测失败时保留已有值，避免清空。
+          AppGo.SetConnectionOS(serverId, String(detectedOs || currentServer.os || '')).catch(console.error);
+          if (detectedOs && currentServer.os !== detectedOs) {
+            return prevServers.map(s => s.id === serverId ? { ...s, os: String(detectedOs) } : s);
+          }
+          return prevServers;
+        });
+      }
     }
   }, [recordRecentConnection]);
 
@@ -343,7 +344,7 @@ export default function useSessionConnections(deps: UseSessionConnectionsDeps): 
     try {
       const data = await AppGo.GetConnectionsMasked();
       setServers(data || []);
-    } catch (e) {
+    } catch (_) {
       addToast(t('加载服务器配置失败'), 'error');
     }
     try {

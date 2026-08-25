@@ -276,7 +276,7 @@ export default function AIConversationBackupSettings({
               <div className="p-4 rounded-xl border border-line bg-canvas text-tertiary text-base">
                 {t('加载中...')}
               </div>
-            ) : historyEntries.length === 0 ? (
+            ) : (historyEntries.length === 0 ? (
               <div className="p-4 rounded-xl border border-line bg-canvas text-tertiary text-base">
                 {t('暂无消息')}
               </div>
@@ -305,7 +305,7 @@ export default function AIConversationBackupSettings({
                   </div>
                 )
               })
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -325,7 +325,7 @@ export default function AIConversationBackupSettings({
             <History size={18} />
             <span>{isRefreshing ? t('刷新中...') : t('加载备份列表中...')}</span>
           </div>
-        ) : backups.length === 0 ? (
+        ) : (backups.length === 0 ? (
           <div className="min-h-40 flex flex-col items-center justify-center gap-2 rounded-xl border border-line bg-canvas text-tertiary text-base">
             <History size={22} className="opacity-35" />
             <span>{t('暂无自动备份')}</span>
@@ -359,7 +359,7 @@ export default function AIConversationBackupSettings({
               </div>
             </div>
           ))
-        )}
+        ))}
       </div>
     </div>
   )

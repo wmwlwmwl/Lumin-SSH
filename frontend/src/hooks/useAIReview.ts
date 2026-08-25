@@ -118,7 +118,7 @@ export default function useAIReview({ sessionsRef, addToast, t }: UseAIReviewOpt
     });
   }, []);
 
-  const removeChangeReviewById = useCallback((reviewId: string) => {
+  const _removeChangeReviewById = useCallback((reviewId: string) => {
     const normalizedId = typeof reviewId === 'string' ? reviewId.trim() : '';
     if (!normalizedId) {
       return;
@@ -310,9 +310,9 @@ export default function useAIReview({ sessionsRef, addToast, t }: UseAIReviewOpt
     const bridge = (window?.go?.wailsapp?.AIBindings || window?.go?.wailsapp?.App) as AIBridgeLike;
     const effectiveTerminalId = typeof targetTerminalId === 'string' && targetTerminalId.trim()
       ? targetTerminalId.trim()
-      : typeof targetSessionId === 'string'
+      : (typeof targetSessionId === 'string'
         ? targetSessionId.trim()
-        : '';
+        : '');
     if (!bridge?.ReapplyAIChatTool) {
       addToast(t('重新应用能力未就绪'), 'error', 3200);
       return false;

@@ -1,4 +1,4 @@
-// 桥接模块（自 .js 收编后类型化）：探针面板数据格式化
+// 探针/网络监控面板数据格式化工具函数
 const STORAGE_UNITS = ['M', 'G', 'T', 'P'];
 const RATE_UNITS = ['KB/s', 'MB/s', 'GB/s', 'TB/s'];
 

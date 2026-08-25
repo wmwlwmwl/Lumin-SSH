@@ -77,7 +77,7 @@ export default function SerialConfigModal({ onClose, onConnect }: SerialConfigMo
               <label className="form-label" htmlFor="serial-config-port">{t('串口设备')}</label>
               {loading ? (
                 <div className="text-sm text-tertiary">{t('正在检索串口设备...')}</div>
-              ) : ports.length === 0 ? (
+              ) : (ports.length === 0 ? (
                 <div>
                   <input
                     id="serial-config-port"
@@ -108,7 +108,7 @@ export default function SerialConfigModal({ onClose, onConnect }: SerialConfigMo
                     </option>
                   ))}
                 </select>
-              )}
+              ))}
             </div>
 
             <div className="form-group">

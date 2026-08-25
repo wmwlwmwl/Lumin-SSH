@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clampPanelWidth } from '../components/probeFormatting.ts';
+import { clampPanelWidth } from '../utils/probeFormatting.ts';
 
 const FILE_MANAGER_LEFT_MIN = 180;
 const FILE_MANAGER_BOTTOM_MIN = 100;
@@ -57,11 +57,11 @@ export interface UseWorkspacePanelDockingResult {
 }
 
 export default function useWorkspacePanelDocking({
-  bottomSplitHeight,
+  bottomSplitHeight: _bottomSplitHeight,
   bottomSplitHeightRef,
   contentTab,
   fileManagerPosition: initialPosition,
-  leftSplitWidth,
+  leftSplitWidth: _leftSplitWidth,
   leftSplitWidthRef,
   aiPanelWidthRef,
   probePanelPosition,
@@ -224,7 +224,7 @@ export default function useWorkspacePanelDocking({
     updateCollapseDragIntent(null);
     updateFileManagerDockPreview(isFileManagerDockDrag ? direction : null);
     updateFileManagerDockConfirmTarget(null);
-    document.body.style.cursor = direction === 'bottom' ? 'row-resize' : direction === 'tab' ? 'grabbing' : 'col-resize';
+    document.body.style.cursor = direction === 'bottom' ? 'row-resize' : (direction === 'tab' ? 'grabbing' : 'col-resize');
     document.body.style.userSelect = 'none';
 
     const getSnapshot = (clientX: number, clientY: number): { clampedSize: number; armed: boolean } => {

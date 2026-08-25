@@ -71,16 +71,16 @@ export function getTerminalBufferSnapshotText(term: XTerm | null) {
 
 // 手写 URL 规则（不依赖 addon-web-links）；provider 负责点击，覆盖层负责常驻下划线
 // 排除 ; | 等 shell 分隔符，避免 curl ...sh;else 把后续命令粘进链接
-export const TERMINAL_URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`;]*[^\s"':,.!?{}|\\^~\[\]`()<>;]/;
+export const TERMINAL_URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`;]*[^\s"':,.!?{}|\\^~[\]`()<>;]/;
 
 export function isTerminalHttpUrl(urlString: string) {
   try {
     const url = new URL(urlString);
     const base = url.password && url.username
       ? `${url.protocol}//${url.username}:${url.password}@${url.host}`
-      : url.username
+      : (url.username
         ? `${url.protocol}//${url.username}@${url.host}`
-        : `${url.protocol}//${url.host}`;
+        : `${url.protocol}//${url.host}`);
     return urlString.toLocaleLowerCase().startsWith(base.toLocaleLowerCase());
   } catch {
     return false;
@@ -230,7 +230,7 @@ export function isInteractivePromptText(value: unknown) {
   const hasPromptStructure = /[:?：？]/.test(text)
     || /[（(]默认/.test(text)
     || /\[[yn][^[\]]*\/[^[\]]*[yn]\]/i.test(text)
-    || /\[[0-9\-][0-9,\- ]*\]/.test(text)
+    || /\[[0-9-][0-9,\- ]*\]/.test(text)
     || /按[^，。：:]*回车|回车[^，。：:]*继续|继续[^，。：:]*执行/.test(text)
   if (hasPromptStructure) {
     // 3.1) 英文关键词：default / leave empty / skip / y/n / yes/no / option / selection / password / username / port ...
@@ -244,7 +244,7 @@ export function isInteractivePromptText(value: unknown) {
   //    即便没命中关键词，这种格式也极大概率是交互提示，保留旧行为。
   if (/[:?：？]\s*(?:\d+)?\s*$/.test(text)) return true
   // 5) 兜底方括号选择格式行尾：[y/n] / [0] / [1-23] ...
-  return /\[[yn0-9/\-]+\]:?\s*(?:\d+)?\s*$/i.test(text)
+  return /\[[yn0-9/-]+\]:?\s*(?:\d+)?\s*$/i.test(text)
 }
 
 // 从 xterm 可见缓冲区的"当前命令行"剥离提示符，返回真正执行的命令。
@@ -262,7 +262,7 @@ export const SHELL_PROMPT_PREFIX_PATTERNS = [
   /^[#$%]\s+/,                            // 极简：单独的 $/#/% 起命令
   // Windows：兼容 "PS C:\path>" 与裸 "C:\path>"，盘符/路径后以 > 结尾。
   // 行首可选 PS，后跟 X:\... 路径，再 > 与空格（空格可选，空提示符也匹配）。
-  /^(?:PS\s+)?[A-Za-z]:[\\\/][^\n]*?>\s*/,
+  /^(?:PS\s+)?[A-Za-z]:[\\/][^\n]*?>\s*/,
   // 自定义 Unicode 符号提示符：可能重复（如 ❯❯）或带颜色，后接空格再接命令。
   // 符号取自常见自定义 prompt：❯ ➜ › » λ ƒ ψ 等。
   /^[❯➜›»λƒψ▶▷]+[=>]?\s+/,
@@ -322,7 +322,7 @@ export function splitTrailingIncompleteEscapeSequence(input: string) {
   return { complete: input, carry: '' }
 }
 
-export function getTextareaAutocompletePopupPosition(textarea: HTMLTextAreaElement | null, popupWidth = 760, popupHeight = 260) {
+export function getTextareaAutocompletePopupPosition(textarea: HTMLTextAreaElement | null, _popupWidth = 760, _popupHeight = 260) {
   if (!textarea || typeof window === 'undefined' || typeof document === 'undefined') {
     return null
   }

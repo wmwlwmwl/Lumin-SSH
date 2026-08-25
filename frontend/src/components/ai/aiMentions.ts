@@ -452,16 +452,16 @@ async function processAIMentions(
 
     const isWrappedFile = isLongTextWrapPath(normalizedPath)
     const isFolder = !isWrappedFile && normalizedPath.endsWith('/')
-    const mentionKey = `${isWrappedFile ? 'wrapped' : isFolder ? 'folder' : 'file'}:${normalizedPath}`
+    const mentionKey = `${isWrappedFile ? 'wrapped' : (isFolder ? 'folder' : 'file')}:${normalizedPath}`
     if (!mentionKeys.has(mentionKey)) {
       mentionKeys.add(mentionKey)
       mentions.push({
-        kind: isWrappedFile ? 'wrapped' : isFolder ? 'folder' : 'file',
+        kind: isWrappedFile ? 'wrapped' : (isFolder ? 'folder' : 'file'),
         path: normalizedPath,
       })
     }
 
-    return `'${mention}' (see below for ${isWrappedFile ? 'wrapped text' : isFolder ? 'folder' : 'file'} content)`
+    return `'${mention}' (see below for ${isWrappedFile ? 'wrapped text' : (isFolder ? 'folder' : 'file')} content)`
   })
 
   if (mentions.length === 0) {

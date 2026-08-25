@@ -4,7 +4,7 @@ import { t as $t } from '../../i18n.ts'
 import { DEFAULT_RUNTIME_ENVIRONMENT_STATUS, getRuntimeEnvironmentStatus, installRuntimeEnvironment } from './runtimeEnvironmentBridge.ts'
 import { cn } from '../../utils/cn.ts'
 import { Button } from '../ui'
-import { SettingsPanel, SettingsSectionTitle, SettingsTabRoot, type SettingsDefinitionNode } from './SharedComponents.tsx'
+import { SettingsPanel, SettingsSectionTitle, SettingsTabRoot } from './SharedComponents.tsx'
 import { settings } from './settingDefinitions'
 
 export default function RuntimeEnvironmentTab() {

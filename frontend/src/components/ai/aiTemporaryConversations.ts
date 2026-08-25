@@ -32,7 +32,7 @@ export function upsertTemporaryAIConversation(snapshot: TemporaryConversationSna
     ...snapshot,
     transient: true,
     updatedAt: typeof snapshot.updatedAt === 'number' ? snapshot.updatedAt : Date.now(),
-    messageCount: typeof snapshot.messageCount === 'number' ? snapshot.messageCount : Array.isArray(snapshot.messages) ? snapshot.messages.length : 0,
+    messageCount: typeof snapshot.messageCount === 'number' ? snapshot.messageCount : (Array.isArray(snapshot.messages) ? snapshot.messages.length : 0),
   }
   temporaryAIConversations.set(normalized.id, {
     ...upsertConversationSummary([], normalized)[0],

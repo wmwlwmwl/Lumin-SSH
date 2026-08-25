@@ -79,16 +79,25 @@ const fieldNode = (id: string, alias: string, titleKey: I18nKey | '', descriptio
   targetId: extra.targetId || id,
   ...extra,
 });
-const fieldGroupNode = (id: string, alias: string, titleKey: I18nKey | '', descriptionKey: I18nKey | '' = '', children: SettingsTreeNode[] = [], extra: Record<string, unknown> = {}): SettingsTreeNode => createSettingsNode({
-  type: 'field-group',
-  id,
-  alias,
-  titleKey,
-  descriptionKey,
-  children,
-  targetId: extra.targetId || id,
-  ...extra,
-});
+const fieldGroupNode = (
+  id: string,
+  alias: string,
+  titleKey: I18nKey | '',
+  descriptionKey: I18nKey | '' = '',
+  ...rest: [children?: SettingsTreeNode[], extra?: Record<string, unknown>]
+): SettingsTreeNode => {
+  const [children = [], extra = {}] = rest;
+  return createSettingsNode({
+    type: 'field-group',
+    id,
+    alias,
+    titleKey,
+    descriptionKey,
+    children,
+    targetId: (extra.targetId as string | undefined) || id,
+    ...extra,
+  });
+};
 const optionNode = (id: string, alias: string, titleKey: I18nKey | '', descriptionKey: I18nKey | '' = '', extra: Record<string, unknown> = {}): SettingsTreeNode => createSettingsNode({
   type: 'option',
   id,

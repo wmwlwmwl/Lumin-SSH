@@ -28,7 +28,7 @@ export default function AIChatCompletionCard({ title = completionTitleKey, summa
         background: 'rgba(var(--success-rgb), 0.08)',
         color: 'var(--success)',
       }
-    : normalizedStatus === '等待处理'
+    : (normalizedStatus === '等待处理'
       ? {
           border: '1px solid rgba(var(--warning-rgb), 0.35)',
           background: 'rgba(var(--warning-rgb), 0.08)',
@@ -38,7 +38,7 @@ export default function AIChatCompletionCard({ title = completionTitleKey, summa
           border: '1px solid rgba(var(--accent-rgb), 0.35)',
           background: 'rgba(var(--accent-rgb), 0.08)',
           color: 'var(--accent)',
-        }
+        })
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-3 text-sm">

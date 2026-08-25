@@ -1,5 +1,5 @@
 import React from 'react';
-import { t, type I18nKey } from '../i18n.ts';
+import { t } from '../i18n.ts';
 
 interface ErrorBoundaryProps {
   children?: React.ReactNode;

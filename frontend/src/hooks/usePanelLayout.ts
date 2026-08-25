@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clampPanelWidth } from '../components/probeFormatting.ts';
+import { clampPanelWidth } from '../utils/probeFormatting.ts';
 
 const FILE_MANAGER_LEFT_MIN = 180;
 const FILE_MANAGER_BOTTOM_MIN = 100;

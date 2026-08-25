@@ -1,71 +1,14 @@
-import { useState, useEffect, useRef, type ChangeEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { Eye, EyeOff, Plus, Monitor, Key, FolderOpen, SquarePen, KeyRound, Globe } from 'lucide-react';
-import * as AppGo from '../../wailsjs/go/wailsapp/App.js';
-import { useTranslation, type I18nKey } from '../i18n.ts';
-import { TERMINAL_ENCODING_GROUPS } from '../constants/terminalEncodings.ts';
-import SearchableGroupedSelect from './SearchableGroupedSelect.tsx';
-import { Button, Modal } from './ui';
-import { getAIGlobalSettings } from './ai/aiGlobalSettingsBridge.ts';
-import type { ServerFormData } from '../hooks/useServerCatalog.ts';
+import { useEffect } from 'react';
+import { Plus, SquarePen } from 'lucide-react';
 import type { config } from '../../wailsjs/go/models.ts';
-
-const PROXY_NODES_CHANGED_EVENT = 'lumin:proxy-nodes-changed';
-
-/** 编辑器表单字段（含历史遗留 authType/group；index signature 供 set(key) 计算键更新） */
-interface ServerEditorForm {
-  name: string;
-  host: string;
-  port: string;
-  username: string;
-  authType: string;
-  password: string;
-  privateKey: string;
-  passphrase: string;
-  terminalInitPath: string;
-  fileManagerInitPath: string;
-  terminalEncoding: string;
-  allowLegacySshRsa: boolean;
-  proxyMode: string;
-  proxyNodeId: string;
-  proxyType: string;
-  proxyHost: string;
-  proxyPort: string;
-  proxyUsername: string;
-  proxyPassword: string;
-  group?: string;
-  [key: string]: unknown;
-}
-
-/** 代理节点（来自 AI 全局设置） */
-interface ProxyNode {
-  id?: string;
-  name?: string;
-  type?: string;
-  host?: string;
-  port?: string | number;
-}
-
-const defaultForm: ServerEditorForm = {
-  name: '',
-  host: '',
-  port: '',
-  username: 'root',
-  authType: 'password',
-  password: '',
-  privateKey: '',
-  passphrase: '',
-  terminalInitPath: '',
-  fileManagerInitPath: '',
-  terminalEncoding: 'utf-8',
-  allowLegacySshRsa: false,
-  proxyMode: 'direct',
-  proxyNodeId: '',
-  proxyType: 'socks5',
-  proxyHost: '',
-  proxyPort: '1080',
-  proxyUsername: '',
-  proxyPassword: '',
-};
+import type { ServerFormData } from '../hooks/useServerCatalog.ts';
+import { useTranslation } from '../i18n.ts';
+import { Button, Modal } from './ui';
+import { AddServerBasicSection } from './serverModal/AddServerBasicSection.tsx';
+import { AddServerAuthSection } from './serverModal/AddServerAuthSection.tsx';
+import { AddServerProxySection } from './serverModal/AddServerProxySection.tsx';
+import { AddServerAdvancedSection } from './serverModal/AddServerAdvancedSection.tsx';
+import { useAddServerForm } from './serverModal/useAddServerForm.ts';
 
 export interface AddServerModalProps {
   server: (config.Connection & { authType?: string }) | null;
@@ -79,58 +22,49 @@ export interface AddServerModalProps {
   shiningFields?: Record<string, unknown>;
 }
 
-export default function AddServerModal({ server, onSave, onSaveAndConnect, onClose, allGroups = [], credentials = [], onOpenCredentials, inline = false, shiningFields = {} }: AddServerModalProps) {
+export default function AddServerModal({
+  server,
+  onSave,
+  onSaveAndConnect,
+  onClose,
+  allGroups = [],
+  credentials = [],
+  onOpenCredentials,
+  inline = false,
+  shiningFields = {},
+}: AddServerModalProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<ServerEditorForm>(defaultForm);
-  const [saving, setSaving] = useState(false);
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [showPassphrase, setShowPassphrase] = useState(false);
-  const [showProxyPassword, setShowProxyPassword] = useState(false);
-  const [proxyNodes, setProxyNodes] = useState<ProxyNode[]>([]);
-
-  const [authMode, setAuthMode] = useState('custom'); // 'custom' | 'credential'
-  const [selectedCredId, setSelectedCredId] = useState('');
-  const [clearAfterAdd, setClearAfterAdd] = useState(true);
-
-  const isEditing = !!server?.id;
-  const suppressSubmitUntilRef = useRef(0);
-
-  const resetInlineForm = () => {
-    setAuthMode('custom');
-    setSelectedCredId('');
-    setForm(defaultForm);
-    setShowPassword(false);
-    setShowPassphrase(false);
-    setShowProxyPassword(false);
-  };
-
-  useEffect(() => {
-    if (server) {
-      const useCred = !!server.credentialId;
-      setAuthMode(useCred ? 'credential' : 'custom');
-      setSelectedCredId(useCred && server.credentialId ? server.credentialId : '');
-      setForm({
-        ...defaultForm,
-        ...server,
-        port: server.port ? String(server.port) : '',
-        authType: server.authMethod ? (server.authMethod === 'privateKey' ? 'key' : 'password') : (server.authType || 'password'),
-        password: '',
-        passphrase: server.passphrase || '',
-        proxyMode: server.proxyMode || 'direct',
-        proxyNodeId: server.proxyNodeId || '',
-        proxyType: server.proxyType || 'socks5',
-        proxyHost: server.proxyHost || '',
-        proxyPort: server.proxyPort ? String(server.proxyPort) : '1080',
-        proxyUsername: server.proxyUsername || '',
-        proxyPassword: '',
-        terminalEncoding: server.terminalEncoding || 'utf-8',
-      });
-      setShowProxyPassword(false);
-    } else {
-      resetInlineForm();
-    }
-  }, [server]);
+  const {
+    form,
+    setForm,
+    set,
+    saving,
+    showPassword,
+    setShowPassword,
+    showPassphrase,
+    setShowPassphrase,
+    showProxyPassword,
+    setShowProxyPassword,
+    proxyNodes,
+    authMode,
+    setAuthMode,
+    selectedCredId,
+    setSelectedCredId,
+    clearAfterAdd,
+    setClearAfterAdd,
+    isEditing,
+    submitForm,
+    handleSubmit,
+    handleSelectPrivateKeyFile,
+    handleCancel,
+  } = useAddServerForm({
+    server,
+    onSave,
+    onSaveAndConnect,
+    onClose,
+    inline,
+  });
 
   // Esc 关闭模态框
   useEffect(() => {
@@ -144,510 +78,48 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadProxyNodes = () => {
-      getAIGlobalSettings()
-        .then((settings) => {
-          if (cancelled) return;
-          setProxyNodes(Array.isArray(settings?.proxyNodes) ? settings.proxyNodes : []);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setProxyNodes([]);
-        });
-    };
-    const handleProxyNodesChanged = (event: Event) => {
-      setProxyNodes(Array.isArray((event as CustomEvent)?.detail) ? (event as CustomEvent).detail : []);
-    };
-    loadProxyNodes();
-    window.addEventListener(PROXY_NODES_CHANGED_EVENT, handleProxyNodesChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(PROXY_NODES_CHANGED_EVENT, handleProxyNodesChanged);
-    };
-  }, []);
-
-  const set = (key: string) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const inputClass = (key: string) => `input${shiningFields?.[key] ? ' editor-field-shine' : ''}`;
   const inputShellClass = (key: string) => `editor-field-shell${shiningFields?.[key] ? ' editor-field-shell-shine' : ''}`;
 
-  const submitForm = async (submitAction = 'save') => {
-    if (Date.now() < suppressSubmitUntilRef.current) return;
-    if (!form.host.trim()) return window.luminDialog?.alert(t('请填写主机地址'));
-    if (authMode === 'custom' && !form.username.trim()) return window.luminDialog?.alert(t('请填写用户名'));
-    if (authMode === 'credential' && !selectedCredId) return window.luminDialog?.alert(t('请选择凭据'));
-    if (form.proxyMode === 'node' && !form.proxyNodeId) return window.luminDialog?.alert(t('请选择代理节点'));
-    if (form.proxyMode === 'custom' && !String(form.proxyHost || '').trim()) return window.luminDialog?.alert(t('请输入代理主机地址'));
-
-    setSaving(true);
-    try {
-      const data: ServerFormData = { ...form };
-      data.port = parseInt(String(data.port), 10) || 22;
-      data.terminalInitPath = String(data.terminalInitPath || '').trim();
-      data.fileManagerInitPath = String(data.fileManagerInitPath || '').trim();
-      data.terminalEncoding = String(data.terminalEncoding || '').trim() || 'utf-8';
-      data.allowLegacySshRsa = !!form.allowLegacySshRsa;
-      data.proxyMode = form.proxyMode || 'direct';
-      data.proxyNodeId = String(data.proxyNodeId || '').trim();
-      data.proxyType = form.proxyType || 'socks5';
-      data.proxyHost = String(data.proxyHost || '').trim();
-      data.proxyPort = parseInt(String(data.proxyPort || '').trim(), 10) || 1080;
-      data.proxyUsername = String(data.proxyUsername || '').trim();
-
-      if (authMode === 'credential') {
-        data.credentialId = selectedCredId;
-        delete data.password;
-        delete data.privateKey;
-        delete data.passphrase;
-        delete data.authMethod;
-        delete data.authType;
-      } else {
-        data.authMethod = form.authType === 'key' ? 'privateKey' : 'password';
-        data.credentialId = '';
-        if (server?.id && !data.password) delete data.password;
-        if (!server?.id && server && !data.password && server.password) data.password = server.password;
-        if (server?.id && (!data.privateKey || data.privateKey === '[key configured]')) {
-          delete data.privateKey;
-        }
-        if (server?.id && (!data.passphrase || data.passphrase === '****')) {
-          delete data.passphrase;
-        }
-      }
-
-      if (server?.id && data.proxyMode === 'custom' && !data.proxyPassword) {
-        delete data.proxyPassword;
-      }
-
-      if (server?.id) data.id = server.id;
-
-      if (submitAction === 'connect' && !server?.id && onSaveAndConnect) {
-        const result = await onSaveAndConnect(data, clearAfterAdd);
-        if (clearAfterAdd && result) resetInlineForm();
-      } else {
-        const result = await onSave(data, clearAfterAdd);
-        if (!server?.id && clearAfterAdd && result) resetInlineForm();
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const submitAction = (e.nativeEvent as SubmitEvent)?.submitter?.dataset?.submitAction || 'save';
-    await submitForm(submitAction);
-  };
-
-  const handleSelectPrivateKeyFile = async () => {
-    try {
-      const content = await AppGo.ReadPrivateKeyFile();
-      if (content) {
-        setForm(f => ({ ...f, privateKey: content }));
-      }
-    } catch (e) {
-      if (e) window.luminDialog?.alert(`${t('读取私钥文件失败')}: ${e}`, t('错误'));
-    }
-  };
-
-  const handleCancel = (e?: ReactMouseEvent) => {
-    e?.preventDefault();
-    e?.stopPropagation();
-    suppressSubmitUntilRef.current = Date.now() + 300;
-    if (inline && !server) {
-      resetInlineForm();
-      return;
-    }
-    if (inline && server) {
-      window.setTimeout(() => onClose(), 0);
-      return;
-    }
-    onClose();
-  };
-
   const sections = (
     <>
-      <div className="webdav-section server-editor-section">
-            <div className="webdav-section-title server-editor-section-title"><span className="server-editor-section-icon"><Monitor size={15} /></span> {t('基本信息')}</div>
-            <div className="server-editor-fields">
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-name">{t('服务器别名（选填）')}</label>
-                <div className={inputShellClass('name')}>
-                  <input
-                    id="server-name"
-                    name="name"
-                    autoComplete="off"
-                    className={inputClass('name')}
-                    data-editor-field="name"
-                    placeholder={t('例如：我的测试服')}
-                    value={form.name}
-                    onChange={set('name')}
-                  />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="server-host">{t('主机地址 *')}</label>
-                  <div className={inputShellClass('host')}>
-                    <input
-                      id="server-host"
-                      name="host"
-                      className={inputClass('host')}
-                      data-editor-field="host"
-                      placeholder={t('192.168.1.1 或 example.com')}
-                      value={form.host}
-                      onChange={set('host')}
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="server-port">{t('端口')}</label>
-                  <div className={inputShellClass('port')}>
-                    <input
-                      id="server-port"
-                      name="port"
-                      className={inputClass('port')}
-                      data-editor-field="port"
-                      placeholder="22"
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={form.port}
-                      onChange={set('port')}
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-username">{t('用户名')} *</label>
-                <div className={inputShellClass('username')}>
-                  <input
-                    id="server-username"
-                    name="username"
-                    autoComplete="username"
-                    className={inputClass('username')}
-                    data-editor-field="username"
-                    placeholder="root"
-                    value={form.username}
-                    onChange={set('username')}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-group">{t('分组')}</label>
-                <input
-                  id="server-group"
-                  name="group"
-                  className="input"
-                  list="group-options"
-                  placeholder={t('默认（不填则不分组）')}
-                  value={form.group || ''}
-                  onChange={set('group')}
-                />
-                <datalist id="group-options">
-                  {allGroups.map(g => <option key={g} value={g} />)}
-                </datalist>
-              </div>
-            </div>
-          </div>
-
-          <div className="webdav-section server-editor-section">
-            <div className="webdav-section-title server-editor-section-title"><span className="server-editor-section-icon"><Key size={15} /></span> {t('认证方式')}</div>
-            <div className="server-editor-fields">
-              <div className="server-editor-auth-row">
-                <div className="server-editor-segment">
-                  <button type="button" className={authMode === 'custom' ? 'active' : ''} onClick={() => setAuthMode('custom')}>
-                    {t('自定义')}
-                  </button>
-                  <button type="button" className={authMode === 'credential' ? 'active' : ''} onClick={() => setAuthMode('credential')}>
-                    {t('使用凭据')}
-                  </button>
-                </div>
-                <button type="button" className="server-editor-credential-button" onClick={onOpenCredentials}>
-                  <KeyRound size={13} /> {t('凭据管理')}
-                </button>
-              </div>
-
-              {authMode === 'credential' ? (
-                credentials.length === 0 ? (
-                  <div className="server-editor-empty">
-                    {t('暂无凭据，请先创建')}
-                  </div>
-                ) : (
-                <>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="server-credential">{t('选择凭据')} *</label>
-                    <select id="server-credential" name="credentialId" className="select" value={selectedCredId} onChange={(e) => setSelectedCredId(e.target.value)}>
-                      <option value="">{t('请选择凭据')}</option>
-                      {credentials.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.username})</option>
-                      ))}
-                    </select>
-                  </div>
-                  {selectedCredId && (() => {
-                    const sel = credentials.find((c) => c.id === selectedCredId);
-                    if (!sel) return null;
-                    return (
-                      <div className="server-editor-credential-summary">
-                        {sel.authMethod === 'privateKey' ? t('私钥认证') : t('密码认证')} · {sel.username}
-                      </div>
-                    );
-                  })()}
-                </>
-                )
-              ) : (
-                <>
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-auth-type">{t('认证方式')}</label>
-                <select id="server-auth-type" name="authType" className="select" value={form.authType} onChange={set('authType')}>
-                  <option value="password">{t('密码认证')}</option>
-                  <option value="key">{t('私钥认证')}</option>
-                </select>
-              </div>
-
-              {form.authType === 'password' ? (
-                <div className="form-group">
-                  <label className="form-label" htmlFor="server-password">
-                    {isEditing ? t('新密码（留空则不修改）') : t('密码')} *
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="server-password"
-                      name="password"
-                      autoComplete={isEditing ? 'new-password' : 'current-password'}
-                      className="input"
-                      type={showPassword ? "text" : "password"}
-                      placeholder={t('请输入密码')}
-                      value={form.password}
-                      onChange={set('password')}
-                      style={{ paddingRight: 36 }}
-                    />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-0 text-tertiary cursor-pointer p-1 flex items-center">
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="form-group">
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="form-label" htmlFor="server-private-key">{t('私钥内容')}</label>
-                      <Button variant="secondary" size="sm" className="server-editor-browse" onClick={handleSelectPrivateKeyFile}>
-                        <FolderOpen size={12} className="inline-block align-middle mr-0.5" /> {t('浏览')}
-                      </Button>
-                    </div>
-                    <textarea
-                      id="server-private-key"
-                      name="privateKey"
-                      className="input"
-                      style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 12,
-                        resize: 'vertical',
-                        minHeight: 100,
-                      }}
-                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
-                      value={form.privateKey}
-                      onChange={set('privateKey')}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="server-passphrase">{t('私钥密码短语 (可选)')}</label>
-                    <div className="relative">
-                      <input
-                        id="server-passphrase"
-                        name="passphrase"
-                        className="input"
-                        type={showPassphrase ? "text" : "password"}
-                        placeholder={t('私钥密码短语')}
-                        value={form.passphrase}
-                        onChange={set('passphrase')}
-                        style={{ paddingRight: 36 }}
-                      />
-                      <button type="button" onClick={() => setShowPassphrase(!showPassphrase)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-0 text-tertiary cursor-pointer p-1 flex items-center">
-                        {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-              </>
-              )}
-            </div>
-          </div>
-
-          <div className="webdav-section server-editor-section">
-            <div className="webdav-section-title server-editor-section-title"><span className="server-editor-section-icon"><Globe size={15} /></span> {t('代理服务器')}</div>
-            <div className="server-editor-fields">
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-proxy-mode">{t('代理模式')}</label>
-                <select id="server-proxy-mode" name="proxyMode" className="select" value={form.proxyMode || 'direct'} onChange={set('proxyMode')}>
-                  <option value="direct">{t('直连')}</option>
-                  <option value="node">{t('选择代理节点')}</option>
-                  <option value="custom">{t('自定义代理')}</option>
-                </select>
-              </div>
-              {form.proxyMode === 'node' ? (
-                proxyNodes.length === 0 ? (
-                  <div className="server-editor-empty">
-                    {t('暂无代理节点，请先到设置中创建')}
-                  </div>
-                ) : (
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="server-proxy-node">{t('代理节点')} *</label>
-                    <select id="server-proxy-node" name="proxyNodeId" className="select" value={form.proxyNodeId || ''} onChange={set('proxyNodeId')}>
-                      <option value="">{t('请选择代理节点')}</option>
-                      {proxyNodes.map((node) => (
-                        <option key={node.id} value={node.id}>
-                          {[
-                            node.name || t('未命名节点'),
-                            node.type === 'http' ? t('HTTP 代理') : t('SOCKS5 代理'),
-                            `${node.host}:${node.port}`,
-                          ].join(' · ')}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )
-              ) : null}
-              {form.proxyMode === 'custom' ? (
-                <>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="server-proxy-type">{t('协议类型')}</label>
-                    <select id="server-proxy-type" name="proxyType" className="select" value={form.proxyType || 'socks5'} onChange={set('proxyType')}>
-                      <option value="socks5">{t('SOCKS5 代理')}</option>
-                      <option value="http">{t('HTTP 代理')}</option>
-                    </select>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label" htmlFor="server-proxy-host">{t('代理主机')} *</label>
-                      <input
-                        id="server-proxy-host"
-                        name="proxyHost"
-                        className="input"
-                        placeholder="127.0.0.1"
-                        value={form.proxyHost || ''}
-                        onChange={set('proxyHost')}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label" htmlFor="server-proxy-port">{t('代理端口')}</label>
-                      <input
-                        id="server-proxy-port"
-                        name="proxyPort"
-                        className="input"
-                        type="number"
-                        min={1}
-                        max={65535}
-                        placeholder="1080"
-                        value={form.proxyPort || ''}
-                        onChange={set('proxyPort')}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="server-proxy-username">{t('代理用户名')}</label>
-                    <input
-                      id="server-proxy-username"
-                      name="proxyUsername"
-                      className="input"
-                      placeholder="user"
-                      value={form.proxyUsername || ''}
-                      onChange={set('proxyUsername')}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="server-proxy-password">{t('代理密码')}</label>
-                    <div className="relative">
-                      <input
-                        id="server-proxy-password"
-                        name="proxyPassword"
-                        className="input"
-                        type={showProxyPassword ? "text" : "password"}
-                        placeholder={t('代理密码')}
-                        value={form.proxyPassword || ''}
-                        onChange={set('proxyPassword')}
-                        style={{ paddingRight: 36 }}
-                      />
-                      <button type="button" onClick={() => setShowProxyPassword(!showProxyPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-0 text-tertiary cursor-pointer p-1 flex items-center">
-                        {showProxyPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="webdav-section server-editor-section">
-            <div className="webdav-section-title server-editor-section-title"><span className="server-editor-section-icon"><FolderOpen size={15} /></span> {t('高级选项')}</div>
-            <div className="server-editor-fields">
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-terminal-init-path">{t('终端默认 cd 目录')}</label>
-                <div className={inputShellClass('terminalInitPath')}>
-                  <input
-                    id="server-terminal-init-path"
-                    name="terminalInitPath"
-                    className={inputClass('terminalInitPath')}
-                    data-editor-field="terminalInitPath"
-                    placeholder="/root"
-                    value={form.terminalInitPath || ''}
-                    onChange={set('terminalInitPath')}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-file-manager-init-path">{t('文件管理器初始目录')}</label>
-                <div className={inputShellClass('fileManagerInitPath')}>
-                  <input
-                    id="server-file-manager-init-path"
-                    name="fileManagerInitPath"
-                    className={inputClass('fileManagerInitPath')}
-                    data-editor-field="fileManagerInitPath"
-                    placeholder="/var/www"
-                    value={form.fileManagerInitPath || ''}
-                    onChange={set('fileManagerInitPath')}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="server-terminal-encoding">{t('终端字符编码')}</label>
-                <SearchableGroupedSelect
-                  id="server-terminal-encoding"
-                  value={form.terminalEncoding || 'utf-8'}
-                  onChange={(nextValue) => setForm((f) => ({ ...f, terminalEncoding: nextValue }))}
-                  groups={TERMINAL_ENCODING_GROUPS.map((group) => ({ ...group, label: t(group.label as I18nKey) }))}
-                  placeholder={t('终端字符编码')}
-                  searchPlaceholder={t('输入关键字过滤字符编码')}
-                  emptyText={t('未找到匹配的字符编码')}
-                  renderOptionLabel={(item) => (
-                    item.value === 'utf-8'
-                      ? 'UTF-8'
-                      : item.value === 'gb18030'
-                        ? t('GB18030(兼容 GBK/GB2312)')
-                        : (item.label || '')
-                  )}
-                />
-                <div className="text-tertiary text-xs mt-1.5">
-                  {t('设置该连接的终端输入与输出编码')}
-                </div>
-              </div>
-              <label className="server-editor-compat-check" htmlFor="server-legacy-ssh-rsa">
-                <input
-                  id="server-legacy-ssh-rsa"
-                  name="allowLegacySshRsa"
-                  type="checkbox"
-                  checked={!!form.allowLegacySshRsa}
-                  onChange={(e) => setForm((f) => ({ ...f, allowLegacySshRsa: e.target.checked }))}
-                />
-                <span>
-                  <strong>{t('兼容旧版 ssh-rsa 主机密钥')}</strong>
-                  <small>{t('仅当服务器只支持 ssh-rsa 时启用；不支持低于 1024 位的 RSA 主机密钥')}</small>
-                </span>
-              </label>
-            </div>
-          </div>
+      <AddServerBasicSection
+        form={form}
+        set={set}
+        allGroups={allGroups}
+        inputClass={inputClass}
+        inputShellClass={inputShellClass}
+      />
+      <AddServerAuthSection
+        form={form}
+        set={set}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        selectedCredId={selectedCredId}
+        setSelectedCredId={setSelectedCredId}
+        credentials={credentials}
+        onOpenCredentials={onOpenCredentials}
+        isEditing={isEditing}
+        showPassword={showPassword}
+        setShowPassword={setShowPassword}
+        showPassphrase={showPassphrase}
+        setShowPassphrase={setShowPassphrase}
+        handleSelectPrivateKeyFile={handleSelectPrivateKeyFile}
+      />
+      <AddServerProxySection
+        form={form}
+        set={set}
+        proxyNodes={proxyNodes}
+        showProxyPassword={showProxyPassword}
+        setShowProxyPassword={setShowProxyPassword}
+      />
+      <AddServerAdvancedSection
+        form={form}
+        set={set}
+        setForm={setForm}
+        inputClass={inputClass}
+        inputShellClass={inputShellClass}
+      />
     </>
   );
 
@@ -686,7 +158,9 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
         <div className="dashboard-server-editor-shell">
           <div className="dashboard-server-editor-header" style={{ flexShrink: 0 }}>
             <div className="dashboard-server-editor-title">
-              <span className="inline-flex items-center dashboard-server-editor-title-icon" data-editor-add-target={!isEditing ? 'true' : undefined}>{isEditing ? <SquarePen size={16} /> : <Plus size={16} />}</span>
+              <span className="inline-flex items-center dashboard-server-editor-title-icon" data-editor-add-target={!isEditing ? 'true' : undefined}>
+                {isEditing ? <SquarePen size={16} /> : <Plus size={16} />}
+              </span>
               {isEditing ? t('编辑配置') : t('添加')}
             </div>
           </div>
@@ -712,11 +186,11 @@ export default function AddServerModal({ server, onSave, onSaveAndConnect, onClo
       closeOnEscape={false}
       panelClassName="flex flex-col self-start mt-14 h-[calc(100vh-72px)] max-h-[calc(100vh-72px)]!"
       bodyClassName="flex-1 min-h-0 overflow-y-auto"
-      icon={
+      icon={(
         <span className="inline-flex items-center shrink-0" data-editor-add-target={!isEditing ? 'true' : undefined}>
           {isEditing ? <SquarePen size={16} /> : <Plus size={16} />}
         </span>
-      }
+      )}
       title={isEditing ? t('编辑配置') : t('添加')}
       footer={footerButtons}
     >

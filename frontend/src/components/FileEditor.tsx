@@ -1,867 +1,105 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import CodeMirror, { keymap, EditorView, EditorState, Prec, EditorSelection, showDialog, type Extension } from '@uiw/react-codemirror';
-import { useTranslation } from '../i18n.ts';
-import { formatShortcut } from '../utils/platform.ts';
-import { Button, ContextMenu } from './ui';
-import { cn } from '../utils/cn.ts';
+import CodeMirror from '@uiw/react-codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { json } from '@codemirror/lang-json';
-import { xml } from '@codemirror/lang-xml';
-import { sql } from '@codemirror/lang-sql';
-import { StreamLanguage } from '@codemirror/language';
-import { shell } from '@codemirror/legacy-modes/mode/shell';
-import { lua } from '@codemirror/legacy-modes/mode/lua';
-import { go } from '@codemirror/legacy-modes/mode/go';
-import { rust } from '@codemirror/legacy-modes/mode/rust';
-import { yaml } from '@codemirror/legacy-modes/mode/yaml';
-import { toml } from '@codemirror/legacy-modes/mode/toml';
-import { ruby } from '@codemirror/legacy-modes/mode/ruby';
-import { perl } from '@codemirror/legacy-modes/mode/perl';
-import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
-import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
-import { nginx } from '@codemirror/legacy-modes/mode/nginx';
-import { properties } from '@codemirror/legacy-modes/mode/properties';
-import { diff } from '@codemirror/legacy-modes/mode/diff';
-import { cmake } from '@codemirror/legacy-modes/mode/cmake';
-import { c, cpp, java, csharp } from '@codemirror/legacy-modes/mode/clike';
-import { X, Pencil, Save, SquarePen, Upload, ExternalLink, AppWindow } from 'lucide-react';
+import { SquarePen, Upload } from 'lucide-react';
 import { Z } from '../constants/zIndex.ts';
-import { getSessionUploadPanelState, getSessionWorkbenchState, setSessionWorkbenchState, subscribeSessionUploadPanelState, subscribeSessionWorkbenchState } from '../utils/fileWorkbench.ts';
-import Tiptop from './Tiptop.tsx';
+import { formatShortcut } from '../utils/platform.ts';
+import { ContextMenu } from './ui';
+import { BASIC_SETUP } from './fileEditor/fileEditorLanguages.ts';
+import { FileEditorTabs } from './fileEditor/FileEditorTabs.tsx';
+import { FileEditorToolbar } from './fileEditor/FileEditorToolbar.tsx';
+import {
+  POPUP_RESIZE_HANDLES,
+  type FileEditorFile,
+  type FileEditorProps,
+} from './fileEditor/fileEditorTypes.ts';
+import { useFileEditor } from './fileEditor/useFileEditor.ts';
 
-const EXTERNAL_PREFERRED_APP_KEY = 'fileEditorPreferredApp';
+export type { FileEditorFile, FileEditorProps };
 
-/** 文件编辑器条目（FileManager 打开的文件） */
-export interface FileEditorFile {
-  path: string;
-  name: string;
-  content: string;
-}
+export default function FileEditor(props: FileEditorProps) {
+  const {
+    files,
+    onCloseAll: _onCloseAll,
+    onActivate,
+    mode = 'modal',
+    onModeChange,
+    splitPosition = 'right',
+    onSplitPositionChange,
+    isActive = true,
+    workbenchSessionId = '',
+    onOpenSystemEditor,
+    onOpenWithEditor,
+    externalOpening = false,
+  } = props;
 
-export interface FileEditorProps {
-  files: FileEditorFile[];
-  activePath?: string;
-  onSave: (path: string, content: string) => Promise<void> | void;
-  onCloseFile: (path: string) => void;
-  onCloseAll: () => void;
-  onActivate: (path: string) => void;
-  mode?: 'modal' | 'popup' | 'split';
-  onModeChange?: (mode: string) => void;
-  splitPosition?: 'left' | 'right' | 'bottom';
-  onSplitPositionChange?: (position: string) => void;
-  isActive?: boolean;
-  workbenchSessionId?: string;
-  workbenchOwnerId?: string;
-  onOpenSystemEditor?: (file: FileEditorFile, content: string) => void;
-  onOpenWithEditor?: (file: FileEditorFile, content: string, chooseApp: boolean) => void;
-  externalOpening?: boolean;
-}
+  const {
+    t,
+    editedContents,
+    saving,
+    minimized,
+    setMinimized,
+    preferredExternalApp,
+    setPreferredExternalApp,
+    contextMenu,
+    setContextMenu,
+    showWorkbenchTabs,
+    activeWorkbenchTab,
+    activeFile,
+    currentContent,
+    isModified,
+    byteSize,
+    handleChange,
+    handleContextMenu,
+    handleMenuAction,
+    handleSave,
+    closeFileWithConfirm,
+    handleCloseAllEditors,
+    popupPos,
+    startPopupDrag,
+    startPopupResize,
+    lang,
+    extensions,
+    ext,
+    handleWorkbenchTabChange,
+  } = useFileEditor(props);
 
-function readPreferredExternalApp() {
-  return (localStorage.getItem(EXTERNAL_PREFERRED_APP_KEY) || '').trim();
-}
-
-function preferredExternalAppLabel(path: string) {
-  if (!path) return '';
-  const normalized = path.replace(/\\/g, '/');
-  const base = normalized.split('/').pop() || path;
-  return base.replace(/\.exe$/i, '').replace(/\.app$/i, '');
-}
-
-// Debian sources.list 语法高亮
-const debianList = StreamLanguage.define({
-  startState: () => ({ inUrl: false }),
-  token: (stream, state) => {
-    if (stream.eatSpace()) return null;
-    // 注释
-    if (stream.match('#')) {
-      stream.skipToEnd();
-      return 'comment';
-    }
-    // 行首关键字
-    if (stream.match(/deb-src\b/)) return 'keyword';
-    if (stream.match(/deb\b/)) return 'keyword';
-    // URL
-    if (stream.match(/https?:\/\/[^\s]+/)) return 'string';
-    // 行末架构标记
-    if (stream.match(/[a-z-]+=/)) return 'attribute';
-    return stream.next() ?? null;
-  }
-});
-
-// RHEL .repo 文件语法高亮 (INI 风格)
-const rhelRepo = StreamLanguage.define({
-  startState: () => ({}),
-  token: (stream) => {
-    if (stream.eatSpace()) return null;
-    // 注释
-    if (stream.match('#') || stream.match(';')) {
-      stream.skipToEnd();
-      return 'comment';
-    }
-    // [section]
-    if (stream.match(/^\[.*\]/)) return 'keyword';
-    // key=value
-    if (stream.match(/^[a-zA-Z_][a-zA-Z0-9_]*\s*=/)) return 'attribute';
-    // $变量
-    if (stream.match(/\$[a-zA-Z_][a-zA-Z0-9_]*/)) return 'string';
-    return stream.next() ?? null;
-  }
-});
-
-// 根据完整路径/文件名返回 CodeMirror 语言（带缓存）。
-// .conf 不能一律当 nginx：仅 nginx 相关路径用 nginx，其余 conf 走 ini/properties。
-const LANG_CACHE: Record<string, Extension | null> = {};
-
-function isNginxConfigPath(fullPath: string, baseName: string) {
-  const path = String(fullPath || '').replace(/\\/g, '/').toLowerCase();
-  const base = String(baseName || '').toLowerCase();
-  if (!base) return false;
-  if (base === 'nginx.conf' || base.endsWith('.nginx')) return true;
-  if (base.endsWith('.conf') && (path.includes('/nginx/') || path.includes('/nginx-') || path.includes('nginx'))) {
-    return true;
-  }
-  // common site config names under nginx trees
-  if ((base.endsWith('.conf') || base.endsWith('.vhost')) && /(^|\/)(sites-available|sites-enabled|conf\.d)(\/|$)/.test(path)) {
-    return true;
-  }
-  return false;
-}
-
-function getLanguage(filename: string): Extension | null {
-  const raw = String(filename || '');
-  const normalized = raw.replace(/\\/g, '/');
-  const base = (normalized.split('/').pop() || '').toLowerCase();
-  const ext = (base.split('.').pop() || '').toLowerCase();
-  // cache by full path for .conf (same name can be nginx or ini in different dirs)
-  const cacheKey = (ext === 'conf' || base === 'nginx.conf' || base.endsWith('.nginx') || base === 'dockerfile' || base.startsWith('dockerfile.') || base === 'cmakelists.txt' || base.endsWith('.cmake'))
-    ? normalized.toLowerCase()
-    : ext;
-
-  if (Object.prototype.hasOwnProperty.call(LANG_CACHE, cacheKey)) return LANG_CACHE[cacheKey];
-
-  let lang: Extension | null = null;
-  // special filenames / path-sensitive first
-  if (base === 'dockerfile' || base.startsWith('dockerfile.')) {
-    lang = StreamLanguage.define(dockerFile);
-  } else if (base === 'cmakelists.txt' || base.endsWith('.cmake')) {
-    lang = StreamLanguage.define(cmake);
-  } else if (isNginxConfigPath(normalized, base) || ext === 'nginx') {
-    lang = StreamLanguage.define(nginx);
-  } else {
-    switch (ext) {
-      case 'js': case 'mjs': case 'cjs': lang = javascript(); break;
-      case 'jsx': lang = javascript({ jsx: true }); break;
-      case 'ts': lang = javascript({ typescript: true }); break;
-      case 'tsx': lang = javascript({ jsx: true, typescript: true }); break;
-      case 'py': case 'pyw': case 'pyi': lang = python(); break;
-      case 'html': case 'htm': lang = html(); break;
-      case 'css': case 'scss': case 'less': lang = css(); break;
-      case 'json': case 'jsonc': lang = json(); break;
-      case 'xml': case 'svg': case 'xsl': case 'xsd': lang = xml(); break;
-      case 'sql': lang = sql(); break;
-      case 'sh': case 'bash': case 'zsh': case 'ksh': lang = StreamLanguage.define(shell); break;
-      case 'lua': lang = StreamLanguage.define(lua); break;
-      case 'go': lang = StreamLanguage.define(go); break;
-      case 'rs': lang = StreamLanguage.define(rust); break;
-      case 'yml': case 'yaml': lang = StreamLanguage.define(yaml); break;
-      case 'toml': lang = StreamLanguage.define(toml); break;
-      case 'rb': case 'rake': case 'gemspec': lang = StreamLanguage.define(ruby); break;
-      case 'pl': case 'pm': case 't': lang = StreamLanguage.define(perl); break;
-      case 'ps1': case 'psm1': case 'psd1': lang = StreamLanguage.define(powerShell); break;
-      case 'dockerfile': lang = StreamLanguage.define(dockerFile); break;
-      // generic conf/cfg/ini/env → properties (ini-like). nginx-specific handled above.
-      case 'conf': case 'ini': case 'cfg': case 'env': case 'properties':
-        lang = StreamLanguage.define(properties); break;
-      case 'diff': case 'patch': lang = StreamLanguage.define(diff); break;
-      case 'cmake': lang = StreamLanguage.define(cmake); break;
-      case 'c': case 'h': lang = StreamLanguage.define(c); break;
-      case 'cc': case 'cpp': case 'cxx': case 'hpp': case 'hh': case 'hxx':
-        lang = StreamLanguage.define(cpp); break;
-      case 'java': lang = StreamLanguage.define(java); break;
-      case 'cs': lang = StreamLanguage.define(csharp); break;
-      case 'list': case 'sources': lang = debianList; break;
-      case 'repo': lang = rhelRepo; break;
-      default:
-        break;
-    }
-  }
-  LANG_CACHE[cacheKey] = lang;
-  return lang;
-}
-
-const BASIC_SETUP = {
-  lineNumbers: true,
-  highlightActiveLineGutter: true,
-  highlightSpecialChars: true,
-  history: true,
-  foldGutter: true,
-  drawSelection: true,
-  dropCursor: true,
-  allowMultipleSelections: true,
-  indentOnInput: true,
-  syntaxHighlighting: true,
-  bracketMatching: true,
-  closeBrackets: true,
-  autocompletion: true,
-  rectangularSelection: true,
-  crosshairCursor: false,
-  highlightActiveLine: true,
-  highlightSelectionMatches: true,
-  closeBracketsKeymap: true,
-  defaultKeymap: true,
-  searchKeymap: true,
-  historyKeymap: true,
-  foldKeymap: true,
-  completionKeymap: true,
-  lintKeymap: true,
-};
-
-// Ctrl+G 跳转到行号（覆盖 searchKeymap 默认的 findNext）。
-// CM6 keymap 同 key 时按 facet 顺序执行第一个返回 true 的胜出，basicSetup 的 searchKeymap 先注册。
-// 用 Prec.highest 提升优先级，确保我们的 Mod-g 先执行。
-//
-// 自定义 gotoLineTop：复制 @codemirror/search 的 gotoLine 逻辑，但 dialog 放顶部（top: true），
-// 符合 VSCode/Sublime 等主流编辑器习惯（CM6 默认底部是 Emacs 风格）。
-// 支持输入 行号 / 行:列 / +N / -N / N%
-const gotoLineTop = (view: EditorView) => {
-  let { state } = view;
-  let { close, result } = showDialog(view, {
-    label: state.phrase('Go to line'),
-    input: { type: 'text', name: 'line', value: '' },
-    focus: true,
-    top: true,
-    submitLabel: state.phrase('go'),
-  });
-  result.then((form) => {
-    // showDialog resolve 的 form 为 HTMLFormElement，elements 无字符串索引签名，按结构断言取输入值
-    const lineValue = (form?.elements as unknown as Record<string, { value?: string }> | null)?.['line']?.value || '';
-    let match = form && /^([+-])?(\d+)?(:\d+)?(%)?$/.exec(lineValue);
-    if (!match) { view.dispatch({ effects: close }); return; }
-    let startLine = state.doc.lineAt(state.selection.main.head);
-    let [, sign, ln, cl, percent] = match;
-    let col = cl ? +cl.slice(1) : 0;
-    let lineNum = ln ? +ln : startLine.number;
-    if (ln && percent) {
-      let pc = lineNum / 100;
-      if (sign) pc = pc * (sign == '-' ? -1 : 1) + (startLine.number / state.doc.lines);
-      lineNum = Math.round(state.doc.lines * pc);
-    } else if (ln && sign) {
-      lineNum = lineNum * (sign == '-' ? -1 : 1) + startLine.number;
-    }
-    let docLine = state.doc.line(Math.max(1, Math.min(state.doc.lines, lineNum)));
-    let selection = EditorSelection.cursor(docLine.from + Math.max(0, Math.min(col, docLine.length)));
-    view.dispatch({
-      effects: [close, EditorView.scrollIntoView(selection.from, { y: 'center' })],
-      selection,
-    });
-  });
-  return true;
-};
-// CM6 的 showDialog 每次创建新 dialog 不自动关闭旧的，连按 Ctrl+G 会堆积。
-// 调用前先 click 已有 dialog 的关闭按钮（.cm-dialog-close 的 onclick 触发 done→resolve，
-// microtask 里 dispatch close effect 移除旧 dialog），避免重复堆积。
-const gotoLineSingle = (view: EditorView) => {
-  view.dom.querySelectorAll('.cm-dialog-close').forEach(btn => (btn as HTMLElement).click());
-  return gotoLineTop(view);
-};
-const gotoLineKeymap = Prec.highest(keymap.of([{ key: 'Mod-g', run: gotoLineSingle }]));
-
-// 当前行标记：oneDark 默认 #6699ff0b 几乎透明看不出。
-// 蓝色只用于行号区（gutter）标记当前行；代码区 .cm-activeLine 用淡灰（见 index.css），
-// 避免与选区蓝色冲突。{ dark: true } 让规则带 &dark 前缀，与 oneDark 同层级可覆盖。
-const editorActiveLineTheme = EditorView.theme({
-  '.cm-activeLineGutter': { backgroundColor: 'rgba(77, 158, 255, 0.22)' },
-  '&.cm-focused .cm-activeLineGutter': { backgroundColor: 'rgba(77, 158, 255, 0.30)' },
-}, { dark: true });
-
-// CodeMirror 对话框/面板文案 phrase 表（英文 key → 当前语言翻译）。
-// 走 i18n：值由组件内 useMemo 用 t() 填充，覆盖 gotoLine 与 search 面板的所有英文文案。
-// 见组件内 editorPhrases（依赖 i18nLang，语言切换时重建）。
-
-// 浮动面板八方向 resize handle：四边窄条 + 四角方块。角 handle 在边之后渲染以覆盖重叠区。
-// 边条贴容器内边缘（容器 overflow:hidden 不裁剪），拖拽用 window mousemove 不受容器限制。
-const POPUP_RESIZE_HANDLES: Array<{ dir: string; pos: Record<string, number>; cursor: string }> = [
-  { dir: 'n',  pos: { top: 0, left: 0, right: 0, height: 6 }, cursor: 'n-resize' },
-  { dir: 's',  pos: { bottom: 0, left: 0, right: 0, height: 6 }, cursor: 's-resize' },
-  { dir: 'e',  pos: { right: 0, top: 0, bottom: 0, width: 6 }, cursor: 'e-resize' },
-  { dir: 'w',  pos: { left: 0, top: 0, bottom: 0, width: 6 }, cursor: 'w-resize' },
-  { dir: 'ne', pos: { top: 0, right: 0, width: 14, height: 14 }, cursor: 'ne-resize' },
-  { dir: 'nw', pos: { top: 0, left: 0, width: 14, height: 14 }, cursor: 'nw-resize' },
-  { dir: 'se', pos: { bottom: 0, right: 0, width: 14, height: 14 }, cursor: 'se-resize' },
-  { dir: 'sw', pos: { bottom: 0, left: 0, width: 14, height: 14 }, cursor: 'sw-resize' },
-];
-
-export default function FileEditor({
-  files,
-  activePath,
-  onSave,
-  onCloseFile,
-  onCloseAll,
-  onActivate,
-  mode = 'modal',
-  onModeChange,
-  splitPosition = 'right',
-  onSplitPositionChange,
-  isActive = true,
-  workbenchSessionId = '',
-  workbenchOwnerId = '',
-  onOpenSystemEditor,
-  onOpenWithEditor,
-  externalOpening = false,
-}: FileEditorProps) {
-  const { t, lang: i18nLang } = useTranslation();
-
-  // 每个文件的编辑内容缓存：{ [path]: content }
-  const [editedContents, setEditedContents] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [minimized, setMinimized] = useState(false);
-  const [preferredExternalApp, setPreferredExternalApp] = useState(() => readPreferredExternalApp());
-
-  useEffect(() => {
-    const refreshPreferred = () => setPreferredExternalApp(readPreferredExternalApp());
-    window.addEventListener('storage', refreshPreferred);
-    window.addEventListener('focus', refreshPreferred);
-    return () => {
-      window.removeEventListener('storage', refreshPreferred);
-      window.removeEventListener('focus', refreshPreferred);
-    };
-  }, []);
-
-  // 打开文件时自动恢复
-  useEffect(() => {
-    if (minimized && activePath) setMinimized(false);
-  }, [activePath]);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
-  const [workbenchState, setWorkbenchStateState] = useState(() => getSessionWorkbenchState(workbenchSessionId));
-  const [uploadPanelState, setUploadPanelState] = useState(() => getSessionUploadPanelState(workbenchSessionId, workbenchOwnerId));
-
-  const activeFile = files.find(f => f.path === activePath) || files[0];
-  const showWorkbenchTabs = !!uploadPanelState.uploadOpen;
-  const activeWorkbenchTab = showWorkbenchTabs && workbenchState.activeTab === 'upload' ? 'upload' : 'editor';
-
-  // popup 模式的位置状态
-  const [popupPos, setPopupPos] = useState<{ x: number; y: number; w: number; h: number }>(() => {
-    const saved = localStorage.getItem('fileEditorPopupPos');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number' && typeof parsed.w === 'number' && typeof parsed.h === 'number') {
-          return parsed as { x: number; y: number; w: number; h: number };
-        }
-      } catch (_) { /* 忽略损坏的持久化位置 */ }
-    }
-    return { x: window.innerWidth - 660, y: 60, w: 620, h: 500 };
-  });
-  const popupPosRef = useRef(popupPos);
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, y: 0, px: 0, py: 0 });
-
-  useEffect(() => {
-    popupPosRef.current = popupPos;
-  }, [popupPos]);
-
-  useEffect(() => {
-    if (!workbenchSessionId) return undefined;
-    return subscribeSessionWorkbenchState(workbenchSessionId, setWorkbenchStateState);
-  }, [workbenchSessionId]);
-
-  useEffect(() => {
-    if (!workbenchSessionId || !workbenchOwnerId) return undefined;
-    return subscribeSessionUploadPanelState(workbenchSessionId, workbenchOwnerId, setUploadPanelState);
-  }, [workbenchOwnerId, workbenchSessionId]);
-
-  useEffect(() => {
-    if (!workbenchSessionId || !workbenchOwnerId) return undefined;
-    if (mode === 'split' && isActive) {
-      const current = getSessionWorkbenchState(workbenchSessionId);
-      setSessionWorkbenchState(workbenchSessionId, {
-        editorSplitOpen: true,
-        editorOwnerId: workbenchOwnerId,
-        activeTab: getSessionUploadPanelState(workbenchSessionId, workbenchOwnerId).uploadOpen ? current.activeTab || 'upload' : 'editor',
-      });
-      return () => {
-        const latest = getSessionWorkbenchState(workbenchSessionId);
-        if (latest.editorOwnerId === workbenchOwnerId) {
-          setSessionWorkbenchState(workbenchSessionId, {
-            editorSplitOpen: false,
-            editorOwnerId: '',
-            activeTab: getSessionUploadPanelState(workbenchSessionId, workbenchOwnerId).uploadOpen ? latest.activeTab || 'upload' : 'editor',
-          });
-        }
-      };
-    }
-    const latest = getSessionWorkbenchState(workbenchSessionId);
-    if (latest.editorOwnerId === workbenchOwnerId && latest.editorSplitOpen) {
-      setSessionWorkbenchState(workbenchSessionId, {
-        editorSplitOpen: false,
-        editorOwnerId: '',
-        activeTab: getSessionUploadPanelState(workbenchSessionId, workbenchOwnerId).uploadOpen ? latest.activeTab || 'upload' : 'editor',
-      });
-    }
-    return undefined;
-  }, [mode, isActive, workbenchOwnerId, workbenchSessionId]);
-
-  const handleWorkbenchTabChange = useCallback((tab: string) => {
-    if (!workbenchSessionId) return;
-    setSessionWorkbenchState(workbenchSessionId, { activeTab: tab });
-  }, [workbenchSessionId]);
-
-  // 当前激活文件的内容（优先使用编辑缓存）
-  const currentContent = activeFile
-    ? (editedContents[activeFile.path] !== undefined ? editedContents[activeFile.path] : activeFile.content)
-    : '';
-
-  const isModified = activeFile ? currentContent !== activeFile.content : false;
-
-  const byteSize = useMemo(() => new Blob([currentContent]).size, [currentContent]);
-
-  const handleChange = useCallback((value: string) => {
-    if (!activeFile) return;
-    setEditedContents(prev => ({ ...prev, [activeFile.path]: value }));
-  }, [activeFile]);
-
-  // ── 右键菜单（复制/粘贴/剪切） ──
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const sel = window.getSelection()?.toString() || '';
-    setContextMenu({ x: e.clientX, y: e.clientY, hasSelection: sel.length > 0 });
-  };
-
-  const handleMenuAction = (action: 'copy' | 'paste' | 'cut' | 'selectAll') => {
-    setContextMenu(null);
-    switch (action) {
-      case 'copy':
-        document.execCommand('copy');
-        break;
-      case 'paste':
-        navigator.clipboard.readText().then(text => {
-          document.execCommand('insertText', false, text);
-        }).catch(() => {});
-        break;
-      case 'cut':
-        document.execCommand('cut');
-        break;
-      case 'selectAll':
-        document.execCommand('selectAll');
-        break;
-    }
-  };
-
-  const handleSave = useCallback(async () => {
-    if (!activeFile || !isModified) return;
-    setSaving(true);
-    try {
-      await onSave(activeFile.path, currentContent);
-      // 保存成功后清除该文件的编辑缓存
-      setEditedContents(prev => {
-        const next = { ...prev };
-        delete next[activeFile.path];
-        return next;
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [activeFile, isModified, currentContent, onSave]);
-
-  // Ctrl+S 保存
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        if (isModified && !saving) handleSave();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isModified, saving, handleSave]);
-
-  const closeFileWithConfirm = async (path: string) => {
-    const f = files.find((x) => x.path === path);
-    const edited = editedContents[path];
-    if (f && edited !== undefined && edited !== f.content) {
-      const ok = await window.luminDialog?.confirm(t('文件有未保存的修改，确定关闭？'));
-      if (!ok) return;
-    }
-    setEditedContents(prev => { const next = { ...prev }; delete next[path]; return next; });
-    onCloseFile(path);
-  };
-
-  const handleCloseAllEditors = async () => {
-    const hasModified = files.some(f => {
-      const edited = editedContents[f.path];
-      return edited !== undefined && edited !== f.content;
-    });
-    if (hasModified && !(await window.luminDialog?.confirm(t('有文件未保存，确定全部关闭？')))) return;
-    onCloseAll();
-  };
-
-  // popup 拖拽逻辑
-  const startPopupDrag = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    isDraggingRef.current = true;
-    dragStartRef.current = { x: e.clientX, y: e.clientY, px: popupPosRef.current.x, py: popupPosRef.current.y };
-    document.body.style.userSelect = 'none';
-
-    const onMove = (ev: MouseEvent) => {
-      if (!isDraggingRef.current) return;
-      const dx = ev.clientX - dragStartRef.current.x;
-      const dy = ev.clientY - dragStartRef.current.y;
-      const next = {
-        ...popupPosRef.current,
-        x: Math.max(0, Math.min(window.innerWidth - 200, dragStartRef.current.px + dx)),
-        y: Math.max(40, Math.min(window.innerHeight - 100, dragStartRef.current.py + dy)),
-      };
-      setPopupPos(next);
-    };
-
-    const onUp = () => {
-      isDraggingRef.current = false;
-      document.body.style.userSelect = '';
-      localStorage.setItem('fileEditorPopupPos', JSON.stringify(popupPosRef.current));
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-
-  // popup 八方向 resize：dir 含 n/s/e/w 组合，各方向独立 clamp，角方向两轴同时处理。
-  // ponytail: 各轴独立 clamp 不做跨轴联合求解，极端拖拽下尺寸/位置可能非最优但够用。
-  const startPopupResize = (dir: string) => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (e.button !== 0) return;
-    isDraggingRef.current = true;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const start = { ...popupPosRef.current };
-    const MIN_W = 320, MIN_H = 200;
-    document.body.style.userSelect = 'none';
-
-    const onMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - startX;
-      const dy = ev.clientY - startY;
-      let { x, y, w, h } = start;
-      if (dir.includes('e')) w = Math.max(MIN_W, Math.min(window.innerWidth - start.x, start.w + dx));
-      if (dir.includes('s')) h = Math.max(MIN_H, Math.min(window.innerHeight - start.y, start.h + dy));
-      if (dir.includes('w')) { w = Math.max(MIN_W, Math.min(start.x + start.w, start.w - dx)); x = start.x + start.w - w; }
-      if (dir.includes('n')) { h = Math.max(MIN_H, Math.min(start.y + start.h - 40, start.h - dy)); y = start.y + start.h - h; }
-      setPopupPos({ x, y, w, h });
-    };
-
-    const onUp = () => {
-      isDraggingRef.current = false;
-      document.body.style.userSelect = '';
-      localStorage.setItem('fileEditorPopupPos', JSON.stringify(popupPosRef.current));
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-
-  // memo 化 lang 和 extensions，避免每次渲染创建新的 LanguageSupport 实例导致 CodeMirror 重新装配
-  const lang = useMemo(
-    () => (activeFile ? getLanguage(activeFile.path || activeFile.name) : null),
-    [activeFile?.path, activeFile?.name],
-  );
-  // CodeMirror phrase 表：英文 key → t() 返回的当前语言翻译。
-  // 依赖 i18nLang，语言切换时重建；t 引用稳定故不触发重建。
-  const editorPhrases = useMemo(() => EditorState.phrases.of({
-    'Go to line': t('跳转到行'),
-    'go': t('跳转'),
-    'Find': t('查找'),
-    'Replace': t('替换'),
-    'next': t('下一个'),
-    'previous': t('上一个'),
-    'all': t('全部'),
-    'match case': t('区分大小写'),
-    'regexp': t('正则'),
-    'by word': t('按词'),
-    'replace': t('替换'),
-    'replace all': t('全部替换'),
-    'replaced $ matches': t('替换了 $ 处'),
-    'replaced match on line $': t('在第 $ 行替换了匹配'),
-    'current match': t('当前匹配'),
-    'on line': t('第'),
-    'close': t('关闭'),
-  }), [i18nLang, t]);
-  const extensions = useMemo(() => {
-    const exts: Extension[] = [gotoLineKeymap, editorActiveLineTheme, editorPhrases];
-    if (lang) exts.push(lang);
-    return exts;
-  }, [lang, editorPhrases]);
-  const ext = activeFile ? (activeFile.name.split('.').pop() || '').toLowerCase() : '';
-
-  // 控制 split host / container 布局
-  useEffect(() => {
-    const host = document.getElementById('editor-split-host');
-    const container = document.getElementById('session-editor-container');
-    if (!host || !container) return;
-    if (!isActive || mode !== 'split') return;
-
-    const resizer = document.getElementById('editor-split-resizer');
-    const mainContent = document.getElementById('editor-main-content');
-    if (resizer) {
-      resizer.style.display = '';
-      // 热区偏编辑器侧，减少终端划词误触
-      resizer.classList.remove('hotzone-left', 'hotzone-right');
-      resizer.classList.add(splitPosition === 'left' ? 'hotzone-left' : 'hotzone-right');
-    }
-    if (splitPosition === 'left') {
-      host.style.order = '0';
-      if (resizer) resizer.style.order = '1';
-      if (mainContent) mainContent.style.order = '2';
-    } else {
-      if (mainContent) mainContent.style.order = '0';
-      if (resizer) resizer.style.order = '1';
-      host.style.order = '2';
-    }
-
-    if (splitPosition === 'bottom') {
-      container.style.flexDirection = 'column';
-      host.style.width = '100%';
-      host.style.height = '50%';
-      host.style.minWidth = '0px';
-      host.style.maxWidth = 'none';
-      host.style.minHeight = '200px';
-      host.style.maxHeight = '70%';
-      host.style.borderTop = '1px solid var(--border)';
-      host.style.borderLeft = 'none';
-      host.style.borderRight = 'none';
-      host.style.order = '2';
-    } else {
-      container.style.flexDirection = 'row';
-      host.style.width = '50%';
-      host.style.height = '100%';
-      host.style.minWidth = '320px';
-      host.style.maxWidth = '70%';
-      host.style.minHeight = '0px';
-      host.style.maxHeight = 'none';
-      host.style.borderTop = 'none';
-      host.style.borderLeft = splitPosition === 'right' ? '1px solid var(--border)' : 'none';
-      host.style.borderRight = splitPosition === 'left' ? '1px solid var(--border)' : 'none';
-      host.style.order = splitPosition === 'left' ? '0' : '2';
-    }
-
-    return () => {
-      const latest = getSessionWorkbenchState(workbenchSessionId);
-      if (getSessionUploadPanelState(workbenchSessionId, workbenchOwnerId).uploadOpen) return;
-      const nextResizer = document.getElementById('editor-split-resizer');
-      const nextMainContent = document.getElementById('editor-main-content');
-      if (nextResizer) nextResizer.style.display = 'none';
-      if (nextMainContent) nextMainContent.style.order = '1';
-      container.style.flexDirection = 'row';
-      host.style.width = '0px';
-      host.style.height = '100%';
-      host.style.minWidth = '0px';
-      host.style.maxWidth = '0px';
-      host.style.minHeight = '0px';
-      host.style.maxHeight = '0px';
-      host.style.borderLeft = 'none';
-      host.style.borderRight = 'none';
-      host.style.borderTop = 'none';
-      host.style.order = '2';
-    };
-  }, [mode, splitPosition, isActive, workbenchSessionId]);
-
-  // 标签页栏
-  const tabsBar = (
-    <div className="flex items-center gap-0.5 px-2 pt-1 border-b border-line bg-overlay overflow-x-auto shrink-0">
-      {files.map(f => {
-        const isActive = f.path === activeFile?.path;
-        const fEdited = editedContents[f.path];
-        const fModified = fEdited !== undefined && fEdited !== f.content;
-        return (
-          <div
-            key={f.path}
-            className={`terminal-sub-tab font-mono py-[5px] px-3 ${isActive ? 'active' : ''}`}
-            onClick={() => onActivate(f.path)}
-          >
-            <span>{f.name}{fModified ? ' ●' : ''}</span>
-            <span
-              onClick={(e) => { e.stopPropagation(); closeFileWithConfirm(f.path); }}
-              className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-xs cursor-pointer text-[10px] opacity-50 hover:opacity-100"
-            >
-              <X size={10} />
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  // 编辑器核心内容
   const editorContent = (
     <>
-      {/* Header：最小化/关闭固定右上角；操作行加大右 padding，避免与保存重叠 */}
-      <div
-        className={cn(
-          'relative flex flex-wrap items-center justify-between gap-2 gap-y-1.5 min-w-0',
-          mode === 'popup' ? 'cursor-move pt-2 pr-10 pb-1.5 pl-3' : 'pt-4 pr-[72px] pb-2 pl-4',
-        )}
-        onMouseDown={mode === 'popup' ? startPopupDrag : undefined}
-      >
-        <div className="flex flex-[1_1_140px] min-w-0 max-w-full items-center gap-2 overflow-hidden text-md font-semibold text-primary">
-          <SquarePen size={14} className="shrink-0" />
-          <span
-            className="font-mono text-base truncate min-w-0"
-            title={activeFile ? activeFile.name : t('编辑器')}
-          >
-            {activeFile ? activeFile.name : t('编辑器')}
-          </span>
-          {isModified && (
-            <span className="text-xs bg-warning-dim text-warning px-2 py-0.5 rounded-sm font-medium shrink-0">
-              {t('未保存')}
-            </span>
-          )}
-        </div>
-        <div className="flex flex-[1_1_auto] flex-wrap gap-1.5 items-center justify-end min-w-0">
-          <span className="text-xs text-tertiary font-mono bg-sunken px-2 py-0.5 rounded-sm shrink-0">
-            {ext || 'text'}
-          </span>
+      <FileEditorToolbar
+        mode={mode}
+        startPopupDrag={startPopupDrag}
+        activeFile={activeFile}
+        isModified={isModified}
+        ext={ext}
+        splitPosition={splitPosition}
+        onSplitPositionChange={onSplitPositionChange}
+        onModeChange={onModeChange}
+        externalOpening={externalOpening}
+        onOpenSystemEditor={onOpenSystemEditor}
+        onOpenWithEditor={onOpenWithEditor}
+        currentContent={currentContent}
+        preferredExternalApp={preferredExternalApp}
+        setPreferredExternalApp={setPreferredExternalApp}
+        saving={saving}
+        handleSave={handleSave}
+        setMinimized={setMinimized}
+        handleCloseAllEditors={handleCloseAllEditors}
+        filesCount={files.length}
+      />
 
-          {mode === 'split' && (
-            <Tiptop text={t('分栏位置')} placement="bottom">
-              <select
-                id="file-editor-split-position"
-                name="file-editor-split-position"
-                value={splitPosition}
-                onChange={(e) => onSplitPositionChange && onSplitPositionChange(e.target.value)}
-                aria-label={t('分栏位置')}
-                className="px-1.5 py-1 text-xs cursor-pointer border-none bg-overlay text-primary rounded-md shrink-0 outline-none transition-colors duration-100 hover:bg-hover hover:text-primary"
-              >
-                <option value="left">{t('左侧分栏')}</option>
-                <option value="right">{t('右侧分栏')}</option>
-                <option value="bottom">{t('底部分栏')}</option>
-              </select>
-            </Tiptop>
-          )}
+      <FileEditorTabs
+        files={files}
+        activeFile={activeFile}
+        editedContents={editedContents}
+        onActivate={onActivate}
+        closeFileWithConfirm={closeFileWithConfirm}
+      />
 
-          <Tiptop text={t('编辑模式')} placement="bottom">
-            <select
-              id="file-editor-edit-mode"
-              name="file-editor-edit-mode"
-              value={mode}
-              onChange={(e) => onModeChange && onModeChange(e.target.value)}
-              aria-label={t('编辑模式')}
-              className="px-1.5 py-1 text-xs cursor-pointer border-none bg-overlay text-primary rounded-md shrink-0 outline-none transition-colors duration-100 hover:bg-hover hover:text-primary"
-            >
-              <option value="modal">{t('全屏弹窗')}</option>
-              <option value="popup">{t('浮动面板')}</option>
-              <option value="split">{t('分栏编辑')}</option>
-            </select>
-          </Tiptop>
-
-          <Tiptop text={t('使用系统编辑器')} placement="bottom">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!activeFile || externalOpening || !onOpenSystemEditor}
-              onClick={() => { if (activeFile) onOpenSystemEditor?.(activeFile, currentContent); }}
-              aria-label={t('使用系统编辑器')}
-              className="gap-1 px-2 py-1 max-w-full"
-            >
-              <ExternalLink size={13} className="shrink-0" />
-              <span className="truncate">
-                {t('使用系统编辑器')}
-              </span>
-            </Button>
-          </Tiptop>
-
-          <Tiptop
-            text={preferredExternalApp
-              ? `${t('用已记住的编辑器打开')} (${preferredExternalAppLabel(preferredExternalApp)})`
-              : t('用…编辑')}
-            placement="bottom"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!activeFile || externalOpening || !onOpenWithEditor}
-              onClick={() => {
-                if (activeFile) onOpenWithEditor?.(activeFile, currentContent, false);
-                setTimeout(() => setPreferredExternalApp(readPreferredExternalApp()), 0);
-              }}
-              aria-label={preferredExternalApp
-                ? `${t('用已记住的编辑器打开')} (${preferredExternalAppLabel(preferredExternalApp)})`
-                : t('用…编辑')}
-              className="gap-1 px-2 py-1 min-w-0"
-              style={{ maxWidth: preferredExternalApp ? 110 : undefined }}
-            >
-              <AppWindow size={13} className="shrink-0" />
-              <span className="truncate min-w-0">
-                {preferredExternalApp
-                  ? `${t('用')} ${preferredExternalAppLabel(preferredExternalApp)}`
-                  : t('用…编辑')}
-              </span>
-            </Button>
-          </Tiptop>
-
-          {preferredExternalApp && (
-            <Tiptop text={t('更换外部编辑器')} placement="bottom">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!activeFile || externalOpening || !onOpenWithEditor}
-                onClick={() => {
-                  if (activeFile) onOpenWithEditor?.(activeFile, currentContent, true);
-                  setTimeout(() => setPreferredExternalApp(readPreferredExternalApp()), 0);
-                }}
-                aria-label={t('更换外部编辑器')}
-                className="px-2 py-1"
-              >
-                {t('更换…')}
-              </Button>
-            </Tiptop>
-          )}
-
-          <Tiptop text={saving ? t('保存中...') : t('保存')} placement="bottom">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSave}
-              disabled={saving || !isModified}
-              aria-label={t('保存')}
-              className="gap-1 px-2.5 py-1 min-h-7"
-            >
-              <Save size={13} className="shrink-0" />
-              {saving ? t('保存中...') : t('保存')}
-            </Button>
-          </Tiptop>
-        </div>
-
-        {mode !== 'split' && (
-          <Tiptop text={t('最小化')} placement="bottom" style={{ position: 'absolute', top: 8, right: 36, zIndex: Z.PANEL_BUTTON }}>
-            <Button variant="ghost" size="icon" onClick={() => setMinimized(true)} aria-label={t('最小化')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </Button>
-          </Tiptop>
-        )}
-        <Tiptop text={files.length > 1 ? t('关闭全部') : t('关闭')} placement="bottom" style={{ position: 'absolute', top: 8, right: 8, zIndex: Z.PANEL_BUTTON }}>
-          <Button variant="ghost" size="icon" onClick={handleCloseAllEditors} aria-label={files.length > 1 ? t('关闭全部') : t('关闭')}>
-            <X size={14} />
-          </Button>
-        </Tiptop>
-      </div>
-
-      {/* Tabs */}
-      {files.length > 1 && tabsBar}
-
-      {/* File path */}
       <div className="px-4 pt-1 pb-2 text-xs text-tertiary font-mono border-b border-line overflow-x-auto whitespace-nowrap shrink-0">
         {activeFile ? activeFile.path : ''}
       </div>
 
-      {/* Editor */}
       <div className="flex-1 overflow-auto min-h-0">
         {activeFile && (
           <CodeMirror
@@ -878,13 +116,11 @@ export default function FileEditor({
         )}
       </div>
 
-      {/* Footer status bar */}
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-line text-xs text-tertiary font-mono">
         <span>{currentContent.split('\n').length}{t('行')} · {byteSize}{t('字节')}</span>
         <span>UTF-8 · {lang ? ext.toUpperCase() : t('文本')}</span>
       </div>
 
-      {/* 右键菜单 */}
       {contextMenu && createPortal(
         <ContextMenu
           x={contextMenu.x}
@@ -899,12 +135,11 @@ export default function FileEditor({
             { label: t('全选'), shortcut: formatShortcut('Ctrl+A'), onSelect: () => handleMenuAction('selectAll') },
           ]}
         />,
-        document.body
+        document.body,
       )}
     </>
   );
 
-  // 最小化浮动条
   if (minimized) {
     if (typeof document === 'undefined') return null;
     return createPortal(
@@ -924,7 +159,7 @@ export default function FileEditor({
         )}
         {isModified && <span className="text-xs text-warning">{t('未保存')}</span>}
       </div>,
-      document.body
+      document.body,
     );
   }
 
@@ -943,8 +178,7 @@ export default function FileEditor({
         onContextMenu={handleContextMenu}
       >
         {editorContent}
-        {/* 八方向 resize handle：四边 + 四角透明热区 */}
-        {POPUP_RESIZE_HANDLES.map(h => (
+        {POPUP_RESIZE_HANDLES.map((h) => (
           <div
             key={h.dir}
             onMouseDown={startPopupResize(h.dir)}
@@ -953,7 +187,7 @@ export default function FileEditor({
           />
         ))}
       </div>,
-      document.body
+      document.body,
     );
   }
 
@@ -998,14 +232,11 @@ export default function FileEditor({
           />
         )}
       </div>,
-      host
+      host,
     );
   }
 
-  // modal mode (default) — portal to body so file-manager stacking context cannot bury the editor
   if (typeof document === 'undefined') return null;
-  // 非 active 会话不渲染 modal overlay：portal 挂在 document.body，不受父容器 display:none 影响，
-  // 会导致切换服务器后旧会话的弹窗仍盖在最上层（跨服务器显示）。组件未 unmount，state 保留，切回时恢复。
   if (!isActive) return null;
   return createPortal(
     <div

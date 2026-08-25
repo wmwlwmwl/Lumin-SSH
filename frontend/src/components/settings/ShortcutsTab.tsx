@@ -1,8 +1,7 @@
-import React from 'react';
-import { t as $t, type I18nKey } from '../../i18n.ts';
+import { t as $t } from '../../i18n.ts';
 import { cn } from '../../utils/cn.ts';
 import { Button } from '../ui';
-import { SettingsPanel, SettingsSectionTitle, SettingsTabRoot, type SettingsDefinitionNode } from './SharedComponents.tsx';
+import { SettingsPanel, SettingsSectionTitle, SettingsTabRoot } from './SharedComponents.tsx';
 import { settings } from './settingDefinitions';
 import { formatShortcut, isMac } from '../../utils/platform.ts';
 

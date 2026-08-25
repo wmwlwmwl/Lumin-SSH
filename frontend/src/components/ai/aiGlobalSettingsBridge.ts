@@ -233,9 +233,9 @@ export function normalizeAIGlobalSettings(settings: unknown): AIGlobalSettings {
   const rawExecuteApprovalMode = typeof s.executeApprovalMode === 'string' ? s.executeApprovalMode.trim() : ''
   const executeApprovalMode: ExecuteApprovalMode = rawExecuteApprovalMode === 'read_only'
     ? 'read_only'
-    : rawExecuteApprovalMode === 'all'
+    : (rawExecuteApprovalMode === 'all'
       ? 'all'
-      : 'basic'
+      : 'basic')
   const allowedCommands = normalizeStringList(s.allowedCommands)
   const deniedCommands = normalizeStringList(s.deniedCommands)
   const slashCommands = normalizeAISlashCommands(s.slashCommands)

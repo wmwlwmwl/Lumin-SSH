@@ -49,7 +49,7 @@ export function upsertConversationSummary(list: unknown, snapshot: AISnapshotLik
     toolProtocol: snapshot.toolProtocol,
     messageCount: typeof snapshot.messageCount === 'number'
       ? snapshot.messageCount
-      : Array.isArray(snapshot.messages) ? snapshot.messages.length : 0,
+      : (Array.isArray(snapshot.messages) ? snapshot.messages.length : 0),
     promptCacheBypassTimestamp: snapshot.promptCacheBypassTimestamp || '',
     parentConversationId: typeof snapshot.parentConversationId === 'string' ? snapshot.parentConversationId : '',
     rootConversationId: typeof snapshot.rootConversationId === 'string' ? snapshot.rootConversationId : '',

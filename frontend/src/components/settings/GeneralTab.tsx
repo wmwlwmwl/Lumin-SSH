@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { t as $t, type I18nKey } from '../../i18n.ts';
+import { t as $t } from '../../i18n.ts';
 import { RadioOption, ToggleSwitch, SettingRow, SettingsField, SettingsDivider, SettingsPanel, SettingsSectionTitle, SettingsTabRoot, type SettingsDefinitionNode } from './SharedComponents';
 import { settings } from './settingDefinitions';
 
@@ -155,7 +155,7 @@ export default function GeneralTab({
       if (!binding) {
         return null;
       }
-      const selectId = `general-${(node.stateKey || '').replace(/[A-Z]/g, (m) => m.toLowerCase())}`;
+      const selectId = `general-${(node.stateKey || '').replace(/[A-Z]/g, (m: string) => m.toLowerCase())}`;
       return (
         <select id={selectId} name={selectId} className="select" style={{ width: binding.width }} value={binding.value} onChange={binding.onChange}>
           {binding.options.map((option) => (
@@ -171,7 +171,7 @@ export default function GeneralTab({
       return [];
     }
     if (node.type === 'panel' || node.type === 'conditional') {
-      return (node.children || []).flatMap((child) => renderNode(child));
+      return (node.children || []).flatMap((child: SettingsDefinitionNode) => renderNode(child));
     }
     if (node.type === 'field') {
       const action = renderFieldAction(node);
@@ -188,7 +188,7 @@ export default function GeneralTab({
       return [(
         <SettingsField key={node.id} definition={node}>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
-            {(node.children || []).map((option) => (
+            {(node.children || []).map((option: SettingsDefinitionNode) => (
               <RadioOption
                 key={option.id}
                 definition={option}

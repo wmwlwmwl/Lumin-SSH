@@ -1,143 +1,24 @@
-import { Copy, PenLine, Search, X } from 'lucide-react';
-import type { Dispatch, SetStateAction } from 'react';
-import CredentialsModal from './CredentialsModal.tsx';
-import ExportSelectedDialog from './ExportSelectedDialog.tsx';
+import { lazy, Suspense } from 'react';
 import GlobalContextMenu from './GlobalContextMenu.tsx';
 import GlobalDialog from './GlobalDialog.tsx';
-import ImportExportDialog from './ImportExportDialog.tsx';
-import PortForwardDialog from './PortForwardDialog.tsx';
-import SerialConfigModal, { type SerialFormConfig } from './SerialConfigModal.tsx';
-import SettingsModal from './SettingsModal.tsx';
-import SyncFailureToast, { type SyncFailureState } from './SyncFailureToast.tsx';
-import Tiptop from './Tiptop.tsx';
+import SyncFailureToast from './SyncFailureToast.tsx';
 import Toast from './Toast.tsx';
-import UpdateModal from './UpdateModal.tsx';
-import type { PortForwardInitialMapping } from '../hooks/usePortForwardDialog.ts';
-import type { SessionAuthPrompt } from '../hooks/useSessionConnections.ts';
-import type { ToastAction, ToastItem } from '../hooks/useToasts.ts';
-import type { ExportOptions } from '../hooks/useImportExport.ts';
-import type { SessionLike } from '../utils/sessionWorkspace.ts';
-import type { TopbarSession } from './AppTopbar.tsx';
-import { cn } from '../utils/cn.ts';
+import EditFlyLayer from './overlays/EditFlyLayer.tsx';
+import TerminalTabContextMenuOverlay from './overlays/TerminalTabContextMenuOverlay.tsx';
+import TabContextMenuOverlay from './overlays/TabContextMenuOverlay.tsx';
+import SessionListOverlay from './overlays/SessionListOverlay.tsx';
+import type { AppOverlaysProps } from './overlays/overlayTypes.ts';
 
-/** 标签栏右键菜单 */
-export interface TabContextMenuState {
-  sessionId: string;
-  x: number;
-  y: number;
-}
+// 懒加载低频/重型模态弹窗，避免在启动首屏时全量解析其依赖树
+const ImportExportDialog = lazy(() => import('./ImportExportDialog.tsx'));
+const ExportSelectedDialog = lazy(() => import('./ExportSelectedDialog.tsx'));
+const SerialConfigModal = lazy(() => import('./SerialConfigModal.tsx'));
+const PortForwardDialog = lazy(() => import('./PortForwardDialog.tsx'));
+const SettingsModal = lazy(() => import('./SettingsModal.tsx'));
+const CredentialsModal = lazy(() => import('./CredentialsModal.tsx'));
+const UpdateModal = lazy(() => import('./UpdateModal.tsx'));
 
-/** 终端子标签右键菜单（type=group 时分屏组） */
-export interface TerminalTabContextMenuState {
-  sessionId: string;
-  terminalId: string;
-  x: number;
-  y: number;
-  type: 'terminal' | 'group';
-  terminalIds?: string[];
-}
-
-/** 编辑飞行动画元素（shape 来自 App.tsx 的组装；beam/capsule 为历史遗留分支无生产者，字段统一声明为必填以简化类型） */
-interface EditFlyItem {
-  id: string;
-  type: string;
-  field: string;
-  from: { x: number; y: number };
-  mid: { x: number; y: number };
-  to: { x: number; y: number };
-  at: { x: number; y: number };
-  length: number;
-  angle: number;
-  delay: number;
-  path: string;
-  size: number;
-  label: string;
-  value?: string;
-}
-
-export interface AppOverlaysProps {
-  dialogs: {
-    activeAIDevilMode: boolean;
-    closePortForwardDialog: () => void;
-    connectSerial: (config: SerialFormConfig) => void;
-    loadServers: () => Promise<void>;
-    portForwardDialogSessionId: string | null;
-    portForwardInitialMapping: PortForwardInitialMapping | null;
-    portForwardInitialTab: string | null;
-    probePanelPosition: 'left' | 'right';
-    setProbePanelPosition: (pos: 'left' | 'right') => void;
-    setSettingsInitialTab: (tab: string) => void;
-    setShowCredentials: (v: boolean) => void;
-    setShowSerialModal: (v: boolean) => void;
-    setShowSettings: (v: boolean) => void;
-    settingsInitialTab: string;
-    showCredentials: boolean;
-    showPortForwardDialog: boolean;
-    showSerialModal: boolean;
-    showSettings: boolean;
-  };
-  importExport: {
-    exportSelectedIds: string[];
-    handleDownloadTemplate: () => void;
-    handleExport: (opts: ExportOptions) => void;
-    handleExportSelected: (opts: ExportOptions) => void;
-    handleImport: () => void;
-    hasRecoveryPassword: boolean;
-    ieBusy: boolean;
-    setExportSelectedIds: (ids: string[]) => void;
-    setShowExportSelectedDialog: (v: boolean) => void;
-    setShowImportExportDialog: (v: boolean) => void;
-    showExportSelectedDialog: boolean;
-    showImportExportDialog: boolean;
-  };
-  notifications: {
-    downloadProgress: number;
-    handleApplyStartupUpdate: () => Promise<void>;
-    handleToastAction: (id: number, action: ToastAction) => void;
-    isUpdateModalVisible: boolean;
-    removeToast: (id: number) => void;
-    setIsUpdateModalVisible: (v: boolean) => void;
-    setSyncFailed: Dispatch<SetStateAction<SyncFailureState | null>>;
-    startupUpdateInfo: { version: string } | null;
-    syncFailed: SyncFailureState | null;
-    toasts: ToastItem[];
-  };
-  menus: {
-    activeSessionId: string | null;
-    canCopySessionPassword: (sessionId: string) => boolean;
-    canMoveTerminalToDockTarget: (session: SessionLike, terminalId: string, target: string) => boolean;
-    closeAllSessions: () => Promise<void>;
-    closeSession: (sessionId: string, e?: React.MouseEvent) => Promise<void>;
-    closeTerminal: (sessionId: string, terminalId: string, e?: React.MouseEvent) => void;
-    closeTerminalGroup: (sessionId: string, layoutId: string, terminalIds: string[], e?: React.MouseEvent) => void;
-    forceCloseSession: (sessionId: string) => void;
-    handleCopySessionPassword: (sessionId: string) => Promise<void>;
-    handleRenameTerminalTab: (sessionId: string, terminalId: string) => Promise<void>;
-    handleTabClick: (sessionId: string) => void;
-    isTerminalDockTargetOccupied: (session: SessionLike, terminalId: string, target: string) => boolean;
-    moveTerminalToDockTarget: (session: SessionLike, terminalId: string, target: string) => void;
-    sessionAuthPrompts: Record<string, SessionAuthPrompt>;
-    sessionListPos: { x: number; y: number };
-    sessionListQuery: string;
-    sessionListRef: React.RefObject<HTMLDivElement | null>;
-    sessions: TopbarSession[];
-    setSessionListQuery: (q: string) => void;
-    setShowSessionList: (v: boolean) => void;
-    setTabContextMenu: (menu: TabContextMenuState | null) => void;
-    setTerminalTabContextMenu: (menu: TerminalTabContextMenuState | null) => void;
-    showSessionList: boolean;
-    tabContextMenu: TabContextMenuState | null;
-    terminalTabContextMenu: TerminalTabContextMenuState | null;
-  };
-  animation: {
-    editFlyAnimation: { items: EditFlyItem[] } | null;
-    editorModeBanner: { id: string; text: string } | null;
-  };
-  shared: {
-    addToast: (message: string | Error, type?: string, duration?: number, actions?: unknown[]) => number;
-    t: (key: string, vars?: Record<string, unknown>) => string;
-  };
-}
+export type { AppOverlaysProps, TabContextMenuState, TerminalTabContextMenuState } from './overlays/overlayTypes.ts';
 
 export default function AppOverlays({ dialogs, importExport, notifications, menus, animation, shared }: AppOverlaysProps) {
   const {
@@ -213,149 +94,82 @@ export default function AppOverlays({ dialogs, importExport, notifications, menu
   } = { ...dialogs, ...importExport, ...notifications, ...menus, ...animation, ...shared };
   return (<>
       {showImportExportDialog && (
-        <ImportExportDialog
-          onClose={() => setShowImportExportDialog(false)}
-          onExport={handleExport}
-          onImport={handleImport}
-          onDownloadTemplate={handleDownloadTemplate}
-          hasRecoveryPassword={hasRecoveryPassword}
-          busy={ieBusy}
-        />
+        <Suspense fallback={null}>
+          <ImportExportDialog
+            onClose={() => setShowImportExportDialog(false)}
+            onExport={handleExport}
+            onImport={handleImport}
+            onDownloadTemplate={handleDownloadTemplate}
+            hasRecoveryPassword={hasRecoveryPassword}
+            busy={ieBusy}
+          />
+        </Suspense>
       )}
 
       {showExportSelectedDialog && (
-        <ExportSelectedDialog
-          onClose={() => {
-            setShowExportSelectedDialog(false);
-            setExportSelectedIds([]);
-          }}
-          onExport={handleExportSelected}
-          hasRecoveryPassword={hasRecoveryPassword}
-          busy={ieBusy}
-          selectedCount={exportSelectedIds.length}
-        />
+        <Suspense fallback={null}>
+          <ExportSelectedDialog
+            onClose={() => {
+              setShowExportSelectedDialog(false);
+              setExportSelectedIds([]);
+            }}
+            onExport={handleExportSelected}
+            hasRecoveryPassword={hasRecoveryPassword}
+            busy={ieBusy}
+            selectedCount={exportSelectedIds.length}
+          />
+        </Suspense>
       )}
 
       {showSerialModal && (
-        <SerialConfigModal
-          onClose={() => setShowSerialModal(false)}
-          onConnect={(config) => {
-            setShowSerialModal(false);
-            connectSerial(config);
-          }}
-        />
+        <Suspense fallback={null}>
+          <SerialConfigModal
+            onClose={() => setShowSerialModal(false)}
+            onConnect={(config) => {
+              setShowSerialModal(false);
+              connectSerial(config);
+            }}
+          />
+        </Suspense>
       )}
 
       {showPortForwardDialog && portForwardDialogSessionId && (
-        <PortForwardDialog
-          sessionId={portForwardDialogSessionId}
-          initialMapping={portForwardInitialMapping}
-          initialTab={portForwardInitialTab}
-          onClose={closePortForwardDialog}
-        />
+        <Suspense fallback={null}>
+          <PortForwardDialog
+            sessionId={portForwardDialogSessionId}
+            initialMapping={portForwardInitialMapping}
+            initialTab={portForwardInitialTab}
+            onClose={closePortForwardDialog}
+          />
+        </Suspense>
       )}
 
       {showSettings && (
-        <SettingsModal
-          initialTab={settingsInitialTab}
-          onClose={() => { setShowSettings(false); loadServers(); }}
-          addToast={addToast}
-          onRestored={loadServers}
-          probePanelPosition={probePanelPosition}
-          onProbePanelPositionChange={setProbePanelPosition}
-          forceDarkTheme={activeAIDevilMode}
-        />
+        <Suspense fallback={null}>
+          <SettingsModal
+            initialTab={settingsInitialTab}
+            onClose={() => { setShowSettings(false); loadServers(); }}
+            addToast={addToast}
+            onRestored={loadServers}
+            probePanelPosition={probePanelPosition}
+            onProbePanelPositionChange={setProbePanelPosition}
+            forceDarkTheme={activeAIDevilMode}
+          />
+        </Suspense>
       )}
 
       {showCredentials && (
-        <CredentialsModal
-          onClose={() => { setShowCredentials(false); loadServers(); }}
-          onChange={loadServers}
-          addToast={addToast}
-        />
+        <Suspense fallback={null}>
+          <CredentialsModal
+            onClose={() => { setShowCredentials(false); loadServers(); }}
+            onChange={loadServers}
+            addToast={addToast}
+          />
+        </Suspense>
       )}
 
       {editFlyAnimation && (
-        <div className="edit-fly-layer" aria-hidden="true">
-          {editFlyAnimation.items.map((item) => (
-            item.type === 'beam' ? (
-              <div
-                key={item.id}
-                className={`edit-fly-beam edit-fly-beam-${item.field}`}
-                style={{
-                  '--beam-from-x': `${item.from.x}px`,
-                  '--beam-from-y': `${item.from.y}px`,
-                  '--beam-length': item.length,
-                  '--beam-angle': item.angle,
-                  '--beam-delay': `${item.delay}ms`,
-                } as React.CSSProperties}
-              />
-            ) : item.type === 'add-core' ? (
-              <div
-                key={item.id}
-                className="add-supernova-core"
-                style={{
-                  '--add-path': item.path,
-                  '--add-delay': `${item.delay}ms`,
-                } as React.CSSProperties}
-              />
-            ) : item.type === 'add-particle' ? (
-              <div
-                key={item.id}
-                className="add-supernova-particle"
-                style={{
-                  '--particle-path': item.path,
-                  '--particle-size': `${item.size}px`,
-                  '--particle-delay': `${item.delay}ms`,
-                } as React.CSSProperties}
-              />
-            ) : item.type === 'add-ring' ? (
-              <div
-                key={item.id}
-                className="add-supernova-ring"
-                style={{
-                  '--ring-x': `${item.at.x}px`,
-                  '--ring-y': `${item.at.y}px`,
-                  '--ring-delay': `${item.delay}ms`,
-                } as React.CSSProperties}
-              />
-            ) : item.type === 'save-flow-capsule' ? (
-              <div
-                key={item.id}
-                className={`save-flow-capsule save-flow-capsule-${item.field}`}
-                style={{
-                  '--save-flow-from-x': `${item.from.x}px`,
-                  '--save-flow-from-y': `${item.from.y}px`,
-                  '--save-flow-mid-x': `${item.mid.x}px`,
-                  '--save-flow-mid-y': `${item.mid.y}px`,
-                  '--save-flow-to-x': `${item.to.x}px`,
-                  '--save-flow-to-y': `${item.to.y}px`,
-                  '--save-flow-delay': `${item.delay}ms`,
-                } as React.CSSProperties}
-              >
-                <span className="edit-fly-label">{item.label}</span>
-                {item.value ? <span className="edit-fly-value">{item.value}</span> : null}
-              </div>
-            ) : (
-              <div
-                key={item.id}
-                className={`edit-fly-capsule edit-fly-capsule-${item.field}`}
-                style={{
-                  '--fly-from-x': `${item.from.x}px`,
-                  '--fly-from-y': `${item.from.y}px`,
-                  '--fly-mid-x': `${item.mid.x}px`,
-                  '--fly-mid-y': `${item.mid.y}px`,
-                  '--fly-to-x': `${item.to.x}px`,
-                  '--fly-to-y': `${item.to.y}px`,
-                  '--fly-delay': `${item.delay}ms`,
-                } as React.CSSProperties}
-              >
-                <span className="edit-fly-label">{item.label}</span>
-                {item.value ? <span className="edit-fly-value">{item.value}</span> : null}
-              </div>
-            )
-          ))}
-        </div>
+        <EditFlyLayer editFlyAnimation={editFlyAnimation} />
       )}
 
       {editorModeBanner && (
@@ -370,14 +184,18 @@ export default function AppOverlays({ dialogs, importExport, notifications, menu
 
 
       {/* ── 自动更新弹窗 ──────────────────────────────── */}
-      <UpdateModal
-        visible={isUpdateModalVisible}
-        updateInfo={startupUpdateInfo}
-        downloadProgress={downloadProgress}
-        t={t}
-        onClose={() => setIsUpdateModalVisible(false)}
-        onUpdate={handleApplyStartupUpdate}
-      />
+      {isUpdateModalVisible && (
+        <Suspense fallback={null}>
+          <UpdateModal
+            visible={isUpdateModalVisible}
+            updateInfo={startupUpdateInfo}
+            downloadProgress={downloadProgress}
+            t={t}
+            onClose={() => setIsUpdateModalVisible(false)}
+            onUpdate={handleApplyStartupUpdate}
+          />
+        </Suspense>
+      )}
 
       <SyncFailureToast
         syncFailed={syncFailed}
@@ -391,163 +209,49 @@ export default function AppOverlays({ dialogs, importExport, notifications, menu
       <GlobalContextMenu />
 
       {/* ── 终端子标签右键菜单 ── */}
-      {terminalTabContextMenu && (() => {
-        const session = sessions.find((item) => item.id === terminalTabContextMenu.sessionId);
-        const moveTargets = [
-          { target: 'top-left', label: t('移至左上面板') },
-          { target: 'top-right', label: t('移至右上面板') },
-          { target: 'bottom-left', label: t('移至左下面板') },
-          { target: 'bottom-right', label: t('移至右下面板') },
-        ];
-        return (
-          <div className="tab-context-menu" style={{ left: terminalTabContextMenu.x, top: terminalTabContextMenu.y }}>
-            {terminalTabContextMenu.type === 'terminal' && moveTargets.map((item) => {
-              const occupied = !!session && isTerminalDockTargetOccupied(session, terminalTabContextMenu.terminalId, item.target);
-              const enabled = !!session && canMoveTerminalToDockTarget(session, terminalTabContextMenu.terminalId, item.target);
-              return (
-                <div
-                  key={item.target}
-                  className={cn(
-                    'tab-context-menu-item',
-                    occupied && 'occupied',
-                    !enabled && 'opacity-[0.42] pointer-events-none',
-                  )}
-                  onClick={() => {
-                    if (!session || !enabled) return;
-                    moveTerminalToDockTarget(session, terminalTabContextMenu.terminalId, item.target);
-                  }}
-                >
-                  <span className="tab-context-menu-state">{occupied ? '☒' : '☑'}</span> {item.label}
-                </div>
-              );
-            })}
-            {terminalTabContextMenu.type === 'terminal' && (
-              <div
-                className="tab-context-menu-item"
-                onClick={() => {
-                  const { sessionId, terminalId } = terminalTabContextMenu;
-                  setTerminalTabContextMenu(null);
-                  void handleRenameTerminalTab(sessionId, terminalId);
-                }}
-              >
-                <PenLine size={14} /> {t('重命名标签标题')}
-              </div>
-            )}
-            <div className="h-px my-1 bg-line" />
-            <div
-              className="tab-context-menu-item"
-              onClick={(e) => {
-                const { sessionId, terminalId, type, terminalIds } = terminalTabContextMenu;
-                setTerminalTabContextMenu(null);
-                if (type === 'group' && terminalIds) {
-                  closeTerminalGroup(sessionId, terminalId, terminalIds, e);
-                  return;
-                }
-                closeTerminal(sessionId, terminalId, e);
-              }}
-            >
-              <X size={14} /> {terminalTabContextMenu.type === 'group' ? t('关闭分屏组') : t('关闭终端')}
-            </div>
-          </div>
-        );
-      })()}
+      {terminalTabContextMenu && (
+        <TerminalTabContextMenuOverlay
+          terminalTabContextMenu={terminalTabContextMenu}
+          sessions={sessions}
+          t={t}
+          isTerminalDockTargetOccupied={isTerminalDockTargetOccupied}
+          canMoveTerminalToDockTarget={canMoveTerminalToDockTarget}
+          moveTerminalToDockTarget={moveTerminalToDockTarget}
+          setTerminalTabContextMenu={setTerminalTabContextMenu}
+          handleRenameTerminalTab={handleRenameTerminalTab}
+          closeTerminalGroup={closeTerminalGroup}
+          closeTerminal={closeTerminal}
+        />
+      )}
 
       {/* ── 标签右键菜单 ── */}
-      {tabContextMenu && (() => {
-        const showCopySessionPassword = canCopySessionPassword(tabContextMenu.sessionId);
-        return (
-          <div className="tab-context-menu" style={{ left: tabContextMenu.x, top: tabContextMenu.y }}>
-            {showCopySessionPassword && (
-              <>
-                <div
-                  className="tab-context-menu-item"
-                  onClick={() => {
-                    const sessionId = tabContextMenu.sessionId;
-                    setTabContextMenu(null);
-                    void handleCopySessionPassword(sessionId);
-                  }}
-                >
-                  <Copy size={14} /> {t('复制服务器密码')}
-                </div>
-                <div className="h-px my-1 bg-line" />
-              </>
-            )}
-            <div
-              className="tab-context-menu-item"
-              onClick={() => {
-                const sessionId = tabContextMenu.sessionId;
-                setTabContextMenu(null);
-                forceCloseSession(sessionId);
-              }}
-            >
-              <X size={14} /> {t('关闭连接')}
-            </div>
-            {sessions.length >= 2 && (
-              <>
-                <div className="h-px my-1 bg-line" />
-                <div
-                  className="tab-context-menu-item"
-                  onClick={() => {
-                    setTabContextMenu(null);
-                    closeAllSessions();
-                  }}
-                >
-                  <X size={14} /> {t('关闭全部')}
-                </div>
-              </>
-            )}
-          </div>
-        );
-      })()}
+      {tabContextMenu && (
+        <TabContextMenuOverlay
+          tabContextMenu={tabContextMenu}
+          sessions={sessions}
+          t={t}
+          canCopySessionPassword={canCopySessionPassword}
+          setTabContextMenu={setTabContextMenu}
+          handleCopySessionPassword={handleCopySessionPassword}
+          forceCloseSession={forceCloseSession}
+          closeAllSessions={closeAllSessions}
+        />
+      )}
       {/* ── 服务器列表下拉 ── */}
       {showSessionList && (
-        <div
-          ref={sessionListRef}
-          className="tab-context-menu max-h-[400px] flex flex-col"
-          style={{ left: sessionListPos.x - 240, top: sessionListPos.y, minWidth: 240 }}
-        >
-          <div className="relative py-1.5 px-2 border-b border-line">
-            <input
-              id="app-overlays-session-search"
-              name="app-overlays-session-search"
-              autoComplete="off"
-              type="text"
-              value={sessionListQuery}
-              onChange={(e) => setSessionListQuery(e.target.value)}
-              placeholder={t('搜索服务器')}
-              autoFocus
-              className="w-full pt-1 pb-1 pl-[26px] pr-2 text-sm bg-sunken border border-line rounded-sm text-primary outline-none"
-            />
-            <Search size={13} className="absolute left-[14px] top-1/2 -translate-y-1/2 text-tertiary" />
-          </div>
-          <div className="overflow-y-auto flex-1 min-h-0">
-            {sessions
-              .filter(s => !sessionListQuery || (s.serverName || '').toLowerCase().includes(sessionListQuery.toLowerCase()) || (s.host || '').toLowerCase().includes(sessionListQuery.toLowerCase()))
-              .map(s => (
-                <div
-                  key={s.id}
-                  className={`tab-context-menu-item ${activeSessionId === s.id ? 'font-bold' : 'font-normal'}`}
-                  onClick={() => { handleTabClick(s.id); setShowSessionList(false); }}
-                  style={{ color: activeSessionId === s.id ? 'var(--accent)' : 'var(--text-secondary)' }}
-                >
-                  <span className={`status-dot ${sessionAuthPrompts[s.id] ? 'attention' : s.status === 'connecting' ? 'connecting' : s.status === 'connected' ? 'online' : 'offline'}`} />
-                  <span className="flex-1 truncate">{s.serverName}</span>
-                  <Tiptop text={t('关闭')} placement="bottom">
-                    <span
-                      onClick={(e) => { e.stopPropagation(); closeSession(s.id, e); }}
-                      aria-label={t('关闭')}
-                      className="cursor-pointer flex items-center opacity-50 shrink-0"
-                    >
-                      <X size={13} />
-                    </span>
-                  </Tiptop>
-                </div>
-              ))}
-            {sessions.filter(s => !sessionListQuery || (s.serverName || '').toLowerCase().includes(sessionListQuery.toLowerCase()) || (s.host || '').toLowerCase().includes(sessionListQuery.toLowerCase())).length === 0 && (
-              <div className="py-3 px-4 text-sm text-tertiary text-center">{t('无匹配结果')}</div>
-            )}
-          </div>
-        </div>
+        <SessionListOverlay
+          sessionListRef={sessionListRef}
+          sessionListPos={sessionListPos}
+          sessionListQuery={sessionListQuery}
+          setSessionListQuery={setSessionListQuery}
+          t={t}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          sessionAuthPrompts={sessionAuthPrompts}
+          handleTabClick={handleTabClick}
+          setShowSessionList={setShowSessionList}
+          closeSession={closeSession}
+        />
       )}
   </>);
 }

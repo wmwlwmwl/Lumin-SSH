@@ -9,7 +9,7 @@ const AI_CONVERSATION_CHANGED_EVENT = 'lumin:ai-conversations-changed'
 
 type AIExecuteApprovalMode = 'basic' | 'read_only' | 'all'
 
-const DEFAULT_TASK_SETTINGS = {
+const _DEFAULT_TASK_SETTINGS = {
   currentProviderId: '',
   autoApprovalEnabled: false,
   alwaysAllowReadOnly: false,
@@ -203,15 +203,15 @@ function normalizeAIFollowUpQuestion(question: unknown, index = 0, fallbackQuest
   const id = typeof q.id === 'string' && q.id.trim() ? q.id.trim() : `question-${index + 1}`
   const text = typeof q.text === 'string' && q.text.trim()
     ? q.text.trim()
-    : index === 0 && typeof fallbackQuestion === 'string' && fallbackQuestion.trim()
+    : (index === 0 && typeof fallbackQuestion === 'string' && fallbackQuestion.trim()
       ? fallbackQuestion.trim()
-      : `Question ${index + 1}`
+      : `Question ${index + 1}`)
   const rawType = String(q.type || '').trim().toLowerCase()
   const type = rawType === 'multiple' || rawType === 'multi_select'
     ? 'multiple'
-    : rawType === 'free_text' || rawType === 'text'
+    : (rawType === 'free_text' || rawType === 'text'
       ? 'free_text'
-      : 'single'
+      : 'single')
   const options = Array.isArray(q.options)
     ? q.options
       .map((item, optionIndex) => normalizeAIFollowUpOption(item, optionIndex, id))
@@ -257,9 +257,9 @@ export function normalizeAIConversationTaskSettings(settings: unknown): AIConver
   const rawExecuteApprovalMode = typeof s.executeApprovalMode === 'string' ? s.executeApprovalMode.trim() : ''
   const executeApprovalMode: AIExecuteApprovalMode = rawExecuteApprovalMode === 'read_only'
     ? 'read_only'
-    : rawExecuteApprovalMode === 'all'
+    : (rawExecuteApprovalMode === 'all'
       ? 'all'
-      : 'basic'
+      : 'basic')
 
   return {
     currentProviderId: typeof s.currentProviderId === 'string' ? s.currentProviderId.trim() : '',
