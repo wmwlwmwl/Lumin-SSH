@@ -9,13 +9,13 @@ import (
 )
 
 type PromptServerTool struct {
-	ServerName        string
-	ServerSource      ServerSource
-	ToolName          string
-	Description       string
-	InputSchema       map[string]any
-	AlwaysAllow       bool
-	EnabledForPrompt  bool
+	ServerName       string
+	ServerSource     ServerSource
+	ToolName         string
+	Description      string
+	InputSchema      map[string]any
+	AlwaysAllow      bool
+	EnabledForPrompt bool
 }
 
 type CallToolResult struct {
@@ -42,12 +42,14 @@ type serverConnection struct {
 }
 
 type ClientHub struct {
-	configDir    string
-	globalStore  *ConfigStore
-	mu           sync.RWMutex
-	connections  map[string]*serverConnection
-	embedded     StoredServerSettings
-	global       StoredServerSettings
+	configDir   string
+	globalStore *ConfigStore
+	mu          sync.RWMutex
+	// configMu 串行化配置的读-改-写事务，防止并发更新互相覆盖（CodeRabbit 审查意见）。
+	configMu    sync.Mutex
+	connections map[string]*serverConnection
+	embedded    StoredServerSettings
+	global      StoredServerSettings
 }
 
 var defaultHub struct {
@@ -413,6 +415,8 @@ func (h *ClientHub) SaveGlobalServer(name string, config ServerConfig) error {
 	if h == nil {
 		return nil
 	}
+	h.configMu.Lock()
+	defer h.configMu.Unlock()
 	normalizedName := strings.TrimSpace(name)
 	if normalizedName == "" {
 		return fmt.Errorf("server name is required")
@@ -434,6 +438,8 @@ func (h *ClientHub) DeleteServer(name string, source ServerSource) error {
 	if source != ServerSourceGlobal {
 		return nil
 	}
+	h.configMu.Lock()
+	defer h.configMu.Unlock()
 	if err := h.globalStore.Delete(strings.TrimSpace(name)); err != nil {
 		return err
 	}
@@ -481,6 +487,8 @@ func (h *ClientHub) UpdateServerToolDisabledForPrompts(name string, source Serve
 	if h == nil {
 		return ServerRuntime{}, nil
 	}
+	h.configMu.Lock()
+	defer h.configMu.Unlock()
 	connection := h.findConnection(name, source)
 	if connection == nil {
 		return ServerRuntime{}, fmt.Errorf("server not found")
@@ -496,7 +504,8 @@ func (h *ClientHub) UpdateServerToolDisabledForPrompts(name string, source Serve
 		return ServerRuntime{}, err
 	}
 	var effectiveDisabledTools []string
-	if source == ServerSourceGlobal {
+	switch source {
+	case ServerSourceGlobal:
 		serverConfig, exists := settings.McpServers[trimmedName]
 		if !exists {
 			return ServerRuntime{}, fmt.Errorf("server not found")
@@ -504,7 +513,7 @@ func (h *ClientHub) UpdateServerToolDisabledForPrompts(name string, source Serve
 		serverConfig.DisabledTools = updatePromptDisabledTools(serverConfig.DisabledTools, trimmedToolName, disabledForPrompts)
 		settings.McpServers[trimmedName] = serverConfig
 		effectiveDisabledTools = serverConfig.DisabledTools
-	} else if source == ServerSourceEmbedded {
+	case ServerSourceEmbedded:
 		if settings.PromptDisabledTools == nil {
 			settings.PromptDisabledTools = map[string][]string{}
 		}
@@ -516,7 +525,7 @@ func (h *ClientHub) UpdateServerToolDisabledForPrompts(name string, source Serve
 		}
 		embeddedConfig := h.embedded.McpServers[trimmedName]
 		effectiveDisabledTools = normalizeUniqueStrings(append(append([]string{}, embeddedConfig.DisabledTools...), nextDisabledTools...))
-	} else {
+	default:
 		return connection.runtime, nil
 	}
 	if err := h.globalStore.Save(settings); err != nil {
@@ -556,7 +565,7 @@ func withPromptDisabledTools(config ServerConfig, disabledTools []string) Server
 }
 
 func updatePromptDisabledTools(disabledTools []string, toolName string, disabled bool) []string {
-	nextDisabledTools := make([]string, 0, len(disabledTools)+1)
+	nextDisabledTools := make([]string, 0, len(disabledTools))
 	found := false
 	for _, disabledToolName := range disabledTools {
 		if strings.TrimSpace(disabledToolName) == toolName {
@@ -591,6 +600,8 @@ func (h *ClientHub) snapshotServerRuntime(name string, source ServerSource) Serv
 // 不关闭 transport、不触发 Reload。仅用于不影响进程生命周期的字段（DisabledForPrompts、Timeout）。
 // 直接改写磁盘 settings.McpServers 而不走 Upsert，避免 ensureServerOrderContains 把该服务器重排到末尾。
 func (h *ClientHub) saveGlobalServerConfigWithoutReconnect(name string, config ServerConfig) (ServerRuntime, error) {
+	h.configMu.Lock()
+	defer h.configMu.Unlock()
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
 		return ServerRuntime{}, fmt.Errorf("server name is required")
@@ -774,4 +785,3 @@ func (h *ClientHub) GlobalStore() *ConfigStore {
 	}
 	return h.globalStore
 }
-
