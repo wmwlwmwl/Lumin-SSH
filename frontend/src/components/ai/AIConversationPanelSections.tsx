@@ -210,6 +210,7 @@ export interface AISettingsOverlaySectionDeps {
   handleRestartMCPClientServer: (name: string, source: string) => Promise<void>
   handleToggleMCPClientServer: (name: string, source: string, disabled: boolean) => Promise<void>
   handleToggleMCPClientServerDisabledForPrompts: (name: string, source: string, disabledForPrompts: boolean) => Promise<void>
+  handleToggleMCPClientServerToolDisabledForPrompts: (name: string, source: string, toolName: string, disabledForPrompts: boolean) => Promise<void>
   handleUpdateMCPClientServerTimeout: (name: string, source: string, timeout: number) => Promise<void>
   setTasksDirMigrating: React.Dispatch<React.SetStateAction<boolean>>
 }
@@ -243,6 +244,7 @@ export function renderAISettingsOverlaySection({
   handleRestartMCPClientServer,
   handleToggleMCPClientServer,
   handleToggleMCPClientServerDisabledForPrompts,
+  handleToggleMCPClientServerToolDisabledForPrompts,
   handleUpdateMCPClientServerTimeout,
   setTasksDirMigrating,
 }: AISettingsOverlaySectionDeps) {
@@ -284,6 +286,7 @@ export function renderAISettingsOverlaySection({
         onRestartMCPClientServer={handleRestartMCPClientServer}
         onToggleMCPClientServer={handleToggleMCPClientServer}
         onToggleMCPClientServerDisabledForPrompts={handleToggleMCPClientServerDisabledForPrompts}
+        onToggleMCPClientServerToolDisabledForPrompts={handleToggleMCPClientServerToolDisabledForPrompts}
         onUpdateMCPClientServerTimeout={handleUpdateMCPClientServerTimeout}
         onMigratingChange={setTasksDirMigrating}
       />

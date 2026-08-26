@@ -43,7 +43,7 @@ func (a *App) SaveMCPGlobalServer(name string, configText string) error {
 	if err := hub.GlobalStore().SaveRawText(configText); err != nil {
 		return err
 	}
-	return hub.ReloadGlobalOnly()
+	return hub.Reload()
 }
 func (a *App) DeleteMCPGlobalServer(name string) error {
 	if a == nil || a.configManager == nil {
@@ -65,33 +65,43 @@ func (a *App) RestartMCPClientServer(name string, source string) error {
 	}
 	return hub.RestartServer(name, mcp.ServerSource(strings.TrimSpace(source)))
 }
-func (a *App) ToggleMCPClientServer(name string, source string, disabled bool) error {
+func (a *App) ToggleMCPClientServer(name string, source string, disabled bool) (mcp.ServerRuntime, error) {
 	if a == nil || a.configManager == nil {
-		return nil
+		return mcp.ServerRuntime{}, nil
 	}
 	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
-		return fmt.Errorf("mcp client hub unavailable")
+		return mcp.ServerRuntime{}, fmt.Errorf("mcp client hub unavailable")
 	}
 	return hub.UpdateServerDisabled(name, mcp.ServerSource(strings.TrimSpace(source)), disabled)
 }
-func (a *App) ToggleMCPClientServerDisabledForPrompts(name string, source string, disabledForPrompts bool) error {
+func (a *App) ToggleMCPClientServerDisabledForPrompts(name string, source string, disabledForPrompts bool) (mcp.ServerRuntime, error) {
 	if a == nil || a.configManager == nil {
-		return nil
+		return mcp.ServerRuntime{}, nil
 	}
 	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
-		return fmt.Errorf("mcp client hub unavailable")
+		return mcp.ServerRuntime{}, fmt.Errorf("mcp client hub unavailable")
 	}
 	return hub.UpdateServerDisabledForPrompts(name, mcp.ServerSource(strings.TrimSpace(source)), disabledForPrompts)
 }
-func (a *App) UpdateMCPClientServerTimeout(name string, source string, timeout int) error {
+func (a *App) ToggleMCPClientServerToolDisabledForPrompts(name string, source string, toolName string, disabledForPrompts bool) (mcp.ServerRuntime, error) {
 	if a == nil || a.configManager == nil {
-		return nil
+		return mcp.ServerRuntime{}, nil
 	}
 	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
 	if hub == nil {
-		return fmt.Errorf("mcp client hub unavailable")
+		return mcp.ServerRuntime{}, fmt.Errorf("mcp client hub unavailable")
+	}
+	return hub.UpdateServerToolDisabledForPrompts(name, mcp.ServerSource(strings.TrimSpace(source)), toolName, disabledForPrompts)
+}
+func (a *App) UpdateMCPClientServerTimeout(name string, source string, timeout int) (mcp.ServerRuntime, error) {
+	if a == nil || a.configManager == nil {
+		return mcp.ServerRuntime{}, nil
+	}
+	hub := mcp.InitializeClientHub(a.configManager.GetConfigDir())
+	if hub == nil {
+		return mcp.ServerRuntime{}, fmt.Errorf("mcp client hub unavailable")
 	}
 	return hub.UpdateServerTimeout(name, mcp.ServerSource(strings.TrimSpace(source)), timeout)
 }
@@ -104,7 +114,7 @@ func (a *App) ReloadMCPGlobalServers() error {
 	if hub == nil {
 		return fmt.Errorf("mcp client hub unavailable")
 	}
-	return hub.ReloadGlobalOnly()
+	return hub.Reload()
 }
 
 func (a *App) GetMCPOutputCompressionSettings() map[string]int {

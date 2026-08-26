@@ -11,7 +11,7 @@ interface MCPServerTool {
 }
 
 /** MCP 服务器运行时状态（normalizeServerRuntime 输出） */
-interface MCPServerRuntime {
+export interface MCPServerRuntime {
   name: string
   config: string
   status: string
@@ -119,14 +119,22 @@ export async function restartMCPClientServer(name: string, source: string): Prom
   await AppGo.RestartMCPClientServer(name, source)
 }
 
-export async function toggleMCPClientServer(name: string, source: string, disabled: boolean): Promise<void> {
-  await AppGo.ToggleMCPClientServer(name, source, disabled)
+export async function toggleMCPClientServer(name: string, source: string, disabled: boolean): Promise<MCPServerRuntime> {
+  const runtime = await AppGo.ToggleMCPClientServer(name, source, disabled)
+  return normalizeServerRuntime(runtime)
 }
 
-export async function toggleMCPClientServerDisabledForPrompts(name: string, source: string, disabledForPrompts: boolean): Promise<void> {
-  await AppGo.ToggleMCPClientServerDisabledForPrompts(name, source, disabledForPrompts)
+export async function toggleMCPClientServerDisabledForPrompts(name: string, source: string, disabledForPrompts: boolean): Promise<MCPServerRuntime> {
+  const runtime = await AppGo.ToggleMCPClientServerDisabledForPrompts(name, source, disabledForPrompts)
+  return normalizeServerRuntime(runtime)
 }
 
-export async function updateMCPClientServerTimeout(name: string, source: string, timeout: number): Promise<void> {
-  await AppGo.UpdateMCPClientServerTimeout(name, source, timeout)
+export async function toggleMCPClientServerToolDisabledForPrompts(name: string, source: string, toolName: string, disabledForPrompts: boolean): Promise<MCPServerRuntime> {
+  const runtime = await AppGo.ToggleMCPClientServerToolDisabledForPrompts(name, source, toolName, disabledForPrompts)
+  return normalizeServerRuntime(runtime)
+}
+
+export async function updateMCPClientServerTimeout(name: string, source: string, timeout: number): Promise<MCPServerRuntime> {
+  const runtime = await AppGo.UpdateMCPClientServerTimeout(name, source, timeout)
+  return normalizeServerRuntime(runtime)
 }

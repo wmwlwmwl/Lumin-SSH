@@ -142,11 +142,7 @@ func (t *stdioTransport) Request(ctx context.Context, method string, params map[
 	if err != nil {
 		return err
 	}
-	frame := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(data))
-	if _, err := io.WriteString(t.stdin, frame); err != nil {
-		return err
-	}
-	if _, err := t.stdin.Write(data); err != nil {
+	if _, err := t.stdin.Write(append(data, '\n')); err != nil {
 		return err
 	}
 	if strings.HasPrefix(method, "notifications/") {
@@ -193,7 +189,7 @@ func (t *stdioTransport) waitLoop() {
 func (t *stdioTransport) readLoop() {
 	reader := bufio.NewReader(t.stdout)
 	for {
-		body, err := readContentLengthFrame(reader)
+		body, err := readJSONLine(reader)
 		if err != nil {
 			if t.closed.Load() {
 				t.closePending(fmt.Errorf("stdio transport closed"))
@@ -257,34 +253,17 @@ func (t *stdioTransport) log(message string) {
 	}
 }
 
-func readContentLengthFrame(reader *bufio.Reader) ([]byte, error) {
-	contentLength := 0
+func readJSONLine(reader *bufio.Reader) ([]byte, error) {
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			return nil, err
 		}
-		trimmed := strings.TrimRight(line, "\r\n")
-		if trimmed == "" {
-			break
-		}
-		if strings.HasPrefix(strings.ToLower(trimmed), "content-length:") {
-			value := strings.TrimSpace(trimmed[len("content-length:"):])
-			parsedLength, err := strconv.Atoi(value)
-			if err != nil {
-				return nil, err
-			}
-			contentLength = parsedLength
+		body := bytes.TrimSpace(line)
+		if len(body) > 0 {
+			return body, nil
 		}
 	}
-	if contentLength <= 0 {
-		return nil, fmt.Errorf("missing content-length")
-	}
-	body := make([]byte, contentLength)
-	if _, err := io.ReadFull(reader, body); err != nil {
-		return nil, err
-	}
-	return body, nil
 }
 
 func parseResponseID(raw json.RawMessage) string {

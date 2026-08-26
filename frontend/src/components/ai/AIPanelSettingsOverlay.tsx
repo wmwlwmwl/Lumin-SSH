@@ -63,6 +63,7 @@ export interface AIPanelSettingsOverlayProps {
   onRestartMCPClientServer?: (name: string, source: string) => Promise<unknown>;
   onToggleMCPClientServer?: (name: string, source: string, enabled: boolean) => Promise<unknown>;
   onToggleMCPClientServerDisabledForPrompts?: (name: string, source: string, disabled: boolean) => Promise<unknown>;
+  onToggleMCPClientServerToolDisabledForPrompts?: (name: string, source: string, toolName: string, disabled: boolean) => Promise<unknown>;
   onUpdateMCPClientServerTimeout?: (name: string, source: string, timeout: number) => Promise<unknown>;
   onMigratingChange?: (migrating: boolean) => void;
 }
@@ -102,6 +103,7 @@ export default function AIPanelSettingsOverlay({
   onRestartMCPClientServer,
   onToggleMCPClientServer,
   onToggleMCPClientServerDisabledForPrompts,
+  onToggleMCPClientServerToolDisabledForPrompts,
   onUpdateMCPClientServerTimeout,
   onMigratingChange,
 }: AIPanelSettingsOverlayProps) {
@@ -340,6 +342,7 @@ export default function AIPanelSettingsOverlay({
                 onRestartServer={onRestartMCPClientServer}
                 onToggleServer={onToggleMCPClientServer}
                 onToggleServerDisabledForPrompts={onToggleMCPClientServerDisabledForPrompts}
+                onToggleToolDisabledForPrompts={onToggleMCPClientServerToolDisabledForPrompts}
                 onUpdateServerTimeout={onUpdateMCPClientServerTimeout}
               />
             ) : null}

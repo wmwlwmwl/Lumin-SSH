@@ -12,8 +12,9 @@ import (
 const defaultStoredServerSettingsJSON = "{\n  \"mcpServers\": {}\n}\n"
 
 type StoredServerSettings struct {
-	McpServers  map[string]ServerConfig `json:"mcpServers"`
-	ServerOrder []string                `json:"serverOrder,omitempty"`
+	McpServers          map[string]ServerConfig `json:"mcpServers"`
+	ServerOrder         []string                `json:"serverOrder,omitempty"`
+	PromptDisabledTools map[string][]string     `json:"promptDisabledTools,omitempty"`
 }
 
 type ConfigStore struct {
@@ -22,8 +23,9 @@ type ConfigStore struct {
 }
 
 type storedServerSettingsEnvelope struct {
-	McpServers  map[string]json.RawMessage `json:"mcpServers"`
-	ServerOrder []string                   `json:"serverOrder,omitempty"`
+	McpServers          map[string]json.RawMessage `json:"mcpServers"`
+	ServerOrder         []string                   `json:"serverOrder,omitempty"`
+	PromptDisabledTools map[string][]string        `json:"promptDisabledTools,omitempty"`
 }
 
 func NewConfigStore(configDir string) *ConfigStore {
@@ -66,8 +68,9 @@ func ParseStoredServerSettingsText(raw string) (StoredServerSettings, error) {
 	}
 
 	normalized := StoredServerSettings{
-		McpServers:  map[string]ServerConfig{},
-		ServerOrder: envelope.ServerOrder,
+		McpServers:          map[string]ServerConfig{},
+		ServerOrder:         envelope.ServerOrder,
+		PromptDisabledTools: envelope.PromptDisabledTools,
 	}
 
 	for name, rawConfig := range envelope.McpServers {
@@ -187,8 +190,9 @@ func (s *ConfigStore) Delete(name string) error {
 
 func NormalizeStoredServerSettings(settings StoredServerSettings) StoredServerSettings {
 	next := StoredServerSettings{
-		McpServers:  map[string]ServerConfig{},
-		ServerOrder: nil,
+		McpServers:          map[string]ServerConfig{},
+		ServerOrder:         nil,
+		PromptDisabledTools: map[string][]string{},
 	}
 	for name, config := range settings.McpServers {
 		trimmedName := strings.TrimSpace(name)
@@ -200,6 +204,14 @@ func NormalizeStoredServerSettings(settings StoredServerSettings) StoredServerSe
 			continue
 		}
 		next.McpServers[trimmedName] = normalizedConfig
+	}
+	for key, toolNames := range settings.PromptDisabledTools {
+		trimmedKey := strings.TrimSpace(key)
+		normalizedToolNames := normalizeUniqueStrings(toolNames)
+		if trimmedKey == "" || len(normalizedToolNames) == 0 {
+			continue
+		}
+		next.PromptDisabledTools[trimmedKey] = normalizedToolNames
 	}
 	orderSeen := map[string]struct{}{}
 	for _, name := range settings.ServerOrder {

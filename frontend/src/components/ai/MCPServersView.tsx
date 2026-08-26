@@ -51,6 +51,7 @@ interface MCPServersViewProps {
   onRestartServer?: (name: string, source: string) => Promise<unknown>
   onToggleServer?: (name: string, source: string, enabled: boolean) => Promise<unknown>
   onToggleServerDisabledForPrompts?: (name: string, source: string, disabled: boolean) => Promise<unknown>
+  onToggleToolDisabledForPrompts?: (name: string, source: string, toolName: string, disabled: boolean) => Promise<unknown>
   onUpdateServerTimeout?: (name: string, source: string, timeout: number) => Promise<unknown>
 }
 
@@ -64,6 +65,7 @@ export default function MCPServersView({
   onRestartServer,
   onToggleServer,
   onToggleServerDisabledForPrompts,
+  onToggleToolDisabledForPrompts,
   onUpdateServerTimeout,
 }: MCPServersViewProps) {
   const { t } = useTranslation()
@@ -171,6 +173,7 @@ export default function MCPServersView({
         ) : sortedServers.map((server) => {
           const isEmbedded = server.source === 'embedded'
           const canManage = server.source === 'global'
+          const canManageToolPrompts = server.source === 'global' || server.source === 'embedded'
           const timeoutValue = Number.isFinite(Number(server.timeout)) ? Number(server.timeout) : 0
           return (
             <div key={`${server.source}-${server.name}`} className="p-3.5 rounded-xl border border-line bg-canvas grid gap-3">
@@ -269,6 +272,15 @@ export default function MCPServersView({
                               <span className="px-2 py-0.5 rounded-full border border-[rgba(var(--warning-rgb),0.28)] bg-[rgba(var(--warning-rgb),0.08)] text-warning text-xs font-bold">
                                 {t('不进提示词')}
                               </span>
+                            ) : null}
+                            {canManageToolPrompts ? (
+                              <div className="ml-auto flex items-center">
+                                <Tiptop text={tool.enabledForPrompt !== false ? t('允许进入提示词上下文') : t('已从提示词上下文隐藏')}>
+                                  <span>
+                                    <ToggleSwitch checked={tool.enabledForPrompt !== false} onChange={() => void onToggleToolDisabledForPrompts?.(server.name, server.source, tool.name, tool.enabledForPrompt !== false)} />
+                                  </span>
+                                </Tiptop>
+                              </div>
                             ) : null}
                           </div>
                           <div className="text-sm text-secondary leading-[1.65] max-h-[120px] overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words pr-1">

@@ -3,7 +3,7 @@ import type * as React from 'react'
 import * as AppGo from '../../../wailsjs/go/wailsapp/App.js'
 import { t as translate, type I18nKey } from '../../i18n.ts'
 import { getAIGlobalSettings, saveAIGlobalSettings, normalizeAIGlobalSettings, type AIGlobalSettings } from './aiGlobalSettingsBridge.ts'
-import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, updateMCPClientServerTimeout } from './mcpClientBridge.ts'
+import { getMCPSettingsState, saveMCPGlobalServer, reloadMCPGlobalServers, deleteMCPGlobalServer, restartMCPClientServer, toggleMCPClientServer, toggleMCPClientServerDisabledForPrompts, toggleMCPClientServerToolDisabledForPrompts, updateMCPClientServerTimeout, type MCPServerRuntime } from './mcpClientBridge.ts'
 import { clearThemeToolPreviewPackage, setThemeToolPreviewPackage } from '../../utils/theme.ts'
 import type { AIConversationSnapshot, McpInfoState } from './aiChatLogic.ts'
 
@@ -69,6 +69,18 @@ export function useAIPanelSettingsState({ t, isWorkspaceTabActive, panelMountedR
       return null
     }
   }, [applyMCPSettingsState])
+  // 差异更新：只替换列表中被操作的那一台服务器，避免整表全量 refetch 与重渲染。
+  const patchMCPClientServer = useCallback((updated: MCPServerRuntime | null | undefined) => {
+    if (!panelMountedRef.current || !updated || !updated.name) {
+      return
+    }
+    setMCPClientServers((previous) => Array.isArray(previous)
+      ? previous.map((item) => {
+          const server = item as MCPServerRuntime
+          return server && server.name === updated.name && server.source === updated.source ? updated : item
+        })
+      : previous)
+  }, [])
   const refreshMCPOutputCompressionSettings = useCallback(async () => {
     try {
       const settings = await AppGo.GetMCPOutputCompressionSettings()
@@ -208,17 +220,21 @@ export function useAIPanelSettingsState({ t, isWorkspaceTabActive, panelMountedR
     await refreshMCPServerInfo()
   }, [refreshMCPServerInfo])
   const handleToggleMCPClientServer = useCallback(async (name: string, source: string, disabled: boolean) => {
-    await toggleMCPClientServer(name, source, disabled)
-    await refreshMCPServerInfo()
-  }, [refreshMCPServerInfo])
+    const runtime = await toggleMCPClientServer(name, source, disabled)
+    patchMCPClientServer(runtime)
+  }, [patchMCPClientServer])
   const handleToggleMCPClientServerDisabledForPrompts = useCallback(async (name: string, source: string, disabledForPrompts: boolean) => {
-    await toggleMCPClientServerDisabledForPrompts(name, source, disabledForPrompts)
-    await refreshMCPServerInfo()
-  }, [refreshMCPServerInfo])
+    const runtime = await toggleMCPClientServerDisabledForPrompts(name, source, disabledForPrompts)
+    patchMCPClientServer(runtime)
+  }, [patchMCPClientServer])
+  const handleToggleMCPClientServerToolDisabledForPrompts = useCallback(async (name: string, source: string, toolName: string, disabledForPrompts: boolean) => {
+    const runtime = await toggleMCPClientServerToolDisabledForPrompts(name, source, toolName, disabledForPrompts)
+    patchMCPClientServer(runtime)
+  }, [patchMCPClientServer])
   const handleUpdateMCPClientServerTimeout = useCallback(async (name: string, source: string, timeout: number) => {
-    await updateMCPClientServerTimeout(name, source, timeout)
-    await refreshMCPServerInfo()
-  }, [refreshMCPServerInfo])
+    const runtime = await updateMCPClientServerTimeout(name, source, timeout)
+    patchMCPClientServer(runtime)
+  }, [patchMCPClientServer])
 
   const saveMCPOutputCompressionSettings = useCallback(async (lineLimit: number, characterLimit: number) => {
     const nextLineLimit = Math.max(10, Math.min(5000, lineLimit || 0))
@@ -310,6 +326,7 @@ export function useAIPanelSettingsState({ t, isWorkspaceTabActive, panelMountedR
     handleRestartMCPClientServer,
     handleToggleMCPClientServer,
     handleToggleMCPClientServerDisabledForPrompts,
+    handleToggleMCPClientServerToolDisabledForPrompts,
     handleUpdateMCPClientServerTimeout,
     saveMCPOutputCompressionSettings,
     handleToggleAiTerminalIsolation,
