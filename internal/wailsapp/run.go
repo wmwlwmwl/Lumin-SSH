@@ -60,6 +60,7 @@ var systrayOnce sync.Once
 
 func setupSystray(app *App) {
 	systrayOnce.Do(func() {
+		log.Println("[Systray] setupSystray initializing...")
 		systray.SetIcon(app.icon)
 		systray.SetTitle("Lumin")
 		systray.SetTooltip("Lumin SSH")
@@ -68,6 +69,7 @@ func setupSystray(app *App) {
 		mQuit := systray.AddMenuItem("完全退出", "Quit Lumin")
 
 		showMain := func() {
+			log.Println("[Systray] showMain invoked, awakening main window")
 			forceShowWindow(app.ctx)
 		}
 
@@ -77,26 +79,39 @@ func setupSystray(app *App) {
 			// 不调 SetOnClick/SetOnRClick：enableOnClick 会覆盖菜单行为，
 			// 且库注释明确 ShowMenu() 在 macOS 只支持 OnRClick 回调内调用。
 			systray.CreateMenu()
+			log.Println("[Systray] macOS CreateMenu configured")
 		} else {
 			// Windows/Linux: 左键直接显示窗口
 			systray.SetOnClick(func(menu systray.IMenu) {
+				log.Println("[Systray] Left click received, showing main window")
 				showMain()
 			})
 			// 右键弹菜单；Windows 久置后 TrackPopupMenu 常因前台锁不弹出，
 			// 先解锁再 ShowMenu。
 			systray.SetOnRClick(func(menu systray.IMenu) {
+				log.Println("[Systray] Right click received, preparing tray menu")
 				platformruntime.PrepareTrayMenu()
-				menu.ShowMenu()
+				if err := menu.ShowMenu(); err != nil {
+					log.Printf("[Systray] ShowMenu returned: %v", err)
+				} else {
+					log.Println("[Systray] ShowMenu completed successfully")
+				}
+				platformruntime.AfterTrayMenu()
 			})
+			log.Println("[Systray] Windows/Linux SetOnClick and SetOnRClick configured")
 		}
 
 		mShow.Click(func() {
+			log.Println("[Systray] Menu item 'Show Main Window' clicked")
 			showMain()
 		})
 
 		mQuit.Click(func() {
+			log.Println("[Systray] Menu item 'Quit Lumin' clicked")
 			app.DoQuit()
 		})
+
+		log.Println("[Systray] setupSystray completed successfully")
 	})
 }
 

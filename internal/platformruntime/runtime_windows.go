@@ -3,6 +3,7 @@
 package platformruntime
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +26,7 @@ var (
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procShowWindow               = user32.NewProc("ShowWindow")
 	procShowWindowAsync          = user32.NewProc("ShowWindowAsync")
+	procPostMessage              = user32.NewProc("PostMessageW")
 	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	procBringWindowToTop         = user32.NewProc("BringWindowToTop")
 	procSetFocus                 = user32.NewProc("SetFocus")
@@ -108,25 +110,63 @@ type trayNotifyIconData struct {
 	BalloonIcon     uintptr
 }
 
-// findSystrayHWND 找本进程 energye 托盘隐藏窗（class=SystrayClass）
-func findSystrayHWND(matchPID uint32) syscall.Handle {
-	var found syscall.Handle
-	callback := syscall.NewCallback(func(hwnd syscall.Handle, lParam uintptr) uintptr {
-		if windowClass(hwnd) != systrayClass {
+var (
+	cachedSystrayHWND     syscall.Handle
+	cachedSystrayHWNDLock sync.Mutex
+)
+
+// systraySearchCtx 携带 SystrayClass 窗口搜索状态，经 EnumWindows 的 lParam 传入回调。
+type systraySearchCtx struct {
+	matchPID uint32
+	found    syscall.Handle
+}
+
+// systrayEnumCallback 必须是包级唯一实例：syscall.NewCallback 在 Windows 上有
+// 进程级数量上限（约 2000），在函数体内每次调用都新建，长期运行会触发
+// "too many callbacks" panic。回调无闭包状态，搜索数据经 lParam 传递。
+var systrayEnumCallback = syscall.NewCallback(func(hwnd syscall.Handle, lParam uintptr) uintptr {
+	// uintptr 不能直接还原 unsafe.Pointer（go vet 禁止）；经 lParam 自身地址
+	// 间接转译。EnumWindows 同步执行，ctx 在调用方栈上存活，生命周期安全。
+	ctx := (*systraySearchCtx)(*(*unsafe.Pointer)(unsafe.Pointer(&lParam)))
+	if windowClass(hwnd) != systrayClass {
+		return 1
+	}
+	if ctx.matchPID != 0 {
+		var pid uint32
+		procGetWindowThreadProcessId.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
+		if pid != ctx.matchPID {
 			return 1
 		}
-		if matchPID != 0 {
+	}
+	ctx.found = hwnd
+	return 0
+})
+
+// findSystrayHWND 找本进程 energye 托盘隐藏窗（class=SystrayClass）
+func findSystrayHWND(matchPID uint32) syscall.Handle {
+	cachedSystrayHWNDLock.Lock()
+	defer cachedSystrayHWNDLock.Unlock()
+
+	// 优先检查缓存的句柄。句柄销毁后数值可能被系统复用（可能落到本进程的
+	// 其它窗口上），仅校验 PID 不够，必须 PID + 窗口类双重校验；
+	// 任一不符说明缓存已失效，清掉回退全量枚举。
+	if matchPID == 0 || matchPID == uint32(os.Getpid()) {
+		if cachedSystrayHWND != 0 {
 			var pid uint32
-			procGetWindowThreadProcessId.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
-			if pid != matchPID {
-				return 1
+			procGetWindowThreadProcessId.Call(uintptr(cachedSystrayHWND), uintptr(unsafe.Pointer(&pid)))
+			if pid == uint32(os.Getpid()) && windowClass(cachedSystrayHWND) == systrayClass {
+				return cachedSystrayHWND
 			}
+			cachedSystrayHWND = 0
 		}
-		found = hwnd
-		return 0
-	})
-	procEnumWindows.Call(callback, 0)
-	return found
+	}
+
+	ctx := systraySearchCtx{matchPID: matchPID}
+	procEnumWindows.Call(systrayEnumCallback, uintptr(unsafe.Pointer(&ctx)))
+	if (matchPID == 0 || matchPID == uint32(os.Getpid())) && ctx.found != 0 {
+		cachedSystrayHWND = ctx.found
+	}
+	return ctx.found
 }
 
 // removeTrayIconSync 退出前同步删托盘图标。
@@ -272,47 +312,63 @@ func activateHWND(hwnd syscall.Handle) {
 	}
 }
 
+// mainWindowSearchCtx 携带主窗候选搜索状态，经 EnumWindows 的 lParam 传入回调。
+type mainWindowSearchCtx struct {
+	matchPID uint32
+	seen     map[syscall.Handle]struct{}
+	found    []syscall.Handle
+}
+
+// mainWindowEnumCallback 与 systrayEnumCallback 同理必须是包级唯一实例：
+// 每次托盘左键/菜单唤起窗口都会走到这里（forceShowWindow 每次触发两次
+// ForceShowWindow），函数内每次新建 syscall.NewCallback 会在约千次唤起后
+// 耗尽进程级上限（约 2000）并 panic。
+var mainWindowEnumCallback = syscall.NewCallback(func(hwnd syscall.Handle, lParam uintptr) uintptr {
+	ctx := (*mainWindowSearchCtx)(*(*unsafe.Pointer)(unsafe.Pointer(&lParam)))
+	if !isTopLevelWindow(hwnd) {
+		return 1
+	}
+	class := windowClass(hwnd)
+	if class == systrayClass {
+		return 1
+	}
+	if ctx.matchPID != 0 {
+		var pid uint32
+		procGetWindowThreadProcessId.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
+		if pid != ctx.matchPID {
+			return 1
+		}
+	}
+	// 当前进程已按 Wails 窗口类识别，无需读取标题；GetWindowTextW
+	// 可能向卡死的目标窗口线程同步取值，反而阻塞托盘消息线程。
+	hit := false
+	if ctx.matchPID != 0 {
+		hit = class == wailsFormClass
+	} else {
+		// 跨进程二次启动：只认标题，避免误激活其他 Wails 应用。
+		hit = windowText(hwnd) == mainWindowTitle
+	}
+	if !hit {
+		return 1
+	}
+	if _, ok := ctx.seen[hwnd]; ok {
+		return 1
+	}
+	ctx.seen[hwnd] = struct{}{}
+	ctx.found = append(ctx.found, hwnd)
+	return 1
+})
+
 // findMainWindowCandidates 枚举本进程/跨进程可能的 Lumin 主窗。
 // 久置+多次点击时任务栏可能出现多个条目，唤醒时优先可见/未最小化的 winc_Form。
 func findMainWindowCandidates(matchPID uint32) []syscall.Handle {
-	found := make([]syscall.Handle, 0, 4)
-	seen := map[syscall.Handle]struct{}{}
-	callback := syscall.NewCallback(func(hwnd syscall.Handle, lParam uintptr) uintptr {
-		if !isTopLevelWindow(hwnd) {
-			return 1
-		}
-		class := windowClass(hwnd)
-		if class == systrayClass {
-			return 1
-		}
-		if matchPID != 0 {
-			var pid uint32
-			procGetWindowThreadProcessId.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&pid)))
-			if pid != matchPID {
-				return 1
-			}
-		}
-		// 当前进程已按 Wails 窗口类识别，无需读取标题；GetWindowTextW
-		// 可能向卡死的目标窗口线程同步取值，反而阻塞托盘消息线程。
-		hit := false
-		if matchPID != 0 {
-			hit = class == wailsFormClass
-		} else {
-			// 跨进程二次启动：只认标题，避免误激活其他 Wails 应用。
-			hit = windowText(hwnd) == mainWindowTitle
-		}
-		if !hit {
-			return 1
-		}
-		if _, ok := seen[hwnd]; ok {
-			return 1
-		}
-		seen[hwnd] = struct{}{}
-		found = append(found, hwnd)
-		return 1
-	})
-	procEnumWindows.Call(callback, 0)
-	return found
+	ctx := mainWindowSearchCtx{
+		matchPID: matchPID,
+		seen:     map[syscall.Handle]struct{}{},
+		found:    make([]syscall.Handle, 0, 4),
+	}
+	procEnumWindows.Call(mainWindowEnumCallback, uintptr(unsafe.Pointer(&ctx)))
+	return ctx.found
 }
 
 type windowCandidate struct {
@@ -369,7 +425,7 @@ func findAndShowWindow() {
 	}
 }
 
-// platformPrepareTrayMenu 托盘右键菜单弹出前调用。
+// PrepareTrayMenu 托盘右键菜单弹出前调用。
 // energye ShowMenu 内部会对托盘隐藏窗 SetForegroundWindow 再 TrackPopupMenu；
 // 久置后前台被拒时菜单直接不显示。这里先解锁前台并激活托盘窗。
 func PrepareTrayMenu() {
@@ -378,10 +434,24 @@ func PrepareTrayMenu() {
 	pid, _, _ := procGetCurrentProcessId.Call()
 	hwnd := findSystrayHWND(uint32(pid))
 	if hwnd == 0 {
+		log.Printf("[Systray] PrepareTrayMenu: SystrayClass HWND not found for PID %d", pid)
 		return
 	}
-	procSetForegroundWindow.Call(uintptr(hwnd))
-	procBringWindowToTop.Call(uintptr(hwnd))
+	fgRes, _, fgErr := procSetForegroundWindow.Call(uintptr(hwnd))
+	topRes, _, topErr := procBringWindowToTop.Call(uintptr(hwnd))
+	log.Printf("[Systray] PrepareTrayMenu: hwnd=0x%x, SetForegroundWindow=%v (err=%v), BringWindowToTop=%v (err=%v)",
+		hwnd, fgRes != 0, fgErr, topRes != 0, topErr)
+}
+
+// AfterTrayMenu 托盘右键菜单关闭后调用（发送 WM_NULL 确保 Windows Shell 清理菜单状态）。
+func AfterTrayMenu() {
+	pid, _, _ := procGetCurrentProcessId.Call()
+	hwnd := findSystrayHWND(uint32(pid))
+	if hwnd != 0 {
+		const wmNull = 0x0000
+		procPostMessage.Call(uintptr(hwnd), uintptr(wmNull), 0, 0)
+		log.Printf("[Systray] AfterTrayMenu: posted WM_NULL to hwnd 0x%x", hwnd)
+	}
 }
 
 // platformForceShowWindow 托盘/任务栏久置后唤醒：激活本进程主窗，并尽量恢复其它最小化副本。
