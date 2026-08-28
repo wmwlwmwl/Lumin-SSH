@@ -10,6 +10,7 @@ import {
   type ThemePackage,
 } from '../../../utils/theme.ts';
 import { settingsConfirm } from '../settingsDialogs.ts';
+import { runThemeChangeWithTransitionAsync, themeTransitionDirectionFor } from '../../../utils/themeTransition.ts';
 
 type AddToast = (message: string | Error, type?: string, duration?: number, actions?: unknown[]) => number;
 
@@ -40,10 +41,12 @@ export function useThemePackages({ addToast, forceDarkTheme, handleClose }: UseT
     }
     setThemePackageBusy(true);
     try {
-      const nextSettings = await saveThemePackageSettings({
-        ...themePackageSettings,
-        themeMode: mode,
-      });
+      // 浅/深/系统模式切换包一层 View Transition：切浅色扩散、切深色收缩（不支持的内核直接切换）
+      const nextSettings = await runThemeChangeWithTransitionAsync(() =>
+        saveThemePackageSettings({
+          ...themePackageSettings,
+          themeMode: mode,
+        }), null, themeTransitionDirectionFor(mode));
       setThemePackageSettings(nextSettings);
       setThemePackages(listThemePackages());
       setThemeMode(nextSettings.themeMode || 'dark');

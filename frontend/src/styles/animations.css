@@ -1009,3 +1009,16 @@ body.theme-light .editor-mode-banner {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+/* ── 主题切换 View Transition（圆形扩散揭示，见 utils/themeTransition.ts） ── */
+/* 关闭默认交叉淡入，改由 JS 在 ::view-transition-new(root) 上跑 clip-path circle 动画 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* 收缩方向（切到深色）：旧快照须盖在新快照之上，才能被 clip-path 收缩露出四周的深色 */
+html.theme-transition-contract::view-transition-old(root) {
+  z-index: 1;
+}

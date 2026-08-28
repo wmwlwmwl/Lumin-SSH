@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { EventsOn } from '../../wailsjs/runtime/runtime.js';
 import { getAIGlobalSettings } from '../components/ai/aiGlobalSettingsBridge.ts';
+import { runThemeChangeWithTransition, themeTransitionDirectionFor } from '../utils/themeTransition.ts';
 import { formatAIQuotedSelection, type SessionLike, type WorkspaceContentTab } from '../utils/sessionWorkspace.ts';
 import type { TerminalPaneLayout } from '../utils/terminalPaneLayout.ts';
 
@@ -151,11 +153,16 @@ export default function useAppGlobalEvents({
       return;
     }
     const nextMode = resolvedQuickThemeMode === 'light' ? 'dark' : 'light';
-    localStorage.setItem('themeMode', nextMode);
-    setQuickThemeMode(nextMode);
-    if (nextMode === 'light') document.body.classList.add('theme-light');
-    else document.body.classList.remove('theme-light');
-    window.dispatchEvent(new CustomEvent('theme-mode-changed'));
+    // 包一层 View Transition：切浅色=白圈从点击处扩散，切深色=旧画面收缩进点击点（不支持的内核直接切换）
+    runThemeChangeWithTransition(() => {
+      flushSync(() => {
+        localStorage.setItem('themeMode', nextMode);
+        setQuickThemeMode(nextMode);
+        if (nextMode === 'light') document.body.classList.add('theme-light');
+        else document.body.classList.remove('theme-light');
+        window.dispatchEvent(new CustomEvent('theme-mode-changed'));
+      });
+    }, null, themeTransitionDirectionFor(nextMode));
   }, [activeAIDevilMode, resolvedQuickThemeMode]);
 
   useEffect(() => {
