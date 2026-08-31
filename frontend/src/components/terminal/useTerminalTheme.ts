@@ -15,6 +15,31 @@ export function useTerminalTheme(deps: {
   // ponytail: getTerminalTheme() 每次渲染调用 30+ 次，缓存为 1 次
   const T = useMemo(() => getTerminalTheme(), [themeToggle]);
 
+  // ponytail: container 颜色同步计算为 CSS 属性对象，确保挂载首帧即生效，防止浅色模式建连时深色闪烁
+  const terminalContainerStyle = useMemo<React.CSSProperties>(() => {
+    const c = T.container || {};
+    const cssVar = (value: string | undefined) => value || '';
+    return {
+      '--term-container-bg': cssVar(c.containerBg),
+      '--term-tint': c.tint || 'transparent',
+      '--term-status-bg': cssVar(c.statusBarBg),
+      '--term-status-border': cssVar(c.statusBarBorder),
+      '--term-status-color': cssVar(c.statusBarColor),
+      '--term-server-color': cssVar(c.serverNameColor),
+      '--term-input-bar-bg': cssVar(c.inputBarBg),
+      '--term-input-bar-border': cssVar(c.inputBarBorder),
+      '--term-input-bg': cssVar(c.inputBg),
+      '--term-input-color': cssVar(c.inputColor),
+      '--term-input-placeholder': c.inputPlaceholder || c.mutedColor || '',
+      '--term-btn-border': cssVar(c.btnBorder),
+      '--term-separator': cssVar(c.separator),
+      '--term-muted': cssVar(c.mutedColor),
+      '--term-context-bg': cssVar(c.contextBg),
+      '--term-context-border': cssVar(c.contextBorder),
+      '--term-context-shadow': cssVar(c.contextShadow),
+    } as React.CSSProperties;
+  }, [T]);
+
   // ── 背景管理与刷新 ─────────────────────────────────────────────────
   const [bgInfo, setBgInfo] = useState({
     image: localStorage.getItem('termBgImage') || '',
@@ -105,5 +130,5 @@ export function useTerminalTheme(deps: {
     }
   }, [T]);
 
-  return { T, themeToggle, bgInfo };
+  return { T, themeToggle, bgInfo, terminalContainerStyle };
 }

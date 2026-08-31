@@ -14,6 +14,7 @@
 /* ── 终端容器 CSS 变量默认值（JS 主题切换时覆盖） ── */
 :root {
   --term-container-bg: #0e1218;
+  --term-tint: transparent;
   --term-status-bg: var(--surface-raised);
   --term-status-border: 1px solid var(--border-subtle);
   --term-status-color: #818fa0;
@@ -22,6 +23,7 @@
   --term-input-bar-border: 1px solid var(--border-subtle);
   --term-input-bg: var(--surface-sunken);
   --term-input-color: #eaf0f7;
+  --term-input-placeholder: #5a6578;
   --term-btn-border: rgba(77,158,255,0.1);
   --term-separator: rgba(77,158,255,0.08);
   --term-muted: #5a6578;
@@ -30,6 +32,28 @@
   --term-context-shadow: 0 8px 32px rgba(0,5,20,0.6), 0 2px 8px rgba(0,5,20,0.4);
   --term-scrollbar-thumb: rgba(140, 165, 195, 0.28);
   --term-scrollbar-thumb-hover: rgba(160, 190, 225, 0.55);
+}
+
+body.theme-light {
+  --term-container-bg: #f7f9fc;
+  --term-tint: transparent;
+  --term-status-bg: var(--surface-raised);
+  --term-status-border: 1px solid var(--border-subtle);
+  --term-status-color: #1d4ed8;
+  --term-server-color: var(--text-primary);
+  --term-input-bar-bg: var(--surface-raised);
+  --term-input-bar-border: 1px solid var(--border-subtle);
+  --term-input-bg: var(--surface-sunken);
+  --term-input-color: var(--text-primary);
+  --term-input-placeholder: var(--text-muted);
+  --term-btn-border: var(--border);
+  --term-separator: var(--border-subtle);
+  --term-muted: var(--text-muted);
+  --term-context-bg: var(--surface-overlay);
+  --term-context-border: 1px solid var(--border-subtle);
+  --term-context-shadow: 0 8px 32px rgba(28,25,23,0.12), 0 2px 8px rgba(28,25,23,0.06);
+  --term-scrollbar-thumb: rgba(100, 116, 139, 0.35);
+  --term-scrollbar-thumb-hover: rgba(71, 85, 105, 0.6);
 }
 
 /* ── 彻底消除 xterm-viewport 的原生浏览器滚动条，避免空视口常驻滚动条槽位 ── */

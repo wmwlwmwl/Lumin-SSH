@@ -101,7 +101,7 @@ export default function Terminal({
   const { gutterRef } = gutterApi;
 
   // ── 主题/壁纸与设置事件监听 ──
-  const { T, themeToggle, bgInfo } = useTerminalTheme({ termRef, wrapperRef });
+  const { T, themeToggle, bgInfo, terminalContainerStyle } = useTerminalTheme({ termRef, wrapperRef });
   useTerminalSettingsEvents({
     ...gutterApi,
     termRef, fitAddonRef, shortcutsRef, localEchoRef, timestampsEnabledRef, commandBlocksEnabledRef,
@@ -219,6 +219,7 @@ export default function Terminal({
       ref={wrapperRef}
       onContextMenu={handleContextMenu}
       onClick={closeContextMenu}
+      style={terminalContainerStyle}
       // 主题底色 + 色调层；壁纸半透明叠在上面
       className="relative h-full flex flex-col overflow-hidden bg-[var(--term-container-bg)]"
     >

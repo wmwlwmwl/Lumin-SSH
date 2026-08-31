@@ -622,6 +622,23 @@ const THEME_COMPONENT_CSS_VARS = [
   '--tab-active-border',
   '--tab-active-text',
   '--tab-radius',
+  '--term-container-bg',
+  '--term-tint',
+  '--term-status-bg',
+  '--term-status-border',
+  '--term-status-color',
+  '--term-server-color',
+  '--term-input-bar-bg',
+  '--term-input-bar-border',
+  '--term-input-bg',
+  '--term-input-color',
+  '--term-input-placeholder',
+  '--term-btn-border',
+  '--term-separator',
+  '--term-muted',
+  '--term-context-bg',
+  '--term-context-border',
+  '--term-context-shadow',
 ];
 
 // 主题包 token 键（与 buildBaseThemeTokens 对齐）。切换主题前先清掉，避免旧包内联值残留盖住 CSS。
@@ -654,6 +671,8 @@ function applyComponentThemeVariables(themePackage: ThemePackage | null | undefi
   if (!target) return;
   const fileManager = getResolvedThemeComponentTheme(themePackage, 'fileManager');
   const topbar = getResolvedThemeComponentTheme(themePackage, 'topbar');
+  const terminal = getTerminalTheme();
+  const c = terminal.container || {};
   const mappings: Record<string, string | undefined> = {
     '--file-manager-panel-bg': fileManager.panelBg,
     '--file-manager-toolbar-bg': fileManager.toolbarBg,
@@ -670,6 +689,23 @@ function applyComponentThemeVariables(themePackage: ThemePackage | null | undefi
     '--topbar-bg': topbar.background,
     '--topbar-border-color': topbar.borderBottomColor,
     '--topbar-title-color': topbar.titleColor,
+    '--term-container-bg': c.containerBg,
+    '--term-tint': c.tint || 'transparent',
+    '--term-status-bg': c.statusBarBg,
+    '--term-status-border': c.statusBarBorder,
+    '--term-status-color': c.statusBarColor,
+    '--term-server-color': c.serverNameColor,
+    '--term-input-bar-bg': c.inputBarBg,
+    '--term-input-bar-border': c.inputBarBorder,
+    '--term-input-bg': c.inputBg,
+    '--term-input-color': c.inputColor,
+    '--term-input-placeholder': c.inputPlaceholder || c.mutedColor,
+    '--term-btn-border': c.btnBorder,
+    '--term-separator': c.separator,
+    '--term-muted': c.mutedColor,
+    '--term-context-bg': c.contextBg,
+    '--term-context-border': c.contextBorder,
+    '--term-context-shadow': c.contextShadow,
   };
   Object.entries(mappings).forEach(([cssVar, value]) => {
     if (value) {
