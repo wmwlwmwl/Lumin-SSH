@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Cpu } from 'lucide-react';
 import * as AppGo from '../../wailsjs/go/wailsapp/App.js';
 import { useTranslation } from '../i18n.ts';
-import { Button, Select } from './ui';
+import { Button, Select, ModalDragStrip } from './ui';
 import { useOverlayScrollLock } from '../hooks/useOverlayScrollLock.ts';
 
 /** 串口连接配置（与 App.ConnectSerial 的参数对应） */
@@ -74,6 +74,7 @@ export default function SerialConfigModal({ onClose, onConnect }: SerialConfigMo
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      <ModalDragStrip />
       <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">

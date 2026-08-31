@@ -1,5 +1,6 @@
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button.tsx';
 export { Modal, type ModalProps, type ModalSize } from './Modal.tsx';
+export { ModalDragStrip } from './ModalDragStrip.tsx';
 export { EmptyState, type EmptyStateProps } from './EmptyState.tsx';
 export {
   ContextMenu,

@@ -10,6 +10,7 @@ import {
   type QueuedDialog,
 } from './globalDialog/globalDialogTypes.ts';
 import { DialogContent } from './globalDialog/DialogContent.tsx';
+import { ModalDragStrip } from './ui';
 
 interface GlobalDialogProps {
   suspendDefault?: boolean;
@@ -130,6 +131,7 @@ export default function GlobalDialog({ suspendDefault = false }: GlobalDialogPro
       data-global-dialog-active={currentSuspended ? undefined : 'true'}
       style={{ zIndex: dialogZIndex, display: currentSuspended ? 'none' : 'flex', isolation: 'isolate' as const }}
     >
+      <ModalDragStrip />
       {dialogs.map((dialog, index) => {
         const dialogActive = index === 0 && !(suspendDefault && dialog.priority === DIALOG_PRIORITY.default);
         const handleClose = () => {

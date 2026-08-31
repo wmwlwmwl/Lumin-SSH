@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { t } from '../../i18n.ts';
 import { Z } from '../../constants/zIndex.ts';
 import { useOverlayScrollLock } from '../../hooks/useOverlayScrollLock.ts';
+import { ModalDragStrip } from './ModalDragStrip.tsx';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -79,6 +80,7 @@ export function Modal({
         if (closeOnOverlay && e.target === e.currentTarget) onClose();
       }}
     >
+      <ModalDragStrip />
       <div
         className={`relative w-full overflow-y-auto bg-raised border border-line rounded-[var(--radius-lg)] shadow-xl animate-[slideUp_0.12s_ease] ${align === 'top' ? '' : 'max-h-[90vh]'} ${SIZE_CLASS[size]} ${panelClassName}`}
         style={panelStyle}

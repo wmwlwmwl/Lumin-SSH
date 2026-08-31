@@ -52,6 +52,9 @@ import { useLayoutEffect } from 'react';
  *
  * @rules
  * - 已使用 `ui/Modal` 的组件无需再调用，`Modal.tsx:65` 已内置。
+ * - 全屏遮罩会盖住顶栏导致窗口无法拖动：新的全屏弹层（`.modal-overlay` 或
+ *   `fixed inset-0` 的模态类遮罩）首个子节点需放 `<ModalDragStrip />`
+ *   （见 `ui/ModalDragStrip.tsx`），恢复遮罩打开时的顶栏拖动/双击最大化。
  * - 任何新写的 `fixed/inset-0` 覆盖层（即使很小如 `Select` 下拉、`ContextMenu`）
  *   若可能盖在可滚动内容（文件管理器的 Virtuoso、首页主机列表、探针面板等）之上，
  *   均应调用 `useOverlayScrollLock(open)` 并 `portal` 到 `body`。

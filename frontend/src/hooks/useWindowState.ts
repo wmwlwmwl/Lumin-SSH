@@ -69,6 +69,21 @@ function isOverNativeScrollbar(e: MouseEvent, el: HTMLElement): boolean {
   return el.clientLeft > 1 && e.clientX <= rect.left + el.clientLeft;
 }
 
+/** 双击顶栏/遮罩拖动条切换最大化：记住还原尺寸 → 切换 → 刷新共享最大化状态 */
+export async function toggleWindowMaximise(): Promise<void> {
+  try {
+    if (shouldRememberWindowSize()) {
+      const [size, maximized] = await Promise.all([WindowGetSize(), WindowIsMaximised()]);
+      if (!maximized && size?.w > 100 && size?.h > 100) {
+        localStorage.setItem('windowSize', JSON.stringify({ w: size.w, h: size.h, maximized: true }));
+      }
+    }
+  } catch { }
+  WindowToggleMaximise();
+  // 切换后稍候刷新共享最大化状态，驱动 enableResize 同步与热区层显隐
+  setTimeout(() => refreshWindowMaximized(), 100);
+}
+
 export default function useWindowState(): () => Promise<void> {
   // 最大化状态来自共享单例轮询，避免多处各自 setInterval 调 Wails IPC
   const maximized = useIsWindowMaximized();
@@ -207,19 +222,7 @@ export default function useWindowState(): () => Promise<void> {
     };
   }, []);
 
-  return useCallback(async () => {
-    try {
-      if (shouldRememberWindowSize()) {
-        const [size, maximized] = await Promise.all([WindowGetSize(), WindowIsMaximised()]);
-        if (!maximized && size?.w > 100 && size?.h > 100) {
-          localStorage.setItem('windowSize', JSON.stringify({ w: size.w, h: size.h, maximized: true }));
-        }
-      }
-    } catch { }
-    WindowToggleMaximise();
-    // 切换后稍候刷新共享最大化状态，驱动 enableResize 同步与热区层显隐
-    setTimeout(() => refreshWindowMaximized(), 100);
-  }, []);
+  return useCallback(() => toggleWindowMaximise(), []);
 }
 
 function shouldRememberWindowSize(): boolean {

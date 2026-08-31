@@ -108,6 +108,8 @@ export default function AIProviderQuickEditOverlay({
     <div
       onClick={onClose}
       data-modal-overlay="true"
+      // zIndex 必须低于 Z.TOPBAR(1000)：本遮罩可能盖住顶栏却无 ModalDragStrip，
+      // 一旦压过顶栏，遮罩打开时窗口将无法从顶栏拖动（Wails 按 mousedown 目标判定）
       style={{
         top: panelBounds?.top ?? 0,
         left: panelBounds?.left ?? 0,

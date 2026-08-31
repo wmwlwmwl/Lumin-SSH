@@ -101,6 +101,18 @@ select option {
   animation: fadeIn 0.12s ease;
 }
 
+/* 模态遮罩会盖住顶栏，而 Wails 按 mousedown 目标元素上的 --wails-draggable
+   判定能否拖动窗口；在遮罩顶部放一条与顶栏同高的透明热区，让遮罩打开时
+   仍能从顶栏区域拖动窗口。必须是真实元素——伪元素不会成为事件 target。 */
+.modal-drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-h, 40px);
+  --wails-draggable: drag;
+}
+
 .modal {
   background: var(--surface-raised);
   border: 1px solid var(--border);

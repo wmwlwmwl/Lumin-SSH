@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Lock } from 'lucide-react';
 import { Z } from '../../constants/zIndex.ts';
 import { useOverlayScrollLock } from '../../hooks/useOverlayScrollLock.ts';
-import { Button } from '../ui';
+import { Button, ModalDragStrip } from '../ui';
 import {
   buildIdentityOptionList,
   calcChmodOctal,
@@ -110,6 +110,7 @@ export default function ChmodDialog({ path, permission, mode, rememberedMode = '
   }
   return createPortal(
     <div className="modal-overlay" data-modal-overlay="true" style={{ zIndex: Z.MODAL, isolation: 'isolate' as const }}>
+      <ModalDragStrip />
       <div className="modal modal-sm">
         <div className="modal-header">
           <div className="modal-title"><Lock size={14} /> {t('修改权限')}</div>
