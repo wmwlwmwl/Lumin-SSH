@@ -45,6 +45,17 @@ function clearWindowResizeState(): void {
   }
 }
 
+/**
+ * 指针是否位于窗口边缘缩放带内。clientX/Y 与 innerWidth/innerHeight 同为 CSS
+ * 像素坐标系；不复用 wails runtime 基于 outerWidth 的边缘判定，避免高 DPI
+ * 缩放下两套坐标错位导致的误判。
+ */
+function isPointInWindowEdgeBand(e: { clientX: number; clientY: number }, thickness = RESIZE_BORDER_THICKNESS): boolean {
+  return e.clientX < thickness || e.clientY < thickness
+    || window.innerWidth - e.clientX < thickness
+    || window.innerHeight - e.clientY < thickness;
+}
+
 /** 指针是否落在元素的原生滚动条像素上（边缘缩放判定带内调用） */
 function isOverNativeScrollbar(e: MouseEvent, el: HTMLElement): boolean {
   // 右侧竖向 / 底部横向：Chromium 中滚动条不占用 client 区，命中坐标越过 client 即滚动条
@@ -109,20 +120,28 @@ export default function useWindowState(): () => Promise<void> {
     const doc = document.documentElement;
 
     const onMouseMove = (e: MouseEvent) => {
-      if (isMaxRef.current) return;
       const flags = getWailsFlags();
-      if (!flags || flags.enableResize === false) return;
-      if (flags.borderThickness !== RESIZE_BORDER_THICKNESS) {
+      if (!flags) return;
+      const resizeActive = !isMaxRef.current && flags.enableResize !== false;
+      if (resizeActive && flags.borderThickness !== RESIZE_BORDER_THICKNESS) {
         flags.borderThickness = RESIZE_BORDER_THICKNESS;
       }
 
       const edge = flags.resizeEdge;
-      if (edge) {
+      if (edge && resizeActive && isPointInWindowEdgeBand(e)) {
         if (doc.getAttribute(RESIZE_EDGE_ATTR) !== edge) {
           doc.setAttribute(RESIZE_EDGE_ATTR, edge);
         }
-      } else if (doc.hasAttribute(RESIZE_EDGE_ATTR)) {
-        doc.removeAttribute(RESIZE_EDGE_ATTR);
+        return;
+      }
+      // flags.resizeEdge 只在 mousemove 事件流里被 wails runtime 维护：原生缩放
+      // 模态循环吃掉后续鼠标事件、触屏/笔输入没有前置 mousemove、指针离开窗口、
+      // 最大化/禁用缩放期间两侧 mousemove 都提前返回——这些空洞都会让边缘状态
+      // 残留。残留时 data 属性会让全局 cursor:inherit 生效（光标异常），mousedown
+      // 还会把普通点击误判成边缘缩放（点击无法聚焦、键盘快捷键失效）。
+      // 这里按坐标现场复核：指针不在边缘带内即为陈旧状态，兜底清理。
+      if (edge || doc.hasAttribute(RESIZE_EDGE_ATTR)) {
+        clearWindowResizeState();
       }
     };
 
@@ -130,6 +149,13 @@ export default function useWindowState(): () => Promise<void> {
       if (isMaxRef.current) return;
       const flags = getWailsFlags();
       if (!flags?.resizeEdge) return;
+      // 按下瞬间复核指针真的在边缘带内且为主键：resizeEdge 可能是事件流空洞
+      // 留下的陈旧值，不复核时一次普通点击（如点终端获取焦点）会被转成原生
+      // 窗口缩放模态循环，吞掉点击与键盘输入
+      if (e.button !== 0 || !isPointInWindowEdgeBand(e)) {
+        clearWindowResizeState();
+        return;
+      }
       // 指针落在原生滚动条像素上时，浏览器强制显示箭头光标（CSS 改不了），
       // 此时按住应为滚动而非缩放：命中滚动条就取消边缘状态，让滚动条接管，
       // 保证"显示缩放光标的地方按下才会缩放"，判定与光标始终一致

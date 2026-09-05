@@ -70,6 +70,7 @@ export default function WindowResizeBorders() {
 
   // 兜底：触屏/笔输入没有前置 mousemove、flags.resizeEdge 为空时，由热区自身发起缩放
   const startResize = (e: React.MouseEvent, edge: string) => {
+    if (e.button !== 0) return; // 仅主键进入缩放，右键/中键不得触发原生缩放循环
     e.preventDefault();
     e.stopPropagation();
     const w = window as unknown as {
