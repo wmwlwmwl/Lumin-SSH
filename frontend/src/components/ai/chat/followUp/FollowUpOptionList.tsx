@@ -1,4 +1,5 @@
 import { cn } from '../../../../utils/cn.ts';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   buildOptionButtonClass,
   type FollowUpQuestion,
@@ -19,6 +20,7 @@ export interface FollowUpOptionListProps {
   transitionTick: number;
   transitionDirection: 'next' | 'prev';
   handleFreeTextChange: (questionItem: FollowUpQuestion, value: string) => void;
+  handleFreeTextKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   handleSingleSelect: (questionItem: FollowUpQuestion, optionId: string) => void;
   handleMultipleToggle: (questionItem: FollowUpQuestion, optionId: string) => void;
   t: (key: I18nKey, vars?: Record<string, unknown>) => string;
@@ -33,6 +35,7 @@ export default function FollowUpOptionList({
   transitionTick,
   transitionDirection,
   handleFreeTextChange,
+  handleFreeTextKeyDown,
   handleSingleSelect,
   handleMultipleToggle,
   t,
@@ -52,6 +55,7 @@ export default function FollowUpOptionList({
           name="ai-chat-followup-free-text"
           value={currentTextAnswer}
           onChange={(event) => handleFreeTextChange(currentQuestion, event.target.value)}
+          onKeyDown={handleFreeTextKeyDown}
           disabled={submitting || isFrozen}
           className="min-h-[140px] resize-y rounded-[var(--radius-md)] border border-line bg-overlay px-3.5 py-3 text-base leading-[1.6] text-primary outline-none"
         />

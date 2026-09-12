@@ -66,18 +66,27 @@ export function useAIChatActions({ addToast, terminalId, workspaceTabId, activeC
     if (!panelState.activeRequestId) {
       return
     }
-    await approveAIChatTools(panelState.activeRequestId)
-  }, [panelState.activeRequestId])
+    try {
+      await approveAIChatTools(panelState.activeRequestId)
+    } catch (error) {
+      // 批准失败（如批次已被丢弃）必须可见，否则按钮看起来像点不动
+      await showAlert(error instanceof Error ? translate(error.message as I18nKey) : translate('操作失败'))
+    }
+  }, [panelState.activeRequestId, showAlert])
   const handleRejectTools = useCallback(async () => {
     if (!panelState.activeRequestId) {
       return
     }
-    if (normalizedGlobalAISettings.continueAfterToolRejection !== false) {
-      await rejectAIChatTools(panelState.activeRequestId)
-      return
+    try {
+      if (normalizedGlobalAISettings.continueAfterToolRejection !== false) {
+        await rejectAIChatTools(panelState.activeRequestId)
+        return
+      }
+      await rejectAIChatToolsForQueuedSubmission(panelState.activeRequestId)
+    } catch (error) {
+      await showAlert(error instanceof Error ? translate(error.message as I18nKey) : translate('操作失败'))
     }
-    await rejectAIChatToolsForQueuedSubmission(panelState.activeRequestId)
-  }, [normalizedGlobalAISettings.continueAfterToolRejection, panelState.activeRequestId])
+  }, [normalizedGlobalAISettings.continueAfterToolRejection, panelState.activeRequestId, showAlert])
   const handleContinueTool = useCallback(async () => {
     if (!panelState.activeRequestId) {
       return

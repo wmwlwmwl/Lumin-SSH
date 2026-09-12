@@ -1,4 +1,5 @@
 import { MessageCircleQuestionMark } from 'lucide-react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n.ts';
 import AIChatMarkdown from './AIChatMarkdown.tsx';
@@ -86,7 +87,7 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
   const canGoPrevious = currentQuestionIndex > 0;
   const selectedIds = currentQuestion ? (answers[currentQuestion.id] || []) : [];
   const currentTextAnswer = currentQuestion ? (textAnswers[currentQuestion.id] || '') : '';
-  const canGoNext = currentQuestion?.type === 'free_text' ? true : selectedIds.length > 0;
+  const canGoNext = currentQuestion?.type === 'free_text' ? Boolean(currentTextAnswer.trim()) : selectedIds.length > 0;
   const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
 
   const submitResponse = useCallback(async (nextAnswers: Record<string, string[]>, nextTextAnswers: Record<string, string> = textAnswersRef.current || {}) => {
@@ -214,6 +215,15 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
     }
   }, [canGoNext, currentQuestion, isFrozen, isLastQuestion, normalizedQuestions.length, startFreeze, submitResponse, submitting]);
 
+  const handleFreeTextKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    // 输入法合成中的 Enter（确认候选词）不触发提交
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    void handleGoNext();
+  }, [handleGoNext]);
+
   if (!currentQuestion) {
     return null;
   }
@@ -239,6 +249,7 @@ export default function AIChatFollowUpCard({ question, questions, suggestions, r
         transitionTick={transitionTick}
         transitionDirection={transitionDirection}
         handleFreeTextChange={handleFreeTextChange}
+        handleFreeTextKeyDown={handleFreeTextKeyDown}
         handleSingleSelect={handleSingleSelect}
         handleMultipleToggle={handleMultipleToggle}
         t={t}

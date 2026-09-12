@@ -3,6 +3,7 @@ import AIChatCompletionCard from './AIChatCompletionCard.tsx'
 import AIChatFollowUpCard from './AIChatFollowUpCard.tsx'
 import AIChatMCPCard from './AIChatMCPCard.tsx'
 import AIChatToolCard from './AIChatToolCard.tsx'
+import { AI_FOLLOWUP_PENDING_STATUS_KEY, normalizeAIMessageStatus } from '../aiChatLogic.ts'
 import { cn } from '../../../utils/cn.ts'
 
 /** 会话工具条目（来自 .tsx 父级；kind 区分卡片类型，各卡片按需取用字段） */
@@ -57,12 +58,19 @@ function renderToolItem(item: AIChatToolSessionItem, options: AIChatToolSessionO
       return <AIChatCommandCard key={item.id} purpose={item.purpose} command={item.command} output={item.output} status={item.status} extra={item.extra} />
     case 'mcp':
       return <AIChatMCPCard key={item.id} serverName={item.serverName} toolName={item.toolName} args={item.args} response={item.response} extra={item.extra} isLast={isLastAssistantTurn} hasSubsequentAssistantMessage={hasSubsequentAssistantMessage} />
-    case 'followup':
+    case 'followup': {
+      // 已应答的追问（状态非待处理或 requestId 已清空）不再渲染交互框，答案已落入随后的用户消息
+      const followupStatus = normalizeAIMessageStatus(item.status)
+      const followupRequestId = typeof item.requestId === 'string' ? item.requestId.trim() : ''
+      if (!followupRequestId || (followupStatus && followupStatus !== AI_FOLLOWUP_PENDING_STATUS_KEY)) {
+        return null
+      }
       return (
         <div key={item.id} className={cn(followupInteractionLocked ? 'pointer-events-none opacity-60' : 'pointer-events-auto opacity-100')}>
           <AIChatFollowUpCard question={item.question} questions={item.questions || []} suggestions={item.suggestions || []} requestId={item.requestId} onSelectSuggestion={onSendUserMessage as (payload: unknown) => unknown} />
         </div>
       )
+    }
     default:
       return null
   }

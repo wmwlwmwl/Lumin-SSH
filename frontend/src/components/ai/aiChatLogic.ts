@@ -295,6 +295,7 @@ export function normalizeAIMessageStatus(value: unknown) {
 
 export const AI_FOLLOWUP_PENDING_STATUS_KEY = '等待处理'
 export const AI_FOLLOWUP_COMPLETED_STATUS_KEY = '已完成'
+export const AI_FOLLOWUP_CANCELLED_STATUS_KEY = '已取消'
 
 export function truncateConversationTitle(text: unknown) {
   const normalized = String(text || '').trim().replace(/\s+/g, ' ')
@@ -821,6 +822,39 @@ export function upsertMessageBeforeAssistant(messages: unknown, requestId: unkno
     return nextMessages
   }
   return insertMessageBeforeAssistant(list, requestId, nextMessage)
+}
+
+/** 请求结束后仍可能滞留在消息流里的工具中间态 */
+export const AI_TOOL_INTERMEDIATE_STATUSES = ['待批准', '执行中', '排队中, 等待终端空闲']
+
+/**
+ * 请求到达终态时，把滞留在中间态的工具卡片与待应答追问统一关闭，
+ * 避免后端批次已丢弃而前端仍渲染可交互的死卡片。
+ */
+export function closeAIStrandedInteractiveMessages(messages: unknown, toolStatus: string, closeFollowups = true): AIMessage[] {
+  const list = Array.isArray(messages) ? messages : []
+  let changed = false
+  const nextMessages = list.map((message) => {
+    const kind = typeof message?.kind === 'string' ? message.kind.trim() : ''
+    const status = normalizeAIMessageStatus(message?.status)
+    if ((kind === 'tool' || kind === 'command' || kind === 'mcp') && AI_TOOL_INTERMEDIATE_STATUSES.includes(status)) {
+      changed = true
+      return {
+        ...message,
+        status: toolStatus,
+      }
+    }
+    if (closeFollowups && kind === 'followup' && status === AI_FOLLOWUP_PENDING_STATUS_KEY) {
+      changed = true
+      return {
+        ...message,
+        status: AI_FOLLOWUP_CANCELLED_STATUS_KEY,
+        requestId: '',
+      }
+    }
+    return message
+  })
+  return changed ? nextMessages : list
 }
 
 export function isAIBusinessTurnMessageKind(kind: unknown) {
