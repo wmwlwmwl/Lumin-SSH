@@ -2001,4 +2001,8 @@ export default {
   "自动重连失败,已达最大重试次数,请手动重连": "Otomatik yeniden bağlanma, maksimum deneme sayısından sonra başarısız oldu; lütfen elle yeniden bağlanın",
   "外部 AI 已重新连接该服务器": "Harici AI bu sunucuyu yeniden bağladı",
   "外部 AI 自动重连服务器失败,请手动处理": "Harici AI sunucuyu yeniden bağlayamadı; lütfen elle işleme alın",
+  "AI 对话日志": "AI sohbet günlüğü",
+  "完整记录每轮 AI 请求与模型的原始响应流（含工具调用与推理），用于排查「未返回内容」「工具不执行」等异常。默认开启，文件超过 20MB 自动轮转。": "Her AI isteğini ve modelin ham yanıt akışını (araç çağrıları ve akıl yürütme dahil) kaydeder; boş yanıt veya çalışmayan araç gibi sorunları teşhis etmek için kullanılır. Varsayılan olarak açık; dosya 20 MB sonrasında döndürülür.",
+  "定位 ai.log": "ai.log dosyasını göster",
+  "定位 AI 日志能力未就绪": "AI günlüğünü gösterme özelliği hazır değil",
 } satisfies I18nDict;

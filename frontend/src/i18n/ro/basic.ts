@@ -2001,4 +2001,8 @@ export default {
   "自动重连失败,已达最大重试次数,请手动重连": "Reconectarea automată a eșuat după numărul maxim de încercări; reconectați manual",
   "外部 AI 已重新连接该服务器": "IA externă a reconectat acest server",
   "外部 AI 自动重连服务器失败,请手动处理": "IA externă nu a reușit să reconecteze serverul; gestionați manual",
+  "AI 对话日志": "Jurnal conversații AI",
+  "完整记录每轮 AI 请求与模型的原始响应流（含工具调用与推理），用于排查「未返回内容」「工具不执行」等异常。默认开启，文件超过 20MB 自动轮转。": "Înregistrează fiecare cerere AI și fluxul brut de răspuns al modelului (inclusiv apeluri de unelte și raționament) pentru a diagnostica probleme precum răspunsuri goale sau unelte neexecutate. Activat implicit; fișierul se rotește după 20 MB.",
+  "定位 ai.log": "Afișează ai.log",
+  "定位 AI 日志能力未就绪": "Funcția de afișare a jurnalului AI nu este disponibilă",
 } satisfies I18nDict;

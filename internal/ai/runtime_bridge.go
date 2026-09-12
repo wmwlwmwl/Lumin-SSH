@@ -71,7 +71,9 @@ type sshBridge struct {
 }
 
 func NewService(ctx context.Context, configDir string, sessionProvider SessionProviderDelegate, sshDelegate SSHDelegate) *Service {
-	return &Service{
+	// AI 对话完整日志:落盘 <configDir>/ai.log;是否写入由设置 aiDebugLogEnabled 控制(默认开启)。
+	initAIDebugLog(configDir)
+	service := &Service{
 		ctx:                       ctx,
 		sshManager:                &sshBridge{delegate: sshDelegate},
 		configManager:             &configBridge{configDir: configDir},
@@ -83,6 +85,8 @@ func NewService(ctx context.Context, configDir string, sessionProvider SessionPr
 		aiToolExecutions:          make(map[string]*ToolExecutionState),
 		aiSkipNextAutomaticReqMap: make(map[string]bool),
 	}
+	setAIDebugLogEnabled(service.GetAIGlobalSettings().AIDebugLogEnabled)
+	return service
 }
 
 func (a *Service) SetContext(ctx context.Context) {

@@ -57,6 +57,8 @@ export type AIGlobalSettings = {
   aiWorkspaceTabNumbersOnly: boolean
   autoCondenseEnabled: boolean
   autoCondenseThresholdRatio: number
+  // 是否把每轮 AI 请求与原始响应流写入 ai.log(默认开启)
+  aiDebugLogEnabled: boolean
   approvalButtonOrder: ApprovalButtonOrder
   commandActionButtonOrder: CommandActionButtonOrder
   toolResultTokenThreshold: number
@@ -103,6 +105,7 @@ const DEFAULT_AI_GLOBAL_SETTINGS: AIGlobalSettings = {
   aiWorkspaceTabNumbersOnly: false,
   autoCondenseEnabled: false,
   autoCondenseThresholdRatio: 0.8,
+  aiDebugLogEnabled: true,
   approvalButtonOrder: 'reject-approve',
   commandActionButtonOrder: 'terminate-continue',
   toolResultTokenThreshold: 350000,
@@ -360,6 +363,7 @@ export function normalizeAIGlobalSettings(settings: unknown): AIGlobalSettings {
     aiWorkspaceTabNumbersOnly: Boolean(s.aiWorkspaceTabNumbersOnly),
     autoCondenseEnabled: Boolean(s.autoCondenseEnabled),
     autoCondenseThresholdRatio: normalizeAICondenseThresholdRatio(s.autoCondenseThresholdRatio),
+    aiDebugLogEnabled: s.aiDebugLogEnabled !== false,
     approvalButtonOrder: normalizeApprovalButtonOrder(s.approvalButtonOrder),
     commandActionButtonOrder: normalizeCommandActionButtonOrder(s.commandActionButtonOrder),
     aiRequestProxyId,

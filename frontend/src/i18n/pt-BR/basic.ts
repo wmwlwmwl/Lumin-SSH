@@ -2001,4 +2001,8 @@ export default {
   "自动重连失败,已达最大重试次数,请手动重连": "A reconexão automática falhou após o número máximo de tentativas; reconecte manualmente",
   "外部 AI 已重新连接该服务器": "A IA externa reconectou este servidor",
   "外部 AI 自动重连服务器失败,请手动处理": "A IA externa não conseguiu reconectar o servidor; trate manualmente",
+  "AI 对话日志": "Registro de conversa da IA",
+  "完整记录每轮 AI 请求与模型的原始响应流（含工具调用与推理），用于排查「未返回内容」「工具不执行」等异常。默认开启，文件超过 20MB 自动轮转。": "Registra cada solicitação de IA e o fluxo de resposta bruto do modelo (incluindo chamadas de ferramentas e raciocínio) para diagnosticar falhas como respostas vazias ou ferramentas não executadas. Ativado por padrão; o arquivo é rotacionado após 20 MB.",
+  "定位 ai.log": "Mostrar ai.log",
+  "定位 AI 日志能力未就绪": "O recurso de mostrar o registro de IA não está disponível",
 } satisfies I18nDict;

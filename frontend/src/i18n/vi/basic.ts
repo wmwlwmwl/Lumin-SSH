@@ -2001,4 +2001,8 @@ export default {
   "自动重连失败,已达最大重试次数,请手动重连": "Tự động kết nối lại thất bại sau số lần thử tối đa; vui lòng kết nối lại thủ công",
   "外部 AI 已重新连接该服务器": "AI bên ngoài đã kết nối lại máy chủ này",
   "外部 AI 自动重连服务器失败,请手动处理": "AI bên ngoài không thể kết nối lại máy chủ; vui lòng xử lý thủ công",
+  "AI 对话日志": "Nhật ký hội thoại AI",
+  "完整记录每轮 AI 请求与模型的原始响应流（含工具调用与推理），用于排查「未返回内容」「工具不执行」等异常。默认开启，文件超过 20MB 自动轮转。": "Ghi lại mọi yêu cầu AI và luồng phản hồi thô của mô hình (bao gồm lời gọi công cụ và suy luận) để chẩn đoán các sự cố như phản hồi rỗng hoặc công cụ không chạy. Bật mặc định; tệp được xoay vòng sau 20 MB.",
+  "定位 ai.log": "Mở vị trí ai.log",
+  "定位 AI 日志能力未就绪": "Tính năng mở nhật ký AI chưa sẵn sàng",
 } satisfies I18nDict;

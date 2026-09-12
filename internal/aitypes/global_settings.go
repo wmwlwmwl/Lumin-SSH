@@ -82,6 +82,9 @@ type AIGlobalSettings struct {
 	ProxyNodes                           []AIProxyNode                 `json:"proxyNodes,omitempty"`
 	AutoCondenseEnabled                  bool                          `json:"autoCondenseEnabled"`
 	AutoCondenseThresholdRatio           float64                       `json:"autoCondenseThresholdRatio,omitempty"`
+	// AIDebugLogEnabled 控制是否把每轮 AI 请求与原始响应流写入 ai.log。
+	// 旧配置缺少该键时,LoadAIGlobalSettings 会保留默认值(true),即默认开启。
+	AIDebugLogEnabled bool `json:"aiDebugLogEnabled"`
 }
 
 const (
@@ -113,6 +116,7 @@ func DefaultAIGlobalSettings() AIGlobalSettings {
 		ToolResultTokenThreshold:             350000,
 		AutoCondenseEnabled:                  false,
 		AutoCondenseThresholdRatio:           DefaultAICondenseThresholdRatio,
+		AIDebugLogEnabled:                    true,
 	}
 }
 

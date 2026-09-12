@@ -1,4 +1,4 @@
-import { FolderOpen, Loader2, RotateCcw } from 'lucide-react';
+import { FileText, FolderOpen, Loader2, RotateCcw } from 'lucide-react';
 import type React from 'react';
 import { useTranslation } from '../../../i18n.ts';
 import { Button, Select } from '../../ui';
@@ -28,6 +28,8 @@ export interface AIPanelBasicSettingsTabProps {
   tasksDirMigrating: boolean;
   handleChangeTasksDir: () => void;
   handleResetTasksDir: () => void;
+  handleRevealAIDebugLog: () => void;
+  aiDebugLogEnabled: boolean;
   onSaveGlobalAISettings?: (settings: Record<string, unknown>) => Promise<unknown> | void;
 }
 
@@ -51,6 +53,8 @@ export default function AIPanelBasicSettingsTab({
   tasksDirMigrating,
   handleChangeTasksDir,
   handleResetTasksDir,
+  handleRevealAIDebugLog,
+  aiDebugLogEnabled,
   onSaveGlobalAISettings,
 }: AIPanelBasicSettingsTabProps) {
   const { t } = useTranslation();
@@ -266,6 +270,31 @@ export default function AIPanelBasicSettingsTab({
               </Button>
             ) : null}
           </div>
+        </div>
+      </div>
+      <div className="bg-canvas p-4 rounded-[var(--radius-md)] border border-line grid gap-3">
+        <div className="flex justify-between items-center gap-4">
+          <div className="min-w-0">
+            <div className="text-primary text-base font-bold">{t('AI 对话日志')}</div>
+            <div className="text-tertiary text-sm leading-[1.6]">
+              {t('完整记录每轮 AI 请求与模型的原始响应流（含工具调用与推理），用于排查「未返回内容」「工具不执行」等异常。默认开启，文件超过 20MB 自动轮转。')}
+            </div>
+          </div>
+          <ToggleSwitchControl
+            checked={aiDebugLogEnabled}
+            onChange={() => onSaveGlobalAISettings?.({ aiDebugLogEnabled: !aiDebugLogEnabled })}
+          />
+        </div>
+        <div className="border-t border-line" />
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="secondary"
+            onClick={handleRevealAIDebugLog}
+            className="h-[30px] px-3.5 gap-1.5 rounded-[var(--radius-sm)]"
+          >
+            <FileText size={14} />
+            {t('定位 ai.log')}
+          </Button>
         </div>
       </div>
     </>

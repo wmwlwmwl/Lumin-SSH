@@ -282,6 +282,26 @@ func (b *AIBindings) OpenAIConversationFolder(conversationID string) error {
 	return localopen.Reveal(filepath.Join(tasksDir, trimmedConversationID), true)
 }
 
+// RevealAIDebugLog 在文件管理器中定位 AI 对话完整日志(ai.log),
+// 便于用户在 AI 面板出现异常时直接把该文件提供出来排查。
+func (b *AIBindings) RevealAIDebugLog() error {
+	if b == nil || b.app == nil || b.app.configManager == nil {
+		return fmt.Errorf("config manager unavailable")
+	}
+	logPath := strings.TrimSpace(ai.AIDebugLogPath())
+	if logPath == "" {
+		configDir := b.app.configManager.GetConfigDir()
+		if configDir == "" {
+			return fmt.Errorf("config dir unavailable")
+		}
+		logPath = filepath.Join(configDir, "ai.log")
+	}
+	if _, err := os.Stat(logPath); err != nil {
+		return fmt.Errorf("AI 日志尚未生成: %w", err)
+	}
+	return localopen.Reveal(logPath, false)
+}
+
 func (b *AIBindings) PreprocessAIConversationLongText(conversationID string, text string) (string, error) {
 	return b.runtime().PreprocessAIConversationLongText(conversationID, text)
 }

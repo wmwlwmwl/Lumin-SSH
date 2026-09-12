@@ -139,5 +139,10 @@ func (a *Service) SaveAIGlobalSettings(jsonStr string) error {
 	if a == nil || a.configManager == nil {
 		return nil
 	}
-	return a.configManager.SaveAIGlobalSettings(settings)
+	if err := a.configManager.SaveAIGlobalSettings(settings); err != nil {
+		return err
+	}
+	// AI 对话日志开关变更后立即生效,无需重启。
+	setAIDebugLogEnabled(settings.AIDebugLogEnabled)
+	return nil
 }

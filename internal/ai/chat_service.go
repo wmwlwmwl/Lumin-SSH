@@ -2611,7 +2611,9 @@ func (a *Service) runCompatibleAIChatLoop(ctx context.Context, requestID string,
 			a.persistAIUserNodeCompensation(requestID, payload.ConversationID, requestMessages)
 		}
 		for attempt := 1; attempt <= aiChatRequestMaxAttempts; attempt++ {
+			roundStartedAt := time.Now()
 			roundResult, err = a.requestAIProviderChatRound(ctx, requestID, payload, profile, requestMessages)
+			aiDebugLogRoundResult(payload.ConversationID, requestID, round, attempt, profile, time.Since(roundStartedAt), roundResult, err)
 			if err == nil {
 				break
 			}

@@ -159,6 +159,21 @@ export default function AIPanelSettingsOverlay({
     }
   };
 
+  // AI 对话完整日志(ai.log)在文件管理器中定位,便于用户直接把文件提供出来排查。
+  const handleRevealAIDebugLog = async () => {
+    try {
+      const bridge = window?.go?.wailsapp?.AIBindings || window?.go?.wailsapp?.App;
+      if (!bridge?.RevealAIDebugLog) {
+        window.luminDialog?.alert?.(t('定位 AI 日志能力未就绪'), t('错误'), { priority: 'settings' });
+        return;
+      }
+      await bridge.RevealAIDebugLog();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e || '');
+      if (msg.trim()) window.luminDialog?.alert?.(msg, t('错误'), { priority: 'settings' });
+    }
+  };
+
   const handleResetTasksDir = async () => {
     if (tasksDirMigrating) return;
     try {
@@ -381,6 +396,8 @@ export default function AIPanelSettingsOverlay({
                 tasksDirMigrating={tasksDirMigrating}
                 handleChangeTasksDir={handleChangeTasksDir}
                 handleResetTasksDir={handleResetTasksDir}
+                handleRevealAIDebugLog={handleRevealAIDebugLog}
+                aiDebugLogEnabled={globalAISettings?.aiDebugLogEnabled !== false}
                 onSaveGlobalAISettings={onSaveGlobalAISettings}
               />
             ) : null}
